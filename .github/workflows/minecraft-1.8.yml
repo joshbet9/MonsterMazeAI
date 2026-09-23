@@ -25,45 +25,39 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-      - name: Set up Gradle 2.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '2.7'
-
       - name: Prepare ForgeGradle workspace
-        working-directory: minecraft-1.8
-        run: gradle --no-daemon setupDevWorkspace
-
-      - name: Inspect ForgeGradle compile inputs
         working-directory: minecraft-1.8
         shell: bash
         run: |
-          set -euxo pipefail
-          find "$HOME/.gradle/caches/minecraft/net/minecraftforge/forge" -type f -name '*forgeBin*.jar' -print | sort
-          gradle --no-daemon dependencies --configuration compile
+          chmod +x gradlew
+          ./gradlew --no-daemon setupDevWorkspace
+
+      - name: Verify generated Forge compile input
+        working-directory: minecraft-1.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge_bin="$HOME/.gradle/caches/minecraft/net/minecraftforge/forge/1.8.9-11.15.1.2318-1.8.9/stable/22/forgeBin.jar"
+          test -f "$forge_bin"
+          echo "Forge compile input: $forge_bin"
+          ls -lh "$forge_bin"
 
       - name: Build Minecraft 1.8 mod
         working-directory: minecraft-1.8
-        run: gradle --no-daemon build
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon build
 
       - name: Verify mod artifact
         working-directory: minecraft-1.8
         shell: bash
         run: |
           set -euo pipefail
-          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
-          test -n "$jar_file"
+          jars=(build/libs/*.jar)
+          test -f "${jars[0]}"
+          jar_file="${jars[0]}"
           echo "Built: $jar_file"
           jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/MonsterMaze18Mod.class'
-          jar tf "$jar_file" | grep -F 'mcmod.info'
-
-      - name: Verify mod artifact
-        working-directory: minecraft-1.8
-        shell: bash
-        run: |
-          set -euo pipefail
-          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
-          test -n "$jar_file"
-          echo "Built: $jar_file"
-          jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/MonsterMaze18Mod.class'
+          jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/Minecraft18Observer.class'
           jar tf "$jar_file" | grep -F 'mcmod.info'

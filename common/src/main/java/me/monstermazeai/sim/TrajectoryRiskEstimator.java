@@ -17,7 +17,7 @@ public final class TrajectoryRiskEstimator {
             GameState result=simulator.forecast(source,actions,seed);
             if(result.alive) survived++;
             if(result.padReached) padReached++;
-            if(result.player.health<source.player.health) damaged++;
+            if(result.player.damageTaken>source.player.damageTaken) damaged++;
             health+=result.player.health;
             double tx=result.targetPadX(),tz=result.targetPadZ();
             distance+=(Double.isNaN(tx)||Double.isNaN(tz))?0:Math.hypot(result.player.x-tx,result.player.z-tz);

@@ -45,7 +45,8 @@ public final class CollisionModel {
             monster.vx = awayX / len;
             monster.vz = awayZ / len;
             monster.vy = 0.8;
-            monster.launchedUntilTick = Math.max(monster.launchedUntilTick, state.tick + 30);
+            monster.launchedAtTick = state.tick;
+            monster.launchedUntilTick = state.tick + 30;
             monster.waypointRow = -1;
             monster.waypointColumn = -1;
             abilities.consumeBodyRushContact(state);

@@ -22,6 +22,15 @@ public final class GameState {
     public int activePadRow = -1, activePadColumn = -1;
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
+    public boolean padReached = false;
+
+    public double targetPadX() {
+        return activePadRow < 0 ? Double.NaN : activePadRow + 0.5;
+    }
+
+    public double targetPadZ() {
+        return activePadColumn < 0 ? Double.NaN : activePadColumn + 0.5;
+    }
 
     public GameState copy() {
         GameState s = new GameState();
@@ -30,7 +39,7 @@ public final class GameState {
         s.ability=ability.copy();
         s.activePadRow=activePadRow; s.activePadColumn=activePadColumn;
         s.previewPadRow=previewPadRow; s.previewPadColumn=previewPadColumn;
-        s.alive=alive;
+        s.alive=alive; s.padReached=padReached;
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;
     }

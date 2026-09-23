@@ -46,6 +46,7 @@ public final class CollisionModel {
 
         state.player.recentMobHitUntilTick = now + HIT_COOLDOWN_TICKS;
         state.player.health -= HIT_DAMAGE;
+        state.player.damageTaken += HIT_DAMAGE;
 
         // Source bump(): snap a player close to the floor upward before applying
         // knockback. UtilAction.velocity then adds +0.2 when grounded.

@@ -5,7 +5,7 @@ import me.monstermazeai.player.PlayerState;
 
 /**
  * Minecraft 1.8-style land movement prediction.
- * Based on EntityLivingBase.moveEntityWithHeading / jump ordering.
+ * Source-informed foundation; exact entity collision is handled separately.
  */
 public final class LegacyMovementModel implements PhysicsModel {
     private static final float DEFAULT_SLIPPERINESS = 0.6F;
@@ -19,15 +19,21 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     @Override
     public void tick(PlayerState p, Action action) {
-        if (action.jump()) {\n            if (p.grounded && p.jumpTicks == 0) {\n                jump(p, action.sprint());\n                p.jumpTicks = 10;\n            }\n        } else {\n            p.jumpTicks = 0;\n        }
+        if (action.jump()) {
+            if (p.grounded && p.jumpTicks == 0) {
+                jump(p, action.sprint());
+                p.jumpTicks = 10;
+            }
+        } else {
+            p.jumpTicks = 0;
+        }
 
         float friction = p.grounded
                 ? DEFAULT_SLIPPERINESS * LAND_FRICTION
                 : LAND_FRICTION;
 
         float movementFactor = p.grounded
-                ? (float)(WALK_SPEED * (0.16277136F /
-                    (friction * friction * friction)))
+                ? (float) (WALK_SPEED * (0.16277136F / (friction * friction * friction)))
                 : JUMP_MOVEMENT_FACTOR;
 
         moveFlying(p, action.strafe(), action.forward(), movementFactor);

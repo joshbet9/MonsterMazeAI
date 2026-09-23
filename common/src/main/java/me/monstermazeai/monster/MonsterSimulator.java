@@ -1,13 +1,22 @@
 package me.monstermazeai.monster;
 
+import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+/**
+ * Source-grounded 1.8 Monster Maze monster movement.
+ *
+ * Monsters choose a direction only when they reach a waypoint/intersection,
+ * then CreatureMoveFast drives them toward the selected terminal waypoint.
+ */
 public final class MonsterSimulator {
     private static final double WAYPOINT_TOLERANCE = 0.4;
+    private static final double CELL_CENTER_OFFSET = 0.5;
 
     private final MazeModel maze;
     private final Random random;
@@ -19,9 +28,14 @@ public final class MonsterSimulator {
         this.speed = speed;
     }
 
-    /** Implements the Monster Maze waypoint decision rule; movement integration is separate. */
+    /**
+     * Mirrors MonsterManager.getTarget(): continue in the selected cardinal
+     * direction until the next cell would leave the path or until an
+     * intersection is reached.
+     */
     public void chooseNextWaypoint(MonsterState monster, Cell currentCell) {
         List<Cell> choices = maze.cardinalNeighbours(currentCell);
+
         if (choices.size() > 1 && monster.direction != CardinalDirection.NONE) {
             choices.removeIf(c -> {
                 int dr = c.row() - currentCell.row();
@@ -29,46 +43,110 @@ public final class MonsterSimulator {
                 return CardinalDirection.between(dr, dc) == monster.direction.opposite();
             });
         }
-        if (choices.isEmpty()) return;
+
+        if (choices.isEmpty()) {
+            monster.waypointRow = -1;
+            monster.waypointColumn = -1;
+            monster.direction = CardinalDirection.NONE;
+            return;
+        }
+
         Cell chosen = choices.get(random.nextInt(choices.size()));
-        monster.waypointRow = chosen.row();
-        monster.waypointColumn = chosen.column();
-        monster.direction = CardinalDirection.between(
-                chosen.row() - currentCell.row(), chosen.column() - currentCell.column());
+        CardinalDirection direction = CardinalDirection.between(
+                chosen.row() - currentCell.row(),
+                chosen.column() - currentCell.column());
+
+        Cell terminal = chosen;
+        Cell cursor = chosen;
+
+        while (true) {
+            List<Cell> forward = maze.cardinalNeighbours(cursor);
+            forward.removeIf(c -> CardinalDirection.between(
+                    c.row() - cursor.row(), c.column() - cursor.column()) != direction);
+
+            if (forward.isEmpty()) break;
+
+            Cell next = forward.get(0);
+            List<Cell> atNext = maze.cardinalNeighbours(next);
+
+            // getTarget() stops after advancing to a cell whose side branches
+            // contain more than one alternative direction.
+            int alternatives = 0;
+            for (Cell n : atNext) {
+                CardinalDirection d = CardinalDirection.between(
+                        n.row() - next.row(), n.column() - next.column());
+                if (d != direction.opposite()) alternatives++;
+            }
+
+            if (alternatives > 1) {
+                terminal = next;
+                break;
+            }
+
+            terminal = next;
+            cursor = next;
+        }
+
+        monster.waypointRow = terminal.row();
+        monster.waypointColumn = terminal.column();
+        monster.direction = direction;
     }
 
-    public void tick(me.monstermazeai.game.GameState state) {
+    public void tick(GameState state) {
         for (MonsterState m : state.monsters) {
-            if (m.frozen() || m.launched()) continue;
+            if (m.frozen(state.tick) || m.launched(state.tick)) continue;
+
             Cell current = nearestCell(m.x, m.z);
             if (current == null) continue;
-            if (m.waypointRow < 0 || atWaypoint(m, centerX(m.waypointRow), centerZ(m.waypointColumn))) {
+
+            if (m.waypointRow < 0 ||
+                    atWaypoint(m, centerX(m.waypointRow), centerZ(m.waypointColumn))) {
                 chooseNextWaypoint(m, current);
             }
+
             if (m.waypointRow < 0) continue;
-            double tx=centerX(m.waypointRow), tz=centerZ(m.waypointColumn);
-            double dx=tx-m.x, dz=tz-m.z, d=Math.hypot(dx,dz);
-            if (d > 1e-9) {
-                double step=Math.min(speed,d);
-                m.vx=dx/d*step; m.vz=dz/d*step;
-                m.x += m.vx; m.z += m.vz;
-            }
+
+            double tx = centerX(m.waypointRow);
+            double tz = centerZ(m.waypointColumn);
+            double dx = tx - m.x;
+            double dz = tz - m.z;
+            double d = Math.hypot(dx, dz);
+
+            if (d <= 1e-9) continue;
+
+            double step = Math.min(speed, d);
+            m.vx = dx / d * step;
+            m.vz = dz / d * step;
+            m.x += m.vx;
+            m.z += m.vz;
         }
     }
 
     private Cell nearestCell(double x, double z) {
-        int r=(int)Math.floor(x+0.5), c=(int)Math.floor(z+0.5);
-        if(r<0 || c<0 || r>=MazeModel.SIZE || c>=MazeModel.SIZE) return null;
-        return maze.isRawPath(r,c) ? new Cell(r,c) : null;
+        int row = (int) Math.floor(x);
+        int column = (int) Math.floor(z);
+        if (row < 0 || column < 0 ||
+                row >= MazeModel.SIZE || column >= MazeModel.SIZE) return null;
+        return maze.isTraversable(row, column)
+                ? new Cell(row, column)
+                : null;
     }
 
-    private double centerX(int row) { return row; }
-    private double centerZ(int column) { return column; }
+    private double centerX(int row) {
+        return row + CELL_CENTER_OFFSET;
+    }
+
+    private double centerZ(int column) {
+        return column + CELL_CENTER_OFFSET;
+    }
 
     public boolean atWaypoint(MonsterState m, double targetX, double targetZ) {
-        double dx = m.x - targetX, dz = m.z - targetZ;
-        return Math.sqrt(dx * dx + dz * dz) < WAYPOINT_TOLERANCE;
+        double dx = m.x - targetX;
+        double dz = m.z - targetZ;
+        return Math.hypot(dx, dz) < WAYPOINT_TOLERANCE;
     }
 
-    public double speed() { return speed; }
+    public double speed() {
+        return speed;
+    }
 }

@@ -12,7 +12,7 @@ public final class CollisionModel {
     public boolean tryMonsterHit(GameState state, MonsterState monster) {
         PlayerState p = state.player;
         if (!state.alive || !pHitEligible(p, state.tick)) return false;
-        if (horizontalDistanceSq(p, monster) >= HIT_DISTANCE_SQ) return false;
+        if (horizontalDistanceSq(p, monster) >= HIT_DISTANCE_SQ) return false;\n        if (distanceSq(p, monster) >= HIT_DISTANCE_SQ) return false;
         double dx = p.x - monster.x, dz = p.z - monster.z;
         double d = Math.sqrt(dx*dx + dz*dz);
         if (d <= 1e-9) return false;
@@ -30,7 +30,7 @@ public final class CollisionModel {
         return tick >= p.recentMobHitUntilTick;
     }
 
-    private double horizontalDistanceSq(PlayerState p, MonsterState m) {
+    private double distanceSq(PlayerState p, MonsterState m) {\n        double dx=p.x-m.x, dy=p.y-m.y, dz=p.z-m.z;\n        return dx*dx+dy*dy+dz*dz;\n    }\n\n    private double horizontalDistanceSq(PlayerState p, MonsterState m) {
         double dx=p.x-m.x, dz=p.z-m.z;
         return dx*dx+dz*dz;
     }

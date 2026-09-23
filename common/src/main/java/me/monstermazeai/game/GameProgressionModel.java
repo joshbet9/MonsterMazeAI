@@ -39,7 +39,6 @@ public final class GameProgressionModel {
             state.padReached = true;
             abilities.onReachedPad(state, true);
 
-            int shortenedSeconds = Math.max(6, 16 - (state.stage - 1));
             state.phaseTicksRemaining = timer.shortenedTicks(
                     state.phaseTicksRemaining, state.stage, false);
         }

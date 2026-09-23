@@ -35,14 +35,36 @@ navigation information. Player physics remain in the common simulator.
 
 Minecraft classes must not cross into common.
 
+## 1.8 implementation status
+
+The first live target is Minecraft 1.8.9, matching the Mineplex-era client/API.
+Forge 1.8.9 build 11.15.1.2318 is used as the development target. The adapter
+is intentionally read-only at first: it observes the client and prints a
+detached snapshot every second while Monster Maze is detected. It does not
+send movement, jump, camera, or ability input.
+
+The initial detector uses:
+- the Monster Maze scoreboard ("Safe Pad" and "Stage") when available;
+- the player position, velocity, health and grounded state;
+- the active Safe Pad beacon;
+- the large stained-clay center area to estimate maze center;
+- the dominant maze top-block signature to reconstruct the 99x99 path grid;
+- snowman entities as the default 1.8 monster representation;
+- inventory display names to identify the kit and Jumper charges.
+
+These are deliberately observation heuristics, not yet validated live against
+recorded Mineplex observations.
+
 ## Implementation order
 
-1. Read-only state capture.
-2. Maze and pad detection.
-3. Monster detection.
-4. Input execution.
-5. Closed-loop live control.
-6. Calibration against recorded observations.
+1. Read-only state capture. **Current.**
+2. Validate center, maze, pad, monster and scoreboard detection against a real
+   1.8 Monster Maze match.
+3. Add robust preview/dynamic-cell detection.
+4. Add monster lifecycle/state calibration.
+5. Add input execution.
+6. Enable closed-loop live control.
+7. Calibrate against recorded observations.
 
 Do not enable unattended gameplay until read-only observation reproduces a live
 GameState accurately.

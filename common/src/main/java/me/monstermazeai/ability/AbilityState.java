@@ -5,4 +5,13 @@ public final class AbilityState {
     public long cooldownUntilTick;
     public long activeUntilTick;
     public int activations;
+
+    public AbilityState copy() {
+        AbilityState a = new AbilityState();
+        a.charges = charges;
+        a.cooldownUntilTick = cooldownUntilTick;
+        a.activeUntilTick = activeUntilTick;
+        a.activations = activations;
+        return a;
+    }
 }

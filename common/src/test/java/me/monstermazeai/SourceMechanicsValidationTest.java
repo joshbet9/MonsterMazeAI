@@ -167,9 +167,13 @@ class SourceMechanicsValidationTest {
 
         s.previewPadRow = 30;
         s.previewPadColumn = 30;
-        s.phaseTicksRemaining = 20;
 
         // Keep the player on the current active pad for the phase boundary.
+        // The state helper starts without an active pad, so place the active
+        // pad under the player before testing the boundary transition.
+        s.activePadRow = 20;
+        s.activePadColumn = 20;
+        s.phaseTicksRemaining = 20;
         for (int i = 0; i < 20; i++) progression.tick(s);
 
         assertTrue(s.alive);

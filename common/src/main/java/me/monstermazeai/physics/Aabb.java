@@ -13,7 +13,7 @@ public record Aabb(double minX,double minY,double minZ,double maxX,double maxY,d
     public double clipY(Aabb moving,double dy){
         if(moving.maxX<=minX||moving.minX>=maxX||moving.maxZ<=minZ||moving.minZ>=maxZ)return dy;
         if(dy>0&&moving.maxY<=minY)return Math.min(dy,minY-moving.maxY);
-        if(dy<0&&moving.minY>=maxY)return Math.max(dy,maxY-moving.minY);
+        if(dy<0&&moving.minY>=maxY)return Math.max(dy,maxY-moving.maxY);
         return dy;
     }
     public double clipZ(Aabb moving,double dz){

@@ -25,10 +25,10 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-      - name: Set up Gradle 4.10.3
+      - name: Set up Gradle 2.7
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '4.10.3'
+          gradle-version: '2.7'
 
       - name: Build Minecraft 1.8 mod
         working-directory: minecraft-1.8

@@ -1,0 +1,47 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        maven { url = "https://maven.minecraftforge.net" }
+    }
+    dependencies {
+        classpath "com.anatawa12.forge:ForgeGradle:2.3-1.0.1"
+    }
+}
+
+apply plugin: "net.minecraftforge.gradle.forge"
+
+version = "0.1.0-SNAPSHOT"
+group = "me.monstermazeai"
+archivesBaseName = "monster-maze-ai-1.8"
+
+sourceCompatibility = targetCompatibility = 1.8
+compileJava.options.encoding = "UTF-8"
+
+minecraft {
+    version = "1.8.9-11.15.1.2318-1.8.9"
+    runDir = "run"
+    mappings = "stable_22"
+    makeObfSourceJar = false
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile files("../common/target/common-0.1.0-SNAPSHOT.jar")
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "mcversion", project.minecraft.version
+
+    from(sourceSets.main.resources.srcDirs) {
+        include "mcmod.info"
+        expand "version": project.version, "mcversion": project.minecraft.version
+    }
+
+    from(sourceSets.main.resources.srcDirs) {
+        exclude "mcmod.info"
+    }
+}

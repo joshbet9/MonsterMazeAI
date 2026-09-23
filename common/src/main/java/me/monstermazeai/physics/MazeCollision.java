@@ -40,8 +40,48 @@ public final class MazeCollision {
         double clippedZ=dz;
         for(Aabb b:boxes) clippedZ=b.clipZ(afterX,clippedZ);
 
-        p.x+=clippedX; p.y+=clippedY; p.z+=clippedZ;
-        p.grounded=dy<0 && clippedY!=dy;
+        boolean horizontalBlocked = clippedX != dx || clippedZ != dz;
+        double directDistanceSq = clippedX*clippedX + clippedZ*clippedZ;
+
+        // Minecraft 1.8's moveEntity attempts a step-up alternative when
+        // horizontal movement was blocked while grounded.
+        if (horizontalBlocked && p.grounded) {
+            Aabb stepBase = original;
+            List<Aabb> stepBoxes = colliders(stepBase.expand(Math.abs(dx), STEP_HEIGHT + Math.abs(dy), Math.abs(dz)));
+
+            double sy = STEP_HEIGHT;
+            for (Aabb b:stepBoxes) sy=b.clipY(stepBase,sy);
+            Aabb stepY=stepBase.offset(0,sy,0);
+
+            double sx=dx;
+            for(Aabb b:stepBoxes)sx=b.clipX(stepY,sx);
+            Aabb stepX=stepY.offset(sx,0,0);
+
+            double sz=dz;
+            for(Aabb b:stepBoxes)sz=b.clipZ(stepX,sz);
+
+            Aabb stepFinal=stepX.offset(0,0,sz);
+            double stepDistanceSq=sx*sx+sz*sz;
+
+            if(stepDistanceSq > directDistanceSq) {
+                clippedX=sx;
+                clippedZ=sz;
+                clippedY=sy;
+                p.x=stepFinal.minX + PLAYER_WIDTH/2.0;
+                p.y=stepFinal.minY;
+                p.z=stepFinal.minZ + PLAYER_WIDTH/2.0;
+                p.grounded=true;
+                if (dy < 0 || sy != dy) p.vy=0;
+                if (clippedX != dx) p.vx=0;
+                if (clippedZ != dz) p.vz=0;
+                return;
+            }
+        }
+
+        p.x += clippedX;
+        p.y += clippedY;
+        p.z += clippedZ;
+        p.grounded = dy < 0 && clippedY != dy;
 
         if(clippedX!=dx)p.vx=0;
         if(clippedY!=dy)p.vy=0;

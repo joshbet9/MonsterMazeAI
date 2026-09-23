@@ -30,7 +30,7 @@ public final class BeamSearchPlanner {
         for (int depth=0; depth<horizon; depth++) {
             ArrayList<Node> candidates = new ArrayList<>(beam.size()*9);
             for (Node node:beam) {
-                for (Action action:ActionSpace.movementActions(allowJump)) {
+                for (Action action:ActionSpace.actions(node.state, allowJump)) {
                     GameState next=simulator.simulate(node.state,new Action[]{action});
                     ArrayList<Action> seq=new ArrayList<>(node.actions);
                     seq.add(action);

@@ -41,7 +41,7 @@ public final class AbilityModel {
     public boolean canConsumeJumperCharge(GameState game) {
         if (game.kit != Kit.JUMPER || game.ability.charges <= 0) return false;
         if (game.tick < game.player.nextJumpChargeTick) return false;
-        if (game.tick < game.player.recentMobHitUntilTick + JUMPER_POST_HIT_GRACE_TICKS) return false;
+        if (game.player.recentMobHitUntilTick > 0 && game.tick < game.player.recentMobHitUntilTick + JUMPER_POST_HIT_GRACE_TICKS) return false;
         return !qolEnabled(game) || !isOnAnyPad(game);
     }
 
@@ -141,8 +141,7 @@ public final class AbilityModel {
 
     public void consumeBodyRushContact(GameState game) {
         if (!isBodyRushActive(game)) return;
-        game.ability.activeUntilTick = Math.max(
-                game.tick, game.ability.activeUntilTick - BODY_RUSH_CONTACT_PENALTY_TICKS);
+        game.ability.activeUntilTick -= BODY_RUSH_CONTACT_PENALTY_TICKS;
     }
 
     public boolean isOnAnyPad(GameState game) {

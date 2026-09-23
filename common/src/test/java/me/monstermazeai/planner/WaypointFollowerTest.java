@@ -72,7 +72,7 @@ class WaypointFollowerTest {
         GameState state = new GameState();
         state.maze = maze;
         state.player.x = 0.5;
-        state.player.z = 2.49;
+        state.player.z = 1.60;
         state.player.grounded = true;
 
         WaypointFollower follower = new WaypointFollower(0.18);

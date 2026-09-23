@@ -21,6 +21,8 @@ Milestone 2 establishes the simulator and planner as a usable game-playing labor
 
 ## Validation
 
+The emergency planner test treats reaching the pad before the search horizon as success; the planner may continue simulating after that point, so the final post-horizon state is not used to invalidate an already successful pad reach.
+
 The Maven CI suite validates source mechanics, maze routing, player movement, planner behaviour, abilities, stochastic trajectory evaluation and the 1,000-future benchmark.
 
 The simulator deliberately remains the authority for candidate trajectories. Heuristics guide search but do not replace tick simulation.

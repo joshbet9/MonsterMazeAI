@@ -27,7 +27,7 @@ public final class BeamSearchPlanner {
         for(int depth=0;depth<searchHorizon;depth++){
             ArrayList<Node> candidates=new ArrayList<>(beam.size()*20);
             for(Node node:beam){
-                for(Action action:ActionSpace.actions(node.state,allowJump)){
+                for(Action action:ActionSpace.actions(node.state,targetX,targetZ,allowJump)){
                     GameState next=simulator.simulate(node.state,new Action[]{action});
                     ArrayList<Action> seq=new ArrayList<>(node.actions);seq.add(action);
                     Score score=trajectoryScore(heuristic.evaluate(next,targetX,targetZ),depth+1,next,source);

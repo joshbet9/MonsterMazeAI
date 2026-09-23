@@ -2,7 +2,7 @@ package me.monstermazeai.planner;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
-import me.monstermazeai.maze.MazePathfinder;
+import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.monster.MonsterState;
 
 import java.util.List;
@@ -13,7 +13,7 @@ public final class Heuristic {
     private static final double LOW_HEALTH_PENALTY = 120.0;
     private static final double CRITICAL_HEALTH_PENALTY = 2_000.0;
     private static final double MAX_PREDICTION_TICKS = 200.0;
-    private final MazePathfinder pathfinder = new MazePathfinder();
+    private final PlayerPathfinder pathfinder = new PlayerPathfinder();
 
     public Score evaluate(GameState s, double targetX, double targetZ) {
         if (!s.alive) {

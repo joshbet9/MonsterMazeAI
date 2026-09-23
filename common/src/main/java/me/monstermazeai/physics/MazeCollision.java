@@ -88,9 +88,9 @@ public final class MazeCollision {
 
     private List<Aabb> colliders(Aabb swept){
         List<Aabb> out=new ArrayList<>();
-        int minX=(int)Math.floor(swept.minX)-1,maxX=(int)Math.floor(swept.maxX)+1;
-        int minY=(int)Math.floor(swept.minY)-1,maxY=(int)Math.floor(swept.maxY)+1;
-        int minZ=(int)Math.floor(swept.minZ)-1,maxZ=(int)Math.floor(swept.maxZ)+1;
+        int minX=(int)Math.floor(swept.minX())-1,maxX=(int)Math.floor(swept.maxX())+1;
+        int minY=(int)Math.floor(swept.minY())-1,maxY=(int)Math.floor(swept.maxY())+1;
+        int minZ=(int)Math.floor(swept.minZ())-1,maxZ=(int)Math.floor(swept.maxZ())+1;
         for(int r=minX;r<=maxX;r++)for(int c=minZ;c<=maxZ;c++){
             if(r<0||c<0||r>=MazeModel.SIZE||c>=MazeModel.SIZE)continue;
             if(!maze.isTraversable(r,c))out.add(new Aabb(r,0,c,r+1,3,c+1));

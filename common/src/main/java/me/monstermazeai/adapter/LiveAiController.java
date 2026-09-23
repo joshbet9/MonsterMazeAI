@@ -30,7 +30,7 @@ public final class LiveAiController {
         }
 
         Cell goal = new Cell(state.activePadRow, state.activePadColumn);
-        Action[] actions = controller.nextActions(state, goal, true, executionTicks);
+        Action[] actions = controller.nextActions(state, goal, true);
         adapter.execute(actions);
     }
 }

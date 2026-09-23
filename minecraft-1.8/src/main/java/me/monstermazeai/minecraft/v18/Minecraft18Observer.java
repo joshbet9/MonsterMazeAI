@@ -463,6 +463,19 @@ public final class Minecraft18Observer {
             player.addProperty("health", health);
             player.addProperty("maxHealth", maxHealth);
             player.addProperty("fallDistance", MC.thePlayer.fallDistance);
+            player.addProperty("moveForward", MC.thePlayer.movementInput.moveForward);
+            player.addProperty("moveStrafe", MC.thePlayer.movementInput.moveStrafe);
+            player.addProperty("inputJump", MC.thePlayer.movementInput.jump);
+            player.addProperty("inputSneak", MC.thePlayer.movementInput.sneak);
+            player.addProperty("collidedHorizontally", MC.thePlayer.isCollidedHorizontally);
+            player.addProperty("collidedVertically", MC.thePlayer.isCollidedVertically);
+            player.addProperty("foodLevel", MC.thePlayer.getFoodStats().getFoodLevel());
+            player.addProperty("foodSaturation", MC.thePlayer.getFoodStats().getSaturationLevel());
+            player.addProperty("air", MC.thePlayer.getAir());
+            player.addProperty("fire", MC.thePlayer.getFire());
+            player.addProperty("hurtTime", MC.thePlayer.hurtTime);
+            player.addProperty("hurtResistantTime", MC.thePlayer.hurtResistantTime);
+            player.addProperty("ticksExisted", MC.thePlayer.ticksExisted);
             player.addProperty("sprinting", MC.thePlayer.isSprinting());
             player.addProperty("sneaking", MC.thePlayer.isSneaking());
             player.addProperty("usingItem", MC.thePlayer.isUsingItem());
@@ -513,6 +526,22 @@ public final class Minecraft18Observer {
 
             ItemStack held = MC.thePlayer.getHeldItem();
             root.addProperty("heldItem", held == null ? "" : held.getDisplayName());
+            root.addProperty("heldItemUseCount", MC.thePlayer.getItemInUseCount());
+            root.addProperty("activeItem", MC.thePlayer.getItemInUse() == null ? "" : MC.thePlayer.getItemInUse().getDisplayName());
+            root.addProperty("flying", MC.thePlayer.capabilities.isFlying);
+            root.addProperty("allowFlying", MC.thePlayer.capabilities.allowFlying);
+            root.addProperty("creativeMode", MC.thePlayer.capabilities.isCreativeMode);
+
+            JsonArray effects = new JsonArray();
+            for (Object effectObject : MC.thePlayer.getActivePotionEffects()) {
+                net.minecraft.potion.PotionEffect effect = (net.minecraft.potion.PotionEffect) effectObject;
+                JsonObject effectJson = new JsonObject();
+                effectJson.addProperty("potionId", effect.getPotionID());
+                effectJson.addProperty("duration", effect.getDuration());
+                effectJson.addProperty("amplifier", effect.getAmplifier());
+                effects.add(effectJson);
+            }
+            root.add("potionEffects", effects);
 
             return root;
         }

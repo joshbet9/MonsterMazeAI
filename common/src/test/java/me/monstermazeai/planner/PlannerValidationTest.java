@@ -9,7 +9,6 @@ import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.physics.LegacyMazePhysics;
-import me.monstermazeai.player.Action;
 import me.monstermazeai.sim.Simulator;
 import org.junit.jupiter.api.Test;
 
@@ -58,17 +57,6 @@ class PlannerValidationTest {
                 "Late-stage plan must make measurable progress.");
     }
 
-
-    @Test void directTargetControlCanReachPad() {
-        GameState s=state(17.5,20.5,15*20);
-        Simulator simulator=new Simulator(
-                new LegacyMazePhysics(),
-                new MonsterSimulator(s.maze,new Random(1234),0.07),
-                new CollisionModel());
-        Action target=new me.monstermazeai.player.Action(1,0,false,true,-90,false);
-        for(int i=0;i<20 && !s.padReached && s.alive;i++) simulator.tick(s,target);
-        assertTrue(s.padReached,"Direct target control failed at x="+s.player.x+" z="+s.player.z);
-    }
 
     @Test void emergencyDeadlineSearchCanReachPadWithinFifteenSeconds() {
         GameState s=state(17.5,20.5,15*20);

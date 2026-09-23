@@ -20,6 +20,11 @@ public final class Heuristic {
      * taking one 4-HP hit can be correct if it saves enough time.
      */
     public Score evaluate(GameState s, double targetX, double targetZ) {
+        if (Double.isNaN(targetX) || Double.isNaN(targetZ)) {
+            return new Score(s.alive ? 100_000.0 : DEATH_PENALTY,
+                    s.alive, s.player.health, Double.POSITIVE_INFINITY, 0.0);
+        }
+
         double distance = Math.hypot(s.player.x - targetX, s.player.z - targetZ);
         double secondsRemaining = Math.max(0.0, s.phaseTicksRemaining / 20.0);
 

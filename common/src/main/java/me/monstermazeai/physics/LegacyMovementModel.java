@@ -4,14 +4,21 @@ import me.monstermazeai.player.Action;
 import me.monstermazeai.player.PlayerState;
 
 /**
- * Minecraft 1.8-style land movement prediction.
- * Source-informed foundation; exact entity collision is handled separately.
+ * Flat-ground Minecraft 1.8 player movement model.
+ *
+ * This intentionally does NOT model walls, steps, liquids, ladders or block
+ * collision. Monster Maze's relevant surface is a flat one-block platform;
+ * collision with monsters is handled by CollisionModel.
+ *
+ * The tick order follows EntityLivingBase.onLivingUpdate:
+ * jump -> input decay -> moveEntityWithHeading -> gravity/drag.
  */
 public final class LegacyMovementModel implements PhysicsModel {
     private static final float DEFAULT_SLIPPERINESS = 0.6F;
     private static final float LAND_FRICTION = 0.91F;
-    private static final float JUMP_MOVEMENT_FACTOR = 0.02F;
-    private static final float WALK_SPEED = 0.1F;
+    private static final float WALK_SPEED = 0.10F;
+    private static final float SPRINT_MULTIPLIER = 1.30F;
+    private static final float AIR_MOVE_FACTOR = 0.02F;
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
@@ -19,6 +26,8 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     @Override
     public void tick(PlayerState p, Action action) {
+        // EntityLivingBase jump handling: holding jump does not repeatedly
+        // jump every tick; jumpTicks is set to 10 after a ground jump.
         if (action.jump()) {
             if (p.grounded && p.jumpTicks == 0) {
                 jump(p, action.sprint());
@@ -28,43 +37,59 @@ public final class LegacyMovementModel implements PhysicsModel {
             p.jumpTicks = 0;
         }
 
+        // onLivingUpdate decays the movement inputs before travel.
+        double strafe = action.strafe() * 0.98D;
+        double forward = action.forward() * 0.98D;
+
         float friction = p.grounded
                 ? DEFAULT_SLIPPERINESS * LAND_FRICTION
                 : LAND_FRICTION;
 
         float movementFactor = p.grounded
-                ? (float) (WALK_SPEED * (0.16277136F / (friction * friction * friction)))
-                : JUMP_MOVEMENT_FACTOR;
+                ? (float) (WALK_SPEED
+                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
+                    * (0.16277136F / (friction * friction * friction)))
+                : AIR_MOVE_FACTOR;
 
-        moveFlying(p, action.strafe(), action.forward(), movementFactor);
+        moveFlying(p, strafe, forward, movementFactor);
 
+        // Entity.moveEntity would normally resolve the displacement against
+        // block AABBs. Monster Maze has no steps or ordinary wall geometry
+        // relevant to this player model, so the flat surface integrates
+        // directly.
         p.x += p.vx;
         p.y += p.vy;
         p.z += p.vz;
 
-        p.vx *= friction;
-        p.vz *= friction;
-
+        // This is the post-move part of EntityLivingBase.moveEntityWithHeading.
         if (!p.grounded) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
-            if (p.y <= 0.0) {
-                p.y = 0.0;
-                p.vy = 0.0;
+
+            if (p.y <= 0.0D) {
+                p.y = 0.0D;
+                p.vy = 0.0D;
                 p.grounded = true;
             }
         } else {
-            p.y = 0.0;
+            p.y = 0.0D;
+            p.vy = 0.0D;
         }
+
+        p.vx *= friction;
+        p.vz *= friction;
 
         if (Math.abs(p.vx) < 0.005D) p.vx = 0.0D;
         if (Math.abs(p.vy) < 0.005D) p.vy = 0.0D;
         if (Math.abs(p.vz) < 0.005D) p.vz = 0.0D;
+
+        if (p.jumpTicks > 0) p.jumpTicks--;
     }
 
     private void jump(PlayerState p, boolean sprinting) {
         p.vy = JUMP_VELOCITY;
         p.grounded = false;
+
         if (sprinting) {
             float yaw = p.yaw * 0.017453292F;
             p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
@@ -74,8 +99,9 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     private void moveFlying(PlayerState p, double strafe, double forward, float friction) {
         double magnitude = Math.hypot(strafe, forward);
-        if (magnitude < 1.0E-4) return;
-        if (magnitude < 1.0) magnitude = 1.0;
+        if (magnitude < 1.0E-4D) return;
+
+        if (magnitude < 1.0D) magnitude = 1.0D;
 
         strafe /= magnitude;
         forward /= magnitude;

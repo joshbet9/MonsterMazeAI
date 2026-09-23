@@ -3,6 +3,8 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
 
+import java.util.Arrays;
+
 /**
  * Executes only the first action of a freshly planned trajectory.
  *
@@ -19,9 +21,22 @@ public final class RecedingHorizonController {
 
     public Action nextAction(GameState state, double targetX, double targetZ,
                              boolean allowJump) {
+        Action[] actions = nextActions(state, targetX, targetZ, allowJump, 1);
+        return actions.length == 0 ? Action.IDLE : actions[0];
+    }
+
+    /**
+     * Returns a short execution window from one fresh plan. A live adapter can
+     * execute this window, observe the actual game, then call nextActions again.
+     * The controller never caches the predicted state between windows.
+     */
+    public Action[] nextActions(GameState state, double targetX, double targetZ,
+                                boolean allowJump, int executionTicks) {
+        if (executionTicks < 1) throw new IllegalArgumentException("executionTicks must be positive");
         BeamSearchPlanner.Plan plan =
                 planner.plan(state, targetX, targetZ, allowJump);
         Action[] actions = plan.sequence().actions();
-        return actions.length == 0 ? Action.IDLE : actions[0];
+        if (actions.length == 0) return new Action[]{Action.IDLE};
+        return Arrays.copyOf(actions, Math.min(executionTicks, actions.length));
     }
 }

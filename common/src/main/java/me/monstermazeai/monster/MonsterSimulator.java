@@ -58,9 +58,10 @@ public final class MonsterSimulator {
         Cell cursor = chosen;
 
         while (true) {
-            List<Cell> forward = maze.cardinalNeighbours(cursor);
+            Cell cursorCell = cursor;
+            List<Cell> forward = maze.cardinalNeighbours(cursorCell);
             forward.removeIf(c -> CardinalDirection.between(
-                    c.row() - cursor.row(), c.column() - cursor.column()) != direction);
+                    c.row() - cursorCell.row(), c.column() - cursorCell.column()) != direction);
 
             if (forward.isEmpty()) break;
 
@@ -138,8 +139,6 @@ public final class MonsterSimulator {
         if (m.y <= 0.0) {
             m.y = 0.0;
             m.vy = 0.0;
-            // MonsterManager removes a launched entity only after it has been
-            // grounded for at least 500 ms.
             if (state.tick - m.launchedAtTick >= 10) {
                 m.removed = true;
                 m.launchedUntilTick = state.tick;
@@ -174,10 +173,6 @@ public final class MonsterSimulator {
         return Math.hypot(dx, dz) < WAYPOINT_TOLERANCE;
     }
 
-    /**
-     * Creates an independent predictor with its own RNG stream. Planning
-     * branches must never share the live simulator's mutable Random state.
-     */
     public MonsterSimulator fork(long seed) {
         return new MonsterSimulator(maze, new Random(seed), speed);
     }

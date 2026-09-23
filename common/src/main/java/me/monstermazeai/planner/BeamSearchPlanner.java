@@ -23,30 +23,51 @@ public final class BeamSearchPlanner {
     }
 
     public Plan plan(GameState source, double targetX, double targetZ, boolean allowJump) {
-        List<Node> beam = List.of(new Node(source.copy(), new ArrayList<>()));
+        List<Node> beam = List.of(new Node(source.copy(), new ArrayList<>(), null));
         Score best = heuristic.evaluate(source,targetX,targetZ);
         Node bestNode = beam.get(0);
 
         for (int depth=0; depth<horizon; depth++) {
-            ArrayList<Node> candidates = new ArrayList<>(beam.size()*9);
+            ArrayList<Node> candidates = new ArrayList<>(beam.size()*18);
+
             for (Node node:beam) {
                 for (Action action:ActionSpace.actions(node.state, allowJump)) {
                     GameState next=simulator.simulate(node.state,new Action[]{action});
                     ArrayList<Action> seq=new ArrayList<>(node.actions);
                     seq.add(action);
+
                     Score score=heuristic.evaluate(next,targetX,targetZ);
-                    candidates.add(new Node(next,seq,score));
-                    if(score.compareTo(best)<0){best=score;bestNode=candidates.get(candidates.size()-1);}
+                    Node candidate=new Node(next,seq,score);
+                    candidates.add(candidate);
+
+                    if (score.compareTo(best)<0) {
+                        best=score;
+                        bestNode=candidate;
+                    }
                 }
             }
+
+            // Always retain at least one surviving candidate when available.
             candidates.sort(Comparator.comparing(n->n.score));
-            if(candidates.size()>beamWidth) candidates.subList(beamWidth,candidates.size()).clear();
-            beam=candidates;
+            List<Node> survivors = new ArrayList<>();
+            for (Node candidate : candidates) {
+                if (candidate.state.alive) {
+                    survivors.add(candidate);
+                    if (survivors.size() >= beamWidth) break;
+                }
+            }
+
+            // If every candidate dies, retain the least-bad branch so the
+            // planner can still recover once a different action becomes
+            // available at the next replanning point.
+            if (survivors.isEmpty()) {
+                survivors.add(candidates.get(0));
+            }
+            beam=survivors;
         }
+
         return new Plan(new ActionSequence(bestNode.actions.toArray(Action[]::new)),bestNode.state,best);
     }
 
-    private record Node(GameState state,List<Action> actions,Score score) {
-        Node(GameState state,List<Action> actions){this(state,actions,null);}
-    }
+    private record Node(GameState state,List<Action> actions,Score score) {}
 }

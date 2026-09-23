@@ -69,13 +69,15 @@ public final class MonsterSimulator {
             Cell next = forward.get(0);
             List<Cell> atNext = maze.cardinalNeighbours(next);
 
-            // getTarget() stops after advancing to a cell whose side branches
-            // contain more than one alternative direction.
+            // The Bukkit implementation checks the three directions other
+            // than the direction currently being followed. The previous
+            // direction is deliberately included in this count, matching
+            // MonsterManager.getTarget() exactly.
             int alternatives = 0;
             for (Cell n : atNext) {
                 CardinalDirection d = CardinalDirection.between(
                         n.row() - next.row(), n.column() - next.column());
-                if (d != direction.opposite()) alternatives++;
+                if (d != direction) alternatives++;
             }
 
             if (alternatives > 1) {

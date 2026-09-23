@@ -120,7 +120,8 @@ public final class AbilityModel {
             m.vx = dx;
             m.vz = dz;
             m.vy = 0.8;
-            m.launchedUntilTick = Math.max(m.launchedUntilTick, game.tick + 30);
+            m.launchedAtTick = game.tick;
+            m.launchedUntilTick = game.tick + 30;
             m.waypointRow = -1;
             m.waypointColumn = -1;
         }

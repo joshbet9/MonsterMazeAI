@@ -8,13 +8,10 @@ import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
-import me.monstermazeai.sim.Simulator;
 import me.monstermazeai.collision.CollisionModel;
-import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.monster.MonsterSimulator;
 import org.junit.jupiter.api.Test;
 
-import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -146,12 +143,8 @@ class SourceMechanicsValidationTest {
     void monsterCollisionUsesSourceThresholdDamageAndGroundBoost() {
         GameState s = state(Kit.JUMPER);
         MonsterState monster = new MonsterState(1, 20.5, 0, 21.0);
-        Simulator simulator = new Simulator(
-                new LegacyMazePhysics(),
-                new MonsterSimulator(s.maze, new Random(1), 0.28),
-                new CollisionModel());
-
-        simulator.tick(s, Action.IDLE);
+        CollisionModel collision = new CollisionModel();
+        collision.tryMonsterHit(s, monster);
 
         assertEquals(16.0, s.player.health);
         assertEquals(0.95, s.player.vy, 1e-9);

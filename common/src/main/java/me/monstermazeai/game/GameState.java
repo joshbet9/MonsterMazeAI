@@ -28,7 +28,7 @@ public final class GameState {
         s.tick=tick; s.mode=mode; s.stage=stage; s.phaseTicksRemaining=phaseTicksRemaining;
         s.maze=maze; s.player=player.copy(); s.kit=kit;
         s.ability=ability.copy();
-        s.activePadRow=s.activePadRow; s.activePadColumn=activePadColumn;
+        s.activePadRow=activePadRow; s.activePadColumn=activePadColumn;
         s.previewPadRow=previewPadRow; s.previewPadColumn=previewPadColumn;
         s.alive=alive;
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());

@@ -20,7 +20,8 @@ public final class CollisionModel {
 
     public void tryMonsterHit(GameState state, MonsterState monster, AbilityModel abilities) {
         if (!state.alive || monster.launched(state.tick)
-                || PadModel.isOn(state.player, state.activePadRow, 0, state.activePadColumn)) {
+                || PadModel.isOn(state.player, state.activePadRow + 0.5,
+                GameState.PAD_SURFACE_Y, state.activePadColumn + 0.5)) {
             return;
         }
 

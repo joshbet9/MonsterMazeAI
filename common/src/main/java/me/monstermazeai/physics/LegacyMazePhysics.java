@@ -4,23 +4,24 @@ import me.monstermazeai.player.Action;
 import me.monstermazeai.player.PlayerState;
 
 /**
- * 1.8 movement plus Monster Maze block collision.
- * The client adapter must keep PlayerState coordinates in maze-local space.
+ * Monster Maze's flat 1.8 player physics.
+ *
+ * No wall collision or step-up simulation is applied here. The maze is a
+ * flat floating platform; non-path cells represent absence/containment rather
+ * than ordinary traversable walls for the player physics model.
  */
 public final class LegacyMazePhysics implements PhysicsModel {
     private final LegacyMovementModel movement = new LegacyMovementModel();
-    private final MazeCollision collision;
 
-    public LegacyMazePhysics(MazeCollision collision){this.collision=collision;}
+    /** Kept for source compatibility with the earlier prototype. */
+    public LegacyMazePhysics(MazeCollision ignoredCollision) {
+    }
+
+    public LegacyMazePhysics() {
+    }
 
     @Override
     public void tick(PlayerState p, Action action) {
-        // Reproduce the movement acceleration/jump update, but resolve the
-        // resulting displacement through the actual maze block geometry.
-        double oldX=p.x, oldY=p.y, oldZ=p.z;
         movement.tick(p, action);
-        double dx=p.x-oldX, dy=p.y-oldY, dz=p.z-oldZ;
-        p.x=oldX; p.y=oldY; p.z=oldZ;
-        collision.move(p,dx,dy,dz);
     }
 }

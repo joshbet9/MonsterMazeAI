@@ -24,6 +24,18 @@ public final class BeamSearchPlanner {
         Node bestNode=beam.get(0); Score best=beam.get(0).score;
         int searchHorizon=effectiveHorizon(source);
 
+        // Emergency mode gets a deterministic physically-simulated incumbent.
+        // This is not a shortcut around planning: it is a guaranteed seed
+        // trajectory that gives the beam a valid deadline-feasible option when
+        // the full 15-second search space is aggressively pruned.
+        if (isEmergency(source)) {
+            Node emergencySeed = buildEmergencySeed(source, targetX, targetZ, allowJump, searchHorizon);
+            if (emergencySeed != null && emergencySeed.state.padReached) {
+                bestNode = emergencySeed;
+                best = emergencySeed.score;
+            }
+        }
+
         for(int depth=0;depth<searchHorizon;depth++){
             ArrayList<Node> candidates=new ArrayList<>(beam.size()*20);
             for(Node node:beam){
@@ -81,6 +93,36 @@ public final class BeamSearchPlanner {
                 ":"+s.ability.charges+":"+s.ability.activations+":"+s.phaseTicksRemaining;
     }
 
+    private boolean isEmergency(GameState state) {
+        return state.phaseTicksRemaining > 0 && state.phaseTicksRemaining <= 15 * 20;
+    }
+
+    private Node buildEmergencySeed(GameState source, double targetX, double targetZ,
+                                    boolean allowJump, int maxTicks) {
+        GameState state = source.copy();
+        ArrayList<Action> actions = new ArrayList<>();
+
+        for (int i = 0; i < maxTicks && state.alive && !state.padReached; i++) {
+            double dx = targetX - state.player.x;
+            double dz = targetZ - state.player.z;
+            if (Double.isNaN(dx) || Double.isNaN(dz)) return null;
+
+            float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+            float delta = desiredYaw - state.player.yaw;
+            while (delta >= 180.0F) delta -= 360.0F;
+            while (delta < -180.0F) delta += 360.0F;
+
+            Action action = new Action(1, 0, false, true, delta, false);
+            state = simulator.simulate(state, new Action[]{action});
+            actions.add(action);
+        }
+
+        if (!state.padReached) return null;
+        Score score = trajectoryScore(heuristic.evaluate(state, targetX, targetZ),
+                actions.size(), state, source);
+        return new Node(state, actions, score);
+    }
+
     private String explain(GameState result,GameState source,double tx,double tz){
         if(!result.alive)return "Branch dies before reaching the active Safe Pad.";
         if(result.padReached)return "Reaches the active Safe Pad within the planned horizon.";
@@ -94,7 +136,7 @@ public final class BeamSearchPlanner {
 
     private Score trajectoryScore(Score h,int depth,GameState state,GameState source){
         double value=h.value()+depth*0.02D;
-        double damage=Math.max(0.0,source.player.health-state.player.health);
+        double damage=Math.max(0.0, state.player.damageTaken-source.player.damageTaken);
         // Damage is a time-equivalent cost, not a hard avoidance rule. A
         // sufficiently large time saving can therefore justify taking a hit.
         value+=damage*2.5D;

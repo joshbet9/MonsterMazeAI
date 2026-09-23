@@ -46,15 +46,22 @@ public final class ActionSpace {
 
     public static List<Action> movementActions(boolean allowJump, boolean includeIdle) {
         java.util.ArrayList<Action> out = new java.util.ArrayList<>();
+        // Movement is expressed relative to the player's current yaw.
+        // Keep the cardinal controls, then add small deliberate heading
+        // changes so the planner can corner without a scripted turn.
         add(out, new Action(1,0,false,true,0,false));
         add(out, new Action(0,1,false,true,0,false));
         add(out, new Action(0,-1,false,true,0,false));
         add(out, new Action(-1,0,false,true,0,false));
+        add(out, new Action(1,0,false,true,15,false));
+        add(out, new Action(1,0,false,true,-15,false));
         if (allowJump) {
             add(out, new Action(1,0,true,true,0,false));
             add(out, new Action(0,1,true,true,0,false));
             add(out, new Action(0,-1,true,true,0,false));
             add(out, new Action(-1,0,true,true,0,false));
+            add(out, new Action(1,0,true,true,15,false));
+            add(out, new Action(1,0,true,true,-15,false));
         }
         if (includeIdle) add(out, Action.IDLE);
         return out;

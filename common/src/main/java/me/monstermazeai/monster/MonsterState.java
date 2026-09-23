@@ -8,6 +8,8 @@ public final class MonsterState {
     public CardinalDirection direction = CardinalDirection.NONE;
     public long frozenUntilTick;
     public long launchedUntilTick;
+    public long launchedAtTick;
+    public boolean removed;
 
     public MonsterState(int id, double x, double y, double z) {
         this.id = id;
@@ -18,4 +20,16 @@ public final class MonsterState {
 
     public boolean frozen(long tick) { return frozenUntilTick > tick; }
     public boolean launched(long tick) { return launchedUntilTick > tick; }
+
+    public MonsterState copy() {
+        MonsterState m = new MonsterState(id, x, y, z);
+        m.vx=vx; m.vy=vy; m.vz=vz;
+        m.waypointRow=waypointRow; m.waypointColumn=waypointColumn;
+        m.direction=direction;
+        m.frozenUntilTick=frozenUntilTick;
+        m.launchedUntilTick=launchedUntilTick;
+        m.launchedAtTick=launchedAtTick;
+        m.removed=removed;
+        return m;
+    }
 }

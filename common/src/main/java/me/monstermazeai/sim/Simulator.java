@@ -59,6 +59,23 @@ public final class Simulator {
         return forecast(source,actions,seed);
     }
 
+    /**
+     * Returns every observed future state after each simulated tick.
+     * This is used by the planner's short-horizon monster predictor so risk is
+     * based on the same monster movement implementation as the simulator.
+     */
+    public java.util.List<GameState> forecastSnapshots(GameState source, Action[] actions, long seed) {
+        GameState state=source.copy();
+        Simulator predictor=new Simulator(physics,monsters.fork(seed),collision,abilities);
+        java.util.ArrayList<GameState> snapshots=new java.util.ArrayList<>(actions.length);
+        for(Action action:actions){
+            if(!state.alive) break;
+            predictor.tick(state,action);
+            snapshots.add(state.copy());
+        }
+        return java.util.List.copyOf(snapshots);
+    }
+
     public long monsterSeed(){ return monsterSeed; }
 
     private long branchSeed(long tick){

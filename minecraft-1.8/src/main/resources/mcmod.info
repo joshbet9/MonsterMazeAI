@@ -1,0 +1,16 @@
+[
+  {
+    "modid": "monstermazeai",
+    "name": "Monster Maze AI",
+    "description": "Read-only Monster Maze 1.8 adapter for MonsterMazeAI.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "https://github.com/joshbet9/MonsterMazeAI",
+    "updateUrl": "",
+    "authorList": ["joshbet9"],
+    "credits": "Monster Maze AI project",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]

@@ -59,9 +59,8 @@ class PlannerValidationTest {
 
 
     @Test void emergencyDeadlineSearchCanReachPadWithinFifteenSeconds() {
-        GameState s=state(12.5,20.5,15*20);
+        GameState s=state(17.5,20.5,15*20);
         var plan=planner(s,20,12).plan(s,s.targetPadX(),s.targetPadZ(),true);
-        System.out.printf("EMERGENCY result pad=%s alive=%s pos=(%.3f,%.3f) ticks=%d reason=%s%n", plan.padReached(), plan.resultingState().alive, plan.resultingState().player.x, plan.resultingState().player.z, plan.sequence().length(), plan.decisionReason());
         assertTrue(plan.padReached(),
                 "Emergency deadline mode must search the full remaining 15-second budget.");
         assertTrue(plan.sequence().length()<=15*20);

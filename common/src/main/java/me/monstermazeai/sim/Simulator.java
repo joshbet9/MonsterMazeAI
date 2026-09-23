@@ -55,4 +55,21 @@ public final class Simulator {
         for(Action action:actions) tick(state,action);
         return state;
     }
+
+    /**
+     * Runs an isolated future rollout. The monster RNG is forked so evaluating
+     * a candidate cannot change the randomness seen by another candidate.
+     */
+    public GameState forecast(GameState source, Action repeatedAction, int horizon, long seed) {
+        GameState state = source.copy();
+        Simulator predictor = new Simulator(
+                physics,
+                monsters.fork(seed),
+                collision,
+                abilities);
+        for (int i = 0; i < horizon && state.alive; i++) {
+            predictor.tick(state, repeatedAction);
+        }
+        return state;
+    }
 }

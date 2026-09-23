@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Block-grid collision for the Monster Maze path/wall topology.
- * Coordinates are maze-local block coordinates; the client adapter supplies
- * the world-to-maze origin.
+ * Legacy block-grid collision utility retained for future experiments.
+ * It is deliberately not used by LegacyMazePhysics: Monster Maze player
+ * movement is modeled as flat open movement with no walls or step-up logic.
  */
 public final class MazeCollision {
     public static final double PLAYER_WIDTH = 0.6;
@@ -43,8 +43,6 @@ public final class MazeCollision {
         boolean horizontalBlocked = clippedX != dx || clippedZ != dz;
         double directDistanceSq = clippedX*clippedX + clippedZ*clippedZ;
 
-        // Minecraft 1.8's moveEntity attempts a step-up alternative when
-        // horizontal movement was blocked while grounded.
         if (horizontalBlocked && p.grounded) {
             Aabb stepBase = original;
             List<Aabb> stepBoxes = colliders(stepBase.expand(Math.abs(dx), STEP_HEIGHT + Math.abs(dy), Math.abs(dz)));
@@ -67,9 +65,9 @@ public final class MazeCollision {
                 clippedX=sx;
                 clippedZ=sz;
                 clippedY=sy;
-                p.x=(stepFinal.minX + stepFinal.maxX)/2.0;
-                p.y=stepFinal.minY;
-                p.z=(stepFinal.minZ + stepFinal.maxZ)/2.0;
+                p.x=(stepFinal.minX() + stepFinal.maxX())/2.0;
+                p.y=stepFinal.minY();
+                p.z=(stepFinal.minZ() + stepFinal.maxZ())/2.0;
                 p.grounded=true;
                 if (dy < 0 || sy != dy) p.vy=0;
                 if (clippedX != dx) p.vx=0;

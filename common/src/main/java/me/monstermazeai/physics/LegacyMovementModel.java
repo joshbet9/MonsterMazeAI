@@ -19,7 +19,7 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     @Override
     public void tick(PlayerState p, Action action) {
-        if (action.jump() && p.grounded) jump(p, action.sprint());
+        if (action.jump()) {\n            if (p.grounded && p.jumpTicks == 0) {\n                jump(p, action.sprint());\n                p.jumpTicks = 10;\n            }\n        } else {\n            p.jumpTicks = 0;\n        }
 
         float friction = p.grounded
                 ? DEFAULT_SLIPPERINESS * LAND_FRICTION

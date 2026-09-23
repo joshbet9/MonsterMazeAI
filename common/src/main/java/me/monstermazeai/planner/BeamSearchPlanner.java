@@ -37,15 +37,10 @@ public final class BeamSearchPlanner {
                     ArrayList<Action> seq=new ArrayList<>(node.actions);
                     seq.add(action);
 
-                    Score immediate=heuristic.evaluate(next,targetX,targetZ);
-
-                    GameState futureA=simulator.forecast(next,action,20,
-                            rolloutSeed(next,action,0));
-                    GameState futureB=simulator.forecast(next,action,20,
-                            rolloutSeed(next,action,1));
-                    Score scoreA=heuristic.evaluate(futureA,targetX,targetZ);
-                    Score scoreB=heuristic.evaluate(futureB,targetX,targetZ);
-                    Score score=combinedScore(immediate,scoreA,scoreB);
+                    Score score = trajectoryScore(
+                            heuristic.evaluate(next, targetX, targetZ),
+                            depth + 1,
+                            next);
 
                     Node candidate=new Node(next,seq,score);
                     candidates.add(candidate);
@@ -96,24 +91,14 @@ public final class BeamSearchPlanner {
         return "Preserves survival while evaluating a better future trajectory.";
     }
 
-    private Score combinedScore(Score immediate,Score a,Score b){
-        double future=Math.min(a.value(),b.value())*.25
-                +Math.max(a.value(),b.value())*.25;
-        double value=immediate.value()*.50+future;
-        return new Score(value,
-                immediate.alive()&&(a.alive()||b.alive()),
-                Math.min(a.health(),b.health()),
-                immediate.padDistance(),
-                Math.max(a.monsterExposure(),b.monsterExposure()));
-    }
-
-    private long rolloutSeed(GameState state,Action action,int branch){
-        long h=state.tick*0x9E3779B97F4A7C15L;
-        h^=((long)action.hashCode()<<32)^action.hashCode();
-        h^=branch*0xBF58476D1CE4E5B9L;
-        h^=Double.doubleToLongBits(state.player.x);
-        h^=Double.doubleToLongBits(state.player.z);
-        return h;
+    private Score trajectoryScore(Score heuristicScore, int depth, GameState state) {
+        // Beam depth is already the planner's exact look-ahead. A tiny
+        // per-tick cost makes otherwise equivalent trajectories prefer
+        // reaching the same state sooner, instead of relying on the old
+        // repeated-action rollout heuristic.
+        double value = heuristicScore.value() + depth * 0.02D;
+        return new Score(value, heuristicScore.alive(), heuristicScore.health(),
+                heuristicScore.padDistance(), heuristicScore.monsterExposure());
     }
 
     private record Node(GameState state,List<Action> actions,Score score){}

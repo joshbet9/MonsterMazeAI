@@ -14,9 +14,7 @@ public final class GameState {
      * Common-simulator Y origin.
      *
      * The real 1.8 maze path points are at the maze center Y. The player stands
-     * with feet at that same Y, while SafePad's surface is one block below it
-     * (SafePad stores pathLocation.getBlockY() - 1). We normalize path/player
-     * feet to Y=0 in the common simulator, so the pad surface is Y=-1.
+     * with feet at that same Y, while SafePad's surface is one block below it.
      */
     public static final double PATH_Y = 0.0;
     public static final double PAD_SURFACE_Y = -1.0;
@@ -26,8 +24,17 @@ public final class GameState {
     public int stage = 1;
     /** Remaining phase time represented in simulation ticks (20 ticks = 1 second). */
     public int phaseTicksRemaining;
-    /** Counts simulation ticks toward the server's once-per-second phase timer task. */
+    /** Counts simulation ticks toward the server's once-per-second phase task. */
     public int phaseSecondAccumulatorTicks;
+    /** Seconds elapsed since the live game began. */
+    public int liveSeconds;
+    /** Source center deterioration counter: starts at 11 and decrements after 20 live seconds. */
+    public int centerSafeZoneDecay = 11;
+    /** Set when the source reaches the 2-second preview-pad event. */
+    public boolean previewPadRequested;
+    /** Number of newly spawned monsters the adapter must create at the next wave event. */
+    public int pendingMonsterSpawns;
+
     public MazeModel maze;
     public PlayerState player = new PlayerState();
     public Kit kit = Kit.JUMPER;
@@ -48,13 +55,25 @@ public final class GameState {
 
     public GameState copy() {
         GameState s = new GameState();
-        s.tick=tick; s.mode=mode; s.stage=stage; s.phaseTicksRemaining=phaseTicksRemaining;
+        s.tick=tick;
+        s.mode=mode;
+        s.stage=stage;
+        s.phaseTicksRemaining=phaseTicksRemaining;
         s.phaseSecondAccumulatorTicks=phaseSecondAccumulatorTicks;
-        s.maze=maze; s.player=player.copy(); s.kit=kit;
+        s.liveSeconds=liveSeconds;
+        s.centerSafeZoneDecay=centerSafeZoneDecay;
+        s.previewPadRequested=previewPadRequested;
+        s.pendingMonsterSpawns=pendingMonsterSpawns;
+        s.maze=maze;
+        s.player=player.copy();
+        s.kit=kit;
         s.ability=ability.copy();
-        s.activePadRow=activePadRow; s.activePadColumn=activePadColumn;
-        s.previewPadRow=previewPadRow; s.previewPadColumn=previewPadColumn;
-        s.alive=alive; s.padReached=padReached;
+        s.activePadRow=activePadRow;
+        s.activePadColumn=activePadColumn;
+        s.previewPadRow=previewPadRow;
+        s.previewPadColumn=previewPadColumn;
+        s.alive=alive;
+        s.padReached=padReached;
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;
     }

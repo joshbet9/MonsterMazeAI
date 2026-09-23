@@ -30,6 +30,10 @@ jobs:
         with:
           gradle-version: '2.7'
 
+      - name: Prepare ForgeGradle workspace
+        working-directory: minecraft-1.8
+        run: gradle --no-daemon setupDecompWorkspace
+
       - name: Build Minecraft 1.8 mod
         working-directory: minecraft-1.8
-        run: gradle --no-daemon setupDecompWorkspace build
+        run: gradle --no-daemon build

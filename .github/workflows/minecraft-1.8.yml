@@ -30,9 +30,20 @@ jobs:
         with:
           gradle-version: '2.7'
 
-      - name: Prepare ForgeGradle workspace and build
+      - name: Prepare ForgeGradle workspace
         working-directory: minecraft-1.8
-        run: gradle --no-daemon setupDevWorkspace build
+        run: gradle --no-daemon setupDevWorkspace
+
+      - name: Inspect generated Forge jars
+        working-directory: minecraft-1.8
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find build .gradle -type f \( -name '*forge*.jar' -o -name '*Forge*.jar' \) -print | sort
+
+      - name: Build Minecraft 1.8 mod
+        working-directory: minecraft-1.8
+        run: gradle --no-daemon build
 
       - name: Verify mod artifact
         working-directory: minecraft-1.8

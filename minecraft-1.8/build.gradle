@@ -28,13 +28,14 @@ repositories {
     mavenCentral()
 }
 
-dependencies {
-    // ForgeGradle 2.1 generates the patched Forge binary locally.  The
-    // generated forgeBin is the authoritative Java-8 compile classpath for
-    // FML/Forge APIs; the remote userdev artifact is only workspace input.
-    compile files(new File(gradle.gradleUserHomeDir, "caches/minecraft/net/minecraftforge/forge/${minecraft.version}/stable/22/forgeBin.jar"))
-}
-
+// ForgeGradle 2.1 generates the patched Forge binary locally.  The
+// generated forgeBin is the authoritative Java-8 compile input for the
+// FML/Forge APIs.  Add it directly to compileJava because ForgeGradle 2.1
+// does not expose it through Gradle's compile configuration on this toolchain.
+compileJava.classpath += files(new File(
+        gradle.gradleUserHomeDir,
+        "caches/minecraft/net/minecraftforge/forge/${minecraft.version}/stable/22/forgeBin.jar"
+))
 compileJava.dependsOn "mergeJars"
 
 processResources {

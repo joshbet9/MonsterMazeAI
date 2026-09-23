@@ -58,6 +58,17 @@ class PlannerValidationTest {
     }
 
 
+    @Test void directTargetControlCanReachPad() {
+        GameState s=state(17.5,20.5,15*20);
+        Simulator simulator=new Simulator(
+                new LegacyMazePhysics(),
+                new MonsterSimulator(s.maze,new Random(1234),0.07),
+                new CollisionModel());
+        Action target=new me.monstermazeai.player.Action(1,0,false,true,-90,false);
+        for(int i=0;i<20 && !s.padReached && s.alive;i++) simulator.tick(s,target);
+        assertTrue(s.padReached,"Direct target control failed at x="+s.player.x+" z="+s.player.z);
+    }
+
     @Test void emergencyDeadlineSearchCanReachPadWithinFifteenSeconds() {
         GameState s=state(17.5,20.5,15*20);
         var plan=planner(s,20,12).plan(s,s.targetPadX(),s.targetPadZ(),true);

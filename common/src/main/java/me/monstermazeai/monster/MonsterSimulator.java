@@ -37,6 +37,34 @@ public final class MonsterSimulator {
                 chosen.row() - currentCell.row(), chosen.column() - currentCell.column());
     }
 
+    public void tick(me.monstermazeai.game.GameState state) {
+        for (MonsterState m : state.monsters) {
+            if (m.frozen() || m.launched()) continue;
+            Cell current = nearestCell(m.x, m.z);
+            if (current == null) continue;
+            if (m.waypointRow < 0 || atWaypoint(m, centerX(m.waypointRow), centerZ(m.waypointColumn))) {
+                chooseNextWaypoint(m, current);
+            }
+            if (m.waypointRow < 0) continue;
+            double tx=centerX(m.waypointRow), tz=centerZ(m.waypointColumn);
+            double dx=tx-m.x, dz=tz-m.z, d=Math.hypot(dx,dz);
+            if (d > 1e-9) {
+                double step=Math.min(speed,d);
+                m.vx=dx/d*step; m.vz=dz/d*step;
+                m.x += m.vx; m.z += m.vz;
+            }
+        }
+    }
+
+    private Cell nearestCell(double x, double z) {
+        int r=(int)Math.floor(x+0.5), c=(int)Math.floor(z+0.5);
+        if(r<0 || c<0 || r>=MazeModel.SIZE || c>=MazeModel.SIZE) return null;
+        return maze.isRawPath(r,c) ? new Cell(r,c) : null;
+    }
+
+    private double centerX(int row) { return row; }
+    private double centerZ(int column) { return column; }
+
     public boolean atWaypoint(MonsterState m, double targetX, double targetZ) {
         double dx = m.x - targetX, dz = m.z - targetZ;
         return Math.sqrt(dx * dx + dz * dz) < WAYPOINT_TOLERANCE;

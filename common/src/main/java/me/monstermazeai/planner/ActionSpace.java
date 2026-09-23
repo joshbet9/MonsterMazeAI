@@ -26,7 +26,7 @@ public final class ActionSpace {
                 if(allowJump) add(out,new Action(1,0,true,true,delta,false));
             }
         }
-        if(canUseAbility(game)){
+        if(canUseAbility(game) && abilityIsTacticallyRelevant(game)){
             ArrayList<Action> withAbility=new ArrayList<>(out.size());
             for(Action a:out) withAbility.add(new Action(a.forward(),a.strafe(),a.jump(),a.sprint(),a.yawDelta(),true));
             out.addAll(withAbility);
@@ -38,6 +38,25 @@ public final class ActionSpace {
         while(angle>=180) angle-=360;
         while(angle< -180) angle+=360;
         return angle;
+    }
+
+    /** Adds ability branches only when a live monster creates a concrete tactical reason. */
+    private static boolean abilityIsTacticallyRelevant(GameState game) {
+        double nearestSq = Double.POSITIVE_INFINITY;
+        for (var monster : game.monsters) {
+            if (monster.removed || monster.launched(game.tick)
+                    || monster.frozen(game.tick)) continue;
+            double dx = game.player.x - monster.x;
+            double dz = game.player.z - monster.z;
+            nearestSq = Math.min(nearestSq, dx * dx + dz * dz);
+        }
+
+        return switch (game.kit) {
+            case REPULSOR -> nearestSq <= 36.0;
+            case SLOWBALLER -> nearestSq <= 64.0;
+            case BODY_BUILDER -> nearestSq <= 16.0;
+            case JUMPER, MAVERICK -> false;
+        };
     }
 
     private static boolean canUseAbility(GameState game){

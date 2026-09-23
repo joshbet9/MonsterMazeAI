@@ -30,10 +30,17 @@ jobs:
         with:
           gradle-version: '2.7'
 
-      - name: Prepare ForgeGradle workspace
+      - name: Prepare ForgeGradle CI workspace and build
         working-directory: minecraft-1.8
-        run: gradle --no-daemon setupDevWorkspace setupDecompWorkspace
+        run: gradle --no-daemon setupCIWorkspace build
 
-      - name: Build Minecraft 1.8 mod
+      - name: Verify mod artifact
         working-directory: minecraft-1.8
-        run: gradle --no-daemon build
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
+          test -n "$jar_file"
+          echo "Built: $jar_file"
+          jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/MonsterMaze18Mod.class'
+          jar tf "$jar_file" | grep -F 'mcmod.info'

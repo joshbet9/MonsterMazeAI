@@ -41,6 +41,16 @@ public final class Simulator {
             collision.tryMonsterHit(state, monster, abilities);
         }
 
+        // SafePad.isOn is the authoritative geometric completion condition.
+        if (state.activePadRow >= 0 && state.activePadColumn >= 0) {
+            double dx = state.player.x - (state.activePadRow + 0.5);
+            double dz = state.player.z - (state.activePadColumn + 0.5);
+            if (dx > -2.5 && dx < 2.5 && dz > -2.5 && dz < 2.5
+                    && state.player.y > 0.0 && state.player.y < 5.0) {
+                state.padReached = true;
+            }
+        }
+
         // Monster Maze checks the Jumper charge once per server tick while airborne.
         if (state.player.y > 0.0 && state.kit == me.monstermazeai.kit.Kit.JUMPER) {
             abilities.consumeJumperCharge(state);

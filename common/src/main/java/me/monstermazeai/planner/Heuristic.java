@@ -13,6 +13,8 @@ public final class Heuristic {
     private static final double LOW_HEALTH_PENALTY = 120.0;
     private static final double CRITICAL_HEALTH_PENALTY = 2_000.0;
     private static final double MAX_PREDICTION_TICKS = 200.0;
+    private static final double GROUND_ACCELERATION = 0.13D;
+    private static final double GROUND_FRICTION = 0.6D * 0.91D;
     private final PlayerPathfinder pathfinder = new PlayerPathfinder();
 
     public Score evaluate(GameState s, double targetX, double targetZ) {
@@ -82,9 +84,38 @@ public final class Heuristic {
 
     private double estimateTimeToPad(GameState s, double routeBlocks) {
         if (Double.isInfinite(routeBlocks)) return MAX_PREDICTION_TICKS;
-        double speed = Math.hypot(s.player.vx, s.player.vz);
-        double effective = Math.max(0.45, speed);
-        return Math.min(MAX_PREDICTION_TICKS, routeBlocks / effective);
+        if (routeBlocks <= 0.0) return 0.0;
+
+        // Estimate travel time using the same per-tick ground acceleration and
+        // friction shape as LegacyMovementModel rather than treating the
+        // player's instantaneous speed as a constant. The projection is only
+        // a heuristic; the simulator remains authoritative for candidate
+        // trajectories.
+        double dx = s.targetPadX() - s.player.x;
+        double dz = s.targetPadZ() - s.player.z;
+        double length = Math.hypot(dx, dz);
+        double ux = length > 1.0E-9 ? dx / length : 0.0;
+        double uz = length > 1.0E-9 ? dz / length : 0.0;
+        double velocity = s.player.vx * ux + s.player.vz * uz;
+
+        if (!s.player.grounded) {
+            // Air control is substantially weaker in 1.8. Use the current
+            // projected velocity but never let it imply an unrealistically
+            // fast route completion.
+            velocity = Math.max(0.0, velocity);
+            double airSpeed = Math.max(0.08, velocity);
+            return Math.min(MAX_PREDICTION_TICKS, routeBlocks / airSpeed);
+        }
+
+        double distance = 0.0;
+        int ticks = 0;
+        while (distance < routeBlocks && ticks < (int) MAX_PREDICTION_TICKS) {
+            velocity += GROUND_ACCELERATION;
+            distance += Math.max(0.0, velocity);
+            velocity *= GROUND_FRICTION;
+            ticks++;
+        }
+        return ticks;
     }
 
     private double distance(GameState s, double x, double z) {

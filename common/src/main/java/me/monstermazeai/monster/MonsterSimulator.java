@@ -4,7 +4,6 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -13,10 +12,14 @@ import java.util.Random;
  *
  * Monsters choose a direction only when they reach a waypoint/intersection,
  * then CreatureMoveFast drives them toward the selected terminal waypoint.
+ * Launched monsters temporarily use vanilla-like projectile motion and are
+ * removed once grounded after 500 ms or after the 1500 ms timeout.
  */
 public final class MonsterSimulator {
     private static final double WAYPOINT_TOLERANCE = 0.4;
     private static final double CELL_CENTER_OFFSET = 0.5;
+    private static final double GRAVITY = 0.08;
+    private static final double AIR_DRAG = 0.98;
 
     private final MazeModel maze;
     private final Random random;
@@ -28,11 +31,6 @@ public final class MonsterSimulator {
         this.speed = speed;
     }
 
-    /**
-     * Mirrors MonsterManager.getTarget(): continue in the selected cardinal
-     * direction until the next cell would leave the path or until an
-     * intersection is reached.
-     */
     public void chooseNextWaypoint(MonsterState monster, Cell currentCell) {
         List<Cell> choices = maze.cardinalNeighbours(currentCell);
 
@@ -69,10 +67,6 @@ public final class MonsterSimulator {
             Cell next = forward.get(0);
             List<Cell> atNext = maze.cardinalNeighbours(next);
 
-            // The Bukkit implementation checks the three directions other
-            // than the direction currently being followed. The previous
-            // direction is deliberately included in this count, matching
-            // MonsterManager.getTarget() exactly.
             int alternatives = 0;
             for (Cell n : atNext) {
                 CardinalDirection d = CardinalDirection.between(
@@ -96,7 +90,14 @@ public final class MonsterSimulator {
 
     public void tick(GameState state) {
         for (MonsterState m : state.monsters) {
-            if (m.frozen(state.tick) || m.launched(state.tick)) continue;
+            if (m.removed) continue;
+
+            if (m.launched(state.tick)) {
+                tickLaunched(state, m);
+                continue;
+            }
+
+            if (m.frozen(state.tick)) continue;
 
             Cell current = nearestCell(m.x, m.z);
             if (current == null) continue;
@@ -121,6 +122,31 @@ public final class MonsterSimulator {
             m.vz = dz / d * step;
             m.x += m.vx;
             m.z += m.vz;
+        }
+    }
+
+    private void tickLaunched(GameState state, MonsterState m) {
+        m.x += m.vx;
+        m.y += m.vy;
+        m.z += m.vz;
+
+        m.vy -= GRAVITY;
+        m.vy *= AIR_DRAG;
+        m.vx *= AIR_DRAG;
+        m.vz *= AIR_DRAG;
+
+        if (m.y <= 0.0) {
+            m.y = 0.0;
+            m.vy = 0.0;
+            // MonsterManager removes a launched entity only after it has been
+            // grounded for at least 500 ms.
+            if (state.tick - m.launchedAtTick >= 10) {
+                m.removed = true;
+                m.launchedUntilTick = state.tick;
+            }
+        } else if (state.tick - m.launchedAtTick >= 30) {
+            m.removed = true;
+            m.launchedUntilTick = state.tick;
         }
     }
 

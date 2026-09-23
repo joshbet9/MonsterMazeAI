@@ -38,11 +38,6 @@ public final class AbilityModel {
         return game.mode != Mode.ORIGINAL;
     }
 
-    /**
-     * Monster Maze's Jumper resource is separate from Minecraft's jump physics.
-     * The server checks once per tick while airborne and can consume a charge,
-     * but never more often than once every 750 ms.
-     */
     public boolean canConsumeJumperCharge(GameState game) {
         if (game.kit != Kit.JUMPER || game.ability.charges <= 0) return false;
         if (game.tick < game.player.nextJumpChargeTick) return false;
@@ -128,10 +123,8 @@ public final class AbilityModel {
         return true;
     }
 
-    /** Apply the kit's pad reward. The game layer supplies whether this player was first. */
     public void onReachedPad(GameState game, boolean first) {
         if (game.kit == Kit.JUMPER && qolEnabled(game)) {
-            // Enhanced/QOL Jumper refills to the full three charges on a pad.
             game.ability.charges = 3;
             game.player.jumpCharges = 3;
         }
@@ -159,7 +152,13 @@ public final class AbilityModel {
     }
 
     public boolean isOnAnyPad(GameState game) {
-        return PadModel.isOn(game.player, game.activePadRow, 0, game.activePadColumn)
-                || PadModel.isOn(game.player, game.previewPadRow, 0, game.previewPadColumn);
+        return PadModel.isOn(game.player,
+                game.activePadRow + 0.5,
+                GameState.PAD_SURFACE_Y,
+                game.activePadColumn + 0.5)
+                || PadModel.isOn(game.player,
+                game.previewPadRow + 0.5,
+                GameState.PAD_SURFACE_Y,
+                game.previewPadColumn + 0.5);
     }
 }

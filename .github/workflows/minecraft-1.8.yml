@@ -25,12 +25,14 @@ jobs:
           distribution: temurin
           java-version: '8'
 
+      - name: Set up Gradle 2.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '2.7'
+
       - name: Prepare ForgeGradle workspace
         working-directory: minecraft-1.8
-        shell: bash
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon setupDevWorkspace
+        run: gradle --no-daemon setupDevWorkspace
 
       - name: Verify generated Forge compile input
         working-directory: minecraft-1.8
@@ -44,19 +46,15 @@ jobs:
 
       - name: Build Minecraft 1.8 mod
         working-directory: minecraft-1.8
-        shell: bash
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon build
+        run: gradle --no-daemon build
 
       - name: Verify mod artifact
         working-directory: minecraft-1.8
         shell: bash
         run: |
           set -euo pipefail
-          jars=(build/libs/*.jar)
-          test -f "${jars[0]}"
-          jar_file="${jars[0]}"
+          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
+          test -n "$jar_file"
           echo "Built: $jar_file"
           jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/MonsterMaze18Mod.class'
           jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/Minecraft18Observer.class'

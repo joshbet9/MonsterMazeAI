@@ -26,6 +26,13 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     @Override
     public void tick(PlayerState p, Action action) {
+        // Rotation is part of the per-tick control input. Minecraft applies
+        // the player's current yaw to movement, so the requested delta is
+        // committed before travel for this tick.
+        p.yaw += action.yawDelta();
+        while (p.yaw >= 180.0F) p.yaw -= 360.0F;
+        while (p.yaw < -180.0F) p.yaw += 360.0F;
+
         // EntityLivingBase jump handling: holding jump does not repeatedly
         // jump every tick; jumpTicks is set to 10 after a ground jump.
         if (action.jump()) {

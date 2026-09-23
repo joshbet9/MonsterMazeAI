@@ -17,7 +17,7 @@ public final class PlayerState {
         p.yaw=yaw; p.pitch=pitch; p.grounded=grounded;
         p.health=health; p.maxHealth=maxHealth;
         p.jumpCharges=jumpCharges; p.nextJumpChargeTick=nextJumpChargeTick;
-        p.recentMobHitUntilTick=recentMobHitUntilTick;
+        p.recentMobHitUntilTick=recentMobHitUntilTick; p.jumpTicks=jumpTicks;
         return p;
     }
 }

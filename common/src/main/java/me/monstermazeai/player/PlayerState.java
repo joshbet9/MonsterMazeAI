@@ -9,7 +9,8 @@ public final class PlayerState {
     public double maxHealth = 20.0;
     public int jumpCharges;
     public long nextJumpChargeTick;
-    public long recentMobHitUntilTick;\n    public int jumpTicks;
+    public long recentMobHitUntilTick;
+    public int jumpTicks;
 
     public PlayerState copy() {
         PlayerState p = new PlayerState();

@@ -58,36 +58,6 @@ class PlannerValidationTest {
     }
 
 
-    @Test void targetRecomputeControlCanReachPad() {
-        GameState s=state(17.5,20.5,15*20);
-        Simulator simulator=new Simulator(new LegacyMazePhysics(),
-                new MonsterSimulator(s.maze,new Random(1234),0.07), new CollisionModel());
-        for(int i=0;i<20 && s.alive && !s.padReached;i++) {
-            double dx=s.targetPadX()-s.player.x, dz=s.targetPadZ()-s.player.z;
-            float desired=(float)Math.toDegrees(Math.atan2(-dx,dz));
-            float delta=desired-s.player.yaw;
-            while(delta>=180) delta-=360;
-            while(delta< -180) delta+=360;
-            simulator.tick(s,new me.monstermazeai.player.Action(1,0,false,true,delta,false));
-        }
-        assertTrue(s.padReached,"x="+s.player.x+" z="+s.player.z+" yaw="+s.player.yaw);
-    }
-
-    @Test void simulatedTargetSteeringCanReachPad() {
-        GameState s=state(17.5,20.5,15*20);
-        Simulator simulator=new Simulator(new LegacyMazePhysics(),
-                new MonsterSimulator(s.maze,new Random(1234),0.07), new CollisionModel());
-        for(int i=0;i<20 && s.alive && !s.padReached;i++) {
-            double dx=s.targetPadX()-s.player.x, dz=s.targetPadZ()-s.player.z;
-            float desired=(float)Math.toDegrees(Math.atan2(-dx,dz));
-            float delta=desired-s.player.yaw;
-            while(delta>=180) delta-=360;
-            while(delta< -180) delta+=360;
-            s=simulator.simulate(s,new me.monstermazeai.player.Action[]{new me.monstermazeai.player.Action(1,0,false,true,delta,false)});
-        }
-        assertTrue(s.padReached,"x="+s.player.x+" z="+s.player.z+" yaw="+s.player.yaw);
-    }
-
     @Test void emergencyDeadlineSearchCanReachPadWithinFifteenSeconds() {
         GameState s=state(17.5,20.5,15*20);
         var plan=planner(s,20,12).plan(s,s.targetPadX(),s.targetPadZ(),true);

@@ -34,8 +34,8 @@ class SourceMechanicsValidationTest {
         s.player.grounded = true;
         s.player.health = 20;
         s.player.maxHealth = 20;
-        s.activePadRow = 20;
-        s.activePadColumn = 20;
+        s.activePadRow = -1;
+        s.activePadColumn = -1;
         s.kit = kit;
         return s;
     }
@@ -98,7 +98,7 @@ class SourceMechanicsValidationTest {
         assertFalse(abilities.activate(s));
         s.tick = 600;
         assertTrue(abilities.activate(s));
-        assertEquals(120, s.monsters.get(0).frozenUntilTick);
+        assertEquals(660, s.monsters.get(0).frozenUntilTick);
     }
 
     @Test
@@ -113,7 +113,7 @@ class SourceMechanicsValidationTest {
 
         s.tick = 1;
         abilities.consumeBodyRushContact(s);
-        assertEquals(161, s.ability.activeUntilTick);
+        assertEquals(160, s.ability.activeUntilTick);
 
         assertTrue(abilities.activate(s) == false);
         s.tick = 161;

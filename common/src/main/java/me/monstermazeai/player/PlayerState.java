@@ -7,6 +7,8 @@ public final class PlayerState {
     public boolean grounded;
     public double health = 20.0;
     public double maxHealth = 20.0;
+    /** Cumulative damage received in this simulated run, independent of healing. */
+    public double damageTaken;
     public int jumpCharges;
     public long nextJumpChargeTick;
     public long recentMobHitUntilTick;
@@ -16,7 +18,7 @@ public final class PlayerState {
         PlayerState p = new PlayerState();
         p.x=x; p.y=y; p.z=z; p.vx=vx; p.vy=vy; p.vz=vz;
         p.yaw=yaw; p.pitch=pitch; p.grounded=grounded;
-        p.health=health; p.maxHealth=maxHealth;
+        p.health=health; p.maxHealth=maxHealth; p.damageTaken=damageTaken;
         p.jumpCharges=jumpCharges; p.nextJumpChargeTick=nextJumpChargeTick;
         p.recentMobHitUntilTick=recentMobHitUntilTick; p.jumpTicks=jumpTicks;
         return p;

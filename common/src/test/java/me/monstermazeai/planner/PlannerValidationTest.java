@@ -36,7 +36,7 @@ class PlannerValidationTest {
     @Test void criticalTimerRequiresActualProgress() {
         GameState s=state(10.5,20.5,15*20);
         var plan=planner(s,60,12).plan(s,s.targetPadX(),s.targetPadZ(),false);
-        assertTrue(plan.resultingState().alive || plan.resultingState().padReached());
+        assertTrue(plan.resultingState().alive || plan.resultingState().padReached);
         assertTrue(plan.resultingState().player.x>s.player.x,"Late-stage plan must make measurable progress.");
     }
     @Test void collisionDamageIsVisibleToPlanner() {

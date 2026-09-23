@@ -3,6 +3,7 @@ package me.monstermazeai.sim;
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.collision.CollisionModel;
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.GameProgressionModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
@@ -13,6 +14,7 @@ public final class Simulator {
     private final MonsterSimulator monsters;
     private final CollisionModel collision;
     private final AbilityModel abilities;
+    private final GameProgressionModel progression;
 
     public Simulator(PhysicsModel physics, MonsterSimulator monsters, CollisionModel collision) {
         this(physics, monsters, collision, new AbilityModel());
@@ -24,6 +26,7 @@ public final class Simulator {
         this.monsters=monsters;
         this.collision=collision;
         this.abilities=abilities;
+        this.progression=new GameProgressionModel(abilities);
     }
 
     public void tick(GameState state, Action action) {
@@ -41,15 +44,7 @@ public final class Simulator {
             collision.tryMonsterHit(state, monster, abilities);
         }
 
-        // SafePad.isOn is the authoritative geometric completion condition.
-        if (state.activePadRow >= 0 && state.activePadColumn >= 0) {
-            double dx = state.player.x - (state.activePadRow + 0.5);
-            double dz = state.player.z - (state.activePadColumn + 0.5);
-            if (dx > -2.5 && dx < 2.5 && dz > -2.5 && dz < 2.5
-                    && state.player.y > 0.0 && state.player.y < 5.0) {
-                state.padReached = true;
-            }
-        }
+        progression.tick(state);
 
         // Monster Maze checks the Jumper charge once per server tick while airborne.
         if (state.player.y > 0.0 && state.kit == me.monstermazeai.kit.Kit.JUMPER) {
@@ -57,7 +52,6 @@ public final class Simulator {
         }
 
         state.tick++;
-        if(state.phaseTicksRemaining>0) state.phaseTicksRemaining--;
     }
 
     public GameState simulate(GameState source, Action[] actions) {

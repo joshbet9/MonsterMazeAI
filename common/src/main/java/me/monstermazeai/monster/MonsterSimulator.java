@@ -174,6 +174,14 @@ public final class MonsterSimulator {
         return Math.hypot(dx, dz) < WAYPOINT_TOLERANCE;
     }
 
+    /**
+     * Creates an independent predictor with its own RNG stream. Planning
+     * branches must never share the live simulator's mutable Random state.
+     */
+    public MonsterSimulator fork(long seed) {
+        return new MonsterSimulator(maze, new Random(seed), speed);
+    }
+
     public double speed() {
         return speed;
     }

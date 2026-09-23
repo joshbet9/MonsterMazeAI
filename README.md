@@ -73,4 +73,10 @@ MonsterMazeAI/
 
 ## Current status
 
-The repository is intentionally starting with the design and mechanics-extraction phase. No gameplay automation is considered correct until it is backed by the Monster Maze implementation and validated in-game.
+**Milestone 2 is complete.**
+
+The common AI core now has source-grounded game mechanics, tick-level 1.8 movement simulation, maze-aware routing, trajectory beam search, emergency 15-second planning, deterministic search branches, stochastic trajectory evaluation, and a receding-horizon controller. Automated benchmarks include timed jump movement and a 1,000-future Monte Carlo evaluation.
+
+Live Minecraft observation/input adapters remain deliberately separate and are the next phase. No gameplay automation is considered correct until the live adapter is validated against the Monster Maze implementation and in-game behaviour.
+
+See [docs/milestone-2.md](docs/milestone-2.md) for the completed scope.

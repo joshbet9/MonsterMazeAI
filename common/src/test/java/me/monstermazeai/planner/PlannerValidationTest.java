@@ -57,6 +57,16 @@ class PlannerValidationTest {
                 "Late-stage plan must make measurable progress.");
     }
 
+
+    @Test void emergencyDeadlineSearchCanReachPadWithinFifteenSeconds() {
+        GameState s=state(12.5,20.5,15*20);
+        var plan=planner(s,20,12).plan(s,s.targetPadX(),s.targetPadZ(),true);
+        assertTrue(plan.padReached(),
+                "Emergency deadline mode must search the full remaining 15-second budget.");
+        assertTrue(plan.sequence().length()<=15*20);
+        assertTrue(plan.resultingState().alive);
+    }
+
     @Test void collisionDamageIsVisibleToPlanner() {
         GameState s=state(10.5,20.5,35*20);
         s.monsters.add(new me.monstermazeai.monster.MonsterState(1,11.0,0,20.5));

@@ -8,6 +8,7 @@ import me.monstermazeai.monster.MonsterState;
 
 public final class AbilityModel {
     private static final long JUMPER_RECHARGE_TICKS = 15; // 750 ms at 20 TPS
+    private static final long JUMPER_POST_HIT_GRACE_TICKS = 40; // 2 s
     private static final long CRYO_COOLDOWN_TICKS = 600; // 30 s
     private static final long CRYO_FREEZE_TICKS = 60; // 3 s
     private static final long BODY_RUSH_TICKS = 200; // 10 s
@@ -41,7 +42,14 @@ public final class AbilityModel {
     public boolean canConsumeJumperCharge(GameState game) {
         if (game.kit != Kit.JUMPER || game.ability.charges <= 0) return false;
         if (game.tick < game.player.nextJumpChargeTick) return false;
-        if (game.tick < game.player.recentMobHitUntilTick) return false;
+
+        // Source KitManager.isPlayerLaunched(): a mob-hit grace window prevents
+        // a knockback jump from consuming a Jumper charge for two seconds.
+        if (game.tick < game.player.recentMobHitUntilTick + JUMPER_POST_HIT_GRACE_TICKS) {
+            return false;
+        }
+
+        // QOL: jumping on active or preview Safe Pads is free.
         if (qolEnabled(game) && isOnAnyPad(game)) return false;
         return true;
     }
@@ -68,20 +76,21 @@ public final class AbilityModel {
     private boolean activateCryo(GameState game) {
         if (!qolEnabled(game) || game.tick < game.ability.cooldownUntilTick) return false;
 
+        // Source starts the cooldown when the ability is used, even if no monster
+        // happens to be inside the radius.
         game.ability.cooldownUntilTick = game.tick + CRYO_COOLDOWN_TICKS;
-        boolean froze = false;
 
         for (MonsterState m : game.monsters) {
             double dx = game.player.x - m.x;
             double dy = game.player.y - m.y;
             double dz = game.player.z - m.z;
             if (dx*dx + dy*dy + dz*dz <= 36.0) {
-                m.frozenUntilTick = Math.max(m.frozenUntilTick, game.tick + CRYO_FREEZE_TICKS);
+                m.frozenUntilTick = Math.max(
+                        m.frozenUntilTick, game.tick + CRYO_FREEZE_TICKS);
                 m.vx = m.vy = m.vz = 0.0;
-                froze = true;
             }
         }
-        return froze;
+        return true;
     }
 
     private boolean activateBodyRush(GameState game) {
@@ -152,13 +161,18 @@ public final class AbilityModel {
     }
 
     public boolean isOnAnyPad(GameState game) {
-        return PadModel.isOn(game.player,
+        boolean active = game.activePadRow >= 0 && game.activePadColumn >= 0
+                && PadModel.isOn(game.player,
                 game.activePadRow + 0.5,
                 GameState.PAD_SURFACE_Y,
-                game.activePadColumn + 0.5)
-                || PadModel.isOn(game.player,
+                game.activePadColumn + 0.5);
+
+        boolean preview = game.previewPadRow >= 0 && game.previewPadColumn >= 0
+                && PadModel.isOn(game.player,
                 game.previewPadRow + 0.5,
                 GameState.PAD_SURFACE_Y,
                 game.previewPadColumn + 0.5);
+
+        return active || preview;
     }
 }

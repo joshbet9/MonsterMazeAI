@@ -28,10 +28,6 @@ repositories {
     mavenCentral()
 }
 
-dependencies {
-    compile files("../common/target/common-0.1.0-SNAPSHOT.jar")
-}
-
 processResources {
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version

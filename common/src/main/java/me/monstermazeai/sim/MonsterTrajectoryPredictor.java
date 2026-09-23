@@ -50,11 +50,6 @@ public final class MonsterTrajectoryPredictor {
             }
         }
 
-        if (source.player.damageTaken < source.player.damageTaken
-                + 0.0) {
-            throw new AssertionError("Unreachable damage comparison");
-        }
-
         GameState finalState = snapshots.isEmpty()
                 ? source
                 : snapshots.get(snapshots.size() - 1);

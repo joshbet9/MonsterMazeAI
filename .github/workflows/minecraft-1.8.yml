@@ -30,13 +30,9 @@ jobs:
         with:
           gradle-version: '2.7'
 
-      - name: Prepare ForgeGradle CI workspace
+      - name: Prepare ForgeGradle workspace and build
         working-directory: minecraft-1.8
-        run: gradle --no-daemon setupCIWorkspace
-
-      - name: Build Minecraft 1.8 mod
-        working-directory: minecraft-1.8
-        run: gradle --no-daemon build
+        run: gradle --no-daemon setupDevWorkspace setupCIWorkspace build
 
       - name: Verify mod artifact
         working-directory: minecraft-1.8

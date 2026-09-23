@@ -48,6 +48,22 @@ public final class PlayerRoute {
      */
     public int nextWaypoint(double x, double z, int currentIndex, double tolerance) {
         int index = Math.max(0, Math.min(currentIndex, cells.size() - 1));
+
+        // If physics carried the player past a waypoint, the player may be
+        // more than the normal arrival tolerance from the old waypoint.
+        // Advance to the furthest nearby forward waypoint so corners do not
+        // cause the controller to turn back toward a point it has already
+        // passed.
+        int furthestNearby = index;
+        for (int i = index + 1; i < cells.size(); i++) {
+            if (Math.hypot(x - targetX(i), z - targetZ(i)) <= 0.75) {
+                furthestNearby = i;
+            } else if (i > index + 1) {
+                break;
+            }
+        }
+        index = furthestNearby;
+
         while (index < cells.size() - 1
                 && Math.hypot(x - targetX(index), z - targetZ(index)) <= tolerance) {
             index++;

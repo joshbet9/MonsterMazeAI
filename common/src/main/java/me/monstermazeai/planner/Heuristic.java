@@ -1,6 +1,8 @@
 package me.monstermazeai.planner;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.maze.Cell;
+import me.monstermazeai.maze.MazePathfinder;
 import me.monstermazeai.monster.MonsterState;
 
 import java.util.List;
@@ -11,6 +13,7 @@ public final class Heuristic {
     private static final double LOW_HEALTH_PENALTY = 120.0;
     private static final double CRITICAL_HEALTH_PENALTY = 2_000.0;
     private static final double MAX_PREDICTION_TICKS = 200.0;
+    private final MazePathfinder pathfinder = new MazePathfinder();
 
     public Score evaluate(GameState s, double targetX, double targetZ) {
         if (!s.alive) {
@@ -18,19 +21,18 @@ public final class Heuristic {
                     distance(s, targetX, targetZ), 0.0);
         }
 
-        double distance = distance(s, targetX, targetZ);
+        double euclidean = distance(s, targetX, targetZ);
         if (Double.isNaN(targetX) || Double.isNaN(targetZ)) {
-            return new Score(100_000.0, true, s.player.health, distance, 0.0);
+            return new Score(100_000.0, true, s.player.health, euclidean, 0.0);
         }
 
         if (s.padReached) {
-            // A reached pad is a concrete success state, not merely a smaller
-            // distance. Give the planner a strong terminal signal.
-            return new Score(s.phaseTicksRemaining * 0.01,
-                    true, s.player.health, 0.0, 0.0);
+            return new Score(s.phaseTicksRemaining * 0.01, true,
+                    s.player.health, 0.0, 0.0);
         }
 
-        double projectedTicks = estimateTimeToPad(s, targetX, targetZ);
+        double routeBlocks = routeDistance(s, targetX, targetZ);
+        double projectedTicks = estimateTimeToPad(s, routeBlocks);
         double timerSlack = s.phaseTicksRemaining - projectedTicks;
 
         double value = projectedTicks;
@@ -44,27 +46,45 @@ public final class Heuristic {
                 MAX_PREDICTION_TICKS, Math.max(20.0, projectedTicks)));
         double remainingHealth = s.player.health - incoming;
 
-        if (remainingHealth <= 0) {
-            value += CRITICAL_HEALTH_PENALTY;
-        } else if (remainingHealth <= 4) {
-            value += LOW_HEALTH_PENALTY;
-        }
+        if (remainingHealth <= 0) value += CRITICAL_HEALTH_PENALTY;
+        else if (remainingHealth <= 4) value += LOW_HEALTH_PENALTY;
 
         value += abilityOpportunityCost(s, projectedTicks);
-
-        return new Score(value, true, s.player.health, distance, incoming);
+        return new Score(value, true, s.player.health, routeBlocks, incoming);
     }
 
     /**
-     * Uses the current simulated velocity plus a conservative movement-speed
-     * estimate. This is deliberately an estimate for ranking, while actual
-     * candidate states are produced by MinecraftPhysics.
+     * Returns a maze-aware path length instead of assuming the pad can be reached
+     * through barriers. Player coordinates are converted to the containing maze
+     * cell, while the pad target is represented by its containing cell.
      */
-    private double estimateTimeToPad(GameState s, double targetX, double targetZ) {
-        double distance = distance(s, targetX, targetZ);
+    private double routeDistance(GameState s, double targetX, double targetZ) {
+        int sr = (int)Math.floor(s.player.x);
+        int sc = (int)Math.floor(s.player.z);
+        int tr = (int)Math.floor(targetX);
+        int tc = (int)Math.floor(targetZ);
+
+        if (sr < 0 || sc < 0 || tr < 0 || tc < 0
+                || sr >= 99 || sc >= 99 || tr >= 99 || tc >= 99) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        List<Cell> path = pathfinder.shortestPath(
+                s.maze, new Cell(sr, sc), new Cell(tr, tc));
+        if (path.isEmpty()) return Double.POSITIVE_INFINITY;
+
+        double fractionalStart = Math.hypot(
+                s.player.x - (sr + 0.5), s.player.z - (sc + 0.5));
+        double fractionalGoal = Math.hypot(
+                targetX - (tr + 0.5), targetZ - (tc + 0.5));
+        return Math.max(0.0, path.size() - 1) + fractionalStart + fractionalGoal;
+    }
+
+    private double estimateTimeToPad(GameState s, double routeBlocks) {
+        if (Double.isInfinite(routeBlocks)) return MAX_PREDICTION_TICKS;
         double speed = Math.hypot(s.player.vx, s.player.vz);
         double effective = Math.max(0.45, speed);
-        return Math.min(MAX_PREDICTION_TICKS, distance / effective);
+        return Math.min(MAX_PREDICTION_TICKS, routeBlocks / effective);
     }
 
     private double distance(GameState s, double x, double z) {
@@ -96,18 +116,11 @@ public final class Heuristic {
     private double sq(double v) { return v * v; }
 
     private double abilityOpportunityCost(GameState s, double travelTicks) {
-        // Finite-charge abilities are resources whose value depends on how
-        // much of the current route remains. Cryo is different: its resource
-        // is time until cooldown, not a charge count.
         return switch (s.kit) {
             case JUMPER -> s.ability.charges * 0.15;
             case REPULSOR -> s.ability.charges * 0.5;
             case BODY_BUILDER -> s.ability.activations * 0.25;
-            case SLOWBALLER -> {
-                double cooldownTicks = Math.max(0,
-                        s.ability.cooldownUntilTick - s.tick);
-                yield cooldownTicks > travelTicks ? 0.0 : 0.0;
-            }
+            case SLOWBALLER -> 0.0; // Cryo is a 30s cooldown, not a charge pool.
             case MAVERICK -> 0.0;
         };
     }

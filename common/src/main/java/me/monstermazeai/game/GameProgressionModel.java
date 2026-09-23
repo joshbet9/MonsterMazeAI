@@ -5,9 +5,10 @@ import me.monstermazeai.ability.AbilityModel;
 /**
  * Source-grounded round/phase progression for the single-player AI simulator.
  *
- * The simulator represents the current active pad and the already-generated
- * preview pad. Pad selection itself remains an observation concern because
- * the live game chooses it from the maze's random pad generator.
+ * The real server's phase timer is an integer number of seconds and is
+ * decremented by a Bukkit task scheduled every 20 ticks. The common simulator
+ * therefore keeps phaseTicksRemaining in ticks but only decrements it once per
+ * 20 simulated ticks.
  */
 public final class GameProgressionModel {
     private final TimerModel timer = new TimerModel();
@@ -24,6 +25,7 @@ public final class GameProgressionModel {
     public void initialise(GameState state) {
         state.stage = 1;
         state.phaseTicksRemaining = timer.initialTicks(state.mode, state.stage);
+        state.phaseSecondAccumulatorTicks = 0;
         state.padReached = false;
     }
 
@@ -31,28 +33,38 @@ public final class GameProgressionModel {
         if (!state.alive) return;
 
         boolean onActive = isOnPad(state, state.activePadRow, state.activePadColumn);
-        boolean onPreview = isOnPad(state, state.previewPadRow, state.previewPadColumn);
 
-        // The first arrival shortens the current phase. The reward is granted
-        // once per player per phase, represented by padReached.
+        // GameManager.checkPlayersOnSafePad() runs every server tick. The first
+        // player to reach the active pad shortens the phase and receives the kit
+        // reward exactly once for this phase.
         if (onActive && !state.padReached) {
             state.padReached = true;
             abilities.onReachedPad(state, true);
 
-            state.phaseTicksRemaining = timer.shortenedTicks(
+            int shortened = timer.shortenedTicks(
                     state.phaseTicksRemaining, state.stage, false);
+            state.phaseTicksRemaining = Math.min(
+                    state.phaseTicksRemaining, shortened);
         }
 
-        // A solo run has one alive player, so being on the pad is equivalent
-        // to the "all alive players on pad" condition.
+        // In solo mode, the single alive player is also the "all alive players"
+        // condition used by the live game to force the timer down to 4 seconds.
         if (onActive) {
             state.phaseTicksRemaining = Math.min(
                     state.phaseTicksRemaining, 4 * 20);
         }
 
-        if (state.phaseTicksRemaining > 0) {
-            state.phaseTicksRemaining--;
-        }
+        // Source GameManager schedules decrementPhaseTime() with
+        // runTaskTimer(..., 20L, 20L), so this is deliberately NOT a per-tick
+        // countdown.
+        state.phaseSecondAccumulatorTicks++;
+        if (state.phaseSecondAccumulatorTicks < 20) return;
+        state.phaseSecondAccumulatorTicks = 0;
+
+        if (state.phaseTicksRemaining <= 0) return;
+
+        // decrementPhaseTime() does phaseTimer-- once per second.
+        state.phaseTicksRemaining -= 20;
 
         if (state.phaseTicksRemaining > 0) return;
 
@@ -68,28 +80,27 @@ public final class GameProgressionModel {
     private void advancePhase(GameState state) {
         state.stage++;
         state.phaseTicksRemaining = timer.initialTicks(state.mode, state.stage);
+        state.phaseSecondAccumulatorTicks = 0;
         state.padReached = false;
 
-        // The preview becomes the new active pad. The live client must provide
-        // its generated location before this transition.
+        // The live game generates nextSafePad when the phase reaches 2 seconds,
+        // then promotes it to safePad at zero. The client adapter must observe
+        // and supply previewPadRow/Column before this transition.
         state.activePadRow = state.previewPadRow;
         state.activePadColumn = state.previewPadColumn;
         state.previewPadRow = -1;
         state.previewPadColumn = -1;
 
-        // Monster-wave growth is represented separately by the live observation
-        // layer; this model does not invent spawn positions or counts.
+        // Monster spawning/removal is deliberately not invented here; the live
+        // observation layer supplies the authoritative wave state.
     }
 
     private boolean isOnPad(GameState state, int row, int column) {
         if (row < 0 || column < 0) return false;
-
-        double dx = state.player.x - (row + 0.5);
-        double dz = state.player.z - (column + 0.5);
-
-        return dx > -2.5 && dx < 2.5
-                && dz > -2.5 && dz < 2.5
-                && state.player.y > 0.0
-                && state.player.y < 5.0;
+        return PadModel.isOn(
+                state.player,
+                row + 0.5,
+                GameState.PAD_SURFACE_Y,
+                column + 0.5);
     }
 }

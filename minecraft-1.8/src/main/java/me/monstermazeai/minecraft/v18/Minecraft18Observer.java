@@ -1,6 +1,5 @@
 package me.monstermazeai.minecraft.v18;
 
-import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
@@ -22,7 +21,6 @@ public final class Minecraft18Observer {
 
     private int ticksSinceLastLog;
 
-    @SubscribeEvent
     public void tick() {
         if (MC.theWorld == null || MC.thePlayer == null) {
             return;

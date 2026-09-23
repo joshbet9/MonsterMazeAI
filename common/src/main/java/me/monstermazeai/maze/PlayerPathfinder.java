@@ -26,22 +26,22 @@ public final class PlayerPathfinder {
             if (current.equals(goal)) return reconstruct(previous, goal);
 
             int r = current.row(), c = current.column();
-            add(maze, new Cell(r - 1, c), queue, previous);
-            add(maze, new Cell(r + 1, c), queue, previous);
-            add(maze, new Cell(r, c - 1), queue, previous);
-            add(maze, new Cell(r, c + 1), queue, previous);
+            add(maze, current, new Cell(r - 1, c), queue, previous);
+            add(maze, current, new Cell(r + 1, c), queue, previous);
+            add(maze, current, new Cell(r, c - 1), queue, previous);
+            add(maze, current, new Cell(r, c + 1), queue, previous);
         }
 
         return List.of();
     }
 
-    private void add(MazeModel maze, Cell next, ArrayDeque<Cell> queue,
+    private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
                      Map<Cell, Cell> previous) {
         if (next.row() < 0 || next.row() >= MazeModel.SIZE
                 || next.column() < 0 || next.column() >= MazeModel.SIZE) return;
         if (!maze.isRawPath(next.row(), next.column())
                 || previous.containsKey(next)) return;
-        previous.put(next, queue.peekLast());
+        previous.put(next, current);
         queue.addLast(next);
     }
 

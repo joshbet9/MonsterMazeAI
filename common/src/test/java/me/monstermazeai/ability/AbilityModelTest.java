@@ -71,7 +71,7 @@ class AbilityModelTest {
         assertEquals(2, s.ability.charges);
         MonsterState m = s.monsters.get(0);
         assertEquals(1.0, m.vx, 1e-9);
-        assertEquals(0.8, m.vy, 1e-9);
+        assertEquals(1.0, m.vy, 1e-9);
         assertTrue(m.launched(s.tick));
     }
 

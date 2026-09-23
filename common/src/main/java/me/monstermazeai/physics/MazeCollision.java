@@ -67,9 +67,9 @@ public final class MazeCollision {
                 clippedX=sx;
                 clippedZ=sz;
                 clippedY=sy;
-                p.x=stepFinal.minX + PLAYER_WIDTH/2.0;
+                p.x=(stepFinal.minX + stepFinal.maxX)/2.0;
                 p.y=stepFinal.minY;
-                p.z=stepFinal.minZ + PLAYER_WIDTH/2.0;
+                p.z=(stepFinal.minZ + stepFinal.maxZ)/2.0;
                 p.grounded=true;
                 if (dy < 0 || sy != dy) p.vy=0;
                 if (clippedX != dx) p.vx=0;

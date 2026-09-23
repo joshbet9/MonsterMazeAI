@@ -19,7 +19,7 @@ public final class CollisionModel {
     }
 
     public void tryMonsterHit(GameState state, MonsterState monster, AbilityModel abilities) {
-        if (!state.alive || monster.launched()
+        if (!state.alive || monster.launched(state.tick)
                 || PadModel.isOn(state.player, state.activePadRow, 0, state.activePadColumn)) {
             return;
         }
@@ -31,8 +31,6 @@ public final class CollisionModel {
         double dy = state.player.y - monster.y;
         if (dx*dx + dy*dy + dz*dz >= HIT_DISTANCE_SQ) return;
 
-        // Body Rush completely replaces the normal bump: launch the monster,
-        // deal no damage, and shorten the active rush by exactly 2 seconds.
         if (abilities.isBodyRushActive(state)) {
             double awayX = monster.x - state.player.x;
             double awayZ = monster.z - state.player.z;
@@ -56,47 +54,29 @@ public final class CollisionModel {
         long now=state.tick;
         if (state.player.recentMobHitUntilTick > now) return;
 
-        state.player.recentMobHitUntilTick = now + HIT_COOLDOWN_TICKS;
-        state.player.health -= HIT_DAMAGE;
+        state.player.recentMobHitUntilTick = now+HIT_COOLDOWN_TICKS;
+        state.player.health-=HIT_DAMAGE;
 
-        // Source snaps a player near the maze floor upward before knockback.
-        if (state.player.y >= 0.0 && state.player.y < 0.9) {
-            state.player.y = 0.7;
-        }
+        if (state.player.y>=0.0 && state.player.y<0.9) state.player.y=0.7;
 
         double knockX;
         double knockZ;
-
         if (state.kit == Kit.MAVERICK && state.mode != me.monstermazeai.game.Mode.ORIGINAL) {
-            int row = state.activePadRow >= 0 ? state.activePadRow : state.previewPadRow;
-            int col = state.activePadRow >= 0 ? state.activePadColumn : state.previewPadColumn;
-            if (row >= 0 && col >= 0) {
-                knockX = (row + 0.5) - state.player.x;
-                knockZ = (col + 0.5) - state.player.z;
-            } else {
-                knockX = dx;
-                knockZ = dz;
-            }
-        } else {
-            knockX = dx;
-            knockZ = dz;
-        }
+            int row=state.activePadRow>=0?state.activePadRow:state.previewPadRow;
+            int col=state.activePadRow>=0?state.activePadColumn:state.previewPadColumn;
+            if(row>=0&&col>=0){ knockX=(row+0.5)-state.player.x; knockZ=(col+0.5)-state.player.z; }
+            else { knockX=dx; knockZ=dz; }
+        } else { knockX=dx; knockZ=dz; }
 
         double len=Math.hypot(knockX,knockZ);
-        if(len < 1e-9) {
-            double yaw=Math.toRadians(state.player.yaw);
-            knockX=-Math.sin(yaw);
-            knockZ=Math.cos(yaw);
-            len=1.0;
-        }
+        if(len<1e-9){ double yaw=Math.toRadians(state.player.yaw); knockX=-Math.sin(yaw); knockZ=Math.cos(yaw); len=1.0; }
         knockX/=len;
         knockZ/=len;
-
-        state.player.vx=knockX * KNOCKBACK_HORIZONTAL;
-        state.player.vz=knockZ * KNOCKBACK_HORIZONTAL;
-        state.player.vy=Math.min(KNOCKBACK_MAX_VERTICAL, KNOCKBACK_VERTICAL);
+        state.player.vx=knockX*KNOCKBACK_HORIZONTAL;
+        state.player.vz=knockZ*KNOCKBACK_HORIZONTAL;
+        state.player.vy=Math.min(KNOCKBACK_MAX_VERTICAL,KNOCKBACK_VERTICAL);
         state.player.grounded=false;
 
-        if(state.player.health <= 0) state.alive=false;
+        if(state.player.health<=0) state.alive=false;
     }
 }

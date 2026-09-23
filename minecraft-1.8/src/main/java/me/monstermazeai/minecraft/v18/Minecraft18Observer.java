@@ -83,7 +83,7 @@ public final class Minecraft18Observer {
         JsonArray chats = new JsonArray();
         synchronized (chatBuffer) {
             for (String chat : chatBuffer) {
-                chats.add(chat);
+                chats.add(new com.google.gson.JsonPrimitive(chat));
             }
             chatBuffer.clear();
         }
@@ -235,7 +235,7 @@ public final class Minecraft18Observer {
                     pos.getY(),
                     pos.getZ(),
                     distanceSq,
-                    beacon.shouldBeamRender(),
+                    beacon.shouldBeamRender() > 0.0F,
                     beacon.getField(0),
                     beacon.getField(1),
                     beacon.getField(2),
@@ -290,11 +290,11 @@ public final class Minecraft18Observer {
                 }
 
                 JsonArray cell = new JsonArray();
-                cell.add(dx);
-                cell.add(dz);
-                cell.add(floorY);
-                cell.add(floorState);
-                cell.add(aboveState);
+                cell.add(new com.google.gson.JsonPrimitive(dx));
+                cell.add(new com.google.gson.JsonPrimitive(dz));
+                cell.add(new com.google.gson.JsonPrimitive(floorY));
+                cell.add(new com.google.gson.JsonPrimitive(floorState));
+                cell.add(new com.google.gson.JsonPrimitive(aboveState));
                 row.add(cell);
             }
 
@@ -472,7 +472,7 @@ public final class Minecraft18Observer {
             player.addProperty("foodLevel", MC.thePlayer.getFoodStats().getFoodLevel());
             player.addProperty("foodSaturation", MC.thePlayer.getFoodStats().getSaturationLevel());
             player.addProperty("air", MC.thePlayer.getAir());
-            player.addProperty("fire", MC.thePlayer.getFire());
+            player.addProperty("fire", MC.thePlayer.isBurning());
             player.addProperty("hurtTime", MC.thePlayer.hurtTime);
             player.addProperty("hurtResistantTime", MC.thePlayer.hurtResistantTime);
             player.addProperty("ticksExisted", MC.thePlayer.ticksExisted);

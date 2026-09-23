@@ -28,7 +28,7 @@ public final class GameState {
         s.activePadRow=activePadRow; s.activePadColumn=activePadColumn;
         s.previewPadRow=previewPadRow; s.previewPadColumn=previewPadColumn;
         s.alive=alive;
-        s.monsters.addAll(monsters); // monster deep-copy added with simulator snapshots
+        for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;
     }
 }

@@ -3,6 +3,8 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.sim.Simulator;
+import me.monstermazeai.sim.MonsterTrajectoryPredictor;
+import me.monstermazeai.monster.MonsterState;
 import java.util.*;
 
 public final class BeamSearchPlanner {
@@ -13,10 +15,12 @@ public final class BeamSearchPlanner {
     private final Heuristic heuristic;
     private final int horizon;
     private final int beamWidth;
+    private final MonsterTrajectoryPredictor monsterPredictor;
 
     public BeamSearchPlanner(Simulator simulator, Heuristic heuristic, int horizon, int beamWidth) {
         if(horizon<1||beamWidth<1) throw new IllegalArgumentException();
         this.simulator=simulator;this.heuristic=heuristic;this.horizon=horizon;this.beamWidth=beamWidth;
+        this.monsterPredictor=new MonsterTrajectoryPredictor(simulator);
     }
 
     public Plan plan(GameState source,double targetX,double targetZ,boolean allowJump) {
@@ -44,6 +48,12 @@ public final class BeamSearchPlanner {
                     GameState next=simulator.simulate(node.state,new Action[]{action});
                     ArrayList<Action> seq=new ArrayList<>(node.actions);seq.add(action);
                     Score score=trajectoryScore(heuristic.evaluate(next,targetX,targetZ),depth+1,next,source);
+                    if (hasNearbyMonster(next, 10.0)) {
+                        MonsterTrajectoryPredictor.Prediction risk =
+                                monsterPredictor.predict(next, action, 6,
+                                        simulator.monsterSeed() ^ next.tick);
+                        score = addRiskCost(score, risk.riskCost());
+                    }
                     Node candidate=new Node(next,seq,score);
                     candidates.add(candidate);
                     if(next.padReached || score.compareTo(best)<0){
@@ -142,6 +152,27 @@ public final class BeamSearchPlanner {
         // sufficiently large time saving can therefore justify taking a hit.
         value+=damage*2.5D;
         return new Score(value,h.alive(),h.health(),h.padDistance(),h.monsterExposure());
+    }
+
+    private Score addRiskCost(Score score, double riskCost) {
+        return new Score(
+                score.value() + riskCost * 3.0D,
+                score.alive(),
+                score.health(),
+                score.padDistance(),
+                score.monsterExposure() + riskCost);
+    }
+
+    private boolean hasNearbyMonster(GameState state, double radius) {
+        double radiusSq = radius * radius;
+        for (MonsterState monster : state.monsters) {
+            if (monster.removed || monster.launched(state.tick)
+                    || monster.frozen(state.tick)) continue;
+            double dx = state.player.x - monster.x;
+            double dz = state.player.z - monster.z;
+            if (dx * dx + dz * dz <= radiusSq) return true;
+        }
+        return false;
     }
 
     private record Node(GameState state,List<Action> actions,Score score){}

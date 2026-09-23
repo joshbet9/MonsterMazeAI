@@ -9,6 +9,7 @@ import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.physics.LegacyMazePhysics;
+import me.monstermazeai.player.Action;
 import me.monstermazeai.sim.Simulator;
 import org.junit.jupiter.api.Test;
 

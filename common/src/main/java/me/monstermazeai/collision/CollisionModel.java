@@ -1,37 +1,44 @@
 package me.monstermazeai.collision;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.PadModel;
 import me.monstermazeai.monster.MonsterState;
-import me.monstermazeai.player.PlayerState;
 
 public final class CollisionModel {
     private static final double HIT_DISTANCE_SQ = 1.0;
     private static final double HIT_DAMAGE = 4.0;
-    private static final long HIT_COOLDOWN = 20;
+    private static final long HIT_COOLDOWN_TICKS = 20;
 
-    public boolean tryMonsterHit(GameState state, MonsterState monster) {
-        PlayerState p = state.player;
-        if (!state.alive || !pHitEligible(p, state.tick)) return false;
-        if (horizontalDistanceSq(p, monster) >= HIT_DISTANCE_SQ) return false;\n        if (distanceSq(p, monster) >= HIT_DISTANCE_SQ) return false;
-        double dx = p.x - monster.x, dz = p.z - monster.z;
-        double d = Math.sqrt(dx*dx + dz*dz);
-        if (d <= 1e-9) return false;
-        p.health -= HIT_DAMAGE;
-        p.vx = dx / d;
-        p.vz = dz / d;
-        p.vy = Math.min(p.vy + 0.75, 1.2);
-        if (p.grounded) p.vy += 0.2;
-        p.recentMobHitUntilTick = state.tick + HIT_COOLDOWN;
-        if (p.health <= 0) state.alive = false;
-        return true;
-    }
+    public void tryMonsterHit(GameState state, MonsterState monster) {
+        if (!state.alive || monster.launched() || PadModel.isOn(
+                state.player, state.activePadRow, 0, state.activePadColumn)) return;
 
-    private boolean pHitEligible(PlayerState p, long tick) {
-        return tick >= p.recentMobHitUntilTick;
-    }
+        double dx = state.player.x - monster.x;
+        double dz = state.player.z - monster.z;
+        if (dx*dx + dz*dz >= HIT_DISTANCE_SQ) return;
 
-    private double distanceSq(PlayerState p, MonsterState m) {\n        double dx=p.x-m.x, dy=p.y-m.y, dz=p.z-m.z;\n        return dx*dx+dy*dy+dz*dz;\n    }\n\n    private double horizontalDistanceSq(PlayerState p, MonsterState m) {
-        double dx=p.x-m.x, dz=p.z-m.z;
-        return dx*dx+dz*dz;
+        double dy = state.player.y - monster.y;
+        if (dx*dx + dy*dy + dz*dz >= HIT_DISTANCE_SQ) return;
+
+        long now=state.tick;
+        if (state.player.recentMobHitUntilTick > now) return;
+
+        state.player.recentMobHitUntilTick = now + HIT_COOLDOWN_TICKS;
+        state.player.health -= HIT_DAMAGE;
+
+        double len=Math.hypot(dx,dz);
+        if(len < 1e-9) {
+            double yaw=Math.toRadians(state.player.yaw);
+            dx=-Math.sin(yaw);
+            dz=Math.cos(yaw);
+            len=1.0;
+        }
+        dx/=len; dz/=len;
+        state.player.vx=dx;
+        state.player.vz=dz;
+        state.player.vy=Math.min(1.2,0.75 + (state.player.grounded ? 0.2 : 0.0));
+        state.player.grounded=false;
+
+        if(state.player.health <= 0) state.alive=false;
     }
 }

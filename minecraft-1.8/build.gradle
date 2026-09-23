@@ -28,6 +28,13 @@ repositories {
     mavenCentral()
 }
 
+dependencies {
+    // ForgeGradle's 1.8.9 workspace supplies Minecraft itself, but the
+    // Forge userdev artifact is required explicitly for FML/Forge APIs
+    // (cpw.mods.fml.* and net.minecraftforge.*) on the Java compile classpath.
+    compile "net.minecraftforge:forge:1.8.9-11.15.1.2318-1.8.9:userdev"
+}
+
 processResources {
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version

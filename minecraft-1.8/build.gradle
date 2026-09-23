@@ -32,7 +32,7 @@ dependencies {
     // ForgeGradle 2.1 generates the patched Forge binary locally.  The
     // generated forgeBin is the authoritative Java-8 compile classpath for
     // FML/Forge APIs; the remote userdev artifact is only workspace input.
-    compile files("$buildDir/dirtyArtifacts/forgeBin-${minecraft.version}.jar")
+    compile fileTree(dir: "$buildDir/dirtyArtifacts", include: "*.jar")
 }
 
 compileJava.dependsOn "mergeJars"

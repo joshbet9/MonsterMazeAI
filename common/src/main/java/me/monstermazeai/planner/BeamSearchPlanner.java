@@ -30,6 +30,7 @@ public final class BeamSearchPlanner {
         // the full 15-second search space is aggressively pruned.
         if (isEmergency(source)) {
             Node emergencySeed = buildEmergencySeed(source, targetX, targetZ, allowJump, searchHorizon);
+            System.out.println("EMERGENCY_SEED=" + (emergencySeed != null ? (emergencySeed.state.padReached + " x=" + emergencySeed.state.player.x + " z=" + emergencySeed.state.player.z + " n=" + emergencySeed.actions.size()) : "null"));
             if (emergencySeed != null && emergencySeed.state.padReached) {
                 // A physically simulated, deadline-feasible trajectory is already
                 // a valid emergency solution. Preserve it as the incumbent while

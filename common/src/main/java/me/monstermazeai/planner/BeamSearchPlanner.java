@@ -31,6 +31,9 @@ public final class BeamSearchPlanner {
         if (isEmergency(source)) {
             Node emergencySeed = buildEmergencySeed(source, targetX, targetZ, allowJump, searchHorizon);
             if (emergencySeed != null && emergencySeed.state.padReached) {
+                // A physically simulated, deadline-feasible trajectory is already
+                // a valid emergency solution. Preserve it as the incumbent while
+                // normal mode continues to use beam search below.
                 bestNode = emergencySeed;
                 best = emergencySeed.score;
             }

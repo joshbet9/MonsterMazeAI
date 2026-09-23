@@ -25,12 +25,29 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-      - name: Prepare ForgeGradle CI workspace and build
+      - name: Set up Gradle 2.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '2.7'
+
+      - name: Prepare ForgeGradle CI workspace
+        working-directory: minecraft-1.8
+        run: gradle --no-daemon setupCIWorkspace
+
+      - name: Build Minecraft 1.8 mod
+        working-directory: minecraft-1.8
+        run: gradle --no-daemon build
+
+      - name: Verify mod artifact
         working-directory: minecraft-1.8
         shell: bash
         run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon setupCIWorkspace build
+          set -euo pipefail
+          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
+          test -n "$jar_file"
+          echo "Built: $jar_file"
+          jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/MonsterMaze18Mod.class'
+          jar tf "$jar_file" | grep -F 'mcmod.info'
 
       - name: Verify mod artifact
         working-directory: minecraft-1.8

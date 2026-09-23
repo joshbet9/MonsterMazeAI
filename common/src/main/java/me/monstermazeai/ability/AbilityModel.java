@@ -127,6 +127,23 @@ public final class AbilityModel {
         return true;
     }
 
+    /** Apply the kit's pad reward. The game layer supplies whether this player was first. */
+    public void onReachedPad(GameState game, boolean first) {
+        if (game.kit == Kit.JUMPER && qolEnabled(game)) {
+            // Enhanced/QOL Jumper refills to the full three charges on a pad.
+            game.ability.charges = 3;
+            game.player.jumpCharges = 3;
+        }
+        if (game.kit == Kit.BODY_BUILDER && first) {
+            game.player.maxHealth = Math.min(30.0, game.player.maxHealth + 2.0);
+            game.player.health = Math.min(game.player.maxHealth, game.player.health + 4.0);
+        } else if (first) {
+            game.player.health = Math.min(game.player.maxHealth, game.player.health + 4.0);
+        } else {
+            game.player.health = Math.min(game.player.maxHealth, game.player.health + 2.0);
+        }
+    }
+
     public boolean isBodyRushActive(GameState game) {
         return game.kit == Kit.BODY_BUILDER
                 && qolEnabled(game)

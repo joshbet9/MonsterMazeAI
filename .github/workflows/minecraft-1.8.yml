@@ -34,6 +34,14 @@ jobs:
         working-directory: minecraft-1.8
         run: gradle --no-daemon setupDevWorkspace
 
+      - name: Inspect ForgeGradle compile inputs
+        working-directory: minecraft-1.8
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find "$HOME/.gradle/caches/minecraft/net/minecraftforge/forge" -type f -name '*forgeBin*.jar' -print | sort
+          gradle --no-daemon dependencies --configuration compile
+
       - name: Build Minecraft 1.8 mod
         working-directory: minecraft-1.8
         run: gradle --no-daemon build

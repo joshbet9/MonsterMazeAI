@@ -39,6 +39,7 @@ class ObservationWorldModelTest {
         assertEquals(49.4, state.monsters.get(0).z, 1e-9);
         assertEquals(50, state.monsters.get(0).waypointRow);
         assertEquals(50, state.monsters.get(0).waypointColumn);
+        assertEquals(3, state.ability.charges);
         assertEquals(50, state.activePadRow);
         assertEquals(50, state.activePadColumn);
         assertEquals(1, state.maze.raw(50, 50));

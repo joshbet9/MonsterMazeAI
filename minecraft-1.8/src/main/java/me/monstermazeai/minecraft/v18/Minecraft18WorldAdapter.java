@@ -1,6 +1,6 @@
 package me.monstermazeai.minecraft.v18;
 
-import me.monstermazeai.adapter.WorldObservation;
+import me.monstermazeai.adapter.LegacyWorldObservation;
 
 /**
  * Minecraft 1.8 client bridge.
@@ -20,7 +20,7 @@ public final class Minecraft18WorldAdapter {
         return observer;
     }
 
-    public WorldObservation observe() {
+    public LegacyWorldObservation observe() {
         return observer.observe().state.copy();
     }
 }

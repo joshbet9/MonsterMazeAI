@@ -41,6 +41,9 @@ public final class Minecraft18Observer {
 
         Observation observation = observe();
         System.out.println("[MonsterMazeAI/1.8] " + observation.toLogLine());
+        if (observation.mazeDetected && ticksSinceLastMazeRefresh == 0) {
+            System.out.println("[MonsterMazeAI/1.8] " + observation.toMazeLogLine());
+        }
     }
 
     public Observation observe() {
@@ -464,6 +467,23 @@ public final class Minecraft18Observer {
                     pad == null ? "none" : formatPad(pad),
                     monsters, escape(scoreboard.title), scoreboardLines,
                     countPathCells(state.maze));
+        }
+
+        public String toMazeLogLine() {
+            StringBuilder cells = new StringBuilder(MAZE_SIZE * (MAZE_SIZE + 1));
+            for (int row = 0; row < state.maze.length; row++) {
+                if (row > 0) {
+                    cells.append("/");
+                }
+                for (int col = 0; col < state.maze[row].length; col++) {
+                    cells.append(state.maze[row][col] == 0 ? '0' : '1');
+                }
+            }
+            return String.format(Locale.ROOT,
+                    "MAZE worldTick=%d center=%s size=%dx%d cells=%s",
+                    state.worldTick,
+                    center == null ? "none" : formatPoint(center),
+                    MAZE_SIZE, MAZE_SIZE, cells);
         }
 
         private static String formatPoint(BlockPos point) {

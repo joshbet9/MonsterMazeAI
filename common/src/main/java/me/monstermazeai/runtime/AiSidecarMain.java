@@ -34,7 +34,7 @@ public final class AiSidecarMain {
     public static void main(String[] args) throws Exception {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
-        RobustLiveController controller = null;
+        AutonomousMonsterMazeAgent agent = null;
         TelemetryRecorder telemetry = null;
         ReplayRecorder replay = null;
         String telemetryPath = System.getProperty("monstermazeai.telemetry");
@@ -60,7 +60,7 @@ public final class AiSidecarMain {
                 telemetryState = state;
                 if (state.inMonsterMaze && state.alive && !state.completed && state.maze != null
                         && state.activePadRow >= 0 && state.activePadColumn >= 0) {
-                    if (controller == null) {
+                    if (agent == null) {
                         MazeModel maze = state.maze;
                         Simulator simulator = new Simulator(
                                 new LegacyMazePhysics(),
@@ -70,16 +70,16 @@ public final class AiSidecarMain {
                         LiveObjectiveController objective = new LiveObjectiveController(
                                 new MazeAwareRecedingHorizonController(
                                         new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
-                        controller = new RobustLiveController(objective);
+                        agent = new AutonomousMonsterMazeAgent(new RobustLiveController(objective));
                     }
-                    Action action = controller.nextAction(state, true);
+                    Action action = agent.decide(state, true);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
-                } else if (controller != null) {
-                    controller.reset();
+                } else if (agent != null) {
+                    agent.reset();
                 }
             } catch (RuntimeException failure) {
-                if (controller != null) controller.reset();
+                if (agent != null) agent.reset();
                 System.err.println("[MonsterMazeAI] sidecar decision failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
             }

@@ -24,7 +24,6 @@ compileJava {
     }
 }
 
-
 minecraft {
     version = "1.8.9-11.15.1.2318-1.8.9"
     runDir = "run"
@@ -37,7 +36,7 @@ repositories {
 }
 
 dependencies {
-    compile files("../common/target/common-0.1.0-SNAPSHOT.jar")
+    compile files("../common-api/target/common-api-0.1.0-SNAPSHOT.jar")
     testCompile "junit:junit:4.13.2"
 }
 

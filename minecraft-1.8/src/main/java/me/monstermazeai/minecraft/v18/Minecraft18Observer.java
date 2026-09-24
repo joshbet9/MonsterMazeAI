@@ -1,10 +1,7 @@
 package me.monstermazeai.minecraft.v18;
 
-import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
-import me.monstermazeai.maze.MazeModel;
-import me.monstermazeai.monster.MonsterState;
-import me.monstermazeai.player.PlayerState;
+import me.monstermazeai.adapter.LegacyWorldObservation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
@@ -86,30 +83,15 @@ public final class Minecraft18Observer {
         }
         previouslyInMonsterMaze = inMonsterMaze;
 
-        GameState state = new GameState();
-        state.tick = world.getTotalWorldTime();
-        state.stage = Math.max(1, scoreboard.stage);
-        state.phaseTicksRemaining = Math.max(0, scoreboard.safePadSeconds * 20);
-        state.liveSeconds = gameStartWorldTick < 0
+        long worldTick = world.getTotalWorldTime();
+        int stage = Math.max(1, scoreboard.stage);
+        int safePadSeconds = Math.max(0, scoreboard.safePadSeconds);
+        int liveSeconds = gameStartWorldTick < 0
                 ? 0
-                : (int) Math.max(0, (world.getTotalWorldTime() - gameStartWorldTick) / 20L);
-        state.alive = player.getHealth() > 0.0F;
-        state.completed = scoreboard.completed;
-        state.inMonsterMaze = inMonsterMaze && !state.completed;
-        state.maze = mazeDetected ? new MazeModel(raw) : null;
-
-        PlayerState ps = state.player;
-        ps.x = player.posX;
-        ps.y = player.posY;
-        ps.z = player.posZ;
-        ps.vx = player.motionX;
-        ps.vy = player.motionY;
-        ps.vz = player.motionZ;
-        ps.yaw = player.rotationYaw;
-        ps.pitch = player.rotationPitch;
-        ps.grounded = player.onGround;
-        ps.health = player.getHealth();
-        ps.maxHealth = player.getMaxHealth();
+                : (int) Math.max(0, (worldTick - gameStartWorldTick) / 20L);
+        boolean alive = player.getHealth() > 0.0F;
+        boolean completed = scoreboard.completed;
+        boolean matchedMaze = inMonsterMaze && !completed;
 
         List<String> displayNames = new ArrayList<String>();
         List<Integer> stackSizes = new ArrayList<Integer>();
@@ -122,45 +104,50 @@ public final class Minecraft18Observer {
             stackSizes.add(stack.stackSize);
         }
 
-        state.kit = Minecraft18ObservationRules.detectKit(displayNames);
-        ps.jumpCharges = Minecraft18ObservationRules.detectJumpCharges(
-                displayNames, state.kit, stackSizes);
-        state.ability.charges = detectAbilityCharges(displayNames, stackSizes, state.kit);
+        Kit kit = Minecraft18ObservationRules.detectKit(displayNames);
+        int jumpCharges = Minecraft18ObservationRules.detectJumpCharges(
+                displayNames, kit, stackSizes);
+        int abilityCharges = detectAbilityCharges(displayNames, stackSizes, kit);
+        boolean padReached = pad != null && pad.row >= 0 && isOnPad(player, pad, center);
 
-        if (pad != null && pad.row >= 0) {
-            state.activePadRow = pad.row;
-            state.activePadColumn = pad.column;
-            state.padReached = isOnPad(player, pad, center);
-            if (state.maze != null) {
-                disablePadArea(state.maze, pad.row, pad.column);
-            }
+        if (pad != null && pad.row >= 0 && mazeDetected) {
+            disablePadArea(raw, pad.row, pad.column);
         }
 
+        List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         int id = 0;
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof EntitySnowman)) {
                 continue;
             }
-
-            MonsterState monster = new MonsterState(id++, entity.posX, entity.posY, entity.posZ);
-            monster.vx = entity.motionX;
-            monster.vy = entity.motionY;
-            monster.vz = entity.motionZ;
-            monster.removed = entity.isDead;
-            state.monsters.add(monster);
-
+            monsters.add(new LegacyWorldObservation.Monster(
+                    id++, entity.posX, entity.posY, entity.posZ,
+                    entity.motionX, entity.motionY, entity.motionZ, entity.isDead));
             if (id >= 256) {
                 break;
             }
         }
 
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                worldTick, matchedMaze, mazeDetected, alive, completed,
+                stage, safePadSeconds, liveSeconds,
+                new LegacyWorldObservation.Player(
+                        player.posX, player.posY, player.posZ,
+                        player.motionX, player.motionY, player.motionZ,
+                        player.rotationYaw, player.rotationPitch, player.onGround,
+                        player.getHealth(), player.getMaxHealth()),
+                kit, jumpCharges, abilityCharges,
+                center == null ? null : new LegacyWorldObservation.BlockPoint(center.getX(), center.getY(), center.getZ()),
+                pad == null ? null : new LegacyWorldObservation.Pad(pad.row, pad.column, pad.distanceSq, padReached),
+                raw, monsters, scoreboard.title, scoreboard.lines);
+
         return new Observation(
-                inMonsterMaze && !state.completed,
+                matchedMaze,
                 mazeDetected,
                 center,
                 pad,
                 scoreboard,
-                state
+                observation
         );
     }
 
@@ -362,11 +349,11 @@ public final class Minecraft18Observer {
         return null;
     }
 
-    private void disablePadArea(MazeModel maze, int row, int col) {
+    private void disablePadArea(int[][] maze, int row, int col) {
         for (int r = row - 2; r <= row + 2; r++) {
             for (int c = col - 2; c <= col + 2; c++) {
                 if (r >= 0 && r < MAZE_SIZE && c >= 0 && c < MAZE_SIZE) {
-                    maze.setDisabled(r, c, true);
+                    maze[r][c] = 0;
                 }
             }
         }
@@ -416,12 +403,12 @@ public final class Minecraft18Observer {
         public final BlockPos center;
         public final PadObservation pad;
         public final Minecraft18ObservationRules.ScoreboardData scoreboard;
-        public final GameState state;
+        public final LegacyWorldObservation state;
 
         private Observation(boolean inMonsterMaze, boolean mazeDetected, BlockPos center,
                             PadObservation pad,
                             Minecraft18ObservationRules.ScoreboardData scoreboard,
-                            GameState state) {
+                            LegacyWorldObservation state) {
             this.inMonsterMaze = inMonsterMaze;
             this.mazeDetected = mazeDetected;
             this.center = center;
@@ -436,7 +423,7 @@ public final class Minecraft18Observer {
                             + "center=%s pad=%s stage=%d timer=%ds maze=%s monsters=%d scoreboard=%s",
                     state.player.x, state.player.y, state.player.z,
                     state.player.vx, state.player.vy, state.player.vz, state.player.health,
-                    state.kit, state.player.jumpCharges,
+                    state.kit, state.jumpCharges,
                     center == null ? "none" : center.toString(),
                     pad == null ? "none" : pad.toString(),
                     scoreboard.stage, scoreboard.safePadSeconds,

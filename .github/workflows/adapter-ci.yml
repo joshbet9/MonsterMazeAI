@@ -24,8 +24,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build common dependency
-        run: mvn -B -ntp -pl common -am package -DskipTests
+      - name: Build Java 8-compatible shared API
+        run: mvn -B -ntp -pl common-api -am package -DskipTests
 
       - name: Set up Java 8
         uses: actions/setup-java@v4

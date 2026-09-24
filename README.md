@@ -88,3 +88,5 @@ The immediate objective is deliberately different: first build the strongest pos
 
 This separation is intentional: **baseline intelligence first; competitor personalities/difficulties second; integration into Monster Maze third.** The AI should remain capable of playing at its full measured potential even when later configurations impose lower difficulty or different attributes.
 
+A further long-term feature is **player modelling**. The system should be able to measure a real player's abilities and playstyle from their gameplay, producing a player profile that an NPC can use to emulate that player. This is intended to capture measurable characteristics such as movement and reaction tendencies, route preferences, risk tolerance, monster interactions, ability usage and other demonstrated behaviours. The NPC should be able to reproduce the player's characteristic decision-making while remaining grounded in the same game-state and physics models as the baseline AI.
+

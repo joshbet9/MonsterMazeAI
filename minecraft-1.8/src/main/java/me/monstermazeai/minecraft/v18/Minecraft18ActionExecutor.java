@@ -17,6 +17,7 @@ import net.minecraft.client.settings.KeyBinding;
 public final class Minecraft18ActionExecutor implements ActionSink {
     private final Minecraft minecraft;
     private boolean abilityPending;
+    private boolean abilityPressed;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -41,6 +42,10 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         }
 
         abilityPending = action.useAbility;
+        // Abilities are represented by the held/selected kit item in Monster Maze.
+        // Pulse the normal Use Item binding for one client tick when the planner requests it.
+        set(minecraft.gameSettings.keyBindUseItem, action.useAbility && !abilityPressed);
+        abilityPressed = action.useAbility;
     }
 
     /**
@@ -60,6 +65,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         set(minecraft.gameSettings.keyBindJump, false);
         set(minecraft.gameSettings.keyBindSprint, false);
         abilityPending = false;
+        abilityPressed = false;
     }
 
     private static void set(KeyBinding binding, boolean pressed) {

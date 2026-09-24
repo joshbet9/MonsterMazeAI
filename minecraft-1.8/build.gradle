@@ -38,6 +38,7 @@ repositories {
 
 dependencies {
     compile files("../common/target/common-0.1.0-SNAPSHOT.jar")
+    testCompile "junit:junit:4.13.2"
 }
 
 processResources {

@@ -87,3 +87,50 @@ The next milestone is real closed-loop execution validation in Minecraft 1.8.9:
 
 The simulator remains the authoritative development environment until those
 adapters can populate the same GameState accurately.
+
+
+## Milestone 5 — Real 1.8 closed-loop execution bridge
+
+The Java-8 Minecraft client and Java-17 AI core are now connected through an
+explicit process boundary rather than sharing incompatible runtime classes.
+
+Implemented:
+
+- LegacyProtocol provides a version-neutral binary observation/action stream.
+- AiSidecarMain runs the existing ObservationWorldModel and
+  LiveTickController in the Java-17 AI process.
+- The Minecraft 1.8 client sends the complete live observation each tick and
+  receives exactly one normalized action.
+- Minecraft18ActionExecutor applies that action through vanilla key bindings
+  and bounded camera yaw.
+- The bridge is fail-closed: missing runtime configuration, process startup
+  failure, protocol failure, lobby state, missing pad, death, completion, or
+  invalid state produces IDLE.
+- The AI runtime is packaged as a shaded executable common runtime JAR
+  containing the common API.
+- The sidecar is opt-in through MONSTERMAZE_AI_RUNTIME_JAR; Java 17 can be
+  selected with MONSTERMAZE_AI_JAVA or JAVA_HOME_17_X64.
+- Protocol and adapter regression tests cover observation/action round trips
+  and the disabled-by-default runtime mode.
+
+The resulting live architecture is:
+
+    Minecraft 1.8.9 tick
+        -> Minecraft18Observer
+        -> LegacyProtocol
+        -> Java-17 AiSidecarMain
+        -> ObservationWorldModel
+        -> LiveTickController
+        -> LegacyAction
+        -> LegacyProtocol
+        -> Minecraft18ActionExecutor
+        -> next Minecraft tick
+
+This preserves the existing Java-8/Java-17 isolation while using the same
+world model and planner that were validated in the simulator.
+
+### Live validation boundary
+
+CI validates both sides and the protocol, but an actual Monster Maze run still
+requires launching the 1.8 client with the generated runtime JAR configured.
+The repository does not claim an in-game movement result from CI alone.

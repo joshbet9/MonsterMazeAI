@@ -1,7 +1,7 @@
 package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.kit.Kit;
-import me.monstermazeai.adapter.WorldObservation;
+import me.monstermazeai.adapter.LegacyWorldObservation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
@@ -114,13 +114,13 @@ public final class Minecraft18Observer {
             disablePadArea(raw, pad.row, pad.column);
         }
 
-        List<WorldObservation.Monster> monsters = new ArrayList<WorldObservation.Monster>();
+        List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         int id = 0;
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof EntitySnowman)) {
                 continue;
             }
-            monsters.add(new WorldObservation.Monster(
+            monsters.add(new LegacyWorldObservation.Monster(
                     id++, entity.posX, entity.posY, entity.posZ,
                     entity.motionX, entity.motionY, entity.motionZ, entity.isDead));
             if (id >= 256) {
@@ -128,7 +128,7 @@ public final class Minecraft18Observer {
             }
         }
 
-        WorldObservation observation = new WorldObservation(
+        WorldObservation observation = new LegacyWorldObservation(
                 worldTick, matchedMaze, mazeDetected, alive, completed,
                 stage, safePadSeconds, liveSeconds,
                 new WorldObservation.Player(
@@ -403,12 +403,12 @@ public final class Minecraft18Observer {
         public final BlockPos center;
         public final PadObservation pad;
         public final Minecraft18ObservationRules.ScoreboardData scoreboard;
-        public final WorldObservation state;
+        public final LegacyWorldObservation state;
 
         private Observation(boolean inMonsterMaze, boolean mazeDetected, BlockPos center,
                             PadObservation pad,
                             Minecraft18ObservationRules.ScoreboardData scoreboard,
-                            WorldObservation state) {
+                            LegacyWorldObservation state) {
             this.inMonsterMaze = inMonsterMaze;
             this.mazeDetected = mazeDetected;
             this.center = center;

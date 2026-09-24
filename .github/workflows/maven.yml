@@ -64,3 +64,5 @@ jobs:
       - name: Build Minecraft 1.8.9 adapter
         working-directory: minecraft-1.8
         run: gradle --no-daemon build
+
+# CI verification branch

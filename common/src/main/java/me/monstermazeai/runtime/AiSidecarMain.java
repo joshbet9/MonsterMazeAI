@@ -35,6 +35,7 @@ public final class AiSidecarMain {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
         AutonomousMonsterMazeAgent agent = null;
+        LiveObjectiveController objective = null;
         TelemetryRecorder telemetry = null;
         ReplayRecorder replay = null;
         String telemetryPath = System.getProperty("monstermazeai.telemetry");
@@ -83,7 +84,7 @@ public final class AiSidecarMain {
                                 new MonsterSimulator(maze,
                                         new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
                                 new CollisionModel());
-                        LiveObjectiveController objective = new LiveObjectiveController(
+                        objective = new LiveObjectiveController(
                                 new MazeAwareRecedingHorizonController(
                                         new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
                         agent = new AutonomousMonsterMazeAgent(new RobustLiveController(objective));
@@ -100,7 +101,8 @@ public final class AiSidecarMain {
                                 + " reached=" + state.padReached
                                 + " f=" + result.forward + " s=" + result.strafe
                                 + " jump=" + result.jump + " sprint=" + result.sprint
-                                + " yawDelta=" + result.yawDelta + " ability=" + result.useAbility);
+                                + " yawDelta=" + result.yawDelta + " ability=" + result.useAbility
+                                + " reason=" + (objective == null ? "NONE" : objective.lastDecisionReason()));
                     }
                 } else if (agent != null) {
                     agent.reset();

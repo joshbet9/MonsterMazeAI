@@ -69,11 +69,17 @@ Implemented deterministic validation for:
 The benchmark suite uses fixed seeds where randomness is involved so planner
 changes can be compared against reproducible scenarios.
 
-## Remaining work after Milestone 3
+## Milestone 4 — Minecraft 1.8 execution boundary
+
+The Java-8-compatible `LegacyAction` contract and `ActionSink` execution boundary are now implemented. `Minecraft18ActionExecutor` maps normalized forward/back/strafe/jump/sprint controls to vanilla 1.8.9 key bindings and applies bounded camera yaw. Ability intent is surfaced explicitly but is not auto-bound to an unvalidated key or mouse action.
+
+Both Maven and Minecraft 1.8.9 adapter CI are green for this implementation.
+
+## Remaining work after Milestone 4
 
 Milestone 3 does not yet connect to a Minecraft server.
 
-The next milestone is the live adapter layer:
+The next milestone is real closed-loop execution validation in Minecraft 1.8.9:
 
     Minecraft 1.8 adapter   ─┐
                              ├──> WorldModel -> same planner/controller

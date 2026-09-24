@@ -40,8 +40,8 @@ public final class LiveTickController {
             return Action.IDLE;
         }
 
-        if (state.activePadRow >= state.maze.size()
-                || state.activePadColumn >= state.maze.size()) {
+        if (state.activePadRow >= me.monstermazeai.maze.MazeModel.SIZE
+                || state.activePadColumn >= me.monstermazeai.maze.MazeModel.SIZE) {
             return Action.IDLE;
         }
 

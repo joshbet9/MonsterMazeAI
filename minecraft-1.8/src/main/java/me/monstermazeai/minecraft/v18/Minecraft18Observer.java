@@ -26,7 +26,7 @@ public final class Minecraft18Observer {
     private static final int SCAN_RADIUS = 64;
     private static final int PAD_SCAN_RADIUS = 70;
 
-    private int ticksSinceLastLog;
+    private int ticksSinceLastMazeRefresh;
     private long gameStartWorldTick = -1L;
     private BlockPos cachedCenter;
     private boolean previouslyInMonsterMaze;
@@ -148,7 +148,7 @@ public final class Minecraft18Observer {
     }
 
     private void reset() {
-        ticksSinceLastLog = 0;
+        ticksSinceLastMazeRefresh = 0;
         gameStartWorldTick = -1L;
         cachedCenter = null;
         previouslyInMonsterMaze = false;
@@ -414,7 +414,6 @@ public final class Minecraft18Observer {
         }
 
         public String toLogLine() {
-            return String.format(Loca        public String toLogLine() {
             StringBuilder monsters = new StringBuilder("[");
             for (int i = 0; i < state.monsters.size(); i++) {
                 if (i > 0) {
@@ -485,7 +484,10 @@ public final class Minecraft18Observer {
             return value == null ? "" : value.replace("\\", "\\\\").replace(";", "\\;")
                     .replace("\"", "\\\"");
         }
-ublic final int row;
+    }
+
+    public static final class PadObservation {
+        public final int row;
         public final int column;
         public final double distanceSq;
 

@@ -32,6 +32,7 @@ public final class Minecraft18Observer {
     private BlockPos cachedPadCenter;
     private int[][] cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
     private boolean cachedMazeDetected;
+    private int cachedMazePattern = -1;
     private long gameStartWorldTick = -1L;
     private BlockPos cachedCenter;
     private boolean previouslyInMonsterMaze;
@@ -139,15 +140,14 @@ public final class Minecraft18Observer {
         }
 
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
-        int id = 0;
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof EntitySnowman)) {
                 continue;
             }
             monsters.add(new LegacyWorldObservation.Monster(
-                    id++, entity.posX, entity.posY, entity.posZ,
+                    entity.getEntityId(), entity.posX, entity.posY, entity.posZ,
                     entity.motionX, entity.motionY, entity.motionZ, entity.isDead));
-            if (id >= 256) {
+            if (monsters.size() >= 256) {
                 break;
             }
         }
@@ -184,6 +184,7 @@ public final class Minecraft18Observer {
         ticksSinceLastPadRefresh = 0;
         cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
         cachedMazeDetected = false;
+        cachedMazePattern = -1;
         previouslyInMonsterMaze = false;
     }
 
@@ -214,70 +215,51 @@ public final class Minecraft18Observer {
         return dx * dx + dz * dz <= 2.25;
     }
 
+    /**
+     * Reconstruct the maze from the authoritative 1.8 Monster Maze layouts.
+     *
+     * The server source places every non-zero layout cell at centerY - 1,
+     * while zero cells remain air.  This deliberately ignores the visual
+     * block palette and active-pad replacement, because both are presentation
+     * details and are not part of the logical maze topology.
+     */
     private boolean readMaze(World world, BlockPos center, int[][] raw) {
-        BlockSignature top = findDominantTopBlock(world, center);
-        if (top == null) {
-            return false;
+        for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
+            int[][] expected = MazeLayouts.ALL_MAZES[pattern];
+            if (!matchesMazeOccupancy(world, center, expected)) {
+                continue;
+            }
+
+            for (int row = 0; row < MAZE_SIZE; row++) {
+                System.arraycopy(expected[row], 0, raw[row], 0, MAZE_SIZE);
+            }
+            cachedMazePattern = pattern;
+            return true;
         }
 
-        int pathCount = 0;
+        cachedMazePattern = -1;
+        return false;
+    }
+
+    private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {
+        int mismatches = 0;
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 int x = center.getX() - HALF_MAZE + row;
                 int z = center.getZ() - HALF_MAZE + col;
-                if (matches(world, new BlockPos(x, center.getY() - 1, z), top)) {
-                    raw[row][col] = 1;
-                    pathCount++;
+                boolean expectedOccupied = expected[row][col] != 0;
+                boolean actualOccupied = world.getBlockState(
+                        new BlockPos(x, center.getY() - 1, z))
+                        .getBlock() != net.minecraft.init.Blocks.air;
+                if (expectedOccupied != actualOccupied) {
+                    mismatches++;
+                    if (mismatches > 0) {
+                        return false;
+                    }
                 }
             }
         }
-        return pathCount >= 100;
-    }
-
-    private BlockSignature findDominantTopBlock(World world, BlockPos center) {
-        java.util.Map<String, Integer> counts = new java.util.HashMap<String, Integer>();
-
-        for (int row = 0; row < MAZE_SIZE; row++) {
-            for (int col = 0; col < MAZE_SIZE; col++) {
-                BlockPos pos = new BlockPos(
-                        center.getX() - HALF_MAZE + row,
-                        center.getY() - 1,
-                        center.getZ() - HALF_MAZE + col
-                );
-                net.minecraft.block.state.IBlockState blockState = world.getBlockState(pos);
-                net.minecraft.block.Block block = blockState.getBlock();
-                if (block == net.minecraft.init.Blocks.air
-                        || block == net.minecraft.init.Blocks.stained_hardened_clay
-                        || block == net.minecraft.init.Blocks.beacon) {
-                    continue;
-                }
-
-                int meta = block.getMetaFromState(blockState);
-                String key = block.getRegistryName() + ":" + meta;
-                Integer count = counts.get(key);
-                counts.put(key, count == null ? 1 : count + 1);
-            }
-        }
-
-        String best = null;
-        int bestCount = 0;
-        for (java.util.Map.Entry<String, Integer> entry : counts.entrySet()) {
-            if (entry.getValue() > bestCount) {
-                best = entry.getKey();
-                bestCount = entry.getValue();
-            }
-        }
-
-        if (best == null) {
-            return null;
-        }
-
-        String[] parts = best.split(":");
-        net.minecraft.block.Block block = net.minecraft.block.Block.getBlockFromName(parts[0]);
-        if (block == null) {
-            return null;
-        }
-        return new BlockSignature(block, Integer.parseInt(parts[1]));
+        return true;
     }
 
     private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {

@@ -6,6 +6,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.monster.EntitySnowman;
+import net.minecraft.entity.monster.EntityEnderman;
+import net.minecraft.entity.monster.EntityPigZombie;
+import net.minecraft.entity.monster.EntitySquid;
+import net.minecraft.entity.monster.EntityZombie;
+import net.minecraft.entity.passive.EntityOcelot;
+import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.Score;
 import net.minecraft.scoreboard.ScoreObjective;
@@ -23,7 +29,7 @@ public final class Minecraft18Observer {
     private static final Minecraft MC = Minecraft.getMinecraft();
     private static final int MAZE_SIZE = 99;
     private static final int HALF_MAZE = 49;
-    private static final int SCAN_RADIUS = 64;
+    private static final int CENTER_SEARCH_RADIUS = 6;
     private static final int PAD_SCAN_RADIUS = 70;
 
     private int ticksSinceLastMazeRefresh;
@@ -58,6 +64,11 @@ public final class Minecraft18Observer {
         boolean mazeScoreboard = Minecraft18ObservationRules.looksLikeMonsterMaze(scoreboard);
 
         BlockPos center = findMazeCenter(world, player, mazeScoreboard);
+        if (center == null && !mazeScoreboard && cachedCenter != null
+                && Math.abs(player.posY - cachedCenter.getY()) > 20.0D) {
+            clearRoundState();
+            center = null;
+        }
         ticksSinceLastPadRefresh++;
         if (center == null) {
             cachedPad = findActivePadWithoutCenter(world, player);
@@ -94,7 +105,7 @@ public final class Minecraft18Observer {
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
         if (!inMonsterMaze) {
             for (Entity entity : world.loadedEntityList) {
-                if (entity instanceof EntitySnowman && !entity.isDead) {
+                if (isMonsterMazeMob(entity) && !entity.isDead) {
                     inMonsterMaze = true;
                     break;
                 }
@@ -141,7 +152,7 @@ public final class Minecraft18Observer {
 
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         for (Entity entity : world.loadedEntityList) {
-            if (!(entity instanceof EntitySnowman)) {
+            if (!isMonsterMazeMob(entity)) {
                 continue;
             }
             monsters.add(new LegacyWorldObservation.Monster(
@@ -176,16 +187,7 @@ public final class Minecraft18Observer {
     }
 
     private void reset() {
-        ticksSinceLastMazeRefresh = 0;
-        gameStartWorldTick = -1L;
-        cachedCenter = null;
-        cachedPad = null;
-        cachedPadCenter = null;
-        ticksSinceLastPadRefresh = 0;
-        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
-        cachedMazeDetected = false;
-        cachedMazePattern = -1;
-        previouslyInMonsterMaze = false;
+        clearRoundState();
     }
 
     private int detectAbilityCharges(List<String> names, List<Integer> sizes, Kit kit) {
@@ -224,21 +226,27 @@ public final class Minecraft18Observer {
      * details and are not part of the logical maze topology.
      */
     private boolean readMaze(World world, BlockPos center, int[][] raw) {
-        for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
-            int[][] expected = MazeLayouts.ALL_MAZES[pattern];
-            if (!matchesMazeOccupancy(world, center, expected)) {
-                continue;
-            }
-
-            for (int row = 0; row < MAZE_SIZE; row++) {
-                System.arraycopy(expected[row], 0, raw[row], 0, MAZE_SIZE);
-            }
-            cachedMazePattern = pattern;
-            return true;
+        int pattern = findMatchingPattern(world, center);
+        if (pattern < 0) {
+            cachedMazePattern = -1;
+            return false;
         }
 
-        cachedMazePattern = -1;
-        return false;
+        int[][] expected = MazeLayouts.ALL_MAZES[pattern];
+        for (int row = 0; row < MAZE_SIZE; row++) {
+            System.arraycopy(expected[row], 0, raw[row], 0, MAZE_SIZE);
+        }
+        cachedMazePattern = pattern;
+        return true;
+    }
+
+    private int findMatchingPattern(World world, BlockPos center) {
+        for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
+            if (matchesMazeOccupancy(world, center, MazeLayouts.ALL_MAZES[pattern])) {
+                return pattern;
+            }
+        }
+        return -1;
     }
 
     private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {
@@ -262,59 +270,113 @@ public final class Minecraft18Observer {
         return true;
     }
 
+    /**
+     * Locate the maze by matching the authoritative layouts, rather than by
+     * guessing from a particular map's visual material.
+     *
+     * The source generator always places the 99x99 logical layout at
+     * centerY - 1, and the player is teleported onto the central 7x7 safe
+     * area. Multiplayer spawn positions may be offset within that area, so
+     * player position is only used to bound candidate centres.
+     */
     private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
-        if (cachedCenter != null && isCenterPlausible(world, cachedCenter)) {
+        if (cachedCenter != null && cachedMazeDetected) {
             return cachedCenter;
         }
 
-        int y = (int) Math.floor(player.posY) - 1;
-        BlockPos best = null;
-        int bestScore = 0;
+        int px = player.getPosition().getX();
+        int pz = player.getPosition().getZ();
+        int py = (int) Math.floor(player.posY);
+        int[] candidateCenterYs = new int[] { py - 1, py, py - 2, py + 1 };
 
-        for (int x = player.getPosition().getX() - SCAN_RADIUS;
-             x <= player.getPosition().getX() + SCAN_RADIUS; x++) {
-            for (int z = player.getPosition().getZ() - SCAN_RADIUS;
-                 z <= player.getPosition().getZ() + SCAN_RADIUS; z++) {
-                if (world.getBlockState(new BlockPos(x, y, z)).getBlock()
-                        != net.minecraft.init.Blocks.stained_hardened_clay) {
-                    continue;
-                }
+        for (int centerY : candidateCenterYs) {
+            for (int x = px - CENTER_SEARCH_RADIUS; x <= px + CENTER_SEARCH_RADIUS; x++) {
+                for (int z = pz - CENTER_SEARCH_RADIUS; z <= pz + CENTER_SEARCH_RADIUS; z++) {
+                    BlockPos candidate = new BlockPos(x, centerY, z);
+                    if (!matchesCenterAnchor(world, candidate)) {
+                        continue;
+                    }
 
-                int score = 0;
-                for (int dx = -3; dx <= 3; dx++) {
-                    for (int dz = -3; dz <= 3; dz++) {
-                        if (world.getBlockState(new BlockPos(x + dx, y, z + dz)).getBlock()
-                                == net.minecraft.init.Blocks.stained_hardened_clay) {
-                            score++;
-                        }
+                    int pattern = findMatchingPattern(world, candidate);
+                    if (pattern >= 0) {
+                        cachedCenter = candidate;
+                        cachedMazePattern = pattern;
+                        return cachedCenter;
                     }
                 }
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = new BlockPos(x, y + 1, z);
-                }
             }
         }
 
-        if (bestScore >= (scoreboardDetected ? 25 : 40)) {
-            cachedCenter = best;
-        }
-        return cachedCenter;
+        return null;
     }
 
-    private boolean isCenterPlausible(World world, BlockPos center) {
-        int y = center.getY() - 1;
-        int score = 0;
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                if (world.getBlockState(new BlockPos(center.getX() + dx, y, center.getZ() + dz)).getBlock()
-                        == net.minecraft.init.Blocks.stained_hardened_clay) {
-                    score++;
+    /**
+     * Cheap pre-filter before the full 99x99 comparison. The authoritative
+     * layouts all contain a distinctive centre-safe region.
+     */
+    private boolean matchesCenterAnchor(World world, BlockPos center) {
+        for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
+            int[][] expected = MazeLayouts.ALL_MAZES[pattern];
+            boolean possible = true;
+            for (int row = 45; row <= 53 && possible; row++) {
+                for (int col = 45; col <= 53; col++) {
+                    int x = center.getX() - HALF_MAZE + row;
+                    int z = center.getZ() - HALF_MAZE + col;
+                    boolean expectedOccupied = expected[row][col] != 0;
+                    boolean actualOccupied = world.getBlockState(
+                            new BlockPos(x, center.getY() - 1, z))
+                            .getBlock() != net.minecraft.init.Blocks.air;
+                    if (expectedOccupied != actualOccupied) {
+                        possible = false;
+                        break;
+                    }
+                }
+            }
+            if (possible) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {
+        for (int row = 0; row < MAZE_SIZE; row++) {
+            for (int col = 0; col < MAZE_SIZE; col++) {
+                int x = center.getX() - HALF_MAZE + row;
+                int z = center.getZ() - HALF_MAZE + col;
+                boolean expectedOccupied = expected[row][col] != 0;
+                boolean actualOccupied = world.getBlockState(
+                        new BlockPos(x, center.getY() - 1, z))
+                        .getBlock() != net.minecraft.init.Blocks.air;
+                if (expectedOccupied != actualOccupied) {
+                    return false;
                 }
             }
         }
-        return score >= 8;
+        return true;
+    }
+
+    private boolean isMonsterMazeMob(Entity entity) {
+        return entity instanceof EntityEnderman
+                || entity instanceof EntityPigZombie
+                || entity instanceof EntitySquid
+                || entity instanceof EntitySnowman
+                || entity instanceof EntityOcelot
+                || entity instanceof EntityVillager
+                || entity instanceof EntityZombie;
+    }
+
+    private void clearRoundState() {
+        cachedCenter = null;
+        cachedPad = null;
+        cachedPadCenter = null;
+        ticksSinceLastPadRefresh = 0;
+        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+        cachedMazeDetected = false;
+        cachedMazePattern = -1;
+        ticksSinceLastMazeRefresh = 0;
+        gameStartWorldTick = -1L;
+        previouslyInMonsterMaze = false;
     }
 
     private PadObservation findActivePad(World world, EntityPlayerSP player, BlockPos center) {
@@ -452,12 +514,12 @@ public final class Minecraft18Observer {
             scoreboardLines.append("]");
 
             return String.format(Locale.ROOT,
-                    "OBS worldTick=%d inMaze=%s mazeDetected=%s alive=%s completed=%s "
+                    "OBS worldTick=%d inMaze=%s mazeDetected=%s mazePattern=%d alive=%s completed=%s "
                             + "stage=%d safePadSeconds=%d liveSeconds=%d "
                             + "player=(x=%.3f,y=%.3f,z=%.3f,vx=%.4f,vy=%.4f,vz=%.4f,yaw=%.2f,pitch=%.2f,grounded=%s,hp=%.1f,maxHp=%.1f) "
                             + "kit=%s jumpCharges=%d abilityCharges=%d "
                             + "center=%s pad=%s monsters=%s scoreboardTitle=\"%s\" scoreboardLines=%s mazePathCells=%d",
-                    state.worldTick, state.inMonsterMaze, state.mazeDetected,
+                    state.worldTick, state.inMonsterMaze, state.mazeDetected, cachedMazePattern,
                     state.alive, state.completed, state.stage,
                     state.safePadSeconds, state.liveSeconds,
                     state.player.x, state.player.y, state.player.z,

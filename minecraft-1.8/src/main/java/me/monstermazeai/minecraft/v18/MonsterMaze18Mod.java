@@ -76,8 +76,9 @@ public final class MonsterMaze18Mod {
         }
 
         if (!aiEnabled) {
-            // Do not apply an IDLE action here: doing so would overwrite the player's real keyboard state every tick and make W/A/S/D behave like pulses.
-            executor.releaseAll();
+            // Never touch movement KeyBindings while AI is disabled. Minecraft owns
+            // the physical keyboard state; forcing keys false every tick turns a
+            // held W/A/S/D into a one-tick pulse on each press.
             movementValidator.reset();
             return;
         }

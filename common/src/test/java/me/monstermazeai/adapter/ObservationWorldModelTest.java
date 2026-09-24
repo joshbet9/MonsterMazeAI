@@ -44,4 +44,22 @@ class ObservationWorldModelTest {
         assertEquals(50, state.activePadColumn);
         assertEquals(1, state.maze.raw(50, 50));
     }
+    @Test
+    void lobbyObservationDoesNotRequireMazeCenter() {
+        int[][] maze = new int[99][99];
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                55, false, false, -1, true, false, 1, 0, 0,
+                new LegacyWorldObservation.Player(
+                        100.0, 70.0, -40.0, 0.0, 0.0, 0.0,
+                        0f, 0f, true, 20, 20),
+                Kit.JUMPER, 1, 0, null, null, maze,
+                Collections.emptyList(), "Lobby", Collections.emptyList());
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertFalse(state.inMonsterMaze);
+        assertNull(state.maze);
+        assertEquals(55, state.tick);
+    }
+
 }

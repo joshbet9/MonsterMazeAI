@@ -36,7 +36,7 @@ public final class PlayerBehaviorTracker {
             damageSum += Math.max(0, state.player().damageTaken-previous.damageTaken);
             abilityCount += action.useAbility() ? 1 : 0;
             forwardSum += action.forward();
-            strafeInputSum += action.strafe()
+            strafeInputSum += action.strafe();
             samples++;
             elapsedTicks += dt;
         }

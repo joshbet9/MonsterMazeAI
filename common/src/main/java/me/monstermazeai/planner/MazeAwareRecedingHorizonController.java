@@ -61,7 +61,28 @@ public final class MazeAwareRecedingHorizonController {
         BeamSearchPlanner.Plan plan =
                 planner.plan(state, targetX, targetZ, allowJump);
         Action[] actions = plan.sequence().actions();
-        if (actions.length == 0) return new Action[]{Action.IDLE};
+        if (actions.length == 0 || actions[0] == Action.IDLE) {
+            /*
+             * A live objective that has not been reached must never become
+             * motionless merely because the beam's incumbent remained at the
+             * source state. Use the first route waypoint as a physically
+             * directed one-tick fallback. This still respects the maze route;
+             * it does not bypass pathfinding or inject a hard-coded direction.
+             */
+            double dx = targetX - state.player.x;
+            double dz = targetZ - state.player.z;
+            if (Math.hypot(dx, dz) > 1.0E-6) {
+                float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+                float delta = desiredYaw - state.player.yaw;
+                while (delta >= 180.0F) delta -= 360.0F;
+                while (delta < -180.0F) delta += 360.0F;
+                return new Action[]{
+                        new Action(1, 0, allowJump && !state.player.grounded,
+                                true, delta, false)
+                };
+            }
+            return new Action[]{Action.IDLE};
+        }
 
         return java.util.Arrays.copyOf(
                 actions, Math.min(executionTicks, actions.length));

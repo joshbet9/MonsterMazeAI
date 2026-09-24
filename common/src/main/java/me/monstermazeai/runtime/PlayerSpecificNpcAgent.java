@@ -12,10 +12,14 @@ import me.monstermazeai.player.PlayerSpecificNpcModel;
  * control tendencies.
  */
 public final class PlayerSpecificNpcAgent {
-    private final AutonomousMonsterMazeAgent base;
+    private final DecisionSource base;
     private final PlayerSpecificNpcModel model;
 
     public PlayerSpecificNpcAgent(AutonomousMonsterMazeAgent base, PlayerSpecificNpcModel model) {
+        this((state, allowJump) -> base.decide(state, allowJump), model);
+    }
+
+    public PlayerSpecificNpcAgent(DecisionSource base, PlayerSpecificNpcModel model) {
         if (base == null || model == null) throw new IllegalArgumentException("base/model");
         this.base = base;
         this.model = model;
@@ -28,6 +32,14 @@ public final class PlayerSpecificNpcAgent {
     }
 
     public void reset() {
-        base.reset();
+        if (base instanceof AutonomousDecisionSource) ((AutonomousDecisionSource) base).reset();
+    }
+
+    public interface DecisionSource {
+        Action decide(GameState state, boolean allowJump);
+    }
+
+    private interface AutonomousDecisionSource extends DecisionSource {
+        void reset();
     }
 }

@@ -103,15 +103,6 @@ public final class Minecraft18Observer {
         boolean mazeDetected = cachedMazeDetected && center != null;
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
-        if (!inMonsterMaze) {
-            for (Entity entity : world.loadedEntityList) {
-                if (isMonsterMazeMob(entity) && !entity.isDead) {
-                    inMonsterMaze = true;
-                    break;
-                }
-            }
-        }
-
         if (inMonsterMaze && !previouslyInMonsterMaze) {
             gameStartWorldTick = world.getTotalWorldTime();
         } else if (!inMonsterMaze) {

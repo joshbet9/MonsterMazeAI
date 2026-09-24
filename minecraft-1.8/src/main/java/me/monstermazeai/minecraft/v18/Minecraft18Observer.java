@@ -136,8 +136,7 @@ public final class Minecraft18Observer {
                 displayNames, kit, stackSizes);
         int abilityCharges = detectAbilityCharges(displayNames, stackSizes, kit);
         boolean padReached = pad != null && pad.row >= 0 && isOnPad(player, pad, center);
-        if (pad != null && pad.row >= 0 && mazeDetected) {            disablePadArea(raw, pad.row, pad.column);
-        }
+        
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         for (Entity entity : world.loadedEntityList) {
             String visualType = MonsterSkinTypes.visualType(entity);

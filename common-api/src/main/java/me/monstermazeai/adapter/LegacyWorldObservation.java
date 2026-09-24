@@ -14,6 +14,8 @@ public final class LegacyWorldObservation {
     public final long worldTick;
     public final boolean inMonsterMaze;
     public final boolean mazeDetected;
+    /** Source layout number (1-3), or -1 when not identified. */
+    public final int mazePattern;
     public final boolean alive;
     public final boolean completed;
     public final int stage;
@@ -36,6 +38,17 @@ public final class LegacyWorldObservation {
                             int abilityCharges, BlockPoint center, Pad pad, int[][] maze,
                             List<Monster> monsters, String scoreboardTitle,
                             List<String> scoreboardLines) {
+        this(worldTick, inMonsterMaze, mazeDetected, -1, alive, completed, stage,
+                safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
+                center, pad, maze, monsters, scoreboardTitle, scoreboardLines);
+    }
+
+    public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
+                            int mazePattern, boolean alive, boolean completed, int stage,
+                            int safePadSeconds, int liveSeconds, Player player, Kit kit,
+                            int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
+                            int[][] maze, List<Monster> monsters, String scoreboardTitle,
+                            List<String> scoreboardLines) {
         if (player == null || kit == null || maze == null || monsters == null
                 || scoreboardTitle == null || scoreboardLines == null) {
             throw new IllegalArgumentException("Observation fields must not be null");
@@ -43,6 +56,7 @@ public final class LegacyWorldObservation {
         this.worldTick = worldTick;
         this.inMonsterMaze = inMonsterMaze;
         this.mazeDetected = mazeDetected;
+        this.mazePattern = mazePattern;
         this.alive = alive;
         this.completed = completed;
         this.stage = stage;
@@ -61,7 +75,7 @@ public final class LegacyWorldObservation {
     }
 
     public LegacyWorldObservation copy() {
-        return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, alive, completed,
+        return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed,
                 stage, safePadSeconds, liveSeconds, player.copy(), kit, jumpCharges,
                 abilityCharges, center == null ? null : center.copy(),
                 pad == null ? null : pad.copy(), maze, monsters, scoreboardTitle, scoreboardLines);

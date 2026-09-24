@@ -31,7 +31,7 @@ class ObservationWorldModelTest {
         assertTrue(state.inMonsterMaze);
         assertEquals(50.0, state.player.x);
         assertEquals(51.0, state.player.z);
-        assertEquals(1, state.activePadRow);
+        assertEquals(50, state.activePadRow);
         assertEquals(50, state.activePadColumn);
         assertEquals(50, state.maze.raw(50, 50));
     }

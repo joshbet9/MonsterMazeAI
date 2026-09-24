@@ -24,12 +24,12 @@ public final class ObservationWorldModel {
         state.alive = observation.alive;
         state.completed = observation.completed;
         state.kit = observation.kit;
-        state.player.x = requireCenter(observation.center, "center") == null
-                ? observation.player.x : 0.0;
+        if (observation.center == null) {
+            throw new IllegalArgumentException("Detected Monster Maze observation requires center");
+        }
         state.player.y = observation.player.y - observation.center.y;
-        state.player.z = 0.0;
 
-        if (observation.center != null) {
+        {
             MazeCoordinates coordinates = new MazeCoordinates(observation.center);
             Cell playerCell = coordinates.containingCell(observation.player.x, observation.player.z);
             state.player.x = playerCell.row();
@@ -75,8 +75,4 @@ public final class ObservationWorldModel {
         return state;
     }
 
-    private static LegacyWorldObservation.BlockPoint requireCenter(
-            LegacyWorldObservation.BlockPoint center, String name) {
-        return center;
-    }
 }

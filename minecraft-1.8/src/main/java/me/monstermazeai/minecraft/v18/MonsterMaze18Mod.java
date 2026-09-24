@@ -56,6 +56,13 @@ public final class MonsterMaze18Mod {
             return;
         }
 
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.theWorld == null || minecraft.thePlayer == null) {
+            executor.releaseAll();
+            movementValidator.reset();
+            return;
+        }
+
         if (toggleAi != null && toggleAi.isPressed()) {
             aiEnabled = !aiEnabled;
             if (!aiEnabled) {

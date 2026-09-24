@@ -43,6 +43,7 @@ public final class GameState {
     public int activePadRow = -1, activePadColumn = -1;
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
+    public boolean completed = false;
     public boolean padReached = false;
 
     public double targetPadX() {
@@ -73,6 +74,7 @@ public final class GameState {
         s.previewPadRow=previewPadRow;
         s.previewPadColumn=previewPadColumn;
         s.alive=alive;
+        s.completed=completed;
         s.padReached=padReached;
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;

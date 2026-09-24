@@ -2,6 +2,7 @@ package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
+import me.monstermazeai.adapter.LiveMovementValidator;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -21,12 +22,14 @@ public final class MonsterMaze18Mod {
     private Minecraft18Observer observer;
     private Minecraft18ActionExecutor executor;
     private Minecraft18AiRuntime runtime;
+    private LiveMovementValidator movementValidator;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         observer = new Minecraft18Observer();
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
         runtime = new Minecraft18AiRuntime();
+        movementValidator = new LiveMovementValidator();
 
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
@@ -48,5 +51,10 @@ public final class MonsterMaze18Mod {
         LegacyWorldObservation state = observer.observe().state;
         LegacyAction action = runtime.decide(state);
         executor.apply(action);
+        if (state.inMonsterMaze) {
+            movementValidator.observe(state, action);
+        } else {
+            movementValidator.reset();
+        }
     }
 }

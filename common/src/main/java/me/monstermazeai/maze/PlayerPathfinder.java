@@ -41,7 +41,8 @@ public final class PlayerPathfinder {
     private boolean isPhysicalFloor(MazeModel maze, Cell cell) {
         return cell.row() >= 0 && cell.row() < MazeModel.SIZE
                 && cell.column() >= 0 && cell.column() < MazeModel.SIZE
-                && maze.raw(cell.row(), cell.column()) != 0;
+                && (maze.raw(cell.row(), cell.column()) != 0
+                    || maze.isDisabled(cell.row(), cell.column()));
     }
 
     private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,

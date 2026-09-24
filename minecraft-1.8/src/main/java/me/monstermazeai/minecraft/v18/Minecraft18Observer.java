@@ -128,17 +128,17 @@ public final class Minecraft18Observer {
             }
         }
 
-        WorldObservation observation = new LegacyWorldObservation(
+        LegacyWorldObservation observation = new LegacyWorldObservation(
                 worldTick, matchedMaze, mazeDetected, alive, completed,
                 stage, safePadSeconds, liveSeconds,
-                new WorldObservation.Player(
+                new LegacyWorldObservation.Player(
                         player.posX, player.posY, player.posZ,
                         player.motionX, player.motionY, player.motionZ,
                         player.rotationYaw, player.rotationPitch, player.onGround,
                         player.getHealth(), player.getMaxHealth()),
                 kit, jumpCharges, abilityCharges,
-                center == null ? null : new WorldObservation.BlockPoint(center.getX(), center.getY(), center.getZ()),
-                pad == null ? null : new WorldObservation.Pad(pad.row, pad.column, pad.distanceSq, padReached),
+                center == null ? null : new LegacyWorldObservation.BlockPoint(center.getX(), center.getY(), center.getZ()),
+                pad == null ? null : new LegacyWorldObservation.Pad(pad.row, pad.column, pad.distanceSq, padReached),
                 raw, monsters, scoreboard.title, scoreboard.lines);
 
         return new Observation(

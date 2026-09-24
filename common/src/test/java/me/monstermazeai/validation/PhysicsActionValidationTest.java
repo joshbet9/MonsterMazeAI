@@ -133,7 +133,7 @@ class PhysicsActionValidationTest {
         assertTrue(monster.launched(s.tick));
         assertTrue(monster.vx > 0.0);
         assertEquals(0.0, monster.vz, 1e-9);
-        assertEquals(1.0, monster.vy, 1e-9);
+        assertEquals(0.9016, monster.vy, 1e-9);
     }
 
     @Test

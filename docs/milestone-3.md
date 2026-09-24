@@ -134,3 +134,12 @@ world model and planner that were validated in the simulator.
 CI validates both sides and the protocol, but an actual Monster Maze run still
 requires launching the 1.8 client with the generated runtime JAR configured.
 The repository does not claim an in-game movement result from CI alone.
+
+
+## Milestone 12 — Full autonomous Monster Maze agent
+
+Milestone 12 is complete when the common runtime exposes a cohesive autonomous agent boundary that consumes the latest GameState and emits exactly one action. The autonomous boundary composes objective navigation, monster-aware routing, ability decisions, stuck recovery, stale-observation protection and fail-closed lifecycle handling.
+
+The Minecraft sidecar now delegates live decisions through AutonomousMonsterMazeAgent. The agent resets on lobby/death/completion and when the observed maze signature changes, preventing controller state from one match/layout leaking into another.
+
+Milestone 12 is validated by AutonomousMonsterMazeAgentTest, including an end-to-end simulated decision loop, objective changes, lifecycle resets, stale observations and ability response. This milestone does not claim real Minecraft gameplay success; that remains the live movement validation scope of Milestone 13.

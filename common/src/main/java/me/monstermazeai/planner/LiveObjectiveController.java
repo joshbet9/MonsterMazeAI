@@ -74,5 +74,6 @@ public final class LiveObjectiveController {
         // replacement as a wall topology. The pad itself is still a valid
         // physical objective, so its raw cell must not be required to remain
         // traversable here.
+        return true;
     }
 }

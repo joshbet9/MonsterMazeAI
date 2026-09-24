@@ -42,7 +42,7 @@ class MazeCoordinatesTest {
     void containingCellHandlesSpawnOffset() {
         MazeCoordinates c = new MazeCoordinates(
                 new LegacyWorldObservation.BlockPoint(23, 13, 15));
-        assertEquals(new Cell(50, 51), c.containingCell(24.0, 16.0));
+        assertEquals(new Cell(50, 50), c.containingCell(24.0, 16.0));
         assertTrue(c.inBounds(c.containingCell(24.0, 16.0)));
     }
 

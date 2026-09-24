@@ -52,10 +52,10 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-      - name: Set up Gradle 2.14.1
+      - name: Set up Gradle 3.5
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '2.14.1'
+          gradle-version: '3.5'
 
       - name: Resolve ForgeGradle workspace
         working-directory: minecraft-1.8

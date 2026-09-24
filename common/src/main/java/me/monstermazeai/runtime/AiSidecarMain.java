@@ -11,7 +11,7 @@ import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.planner.BeamSearchPlanner;
 import me.monstermazeai.planner.Heuristic;
-import me.monstermazeai.planner.LiveTickController;
+import me.monstermazeai.planner.LiveObjectiveController;
 import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.sim.Simulator;
@@ -51,9 +51,12 @@ public final class AiSidecarMain {
                     MazeModel maze = state.maze;
                     Simulator simulator = new Simulator(
                             new LegacyMazePhysics(),
-                            new MonsterSimulator(maze, new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
+                            new MonsterSimulator(
+                                    maze,
+                                    new Random(observation.worldTick ^ 0x4D4D4159L),
+                                    0.0),
                             new CollisionModel());
-                    LiveTickController controller = new LiveTickController(
+                    LiveObjectiveController controller = new LiveObjectiveController(
                             new MazeAwareRecedingHorizonController(
                                     new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
                     Action action = controller.nextAction(state, true);

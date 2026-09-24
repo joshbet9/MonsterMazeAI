@@ -62,8 +62,8 @@ public final class AutonomousMonsterMazeAgent {
         h = mix(h, state.activePadColumn);
         if (state.maze != null) {
             h = mix(h, MazeModel.SIZE);
-            for (int r = 0; r < state.maze.size(); r++) {
-                for (int c = 0; c < state.maze.size(); c++) {
+            for (int r = 0; r < MazeModel.SIZE; r++) {
+                for (int c = 0; c < state.MazeModel.SIZE; c++) {
                     h = mix(h, state.maze.raw(r, c));
                 }
             }

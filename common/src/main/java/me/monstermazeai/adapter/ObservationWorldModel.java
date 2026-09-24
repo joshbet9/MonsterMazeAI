@@ -19,6 +19,7 @@ public final class ObservationWorldModel {
         state.tick = observation.worldTick;
         state.inMonsterMaze = observation.inMonsterMaze && observation.mazeDetected;
         state.stage = observation.stage;
+        state.mazePattern = observation.mazePattern;
         state.phaseTicksRemaining = Math.max(0, observation.safePadSeconds) * 20;
         state.liveSeconds = observation.liveSeconds;
         state.alive = observation.alive;

@@ -68,6 +68,12 @@ public final class Minecraft18Observer {
             ticksSinceLastPadRefresh = 0;
         }
         PadObservation pad = cachedPad;
+        if (pad != null && center != null && pad.row >= 0) {
+            double x = center.getX() - HALF_MAZE + pad.row + 0.5;
+            double z = center.getZ() - HALF_MAZE + pad.column + 0.5;
+            pad = new PadObservation(pad.row, pad.column,
+                    player.getDistanceSq(x, center.getY(), z));
+        }
 
         ticksSinceLastMazeRefresh++;
         boolean refreshMaze = center != null && (ticksSinceLastMazeRefresh >= 20 || !cachedMazeDetected);

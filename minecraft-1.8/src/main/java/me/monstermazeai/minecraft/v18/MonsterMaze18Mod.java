@@ -21,6 +21,8 @@ public final class MonsterMaze18Mod {
     public void init(FMLInitializationEvent event) {
         observer = new Minecraft18Observer();
         MinecraftForge.EVENT_BUS.register(observer);
+        MinecraftForge.EVENT_BUS.register(this);
+        System.out.println("[MonsterMazeAI/1.8] observer initialized; client tick handler registered");
     }
 
     @SubscribeEvent

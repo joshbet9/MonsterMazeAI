@@ -26,7 +26,12 @@ public final class Minecraft18Observer {
     private static final int SCAN_RADIUS = 64;
     private static final int PAD_SCAN_RADIUS = 70;
 
-    private int ticksSinceLastLog;
+    private int ticksSinceLastMazeRefresh;
+    private int ticksSinceLastPadRefresh;
+    private PadObservation cachedPad;
+    private BlockPos cachedPadCenter;
+    private int[][] cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+    private boolean cachedMazeDetected;
     private long gameStartWorldTick = -1L;
     private BlockPos cachedCenter;
     private boolean previouslyInMonsterMaze;
@@ -37,18 +42,11 @@ public final class Minecraft18Observer {
             return;
         }
 
-        ticksSinceLastLog++;
-        if (ticksSinceLastLog < 20) {
-            return;
-        }
-        ticksSinceLastLog = 0;
-
         Observation observation = observe();
-        if (!observation.inMonsterMaze) {
-            return;
-        }
-
         System.out.println("[MonsterMazeAI/1.8] " + observation.toLogLine());
+        if (observation.mazeDetected && ticksSinceLastMazeRefresh == 0) {
+            System.out.println("[MonsterMazeAI/1.8] " + observation.toMazeLogLine());
+        }
     }
 
     public Observation observe() {
@@ -59,12 +57,38 @@ public final class Minecraft18Observer {
         boolean mazeScoreboard = Minecraft18ObservationRules.looksLikeMonsterMaze(scoreboard);
 
         BlockPos center = findMazeCenter(world, player, mazeScoreboard);
-        PadObservation pad = center == null
-                ? findActivePadWithoutCenter(world, player)
-                : findActivePad(world, player, center);
+        ticksSinceLastPadRefresh++;
+        if (center == null) {
+            cachedPad = findActivePadWithoutCenter(world, player);
+            cachedPadCenter = null;
+            ticksSinceLastPadRefresh = 0;
+        } else if (cachedPadCenter == null || !cachedPadCenter.equals(center) || ticksSinceLastPadRefresh >= 5) {
+            cachedPad = findActivePad(world, player, center);
+            cachedPadCenter = center;
+            ticksSinceLastPadRefresh = 0;
+        }
+        PadObservation pad = cachedPad;
+        if (pad != null && center != null && pad.row >= 0) {
+            double x = center.getX() - HALF_MAZE + pad.row + 0.5;
+            double z = center.getZ() - HALF_MAZE + pad.column + 0.5;
+            pad = new PadObservation(pad.row, pad.column,
+                    player.getDistanceSq(x, center.getY(), z));
+        }
 
-        int[][] raw = new int[MAZE_SIZE][MAZE_SIZE];
-        boolean mazeDetected = center != null && readMaze(world, center, raw);
+        ticksSinceLastMazeRefresh++;
+        boolean refreshMaze = center != null && (ticksSinceLastMazeRefresh >= 20 || !cachedMazeDetected);
+        if (refreshMaze) {
+            int[][] refreshed = new int[MAZE_SIZE][MAZE_SIZE];
+            cachedMazeDetected = readMaze(world, center, refreshed);
+            if (cachedMazeDetected) {
+                cachedMaze = refreshed;
+            } else {
+                cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+            }
+            ticksSinceLastMazeRefresh = 0;
+        }
+        int[][] raw = cachedMaze;
+        boolean mazeDetected = cachedMazeDetected && center != null;
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
         if (!inMonsterMaze) {
@@ -152,9 +176,14 @@ public final class Minecraft18Observer {
     }
 
     private void reset() {
-        ticksSinceLastLog = 0;
+        ticksSinceLastMazeRefresh = 0;
         gameStartWorldTick = -1L;
         cachedCenter = null;
+        cachedPad = null;
+        cachedPadCenter = null;
+        ticksSinceLastPadRefresh = 0;
+        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+        cachedMazeDetected = false;
         previouslyInMonsterMaze = false;
     }
 
@@ -418,16 +447,92 @@ public final class Minecraft18Observer {
         }
 
         public String toLogLine() {
+            StringBuilder monsters = new StringBuilder("[");
+            for (int i = 0; i < state.monsters.size(); i++) {
+                if (i > 0) {
+                    monsters.append(";");
+                }
+                LegacyWorldObservation.Monster monster = state.monsters.get(i);
+                monsters.append(String.format(Locale.ROOT,
+                        "%d,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
+                        monster.id, monster.x, monster.y, monster.z,
+                        monster.vx, monster.vy, monster.vz, monster.removed));
+            }
+            monsters.append("]");
+
+            StringBuilder scoreboardLines = new StringBuilder("[");
+            for (int i = 0; i < state.scoreboardLines.size(); i++) {
+                if (i > 0) {
+                    scoreboardLines.append(";");
+                }
+                scoreboardLines.append(escape(state.scoreboardLines.get(i)));
+            }
+            scoreboardLines.append("]");
+
             return String.format(Locale.ROOT,
-                    "player=(%.2f,%.2f,%.2f) vel=(%.3f,%.3f,%.3f) hp=%.1f kit=%s jumps=%d "
-                            + "center=%s pad=%s stage=%d timer=%ds maze=%s monsters=%d scoreboard=%s",
+                    "OBS worldTick=%d inMaze=%s mazeDetected=%s alive=%s completed=%s "
+                            + "stage=%d safePadSeconds=%d liveSeconds=%d "
+                            + "player=(x=%.3f,y=%.3f,z=%.3f,vx=%.4f,vy=%.4f,vz=%.4f,yaw=%.2f,pitch=%.2f,grounded=%s,hp=%.1f,maxHp=%.1f) "
+                            + "kit=%s jumpCharges=%d abilityCharges=%d "
+                            + "center=%s pad=%s monsters=%s scoreboardTitle=\"%s\" scoreboardLines=%s mazePathCells=%d",
+                    state.worldTick, state.inMonsterMaze, state.mazeDetected,
+                    state.alive, state.completed, state.stage,
+                    state.safePadSeconds, state.liveSeconds,
                     state.player.x, state.player.y, state.player.z,
-                    state.player.vx, state.player.vy, state.player.vz, state.player.health,
-                    state.kit, state.jumpCharges,
-                    center == null ? "none" : center.toString(),
-                    pad == null ? "none" : pad.toString(),
-                    scoreboard.stage, scoreboard.safePadSeconds,
-                    mazeDetected, state.monsters.size(), scoreboard.title);
+                    state.player.vx, state.player.vy, state.player.vz,
+                    state.player.yaw, state.player.pitch, state.player.grounded,
+                    state.player.health, state.player.maxHealth,
+                    state.kit, state.jumpCharges, state.abilityCharges,
+                    center == null ? "none" : formatPoint(center),
+                    pad == null ? "none" : formatPad(pad),
+                    monsters, escape(scoreboard.title), scoreboardLines,
+                    countPathCells(state.maze));
+        }
+
+        public String toMazeLogLine() {
+            StringBuilder cells = new StringBuilder(MAZE_SIZE * (MAZE_SIZE + 1));
+            for (int row = 0; row < state.maze.length; row++) {
+                if (row > 0) {
+                    cells.append("/");
+                }
+                for (int col = 0; col < state.maze[row].length; col++) {
+                    cells.append(state.maze[row][col] == 0 ? '0' : '1');
+                }
+            }
+            return String.format(Locale.ROOT,
+                    "MAZE worldTick=%d center=%s size=%dx%d cells=%s",
+                    state.worldTick,
+                    center == null ? "none" : formatPoint(center),
+                    MAZE_SIZE, MAZE_SIZE, cells);
+        }
+
+        private static String formatPoint(BlockPos point) {
+            return String.format(Locale.ROOT, "(x=%d,y=%d,z=%d)",
+                    point.getX(), point.getY(), point.getZ());
+        }
+
+        private static String formatPad(PadObservation pad) {
+            return String.format(Locale.ROOT,
+                    "(row=%d,col=%d,distanceSq=%.3f,reached=%s)",
+                    pad.row, pad.column, pad.distanceSq,
+                    pad.row >= 0 && pad.column >= 0 && pad.distanceSq <= 2.25);
+        }
+
+        private static int countPathCells(int[][] maze) {
+            int count = 0;
+            for (int row = 0; row < maze.length; row++) {
+                for (int col = 0; col < maze[row].length; col++) {
+                    if (maze[row][col] != 0) {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        private static String escape(String value) {
+            return value == null ? "" : value.replace("\\", "\\\\").replace(";", "\\;")
+                    .replace("\"", "\\\"");
         }
     }
 

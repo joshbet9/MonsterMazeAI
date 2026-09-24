@@ -1,5 +1,7 @@
 package me.monstermazeai.runtime;
 
+import me.monstermazeai.ability.AbilityDecision;
+import me.monstermazeai.ability.AbilityUseGate;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyProtocol;
 import me.monstermazeai.adapter.LegacyWorldObservation;
@@ -22,18 +24,13 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.util.Random;
 
-/**
- * Java-17 sidecar process used by the Java-8 Minecraft 1.8 client.
- *
- * stdin/stdout are a binary request/response stream. Never write diagnostics to
- * stdout: it is the protocol channel. Diagnostics should go to stderr.
- */
 public final class AiSidecarMain {
     private AiSidecarMain() {}
 
     public static void main(String[] args) throws Exception {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
+        AbilityUseGate abilityGate = new AbilityUseGate();
 
         while (true) {
             LegacyWorldObservation observation;
@@ -51,21 +48,23 @@ public final class AiSidecarMain {
                     MazeModel maze = state.maze;
                     Simulator simulator = new Simulator(
                             new LegacyMazePhysics(),
-                            new MonsterSimulator(
-                                    maze,
-                                    new Random(observation.worldTick ^ 0x4D4D4159L),
-                                    0.0),
+                            new MonsterSimulator(maze,
+                                    new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
                             new CollisionModel());
                     LiveObjectiveController controller = new LiveObjectiveController(
                             new MazeAwareRecedingHorizonController(
                                     new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
                     Action action = controller.nextAction(state, true);
+
+                    boolean useAbility = abilityGate.allow(state);
+                    if (useAbility) abilityGate.record(state);
+
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
-                            action.sprint(), action.yawDelta(), action.useAbility());
+                            action.sprint(), action.yawDelta(), useAbility);
                 }
             } catch (RuntimeException failure) {
-                System.err.println("[MonsterMazeAI] sidecar decision failed: " + failure.getClass().getSimpleName()
-                        + ": " + failure.getMessage());
+                System.err.println("[MonsterMazeAI] sidecar decision failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
             }
 
             LegacyProtocol.writeAction(out, result);

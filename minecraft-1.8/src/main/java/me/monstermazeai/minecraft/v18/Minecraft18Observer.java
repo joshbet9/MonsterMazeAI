@@ -423,7 +423,7 @@ public final class Minecraft18Observer {
                             + "center=%s pad=%s stage=%d timer=%ds maze=%s monsters=%d scoreboard=%s",
                     state.player.x, state.player.y, state.player.z,
                     state.player.vx, state.player.vy, state.player.vz, state.player.health,
-                    state.kit, state.player.jumpCharges,
+                    state.kit, state.jumpCharges,
                     center == null ? "none" : center.toString(),
                     pad == null ? "none" : pad.toString(),
                     scoreboard.stage, scoreboard.safePadSeconds,

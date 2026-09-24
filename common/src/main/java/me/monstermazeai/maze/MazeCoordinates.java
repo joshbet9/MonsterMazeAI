@@ -21,11 +21,27 @@ public final class MazeCoordinates {
     public int centerZ() { return centerZ; }
 
     public int row(double worldX) {
-        return (int) Math.floor(worldX - (centerX - HALF_MAZE));
+        return (int) Math.floor(logicalX(worldX));
     }
 
     public int column(double worldZ) {
-        return (int) Math.floor(worldZ - (centerZ - HALF_MAZE));
+        return (int) Math.floor(logicalZ(worldZ));
+    }
+
+    /**
+     * Converts a continuous world X position to the simulator's logical
+     * coordinate system. Logical cell r occupies [r, r+1).
+     */
+    public double logicalX(double worldX) {
+        return worldX - (centerX - HALF_MAZE);
+    }
+
+    /**
+     * Converts a continuous world Z position to the simulator's logical
+     * coordinate system. Logical cell c occupies [c, c+1).
+     */
+    public double logicalZ(double worldZ) {
+        return worldZ - (centerZ - HALF_MAZE);
     }
 
     public double worldX(int row) {

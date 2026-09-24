@@ -69,7 +69,10 @@ public final class LiveObjectiveController {
             return false;
         }
 
-        return state.maze.isTraversable(
-                state.activePadRow, state.activePadColumn);
+        // The observer deliberately disables the active Safe Pad's 5x5 area
+        // in the logical maze so pathfinding does not treat the temporary pad
+        // replacement as a wall topology. The pad itself is still a valid
+        // physical objective, so its raw cell must not be required to remain
+        // traversable here.
     }
 }

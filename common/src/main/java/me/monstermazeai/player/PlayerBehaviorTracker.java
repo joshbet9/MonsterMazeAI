@@ -22,21 +22,21 @@ public final class PlayerBehaviorTracker {
     public void observe(GameStateLike state, Action action) {
         if (state == null || state.player() == null || action == null) return;
         if (previous != null && state.tick() <= previousTick) {
-            previous = state.player.copy(); previousTick=state.tick; return;
+            previous = state.player().copy(); previousTick=state.tick(); return;
         }
         if (previous != null) {
             long dt = Math.max(1, state.tick - previousTick);
-            double dx=state.player.x-previous.x, dz=state.player.z-previous.z;
+            double dx=state.player().x-previous.x, dz=state.player().z-previous.z;
             double speed=Math.sqrt(dx*dx+dz*dz)/dt;
             speedSum += speed;
             sprintCount += action.sprint() ? 1 : 0;
             jumpCount += action.jump() ? 1 : 0;
             strafeCount += Math.abs(action.strafe())>1e-6 ? 1 : 0;
             turnSum += Math.abs(action.yawDelta());
-            damageSum += Math.max(0, state.player.damageTaken-previous.damageTaken);
+            damageSum += Math.max(0, state.player().damageTaken-previous.damageTaken);
             abilityCount += action.useAbility() ? 1 : 0;
             forwardSum += action.forward();
-            strafeInputSum += action.strafe;
+            strafeInputSum += action.strafe()
             samples++;
             elapsedTicks += dt;
         }

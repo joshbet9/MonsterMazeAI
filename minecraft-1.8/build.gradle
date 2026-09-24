@@ -32,13 +32,6 @@ compileTestJava {
     }
 }
 
-test {
-    def java17Home = System.getenv("JAVA_HOME_17_X64")
-    if (java17Home != null) {
-        executable = new File(java17Home, "bin/java").absolutePath
-    }
-}
-
 
 minecraft {
     version = "1.8.9-11.15.1.2318-1.8.9"

@@ -44,10 +44,6 @@ public final class Minecraft18Observer {
         ticksSinceLastLog = 0;
 
         Observation observation = observe();
-        if (!observation.inMonsterMaze) {
-            return;
-        }
-
         System.out.println("[MonsterMazeAI/1.8] " + observation.toLogLine());
     }
 
@@ -418,21 +414,78 @@ public final class Minecraft18Observer {
         }
 
         public String toLogLine() {
-            return String.format(Locale.ROOT,
-                    "player=(%.2f,%.2f,%.2f) vel=(%.3f,%.3f,%.3f) hp=%.1f kit=%s jumps=%d "
-                            + "center=%s pad=%s stage=%d timer=%ds maze=%s monsters=%d scoreboard=%s",
-                    state.player.x, state.player.y, state.player.z,
-                    state.player.vx, state.player.vy, state.player.vz, state.player.health,
-                    state.kit, state.jumpCharges,
-                    center == null ? "none" : center.toString(),
-                    pad == null ? "none" : pad.toString(),
-                    scoreboard.stage, scoreboard.safePadSeconds,
-                    mazeDetected, state.monsters.size(), scoreboard.title);
-        }
-    }
+            return String.format(Loca        public String toLogLine() {
+            StringBuilder monsters = new StringBuilder("[");
+            for (int i = 0; i < state.monsters.size(); i++) {
+                if (i > 0) {
+                    monsters.append(";");
+                }
+                LegacyWorldObservation.Monster monster = state.monsters.get(i);
+                monsters.append(String.format(Locale.ROOT,
+                        "%d,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
+                        monster.id, monster.x, monster.y, monster.z,
+                        monster.vx, monster.vy, monster.vz, monster.removed));
+            }
+            monsters.append("]");
 
-    public static final class PadObservation {
-        public final int row;
+            StringBuilder scoreboardLines = new StringBuilder("[");
+            for (int i = 0; i < state.scoreboardLines.size(); i++) {
+                if (i > 0) {
+                    scoreboardLines.append(";");
+                }
+                scoreboardLines.append(escape(state.scoreboardLines.get(i)));
+            }
+            scoreboardLines.append("]");
+
+            return String.format(Locale.ROOT,
+                    "OBS worldTick=%d inMaze=%s mazeDetected=%s alive=%s completed=%s "
+                            + "stage=%d safePadSeconds=%d liveSeconds=%d "
+                            + "player=(x=%.3f,y=%.3f,z=%.3f,vx=%.4f,vy=%.4f,vz=%.4f,yaw=%.2f,pitch=%.2f,grounded=%s,hp=%.1f,maxHp=%.1f) "
+                            + "kit=%s jumpCharges=%d abilityCharges=%d "
+                            + "center=%s pad=%s monsters=%s scoreboardTitle=\"%s\" scoreboardLines=%s mazePathCells=%d",
+                    state.worldTick, state.inMonsterMaze, state.mazeDetected,
+                    state.alive, state.completed, state.stage,
+                    state.safePadSeconds, state.liveSeconds,
+                    state.player.x, state.player.y, state.player.z,
+                    state.player.vx, state.player.vy, state.player.vz,
+                    state.player.yaw, state.player.pitch, state.player.grounded,
+                    state.player.health, state.player.maxHealth,
+                    state.kit, state.jumpCharges, state.abilityCharges,
+                    center == null ? "none" : formatPoint(center),
+                    pad == null ? "none" : formatPad(pad),
+                    monsters, escape(scoreboard.title), scoreboardLines,
+                    countPathCells(state.maze));
+        }
+
+        private static String formatPoint(BlockPos point) {
+            return String.format(Locale.ROOT, "(x=%d,y=%d,z=%d)",
+                    point.getX(), point.getY(), point.getZ());
+        }
+
+        private static String formatPad(PadObservation pad) {
+            return String.format(Locale.ROOT,
+                    "(row=%d,col=%d,distanceSq=%.3f,reached=%s)",
+                    pad.row, pad.column, pad.distanceSq,
+                    pad.row >= 0 && pad.column >= 0 && pad.distanceSq <= 2.25);
+        }
+
+        private static int countPathCells(int[][] maze) {
+            int count = 0;
+            for (int row = 0; row < maze.length; row++) {
+                for (int col = 0; col < maze[row].length; col++) {
+                    if (maze[row][col] != 0) {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        private static String escape(String value) {
+            return value == null ? "" : value.replace("\\", "\\\\").replace(";", "\\;")
+                    .replace("\"", "\\\"");
+        }
+ublic final int row;
         public final int column;
         public final double distanceSq;
 

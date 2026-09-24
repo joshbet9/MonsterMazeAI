@@ -14,15 +14,20 @@ import me.monstermazeai.player.PlayerSpecificNpcModel;
 public final class PlayerSpecificNpcAgent {
     private final DecisionSource base;
     private final PlayerSpecificNpcModel model;
+    private final Runnable resetter;
 
     public PlayerSpecificNpcAgent(AutonomousMonsterMazeAgent base, PlayerSpecificNpcModel model) {
-        this((state, allowJump) -> base.decide(state, allowJump), model);
+        if (base == null || model == null) throw new IllegalArgumentException("base/model");
+        this.base = (state, allowJump) -> base.decide(state, allowJump);
+        this.model = model;
+        this.resetter = base::reset;
     }
 
     public PlayerSpecificNpcAgent(DecisionSource base, PlayerSpecificNpcModel model) {
         if (base == null || model == null) throw new IllegalArgumentException("base/model");
         this.base = base;
         this.model = model;
+        this.resetter = () -> {};
     }
 
     public Action decide(GameState state, boolean allowJump) {
@@ -32,14 +37,10 @@ public final class PlayerSpecificNpcAgent {
     }
 
     public void reset() {
-        if (base instanceof AutonomousDecisionSource) ((AutonomousDecisionSource) base).reset();
+        resetter.run();
     }
 
     public interface DecisionSource {
         Action decide(GameState state, boolean allowJump);
-    }
-
-    private interface AutonomousDecisionSource extends DecisionSource {
-        void reset();
     }
 }

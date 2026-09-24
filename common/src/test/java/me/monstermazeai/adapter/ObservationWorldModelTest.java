@@ -35,8 +35,8 @@ class ObservationWorldModelTest {
         assertTrue(state.inMonsterMaze);
         assertEquals(50.2, state.player.x, 1e-9);
         assertEquals(50.7, state.player.z, 1e-9);
-        assertEquals(0.8, state.monsters.get(0).x, 1e-9);
-        assertEquals(0.4, state.monsters.get(0).z, 1e-9);
+        assertEquals(49.8, state.monsters.get(0).x, 1e-9);
+        assertEquals(49.4, state.monsters.get(0).z, 1e-9);
         assertEquals(50, state.monsters.get(0).waypointRow);
         assertEquals(50, state.monsters.get(0).waypointColumn);
         assertEquals(50, state.activePadRow);

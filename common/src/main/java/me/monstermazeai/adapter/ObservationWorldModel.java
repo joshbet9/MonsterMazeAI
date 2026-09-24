@@ -29,12 +29,10 @@ public final class ObservationWorldModel {
         }
         state.player.y = observation.player.y - observation.center.y;
 
-        {
-            MazeCoordinates coordinates = new MazeCoordinates(observation.center);
-            Cell playerCell = coordinates.containingCell(observation.player.x, observation.player.z);
-            state.player.x = playerCell.row();
-            state.player.z = playerCell.column();
-        }
+        MazeCoordinates coordinates = new MazeCoordinates(observation.center);
+        Cell playerCell = coordinates.containingCell(observation.player.x, observation.player.z);
+        state.player.x = coordinates.logicalX(observation.player.x);
+        state.player.z = coordinates.logicalZ(observation.player.z);
 
         state.player.vx = observation.player.vx;
         state.player.vy = observation.player.vy;
@@ -56,13 +54,15 @@ public final class ObservationWorldModel {
 
         for (LegacyWorldObservation.Monster observed : observation.monsters) {
             MonsterState monster = new MonsterState(
-                    observed.id, observed.x, observed.y, observed.z);
+                    observed.id,
+                    coordinates.logicalX(observed.x),
+                    observed.y - observation.center.y,
+                    coordinates.logicalZ(observed.z));
             monster.vx = observed.vx;
             monster.vy = observed.vy;
             monster.vz = observed.vz;
             monster.removed = observed.removed;
-            if (observation.center != null) {
-                MazeCoordinates coordinates = new MazeCoordinates(observation.center);
+            {
                 Cell cell = coordinates.containingCell(observed.x, observed.z);
                 if (coordinates.inBounds(cell)) {
                     monster.waypointRow = cell.row();

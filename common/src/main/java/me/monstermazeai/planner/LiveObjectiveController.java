@@ -17,6 +17,7 @@ import me.monstermazeai.player.Action;
  */
 public final class LiveObjectiveController {
     private final MazeAwareRecedingHorizonController movement;
+    private String lastDecisionReason = "UNSET";
 
     public LiveObjectiveController(MazeAwareRecedingHorizonController movement) {
         if (movement == null) throw new IllegalArgumentException("movement");
@@ -31,28 +32,48 @@ public final class LiveObjectiveController {
      * only exposes the currently active Safe Pad.
      */
     public Action nextAction(GameState state, boolean allowJump) {
-        if (!validObjective(state)) return Action.IDLE;
+        if (!validObjective(state)) { lastDecisionReason = invalidReason(state); return Action.IDLE; }
 
         if (PadModel.isOn(
                 state.player,
                 state.activePadRow + 0.5,
                 GameState.PAD_SURFACE_Y,
                 state.activePadColumn + 0.5)) {
+            lastDecisionReason = "ON_PAD";
             return Action.IDLE;
         }
 
-        if (state.padReached) return Action.IDLE;
+        if (state.padReached) {
+            lastDecisionReason = "PAD_REACHED";
+            return Action.IDLE;
+        }
 
         try {
             return movement.nextActions(
                     state,
                     new Cell(state.activePadRow, state.activePadColumn),
                     allowJump)[0];
+            lastDecisionReason = "MOVEMENT_PLANNER";
+            return action;
         } catch (IllegalArgumentException noRoute) {
+            lastDecisionReason = "NO_ROUTE";
             // An objective can become unreachable after live maze mutation.
             // Never turn a planning failure into uncontrolled movement.
             return Action.IDLE;
         }
+    }
+
+    public String lastDecisionReason() { return lastDecisionReason; }
+
+    private String invalidReason(GameState state) {
+        if (state == null) return "NULL_STATE";
+        if (!state.inMonsterMaze) return "NOT_IN_MAZE";
+        if (!state.alive) return "DEAD";
+        if (state.completed) return "COMPLETED";
+        if (state.maze == null) return "NO_MAZE";
+        if (state.phaseTicksRemaining <= 0) return "NO_PHASE_TIME";
+        if (state.activePadRow < 0 || state.activePadColumn < 0 || state.activePadRow >= MazeModel.SIZE || state.activePadColumn >= MazeModel.SIZE) return "INVALID_PAD";
+        return "INVALID_OBJECTIVE";
     }
 
     private boolean validObjective(GameState state) {

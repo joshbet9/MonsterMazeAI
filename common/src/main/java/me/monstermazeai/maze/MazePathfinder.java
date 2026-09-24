@@ -19,7 +19,7 @@ public final class MazePathfinder {
         if (start.equals(goal)) return List.of(start);
 
         PriorityQueue<Node> open = new PriorityQueue<>(
-                Comparator.comparingInt((Node n) -> n.f)
+                Comparator.comparingInt(Node::f)
                         .thenComparingInt(n -> n.h)
                         .thenComparingInt(n -> n.cell.row())
                         .thenComparingInt(n -> n.cell.column()));

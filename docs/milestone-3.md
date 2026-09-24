@@ -150,3 +150,34 @@ Milestone 12 is validated by AutonomousMonsterMazeAgentTest, including an end-to
 The 1.8 client now validates the real closed-loop boundary at runtime. After each AI decision, the adapter feeds the issued action and the next Minecraft observation into LiveMovementValidator. The validator checks monotonic world ticks, finite player state, bounded per-tick horizontal displacement, and records observed movement, jump, and ability responses.
 
 This validation is observational and keeps Minecraft physics authoritative. It does not replace the real client/server test: a live Monster Maze run is the acceptance environment, while CI verifies the validator and adapter integration compile and test successfully.
+
+
+## Milestone 16 — Monster Maze competitor integration
+
+The common runtime now exposes a direct competitor integration boundary for the
+long-term Monster Maze population model.
+
+Implemented:
+
+- `CompetitorDefinition` gives each competitor an independent id, display
+  name, kit, measured player-behaviour profile, and jump policy.
+- `MonsterMazeCompetitor` owns an independent autonomous controller and
+  player-specific behaviour model. Its simulator/controller is rebuilt when the
+  observed maze layout or objective changes, preventing state leakage between
+  matches.
+- `MonsterMazeCompetitorManager` supports multiple simultaneous competitors,
+  independent controller state, registration/removal, reset, and fail-closed
+  lookup.
+- Each competitor therefore shares the same autonomous navigation/monster/
+  ability stack while retaining a distinct movement style.
+- Tests verify multiple independent competitors, lifecycle reset, missing
+  competitor fail-closed behaviour, and duplicate-id protection.
+
+The integration boundary is deliberately version-neutral. A Monster Maze
+server/runtime adapter can bind each competitor id to a real player, bot
+connection, or future fake-player/NPC implementation without putting Bukkit or
+Minecraft APIs into the AI core.
+
+This milestone establishes the competitor population layer; actual server-side
+NPC spawning/execution remains an adapter concern rather than being simulated
+or claimed by common-core CI.

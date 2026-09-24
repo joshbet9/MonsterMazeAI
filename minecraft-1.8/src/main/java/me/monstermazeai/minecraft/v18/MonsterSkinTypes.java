@@ -28,6 +28,10 @@ import net.minecraft.entity.passive.EntitySquid;
 import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.entity.passive.EntityWolf;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * Source-backed list of every visual mob skin exposed by Monster Maze 1.8.
  *
@@ -38,6 +42,13 @@ import net.minecraft.entity.passive.EntityWolf;
  */
 public final class MonsterSkinTypes {
     public static final String GAMEPLAY_TYPE = "monster_maze_monster";
+    public static final List<String> SUPPORTED_VISUAL_TYPES = Collections.unmodifiableList(Arrays.asList(
+            "creeper", "skeleton", "spider", "zombie", "slime", "zombie_pigman",
+            "enderman", "cave_spider", "silverfish", "blaze", "magma_cube", "bat",
+            "witch", "endermite", "guardian", "pig", "sheep", "cow", "chicken",
+            "squid", "wolf", "mooshroom", "snowman", "ocelot", "horse", "rabbit",
+            "villager"
+    ));
 
     private MonsterSkinTypes() {}
 
@@ -74,6 +85,10 @@ public final class MonsterSkinTypes {
 
     public static boolean isSupported(Entity entity) {
         return visualType(entity) != null;
+    }
+
+    public static boolean isSupportedVisualType(String visualType) {
+        return SUPPORTED_VISUAL_TYPES.contains(visualType);
     }
 
     public static String displayName(String visualType) {

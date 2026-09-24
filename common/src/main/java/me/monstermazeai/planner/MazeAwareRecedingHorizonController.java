@@ -2,20 +2,22 @@ package me.monstermazeai.planner;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
+import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 
 /**
  * Closed-loop controller that combines the maze graph with physical planning.
  *
- * The maze supplies navigation waypoints; the BeamSearchPlanner supplies the
- * physically simulated controls needed to reach the current waypoint. No
- * block/wall collision is introduced.
+ * The maze supplies navigation waypoints and the monster-aware route planner
+ * can prefer safer physical corridors; the BeamSearchPlanner then supplies
+ * the physically simulated controls needed to reach the current waypoint.
  */
 public final class MazeAwareRecedingHorizonController {
     private final BeamSearchPlanner planner;
     private final int executionTicks;
     private final double waypointTolerance;
+    private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
 
     public MazeAwareRecedingHorizonController(BeamSearchPlanner planner,
                                                int executionTicks) {
@@ -43,8 +45,8 @@ public final class MazeAwareRecedingHorizonController {
             return new Action[]{Action.IDLE};
         }
 
-        PlayerRoute route = PlayerRoute.between(
-                state.maze, new Cell(startRow, startColumn), goal);
+        PlayerRoute route = routePlanner.route(
+                state, new Cell(startRow, startColumn), goal);
 
         int waypoint = route.nextWaypoint(
                 state.player.x, state.player.z, 0, waypointTolerance);

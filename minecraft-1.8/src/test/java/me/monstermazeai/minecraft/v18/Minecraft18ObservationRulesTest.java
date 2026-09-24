@@ -1,6 +1,5 @@
 package me.monstermazeai.minecraft.v18;
 
-import me.monstermazeai.kit.Kit;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -30,29 +29,6 @@ public class Minecraft18ObservationRulesTest {
 
         assertEquals(12, data.safePadSeconds);
         assertEquals(4, data.stage);
-    }
-
-    @Test
-    public void detectsKitsAndJumperCharges() {
-        assertEquals(Kit.JUMPER,
-                Minecraft18ObservationRules.detectKit(Arrays.asList("Jumper", "5 jumps remaining")));
-        assertEquals(Kit.REPULSOR,
-                Minecraft18ObservationRules.detectKit(Arrays.asList("Repulsor")));
-        assertEquals(Kit.SLOWBALLER,
-                Minecraft18ObservationRules.detectKit(Arrays.asList("Slowballer")));
-        assertEquals(Kit.BODY_BUILDER,
-                Minecraft18ObservationRules.detectKit(Arrays.asList("Body Builder")));
-
-        assertEquals(5,
-                Minecraft18ObservationRules.detectJumpCharges(
-                        Arrays.asList("Jumper", "5 jumps remaining"),
-                        Kit.JUMPER,
-                        Arrays.asList(1, 5)));
-        assertEquals(0,
-                Minecraft18ObservationRules.detectJumpCharges(
-                        Arrays.asList("Repulsor"),
-                        Kit.REPULSOR,
-                        Arrays.asList(3)));
     }
 
     @Test

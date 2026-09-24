@@ -1,7 +1,5 @@
 package me.monstermazeai.runtime;
 
-import me.monstermazeai.ability.AbilityDecision;
-import me.monstermazeai.ability.AbilityUseGate;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyProtocol;
 import me.monstermazeai.adapter.LegacyWorldObservation;
@@ -15,6 +13,7 @@ import me.monstermazeai.planner.BeamSearchPlanner;
 import me.monstermazeai.planner.Heuristic;
 import me.monstermazeai.planner.LiveObjectiveController;
 import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
+import me.monstermazeai.planner.RobustLiveController;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.sim.Simulator;
 
@@ -30,7 +29,6 @@ public final class AiSidecarMain {
     public static void main(String[] args) throws Exception {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
-        AbilityUseGate abilityGate = new AbilityUseGate();
 
         while (true) {
             LegacyWorldObservation observation;
@@ -51,16 +49,13 @@ public final class AiSidecarMain {
                             new MonsterSimulator(maze,
                                     new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
                             new CollisionModel());
-                    LiveObjectiveController controller = new LiveObjectiveController(
+                    LiveObjectiveController objective = new LiveObjectiveController(
                             new MazeAwareRecedingHorizonController(
                                     new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
+                    RobustLiveController controller = new RobustLiveController(objective);
                     Action action = controller.nextAction(state, true);
-
-                    boolean useAbility = abilityGate.allow(state);
-                    if (useAbility) abilityGate.record(state);
-
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
-                            action.sprint(), action.yawDelta(), useAbility);
+                            action.sprint(), action.yawDelta(), action.useAbility());
                 }
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] sidecar decision failed: "

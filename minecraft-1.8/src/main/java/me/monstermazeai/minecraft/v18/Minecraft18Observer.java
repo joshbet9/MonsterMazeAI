@@ -8,7 +8,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.monster.EntitySnowman;
 import net.minecraft.entity.monster.EntityEnderman;
 import net.minecraft.entity.monster.EntityPigZombie;
-import net.minecraft.entity.monster.EntitySquid;
+import net.minecraft.entity.passive.EntitySquid;
 import net.minecraft.entity.monster.EntityZombie;
 import net.minecraft.entity.passive.EntityOcelot;
 import net.minecraft.entity.passive.EntityVillager;
@@ -29,6 +29,7 @@ public final class Minecraft18Observer {
     private static final Minecraft MC = Minecraft.getMinecraft();
     private static final int MAZE_SIZE = 99;
     private static final int HALF_MAZE = 49;
+    private static final int SCAN_RADIUS = 64;
     private static final int CENTER_SEARCH_RADIUS = 6;
     private static final int PAD_SCAN_RADIUS = 70;
 
@@ -137,8 +138,7 @@ public final class Minecraft18Observer {
         int abilityCharges = detectAbilityCharges(displayNames, stackSizes, kit);
         boolean padReached = pad != null && pad.row >= 0 && isOnPad(player, pad, center);
 
-        if (pad != null && pad.row >= 0 && mazeDetected) {
-            disablePadArea(raw, pad.row, pad.column);
+        if (pad != null && pad.row >= 0 && mazeDetected) {            disablePadArea(raw, pad.row, pad.column);
         }
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         for (Entity entity : world.loadedEntityList) {
@@ -238,27 +238,6 @@ public final class Minecraft18Observer {
         return -1;
     }
 
-    private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {
-        int mismatches = 0;
-        for (int row = 0; row < MAZE_SIZE; row++) {
-            for (int col = 0; col < MAZE_SIZE; col++) {
-                int x = center.getX() - HALF_MAZE + row;
-                int z = center.getZ() - HALF_MAZE + col;
-                boolean expectedOccupied = expected[row][col] != 0;
-                boolean actualOccupied = world.getBlockState(
-                        new BlockPos(x, center.getY() - 1, z))
-                        .getBlock() != net.minecraft.init.Blocks.air;
-                if (expectedOccupied != actualOccupied) {
-                    mismatches++;
-                    if (mismatches > 0) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
-    }
-
     private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
         if (cachedCenter != null && cachedMazeDetected) return cachedCenter;
 
@@ -277,8 +256,7 @@ public final class Minecraft18Observer {
                         cachedCenter = candidate;
                         cachedMazePattern = pattern;
                         return cachedCenter;
-                    }
-                }
+                    }                }
             }
         }
         return null;
@@ -417,8 +395,7 @@ public final class Minecraft18Observer {
             if (score.getPlayerName() == null || score.getPlayerName().startsWith("#")) {
                 continue;
             }
-            String name = score.getPlayerName();
-            ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
+            String name = score.getPlayerName();            ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
             String formatted = team == null ? name : ScorePlayerTeam.formatPlayerName(team, name);
             lines.add(formatted);
         }
@@ -484,7 +461,7 @@ public final class Minecraft18Observer {
                             + "player=(x=%.3f,y=%.3f,z=%.3f,vx=%.4f,vy=%.4f,vz=%.4f,yaw=%.2f,pitch=%.2f,grounded=%s,hp=%.1f,maxHp=%.1f) "
                             + "kit=%s jumpCharges=%d abilityCharges=%d "
                             + "center=%s pad=%s monsters=%s scoreboardTitle=\"%s\" scoreboardLines=%s mazePathCells=%d",
-                    state.worldTick, state.inMonsterMaze, state.mazeDetected, cachedMazePattern < 0 ? -1 : cachedMazePattern + 1,
+                    state.worldTick, state.inMonsterMaze, state.mazeDetected, state.mazePattern,
                     state.alive, state.completed, state.stage,
                     state.safePadSeconds, state.liveSeconds,
                     state.player.x, state.player.y, state.player.z,
@@ -558,7 +535,3 @@ public final class Minecraft18Observer {
 
         @Override
         public String toString() {
-            return String.format(Locale.ROOT, "(%d,%d)", row, column);
-        }
-    }
-}

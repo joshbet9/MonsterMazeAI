@@ -44,6 +44,8 @@ public final class GameState {
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
     public boolean completed = false;
+    /** True when the live adapter positively identifies a Monster Maze match. */
+    public boolean inMonsterMaze = false;
     public boolean padReached = false;
 
     public double targetPadX() {
@@ -75,6 +77,7 @@ public final class GameState {
         s.previewPadColumn=previewPadColumn;
         s.alive=alive;
         s.completed=completed;
+        s.inMonsterMaze=inMonsterMaze;
         s.padReached=padReached;
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;

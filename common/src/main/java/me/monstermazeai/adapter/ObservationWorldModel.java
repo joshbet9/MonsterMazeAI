@@ -25,6 +25,9 @@ public final class ObservationWorldModel {
         state.completed = observation.completed;
         state.kit = observation.kit;
         state.ability.charges = observation.abilityCharges;
+        if (!state.inMonsterMaze) {
+            return state;
+        }
         if (observation.center == null) {
             throw new IllegalArgumentException("Detected Monster Maze observation requires center");
         }

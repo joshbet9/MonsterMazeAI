@@ -6,23 +6,21 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerSpecificNpcAgentTest {
-    @Test void stylesAutonomousActionWithoutReplacingObjective() {
-        AutonomousMonsterMazeAgent base = new AutonomousMonsterMazeAgent(
-                new me.monstermazeai.planner.RobustLiveController(
-                        new me.monstermazeai.planner.LiveObjectiveController(
-                                new me.monstermazeai.planner.MazeAwareRecedingHorizonController(
-                                        new me.monstermazeai.planner.BeamSearchPlanner()))));
+    @Test void stylesBaseDecisionWithoutReplacingIt() {
         PlayerBehaviorProfile p = new PlayerBehaviorProfile(10,0.2,1,0,0,0,0,0,1,0);
-        PlayerSpecificNpcAgent agent = new PlayerSpecificNpcAgent(base,new PlayerSpecificNpcModel(p));
-        GameState state = new GameState();
-        state.inMonsterMaze=true; state.alive=true; state.completed=false;
-        state.mazePattern=1; state.phaseTicksRemaining=100;
-        state.maze=new me.monstermazeai.maze.MazeModel(new int[99][99]);
-        int[][] raw=new int[99][99]; for(int r=0;r<99;r++) for(int c=0;c<99;c++) raw[r][c]=1;
-        state.maze=new me.monstermazeai.maze.MazeModel(raw);
-        state.activePadRow=55; state.activePadColumn=50;
-        state.player.x=50.5; state.player.z=50.5; state.player.grounded=true;
-        Action action=agent.decide(state,true);
+        PlayerSpecificNpcAgent agent = new PlayerSpecificNpcAgent(
+                (state, allowJump) -> new Action(1,0,false,false,3,false),
+                new PlayerSpecificNpcModel(p));
+        Action action = agent.decide(new GameState(), true);
+        assertEquals(1, action.forward(), 1e-9);
         assertTrue(action.sprint());
+        assertEquals(3, action.yawDelta(), 1e-9);
+    }
+
+    @Test void idleFromBaseRemainsIdle() {
+        PlayerSpecificNpcAgent agent = new PlayerSpecificNpcAgent(
+                (state, allowJump) -> Action.IDLE,
+                new PlayerSpecificNpcModel(new PlayerBehaviorTracker().profile()));
+        assertEquals(Action.IDLE, agent.decide(new GameState(), true));
     }
 }

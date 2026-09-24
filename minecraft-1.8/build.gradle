@@ -4,7 +4,7 @@ buildscript {
         maven { url = "https://maven.minecraftforge.net" }
     }
     dependencies {
-        classpath "com.anatawa12.forge:ForgeGradle:2.3-1.0.1"
+        classpath "net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT"
     }
 }
 
@@ -16,6 +16,14 @@ archivesBaseName = "monster-maze-ai-1.8"
 
 sourceCompatibility = targetCompatibility = 1.8
 compileJava.options.encoding = "UTF-8"
+compileJava {
+    options.fork = true
+    def java17Home = System.getenv("JAVA_HOME_17_X64")
+    if (java17Home != null) {
+        options.forkOptions.executable = new File(java17Home, "bin/javac").absolutePath
+    }
+}
+
 
 minecraft {
     version = "1.8.9-11.15.1.2318-1.8.9"

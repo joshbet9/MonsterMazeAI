@@ -59,8 +59,10 @@ jobs:
 
       - name: Resolve ForgeGradle workspace
         working-directory: minecraft-1.8
-        run: gradle --no-daemon setupDecompWorkspace
+        run: gradle --no-daemon setupCIWorkspace
 
       - name: Build Minecraft 1.8.9 adapter
         working-directory: minecraft-1.8
         run: gradle --no-daemon build
+
+# CI verification branch

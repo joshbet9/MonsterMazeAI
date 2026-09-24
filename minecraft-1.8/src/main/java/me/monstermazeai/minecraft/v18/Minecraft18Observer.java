@@ -95,6 +95,7 @@ public final class Minecraft18Observer {
                 : (int) Math.max(0, (world.getTotalWorldTime() - gameStartWorldTick) / 20L);
         state.alive = player.getHealth() > 0.0F;
         state.completed = scoreboard.completed;
+        state.inMonsterMaze = inMonsterMaze && !state.completed;
         state.maze = mazeDetected ? new MazeModel(raw) : null;
 
         PlayerState ps = state.player;

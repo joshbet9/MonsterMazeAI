@@ -2,17 +2,20 @@ package me.monstermazeai.maze;
 
 import java.util.*;
 
- /**
-  * Shortest physical route for the player.
-  *
-  * Monster waypoint disabling is intentionally ignored here: the live game
-  * disables maze waypoints around Safe Pads and during center decay, but those
-  * cells remain physical floor that a player can stand and move across.
-  */
+/**
+ * Shortest physical route for the player.
+ *
+ * The live game has two different notions of walkability:
+ * - monster waypoints use the logical maze topology (1/2/5/6);
+ * - the player can physically stand on every non-air maze cell, including the
+ *   central safe area (3/4) and temporarily disabled Safe Pad cells.
+ *
+ * Player routing must therefore ignore logical waypoint disabling and use the
+ * physical floor represented by any non-zero source layout cell.
+ */
 public final class PlayerPathfinder {
     public List<Cell> shortestPath(MazeModel maze, Cell start, Cell goal) {
-        if (!maze.isRawPath(start.row(), start.column())
-                || !maze.isRawPath(goal.row(), goal.column())) {
+        if (!isPhysicalFloor(maze, start) || !isPhysicalFloor(maze, goal)) {
             return List.of();
         }
 
@@ -35,12 +38,15 @@ public final class PlayerPathfinder {
         return List.of();
     }
 
+    private boolean isPhysicalFloor(MazeModel maze, Cell cell) {
+        return cell.row() >= 0 && cell.row() < MazeModel.SIZE
+                && cell.column() >= 0 && cell.column() < MazeModel.SIZE
+                && maze.raw(cell.row(), cell.column()) != 0;
+    }
+
     private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
                      Map<Cell, Cell> previous) {
-        if (next.row() < 0 || next.row() >= MazeModel.SIZE
-                || next.column() < 0 || next.column() >= MazeModel.SIZE) return;
-        if (!maze.isRawPath(next.row(), next.column())
-                || previous.containsKey(next)) return;
+        if (!isPhysicalFloor(maze, next) || previous.containsKey(next)) return;
         previous.put(next, current);
         queue.addLast(next);
     }

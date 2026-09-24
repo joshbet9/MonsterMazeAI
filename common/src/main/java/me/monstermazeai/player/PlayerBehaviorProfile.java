@@ -17,7 +17,7 @@ public final class PlayerBehaviorProfile {
     public final double forwardBias;
     public final double strafeBias;
 
-    PlayerBehaviorProfile(long samples, double averageHorizontalSpeed, double sprintRatio,
+    public PlayerBehaviorProfile(long samples, double averageHorizontalSpeed, double sprintRatio,
                           double jumpRatio, double strafeRatio, double averageTurnPerTick,
                           double damagePerSecond, double abilityUseRatePerSecond,
                           double forwardBias, double strafeBias) {

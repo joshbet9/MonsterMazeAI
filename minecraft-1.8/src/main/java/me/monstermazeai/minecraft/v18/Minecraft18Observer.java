@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.init.Blocks;
 import net.minecraft.scoreboard.Score;
 import net.minecraft.scoreboard.ScoreObjective;
 import net.minecraft.scoreboard.ScorePlayerTeam;
@@ -25,6 +26,8 @@ public final class Minecraft18Observer {
     private static final int SCAN_RADIUS = 64;
     private static final int CENTER_SEARCH_RADIUS = 6;
     private static final int PAD_SCAN_RADIUS = 70;
+    private static final int CENTER_ANCHOR_RADIUS = 6;
+    private static final int SAFE_PAD_RADIUS = 2;
 
     private int ticksSinceLastMazeRefresh;
     private int ticksSinceLastPadRefresh;
@@ -82,7 +85,10 @@ public final class Minecraft18Observer {
         }
 
         ticksSinceLastMazeRefresh++;
-        boolean refreshMaze = center != null && (ticksSinceLastMazeRefresh >= 20 || !cachedMazeDetected);
+        // Keep the authoritative pattern cached for the whole round. The source mutates the center
+        // platform and replaces a 5x5 area for each SafePad, so re-matching the live grid later
+        // would eventually create false negatives.
+        boolean refreshMaze = center != null && !cachedMazeDetected;
         if (refreshMaze) {
             int[][] refreshed = new int[MAZE_SIZE][MAZE_SIZE];
             cachedMazeDetected = readMaze(world, center, refreshed);
@@ -237,7 +243,11 @@ public final class Minecraft18Observer {
         int px = player.getPosition().getX();
         int pz = player.getPosition().getZ();
         int py = (int) Math.floor(player.posY);
-        int[] candidateCenterYs = new int[] { py - 1, py, py - 2, py + 1 };
+
+        // MazeGenerator stores the arena center at the player's feet Y-level and
+        // places the walkable surface at centerY - 1. Prioritize that relationship,
+        // with nearby fallbacks for teleport/interpolation timing.
+        int[] candidateCenterYs = new int[] { py, py - 1, py + 1, py - 2 };
 
         for (int centerY : candidateCenterYs) {
             for (int x = px - CENTER_SEARCH_RADIUS; x <= px + CENTER_SEARCH_RADIUS; x++) {
@@ -249,47 +259,104 @@ public final class Minecraft18Observer {
                         cachedCenter = candidate;
                         cachedMazePattern = pattern;
                         return cachedCenter;
-                    }                }
+                    }
+                }
             }
         }
         return null;
     }
 
+    /**
+     * Source-aware center anchor.
+     *
+     * MazeGenerator marks the central safe zone with layout values 3-6 and writes
+     * those cells as STAINED_CLAY data 5. This is a much stronger anchor than a
+     * generic occupancy check and directly models the authoritative server logic.
+     */
     private boolean matchesCenterAnchor(World world, BlockPos center) {
+        int surfaceY = center.getY() - 1;
+
         for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
             int[][] expected = MazeLayouts.ALL_MAZES[pattern];
             boolean possible = true;
-            for (int row = 45; row <= 53 && possible; row++) {
-                for (int col = 45; col <= 53; col++) {
+            boolean sawCenterMarker = false;
+
+            for (int row = 49 - CENTER_ANCHOR_RADIUS;
+                 row <= 49 + CENTER_ANCHOR_RADIUS && possible; row++) {
+                for (int col = 49 - CENTER_ANCHOR_RADIUS;
+                     col <= 49 + CENTER_ANCHOR_RADIUS; col++) {
                     int x = center.getX() - HALF_MAZE + row;
                     int z = center.getZ() - HALF_MAZE + col;
-                    boolean expectedOccupied = expected[row][col] != 0;
-                    boolean actualOccupied = world.getBlockState(
-                            new BlockPos(x, center.getY() - 1, z)).getBlock()
-                            != net.minecraft.init.Blocks.air;
-                    if (expectedOccupied != actualOccupied) {
-                        possible = false;
-                        break;
-                    }                }
+                    net.minecraft.block.state.IBlockState state =
+                            world.getBlockState(new BlockPos(x, surfaceY, z));
+
+                    int value = expected[row][col];
+                    if (value >= 3 && value <= 6) {
+                        sawCenterMarker = true;
+                        if (state.getBlock() != Blocks.stained_hardened_clay
+                                || Blocks.stained_hardened_clay.getMetaFromState(state) != 5) {
+                            possible = false;
+                            break;
+                        }
+                    } else {
+                        boolean expectedOccupied = value != 0;
+                        boolean actualOccupied = state.getBlock() != Blocks.air;
+                        if (expectedOccupied != actualOccupied) {
+                            possible = false;
+                            break;
+                        }
+                    }
+                }
             }
-            if (possible) return true;
+
+            if (possible && sawCenterMarker) return true;
         }
         return false;
     }
 
     private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {
+        int surfaceY = center.getY() - 1;
+        List<BlockPos> activePads = findActivePadCenters(world, center, surfaceY);
+
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 int x = center.getX() - HALF_MAZE + row;
                 int z = center.getZ() - HALF_MAZE + col;
+
+                // SafePad.captureAndBuild replaces a symmetric 5x5 surface with
+                // clay/beacon regardless of the underlying layout cell. Ignore that
+                // presentation mutation and compare the remaining topology exactly.
+                if (withinAnyPad(x, z, activePads)) continue;
+
                 boolean expectedOccupied = expected[row][col] != 0;
                 boolean actualOccupied = world.getBlockState(
-                        new BlockPos(x, center.getY() - 1, z)).getBlock()
-                        != net.minecraft.init.Blocks.air;
+                        new BlockPos(x, surfaceY, z)).getBlock() != Blocks.air;
                 if (expectedOccupied != actualOccupied) return false;
             }
         }
         return true;
+    }
+
+    private List<BlockPos> findActivePadCenters(World world, BlockPos center, int surfaceY) {
+        List<BlockPos> pads = new ArrayList<BlockPos>();
+        for (int x = center.getX() - HALF_MAZE; x <= center.getX() + HALF_MAZE; x++) {
+            for (int z = center.getZ() - HALF_MAZE; z <= center.getZ() + HALF_MAZE; z++) {
+                if (world.getBlockState(new BlockPos(x, surfaceY, z)).getBlock() == Blocks.beacon) {
+                    pads.add(new BlockPos(x, surfaceY, z));
+                }
+            }
+        }
+        return pads;
+    }
+
+    private boolean withinAnyPad(int x, int z, List<BlockPos> pads) {
+        for (BlockPos pad : pads) {
+            if (Math.abs(x - pad.getX()) <= SAFE_PAD_RADIUS
+                    && Math.abs(z - pad.getZ()) <= SAFE_PAD_RADIUS) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void clearRoundState() {

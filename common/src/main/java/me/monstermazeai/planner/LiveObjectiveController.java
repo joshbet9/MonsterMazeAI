@@ -8,62 +8,57 @@ import me.monstermazeai.player.Action;
 
 /**
  * Live-game objective layer above the physical movement controller.
- *
- * The live adapter supplies the authoritative active Safe Pad. This layer
- * decides whether the AI should still pursue that objective before asking the
- * movement planner for a control. A newly promoted pad is therefore naturally
- * picked up on the next observation, while lobby/dead/completed/expired
- * objectives fail closed.
  */
 public final class LiveObjectiveController {
     private final MazeAwareRecedingHorizonController movement;
     private String lastDecisionReason = "UNSET";
+    private String lastDecisionDetail = "UNSET";
 
     public LiveObjectiveController(MazeAwareRecedingHorizonController movement) {
         if (movement == null) throw new IllegalArgumentException("movement");
         this.movement = movement;
     }
 
-    /**
-     * Produce exactly one control for the current live objective.
-     *
-     * The active pad is the authoritative objective. We intentionally do not
-     * predict a future/preview pad because the live 1.8 observation contract
-     * only exposes the currently active Safe Pad.
-     */
     public Action nextAction(GameState state, boolean allowJump) {
-        if (!validObjective(state)) { lastDecisionReason = invalidReason(state); return Action.IDLE; }
+        if (!validObjective(state)) {
+            lastDecisionReason = invalidReason(state);
+            lastDecisionDetail = "objective invalid";
+            return Action.IDLE;
+        }
 
-        if (PadModel.isOn(
-                state.player,
-                state.activePadRow + 0.5,
-                GameState.PAD_SURFACE_Y,
-                state.activePadColumn + 0.5)) {
+        if (PadModel.isOn(state.player, state.activePadRow + 0.5,
+                GameState.PAD_SURFACE_Y, state.activePadColumn + 0.5)) {
             lastDecisionReason = "ON_PAD";
+            lastDecisionDetail = "player is geometrically on active pad";
             return Action.IDLE;
         }
 
         if (state.padReached) {
             lastDecisionReason = "PAD_REACHED";
+            lastDecisionDetail = "observation says active pad is reached";
             return Action.IDLE;
         }
 
         try {
-            return movement.nextActions(
+            Action action = movement.nextActions(
                     state,
                     new Cell(state.activePadRow, state.activePadColumn),
                     allowJump)[0];
             lastDecisionReason = "MOVEMENT_PLANNER";
+            lastDecisionDetail = movement.lastDecisionDetail()
+                    + " | action=" + describe(action);
             return action;
         } catch (IllegalArgumentException noRoute) {
             lastDecisionReason = "NO_ROUTE";
-            // An objective can become unreachable after live maze mutation.
-            // Never turn a planning failure into uncontrolled movement.
+            lastDecisionDetail = noRoute.getMessage() == null
+                    ? "movement planner rejected route"
+                    : noRoute.getMessage();
             return Action.IDLE;
         }
     }
 
     public String lastDecisionReason() { return lastDecisionReason; }
+    public String lastDecisionDetail() { return lastDecisionDetail; }
 
     private String invalidReason(GameState state) {
         if (state == null) return "NULL_STATE";
@@ -72,29 +67,32 @@ public final class LiveObjectiveController {
         if (state.completed) return "COMPLETED";
         if (state.maze == null) return "NO_MAZE";
         if (state.phaseTicksRemaining <= 0) return "NO_PHASE_TIME";
-        if (state.activePadRow < 0 || state.activePadColumn < 0 || state.activePadRow >= MazeModel.SIZE || state.activePadColumn >= MazeModel.SIZE) return "INVALID_PAD";
+        if (state.activePadRow < 0 || state.activePadColumn < 0
+                || state.activePadRow >= MazeModel.SIZE
+                || state.activePadColumn >= MazeModel.SIZE) return "INVALID_PAD";
         return "INVALID_OBJECTIVE";
     }
 
     private boolean validObjective(GameState state) {
-        if (state == null
-                || !state.inMonsterMaze
-                || !state.alive
-                || state.completed
-                || state.maze == null
-                || state.phaseTicksRemaining <= 0
-                || state.activePadRow < 0
-                || state.activePadColumn < 0
-                || state.activePadRow >= MazeModel.SIZE
-                || state.activePadColumn >= MazeModel.SIZE) {
-            return false;
-        }
+        return state != null
+                && state.inMonsterMaze
+                && state.alive
+                && !state.completed
+                && state.maze != null
+                && state.phaseTicksRemaining > 0
+                && state.activePadRow >= 0
+                && state.activePadColumn >= 0
+                && state.activePadRow < MazeModel.SIZE
+                && state.activePadColumn < MazeModel.SIZE;
+    }
 
-        // The observer deliberately disables the active Safe Pad's 5x5 area
-        // in the logical maze so pathfinding does not treat the temporary pad
-        // replacement as a wall topology. The pad itself is still a valid
-        // physical objective, so its raw cell must not be required to remain
-        // traversable here.
-        return true;
+    private static String describe(Action action) {
+        if (action == null) return "null";
+        return "f=" + action.forward()
+                + ",s=" + action.strafe()
+                + ",jump=" + action.jump()
+                + ",sprint=" + action.sprint()
+                + ",yawDelta=" + action.yawDelta()
+                + ",ability=" + action.useAbility();
     }
 }

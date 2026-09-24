@@ -147,7 +147,8 @@ public final class Minecraft18Observer {
                 continue;
             }
             monsters.add(new LegacyWorldObservation.Monster(
-                    entity.getEntityId(), entity.posX, entity.posY, entity.posZ,
+                    entity.getEntityId(), entity.getClass().getSimpleName(),
+                    entity.posX, entity.posY, entity.posZ,
                     entity.motionX, entity.motionY, entity.motionZ, entity.isDead));
             if (monsters.size() >= 256) {
                 break;
@@ -489,8 +490,8 @@ public final class Minecraft18Observer {
                 }
                 LegacyWorldObservation.Monster monster = state.monsters.get(i);
                 monsters.append(String.format(Locale.ROOT,
-                        "%d,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
-                        monster.id, monster.x, monster.y, monster.z,
+                        "%d,%s,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
+                        monster.id, monster.type, monster.x, monster.y, monster.z,
                         monster.vx, monster.vy, monster.vz, monster.removed));
             }
             monsters.append("]");

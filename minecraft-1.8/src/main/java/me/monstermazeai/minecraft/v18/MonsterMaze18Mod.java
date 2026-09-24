@@ -37,7 +37,8 @@ public final class MonsterMaze18Mod {
         toggleAi = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
         ClientRegistry.registerKeyBinding(toggleAi);
-        aiEnabled = runtime.configured();
+        // Manual opt-in: the AI must never take control merely because the sidecar is configured.
+        aiEnabled = false;
 
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
@@ -74,8 +75,15 @@ public final class MonsterMaze18Mod {
             }
         }
 
+        if (!aiEnabled) {
+            // Do not apply an IDLE action here: doing so would overwrite the player's real keyboard state every tick and make W/A/S/D behave like pulses.
+            executor.releaseAll();
+            movementValidator.reset();
+            return;
+        }
+
         LegacyWorldObservation state = observer.observe().state;
-        LegacyAction action = aiEnabled ? runtime.decide(state) : LegacyAction.IDLE;
+        LegacyAction action = runtime.decide(state);
         executor.apply(action);
         if (state.inMonsterMaze) {
             movementValidator.observe(state, action);

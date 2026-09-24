@@ -22,6 +22,8 @@ public final class GameState {
     public long tick;
     public Mode mode = Mode.MODERN;
     public int stage = 1;
+    /** Source Monster Maze layout number (1-3), or -1 when not identified. */
+    public int mazePattern = -1;
     /** Remaining phase time represented in simulation ticks (20 ticks = 1 second). */
     public int phaseTicksRemaining;
     /** Counts simulation ticks toward the server's once-per-second phase task. */
@@ -61,6 +63,7 @@ public final class GameState {
         s.tick=tick;
         s.mode=mode;
         s.stage=stage;
+        s.mazePattern=mazePattern;
         s.phaseTicksRemaining=phaseTicksRemaining;
         s.phaseSecondAccumulatorTicks=phaseSecondAccumulatorTicks;
         s.liveSeconds=liveSeconds;

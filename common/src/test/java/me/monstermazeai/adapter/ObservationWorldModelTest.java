@@ -32,6 +32,7 @@ class ObservationWorldModelTest {
         GameState state = ObservationWorldModel.from(observation);
 
         assertEquals(1234, state.tick);
+        assertEquals(3, state.mazePattern);
         assertTrue(state.inMonsterMaze);
         assertEquals(50.2, state.player.x, 1e-9);
         assertEquals(50.7, state.player.z, 1e-9);

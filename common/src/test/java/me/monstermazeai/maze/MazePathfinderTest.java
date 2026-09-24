@@ -41,4 +41,35 @@ class MazePathfinderTest {
         assertEquals(3, path.size());
         assertEquals(new Cell(1, 1), path.get(1));
     }
+
+    @Test
+    void playerCanLeaveCentralSafeArea() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[49][49] = 3;
+        raw[49][50] = 4;
+        raw[49][51] = 5;
+        MazeModel maze = new MazeModel(raw);
+
+        List<Cell> path = new PlayerPathfinder().shortestPath(
+                maze, new Cell(49, 49), new Cell(49, 51));
+
+        assertEquals(List.of(
+                new Cell(49, 49), new Cell(49, 50), new Cell(49, 51)), path);
+    }
+
+    @Test
+    void playerCanReachDisabledSafePadFloor() {
+        MazeModel maze = openMaze();
+        for (int r = 47; r <= 51; r++) {
+            for (int c = 47; c <= 51; c++) {
+                maze.setDisabled(r, c, true);
+            }
+        }
+
+        List<Cell> path = new PlayerPathfinder().shortestPath(
+                maze, new Cell(46, 49), new Cell(49, 49));
+
+        assertEquals(4, path.size());
+        assertEquals(new Cell(49, 49), path.get(path.size() - 1));
+    }
 }

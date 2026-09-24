@@ -14,7 +14,7 @@ class RobustLiveControllerTest {
         s.inMonsterMaze = true;
         s.alive = true;
         s.phaseTicksRemaining = 200;
-        s.activePadRow = 51;
+        s.activePadRow = 55;
         s.activePadColumn = 50;
         s.maze = openMaze();
         s.player.x = 50.5;

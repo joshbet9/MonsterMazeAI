@@ -29,6 +29,7 @@ public final class AiSidecarMain {
     public static void main(String[] args) throws Exception {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
+        RobustLiveController controller = null;
 
         while (true) {
             LegacyWorldObservation observation;
@@ -43,21 +44,26 @@ public final class AiSidecarMain {
                 GameState state = ObservationWorldModel.from(observation);
                 if (state.inMonsterMaze && state.alive && !state.completed && state.maze != null
                         && state.activePadRow >= 0 && state.activePadColumn >= 0) {
-                    MazeModel maze = state.maze;
-                    Simulator simulator = new Simulator(
-                            new LegacyMazePhysics(),
-                            new MonsterSimulator(maze,
-                                    new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
-                            new CollisionModel());
-                    LiveObjectiveController objective = new LiveObjectiveController(
-                            new MazeAwareRecedingHorizonController(
-                                    new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
-                    RobustLiveController controller = new RobustLiveController(objective);
+                    if (controller == null) {
+                        MazeModel maze = state.maze;
+                        Simulator simulator = new Simulator(
+                                new LegacyMazePhysics(),
+                                new MonsterSimulator(maze,
+                                        new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
+                                new CollisionModel());
+                        LiveObjectiveController objective = new LiveObjectiveController(
+                                new MazeAwareRecedingHorizonController(
+                                        new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
+                        controller = new RobustLiveController(objective);
+                    }
                     Action action = controller.nextAction(state, true);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
+                } else if (controller != null) {
+                    controller.reset();
                 }
             } catch (RuntimeException failure) {
+                if (controller != null) controller.reset();
                 System.err.println("[MonsterMazeAI] sidecar decision failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
             }

@@ -5,13 +5,6 @@ import me.monstermazeai.adapter.LegacyWorldObservation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.monster.EntitySnowman;
-import net.minecraft.entity.monster.EntityEnderman;
-import net.minecraft.entity.monster.EntityPigZombie;
-import net.minecraft.entity.passive.EntitySquid;
-import net.minecraft.entity.monster.EntityZombie;
-import net.minecraft.entity.passive.EntityOcelot;
-import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.Score;
 import net.minecraft.scoreboard.ScoreObjective;
@@ -141,11 +134,12 @@ public final class Minecraft18Observer {
         }
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         for (Entity entity : world.loadedEntityList) {
-            if (!isMonsterMazeMob(entity)) {
+            String visualType = MonsterSkinTypes.visualType(entity);
+            if (visualType == null) {
                 continue;
             }
             monsters.add(new LegacyWorldObservation.Monster(
-                    entity.getEntityId(), entity.getClass().getSimpleName(),
+                    entity.getEntityId(), MonsterSkinTypes.GAMEPLAY_TYPE, visualType,
                     entity.posX, entity.posY, entity.posZ,
                     entity.motionX, entity.motionY, entity.motionZ, entity.isDead));
             if (monsters.size() >= 256) {
@@ -298,16 +292,6 @@ public final class Minecraft18Observer {
         return true;
     }
 
-    private boolean isMonsterMazeMob(Entity entity) {
-        return entity instanceof EntityEnderman
-                || entity instanceof EntityPigZombie
-                || entity instanceof EntitySquid
-                || entity instanceof EntitySnowman
-                || entity instanceof EntityOcelot
-                || entity instanceof EntityVillager
-                || entity instanceof EntityZombie;
-    }
-
     private void clearRoundState() {
         cachedCenter = null;
         cachedPad = null;
@@ -437,8 +421,8 @@ public final class Minecraft18Observer {
                 }
                 LegacyWorldObservation.Monster monster = state.monsters.get(i);
                 monsters.append(String.format(Locale.ROOT,
-                        "%d,%s,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
-                        monster.id, monster.type, monster.x, monster.y, monster.z,
+                        "%d,%s,%s,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
+                        monster.id, monster.gameplayType, monster.visualType, monster.x, monster.y, monster.z,
                         monster.vx, monster.vy, monster.vz, monster.removed));
             }
             monsters.append("]");

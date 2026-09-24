@@ -57,7 +57,7 @@ recorded Mineplex observations.
 
 ## Implementation order
 
-1. Read-only state capture. **Current.**
+1. Read-only state capture. **Implemented.**
 2. Validate center, maze, pad, monster and scoreboard detection against a real
    1.8 Monster Maze match.
 3. Add robust preview/dynamic-cell detection.

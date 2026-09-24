@@ -80,3 +80,13 @@ The common AI core now has source-grounded game mechanics, tick-level 1.8 moveme
 Live Minecraft observation/input adapters remain deliberately separate and are the next phase. No gameplay automation is considered correct until the live adapter is validated against the Monster Maze implementation and in-game behaviour.
 
 See [docs/milestone-2.md](docs/milestone-2.md) for the completed scope.
+## Long-term deployment vision
+
+The long-term goal is for MonsterMazeAI to become a population of AI-controlled competitor players that can be integrated into the Monster Maze game itself. Rather than having one monolithic "bot difficulty", the eventual system should support distinct AI competitors with configurable difficulty and attribute sliders, allowing their behaviour and capabilities to be tuned independently while using the same underlying AI framework.
+
+The immediate objective is deliberately different: first build the strongest possible AI baseline. The read-only live adapter, accurate state model, physics/monster simulation, planning and closed-loop control should be developed and validated without artificially weakening the agent. Once that baseline is reliable, difficulty profiles and attribute controls can be layered on top as deliberate constraints or behavioural variations rather than being baked into the core planner.
+
+This separation is intentional: **baseline intelligence first; competitor personalities/difficulties second; integration into Monster Maze third.** The AI should remain capable of playing at its full measured potential even when later configurations impose lower difficulty or different attributes.
+
+A further long-term feature is **player modelling**. The system should be able to measure a real player's abilities and playstyle from their gameplay, producing a player profile that an NPC can use to emulate that player. This is intended to capture measurable characteristics such as movement and reaction tendencies, route preferences, risk tolerance, monster interactions, ability usage and other demonstrated behaviours. The NPC should be able to reproduce the player's characteristic decision-making while remaining grounded in the same game-state and physics models as the baseline AI.
+

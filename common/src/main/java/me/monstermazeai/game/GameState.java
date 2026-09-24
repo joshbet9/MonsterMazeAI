@@ -43,6 +43,9 @@ public final class GameState {
     public int activePadRow = -1, activePadColumn = -1;
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
+    public boolean completed = false;
+    /** True when the live adapter positively identifies a Monster Maze match. */
+    public boolean inMonsterMaze = false;
     public boolean padReached = false;
 
     public double targetPadX() {
@@ -64,7 +67,7 @@ public final class GameState {
         s.centerSafeZoneDecay=centerSafeZoneDecay;
         s.previewPadRequested=previewPadRequested;
         s.pendingMonsterSpawns=pendingMonsterSpawns;
-        s.maze=maze;
+        s.maze=maze == null ? null : maze.copy();
         s.player=player.copy();
         s.kit=kit;
         s.ability=ability.copy();
@@ -73,6 +76,8 @@ public final class GameState {
         s.previewPadRow=previewPadRow;
         s.previewPadColumn=previewPadColumn;
         s.alive=alive;
+        s.completed=completed;
+        s.inMonsterMaze=inMonsterMaze;
         s.padReached=padReached;
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;

@@ -26,6 +26,16 @@ public final class MazeModel {
     }
     public boolean isDisabled(int row, int col) { return disabled[row][col]; }
     public void setDisabled(int row, int col, boolean value) { disabled[row][col] = value; }
+    public MazeModel copy() {
+        MazeModel copy = new MazeModel(raw);
+        for (int r = 0; r < SIZE; r++) {
+            for (int c = 0; c < SIZE; c++) {
+                copy.disabled[r][c] = disabled[r][c];
+            }
+        }
+        return copy;
+    }
+
     public boolean isTraversable(int row, int col) {
         return row >= 0 && row < SIZE && col >= 0 && col < SIZE
                 && isRawPath(row, col) && !disabled[row][col];

@@ -112,3 +112,15 @@ Monster futures are stochastic. Search should sample multiple legal monster futu
 The minimum simulator state includes tick, platform/mode, stage, phase timer, maze pattern, dynamic disabled cells, active/preview pads, player position/velocity/orientation/grounded/health/kit/jump and ability resources, and per-monster position/velocity/waypoint/direction/frozen/launched state.
 
 Initial raw metrics are pad progress, time-to-pad, survival, health remaining, distance to pad, monster exposure and remaining movement/ability resources. These are metrics for search, not a baked-in universal route ranking.
+## Long-term competitor integration
+
+The eventual deployment target is not only a standalone TAS/AI client. The AI is intended to be integrable into the Monster Maze project as computer-controlled competitor players. The system should support multiple competitor profiles with different difficulty levels and configurable attribute sliders, while sharing the same underlying observation, simulation and planning architecture.
+
+The development order matters. The first target is a **maximum-capability baseline**: build and validate the strongest practical AI without difficulty handicaps. Difficulty and attribute profiles should later be implemented as explicit configuration layers that constrain or modify the baseline agent, rather than weakening the core intelligence during its initial development.
+
+### Player modelling and human emulation
+
+A later layer should allow the system to learn a model of an individual real player's demonstrated abilities and playstyle. Gameplay telemetry can be used to estimate characteristics such as movement execution, reaction timing, route preferences, risk tolerance, monster interaction choices, ability usage and other repeatable decision patterns. That profile can then drive an NPC competitor intended to play like that player, while the underlying game-state, physics and legality remain governed by the same simulation and observation framework.
+
+This is separate from difficulty. A player model describes **who the NPC plays like**; a difficulty profile describes **how capable or constrained the NPC is allowed to be**. The maximum-capability AI remains the baseline from which both can be derived.
+

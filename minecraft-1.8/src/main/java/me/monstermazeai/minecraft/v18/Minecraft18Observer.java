@@ -27,6 +27,9 @@ public final class Minecraft18Observer {
     private static final int PAD_SCAN_RADIUS = 70;
 
     private int ticksSinceLastMazeRefresh;
+    private int ticksSinceLastPadRefresh;
+    private PadObservation cachedPad;
+    private BlockPos cachedPadCenter;
     private int[][] cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
     private boolean cachedMazeDetected;
     private long gameStartWorldTick = -1L;
@@ -54,9 +57,17 @@ public final class Minecraft18Observer {
         boolean mazeScoreboard = Minecraft18ObservationRules.looksLikeMonsterMaze(scoreboard);
 
         BlockPos center = findMazeCenter(world, player, mazeScoreboard);
-        PadObservation pad = center == null
-                ? findActivePadWithoutCenter(world, player)
-                : findActivePad(world, player, center);
+        ticksSinceLastPadRefresh++;
+        if (center == null) {
+            cachedPad = findActivePadWithoutCenter(world, player);
+            cachedPadCenter = null;
+            ticksSinceLastPadRefresh = 0;
+        } else if (cachedPadCenter == null || !cachedPadCenter.equals(center) || ticksSinceLastPadRefresh >= 5) {
+            cachedPad = findActivePad(world, player, center);
+            cachedPadCenter = center;
+            ticksSinceLastPadRefresh = 0;
+        }
+        PadObservation pad = cachedPad;
 
         ticksSinceLastMazeRefresh++;
         boolean refreshMaze = center != null && (ticksSinceLastMazeRefresh >= 20 || !cachedMazeDetected);
@@ -162,6 +173,9 @@ public final class Minecraft18Observer {
         ticksSinceLastMazeRefresh = 0;
         gameStartWorldTick = -1L;
         cachedCenter = null;
+        cachedPad = null;
+        cachedPadCenter = null;
+        ticksSinceLastPadRefresh = 0;
         cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
         cachedMazeDetected = false;
         previouslyInMonsterMaze = false;

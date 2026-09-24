@@ -27,6 +27,8 @@ public final class Minecraft18Observer {
     private static final int PAD_SCAN_RADIUS = 70;
 
     private int ticksSinceLastMazeRefresh;
+    private int[][] cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+    private boolean cachedMazeDetected;
     private long gameStartWorldTick = -1L;
     private BlockPos cachedCenter;
     private boolean previouslyInMonsterMaze;
@@ -36,12 +38,6 @@ public final class Minecraft18Observer {
             reset();
             return;
         }
-
-        ticksSinceLastLog++;
-        if (ticksSinceLastLog < 20) {
-            return;
-        }
-        ticksSinceLastLog = 0;
 
         Observation observation = observe();
         System.out.println("[MonsterMazeAI/1.8] " + observation.toLogLine());
@@ -59,8 +55,20 @@ public final class Minecraft18Observer {
                 ? findActivePadWithoutCenter(world, player)
                 : findActivePad(world, player, center);
 
-        int[][] raw = new int[MAZE_SIZE][MAZE_SIZE];
-        boolean mazeDetected = center != null && readMaze(world, center, raw);
+        ticksSinceLastMazeRefresh++;
+        boolean refreshMaze = center != null && (ticksSinceLastMazeRefresh >= 20 || !cachedMazeDetected);
+        if (refreshMaze) {
+            int[][] refreshed = new int[MAZE_SIZE][MAZE_SIZE];
+            cachedMazeDetected = readMaze(world, center, refreshed);
+            if (cachedMazeDetected) {
+                cachedMaze = refreshed;
+            } else {
+                cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+            }
+            ticksSinceLastMazeRefresh = 0;
+        }
+        int[][] raw = cachedMaze;
+        boolean mazeDetected = cachedMazeDetected && center != null;
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
         if (!inMonsterMaze) {
@@ -151,6 +159,8 @@ public final class Minecraft18Observer {
         ticksSinceLastMazeRefresh = 0;
         gameStartWorldTick = -1L;
         cachedCenter = null;
+        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+        cachedMazeDetected = false;
         previouslyInMonsterMaze = false;
     }
 

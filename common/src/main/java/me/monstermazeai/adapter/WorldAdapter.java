@@ -13,7 +13,8 @@ public interface WorldAdapter {
     }
 
     default boolean inMonsterMaze() {
-        return observe().state().activePadRow >= 0;
+        GameState state = observe().state();
+        return state.inMonsterMaze && !state.completed;
     }
 
     default Cell activePad() {

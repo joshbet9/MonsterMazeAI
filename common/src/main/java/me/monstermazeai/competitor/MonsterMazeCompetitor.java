@@ -61,7 +61,7 @@ public final class MonsterMazeCompetitor {
         RobustLiveController robust=new RobustLiveController(
                 new LiveObjectiveController(
                         new MazeAwareRecedingHorizonController(
-                                new BeamSearchPlanner(simulator, new me.monstermazeai.planner.Heuristic(), 12, 32))));
+                                new BeamSearchPlanner(simulator, new me.monstermazeai.planner.Heuristic(), 12, 32), 1)));
         AutonomousMonsterMazeAgent autonomous=new AutonomousMonsterMazeAgent(robust);
         agent=new PlayerSpecificNpcAgent(autonomous,
                 new PlayerSpecificNpcModel(definition.profile));

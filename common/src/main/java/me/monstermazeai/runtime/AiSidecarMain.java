@@ -44,6 +44,9 @@ public final class AiSidecarMain {
         if (telemetryPath != null && !telemetryPath.isEmpty()) telemetry = new TelemetryRecorder(Paths.get(telemetryPath));
         if (replayPath != null && !replayPath.isEmpty()) replay = new ReplayRecorder(Paths.get(replayPath));
 
+        long observationCount = 0L;
+        long lastDiagnosticTick = Long.MIN_VALUE;
+
         while (true) {
             LegacyWorldObservation observation;
             try {
@@ -52,14 +55,27 @@ public final class AiSidecarMain {
                 return;
             }
 
+            observationCount++;
             LegacyAction result = LegacyAction.IDLE;
             long decisionStart = System.nanoTime();
             GameState telemetryState = null;
             try {
                 GameState state = ObservationWorldModel.from(observation);
                 telemetryState = state;
-                if (state.inMonsterMaze && state.alive && !state.completed && state.maze != null
-                        && state.activePadRow >= 0 && state.activePadColumn >= 0) {
+                boolean decisionReady = state.inMonsterMaze && state.alive && !state.completed && state.maze != null
+                        && state.activePadRow >= 0 && state.activePadColumn >= 0;
+                if (!decisionReady && (observationCount == 1 || observation.worldTick != lastDiagnosticTick)) {
+                    System.err.println("[MonsterMazeAI] gate: tick=" + observation.worldTick
+                            + " rawInMaze=" + observation.inMonsterMaze
+                            + " mazeDetected=" + observation.mazeDetected
+                            + " stateInMaze=" + state.inMonsterMaze
+                            + " alive=" + state.alive
+                            + " completed=" + state.completed
+                            + " maze=" + (state.maze != null)
+                            + " pad=" + state.activePadRow + "," + state.activePadColumn);
+                    lastDiagnosticTick = observation.worldTick;
+                }
+                if (decisionReady) {
                     if (agent == null) {
                         MazeModel maze = state.maze;
                         Simulator simulator = new Simulator(
@@ -75,6 +91,12 @@ public final class AiSidecarMain {
                     Action action = agent.decide(state, true);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
+                    if (observationCount == 1 || observationCount % 20 == 0) {
+                        System.err.println("[MonsterMazeAI] action: tick=" + observation.worldTick
+                                + " f=" + result.forward + " s=" + result.strafe
+                                + " jump=" + result.jump + " sprint=" + result.sprint
+                                + " yawDelta=" + result.yawDelta + " ability=" + result.useAbility); 
+                    }
                 } else if (agent != null) {
                     agent.reset();
                 }

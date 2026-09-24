@@ -35,9 +35,17 @@ repositories {
     mavenCentral()
 }
 
+def commonApiJar = file("../common-api/target/common-api-0.1.0-SNAPSHOT.jar")
+
 dependencies {
-    compile files("../common-api/target/common-api-0.1.0-SNAPSHOT.jar")
+    compile files(commonApiJar)
     testCompile "junit:junit:4.13.2"
+}
+
+jar {
+    // Forge loads the adapter as a single mod JAR. Package the tiny Java-8
+    // common API inside it so runtime classes such as Kit are available.
+    from zipTree(commonApiJar)
 }
 
 processResources {

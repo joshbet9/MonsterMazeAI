@@ -137,7 +137,6 @@ public final class Minecraft18Observer {
                 displayNames, kit, stackSizes);
         int abilityCharges = detectAbilityCharges(displayNames, stackSizes, kit);
         boolean padReached = pad != null && pad.row >= 0 && isOnPad(player, pad, center);
-
         if (pad != null && pad.row >= 0 && mazeDetected) {            disablePadArea(raw, pad.row, pad.column);
         }
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
@@ -277,8 +276,7 @@ public final class Minecraft18Observer {
                     if (expectedOccupied != actualOccupied) {
                         possible = false;
                         break;
-                    }
-                }
+                    }                }
             }
             if (possible) return true;
         }
@@ -417,8 +415,7 @@ public final class Minecraft18Observer {
         public final boolean inMonsterMaze;
         public final boolean mazeDetected;
         public final BlockPos center;
-        public final PadObservation pad;
-        public final Minecraft18ObservationRules.ScoreboardData scoreboard;
+        public final PadObservation pad;        public final Minecraft18ObservationRules.ScoreboardData scoreboard;
         public final LegacyWorldObservation state;
 
         private Observation(boolean inMonsterMaze, boolean mazeDetected, BlockPos center,
@@ -534,4 +531,7 @@ public final class Minecraft18Observer {
         }
 
         @Override
-        public String toString() {
+        public String toString() {            return String.format(Locale.ROOT, "(%d,%d)", row, column);
+        }
+    }
+}

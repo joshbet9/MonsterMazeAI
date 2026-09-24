@@ -12,7 +12,7 @@ import java.util.*;
  */
 public final class MonsterAwareRoutePlanner {
     private static final double MONSTER_RISK_RADIUS = 3.0;
-    private static final double RISK_WEIGHT = 8.0;
+    private static final double RISK_WEIGHT = 20.0;
     private static final double STEP_COST = 1.0;
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {

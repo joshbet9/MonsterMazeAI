@@ -52,6 +52,20 @@ public final class ObservationWorldModel {
         state.maze = new me.monstermazeai.maze.MazeModel(observation.maze);
 
         if (observation.pad != null && observation.pad.row >= 0 && observation.pad.column >= 0) {
+            // Keep the authoritative raw layout intact for physical player routing.
+            // The active Safe Pad is temporarily removed only from the logical
+            // monster topology, not from the physical floor graph.
+            for (int row = observation.pad.row - 2; row <= observation.pad.row + 2; row++) {
+                for (int column = observation.pad.column - 2; column <= observation.pad.column + 2; column++) {
+                    if (row >= 0 && row < me.monstermazeai.maze.MazeModel.SIZE
+                            && column >= 0 && column < me.monstermazeai.maze.MazeModel.SIZE) {
+                        state.maze.setDisabled(row, column, true);
+                    }
+                }
+            }
+        }
+
+        if (observation.pad != null && observation.pad.row >= 0 && observation.pad.column >= 0) {
             state.activePadRow = observation.pad.row;
             state.activePadColumn = observation.pad.column;
             state.padReached = observation.pad.reached;

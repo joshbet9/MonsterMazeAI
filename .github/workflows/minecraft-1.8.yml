@@ -39,10 +39,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          forge_bin="$HOME/.gradle/caches/minecraft/net/minecraftforge/forge/1.8.9-11.15.1.2318-1.8.9/stable/22/forgeBin.jar"
-          test -f "$forge_bin"
-          echo "Forge compile input: $forge_bin"
-          ls -lh "$forge_bin"
+          mapfile -t forge_bins < <(find "$HOME/.gradle/caches/minecraft" -type f -name 'forgeBin*.jar' -print)
+          test "${#forge_bins[@]}" -gt 0
+          printf 'Forge compile input: %s\n' "${forge_bins[@]}"
+          ls -lh "${forge_bins[@]}"
 
       - name: Build Minecraft 1.8 mod
         working-directory: minecraft-1.8

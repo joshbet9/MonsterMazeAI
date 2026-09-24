@@ -6,6 +6,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.monster.EntitySnowman;
+import net.minecraft.entity.monster.EntityEnderman;
+import net.minecraft.entity.monster.EntityPigZombie;
+import net.minecraft.entity.passive.EntitySquid;
+import net.minecraft.entity.monster.EntityZombie;
+import net.minecraft.entity.passive.EntityOcelot;
+import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.Score;
 import net.minecraft.scoreboard.ScoreObjective;
@@ -24,6 +30,7 @@ public final class Minecraft18Observer {
     private static final int MAZE_SIZE = 99;
     private static final int HALF_MAZE = 49;
     private static final int SCAN_RADIUS = 64;
+    private static final int CENTER_SEARCH_RADIUS = 6;
     private static final int PAD_SCAN_RADIUS = 70;
 
     private int ticksSinceLastMazeRefresh;
@@ -58,6 +65,11 @@ public final class Minecraft18Observer {
         boolean mazeScoreboard = Minecraft18ObservationRules.looksLikeMonsterMaze(scoreboard);
 
         BlockPos center = findMazeCenter(world, player, mazeScoreboard);
+        if (center == null && !mazeScoreboard && cachedCenter != null
+                && Math.abs(player.posY - cachedCenter.getY()) > 20.0D) {
+            clearRoundState();
+            center = null;
+        }
         ticksSinceLastPadRefresh++;
         if (center == null) {
             cachedPad = findActivePadWithoutCenter(world, player);
@@ -92,15 +104,6 @@ public final class Minecraft18Observer {
         boolean mazeDetected = cachedMazeDetected && center != null;
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
-        if (!inMonsterMaze) {
-            for (Entity entity : world.loadedEntityList) {
-                if (entity instanceof EntitySnowman && !entity.isDead) {
-                    inMonsterMaze = true;
-                    break;
-                }
-            }
-        }
-
         if (inMonsterMaze && !previouslyInMonsterMaze) {
             gameStartWorldTick = world.getTotalWorldTime();
         } else if (!inMonsterMaze) {
@@ -134,18 +137,16 @@ public final class Minecraft18Observer {
                 displayNames, kit, stackSizes);
         int abilityCharges = detectAbilityCharges(displayNames, stackSizes, kit);
         boolean padReached = pad != null && pad.row >= 0 && isOnPad(player, pad, center);
-
-        if (pad != null && pad.row >= 0 && mazeDetected) {
-            disablePadArea(raw, pad.row, pad.column);
+        if (pad != null && pad.row >= 0 && mazeDetected) {            disablePadArea(raw, pad.row, pad.column);
         }
-
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         for (Entity entity : world.loadedEntityList) {
-            if (!(entity instanceof EntitySnowman)) {
+            if (!isMonsterMazeMob(entity)) {
                 continue;
             }
             monsters.add(new LegacyWorldObservation.Monster(
-                    entity.getEntityId(), entity.posX, entity.posY, entity.posZ,
+                    entity.getEntityId(), entity.getClass().getSimpleName(),
+                    entity.posX, entity.posY, entity.posZ,
                     entity.motionX, entity.motionY, entity.motionZ, entity.isDead));
             if (monsters.size() >= 256) {
                 break;
@@ -153,8 +154,9 @@ public final class Minecraft18Observer {
         }
 
         LegacyWorldObservation observation = new LegacyWorldObservation(
-                worldTick, matchedMaze, mazeDetected, alive, completed,
-                stage, safePadSeconds, liveSeconds,
+                worldTick, matchedMaze, mazeDetected,
+                cachedMazePattern < 0 ? -1 : cachedMazePattern + 1,
+                alive, completed, stage, safePadSeconds, liveSeconds,
                 new LegacyWorldObservation.Player(
                         player.posX, player.posY, player.posZ,
                         player.motionX, player.motionY, player.motionZ,
@@ -176,16 +178,7 @@ public final class Minecraft18Observer {
     }
 
     private void reset() {
-        ticksSinceLastMazeRefresh = 0;
-        gameStartWorldTick = -1L;
-        cachedCenter = null;
-        cachedPad = null;
-        cachedPadCenter = null;
-        ticksSinceLastPadRefresh = 0;
-        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
-        cachedMazeDetected = false;
-        cachedMazePattern = -1;
-        previouslyInMonsterMaze = false;
+        clearRoundState();
     }
 
     private int detectAbilityCharges(List<String> names, List<Integer> sizes, Kit kit) {
@@ -224,97 +217,108 @@ public final class Minecraft18Observer {
      * details and are not part of the logical maze topology.
      */
     private boolean readMaze(World world, BlockPos center, int[][] raw) {
+        int pattern = findMatchingPattern(world, center);
+        if (pattern < 0) {
+            cachedMazePattern = -1;
+            return false;
+        }
+        int[][] expected = MazeLayouts.ALL_MAZES[pattern];
+        for (int row = 0; row < MAZE_SIZE; row++) {
+            System.arraycopy(expected[row], 0, raw[row], 0, MAZE_SIZE);
+        }
+        cachedMazePattern = pattern;
+        return true;
+    }
+
+    private int findMatchingPattern(World world, BlockPos center) {
+        for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
+            if (matchesMazeOccupancy(world, center, MazeLayouts.ALL_MAZES[pattern])) return pattern;
+        }
+        return -1;
+    }
+
+    private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
+        if (cachedCenter != null && cachedMazeDetected) return cachedCenter;
+
+        int px = player.getPosition().getX();
+        int pz = player.getPosition().getZ();
+        int py = (int) Math.floor(player.posY);
+        int[] candidateCenterYs = new int[] { py - 1, py, py - 2, py + 1 };
+
+        for (int centerY : candidateCenterYs) {
+            for (int x = px - CENTER_SEARCH_RADIUS; x <= px + CENTER_SEARCH_RADIUS; x++) {
+                for (int z = pz - CENTER_SEARCH_RADIUS; z <= pz + CENTER_SEARCH_RADIUS; z++) {
+                    BlockPos candidate = new BlockPos(x, centerY, z);
+                    if (!matchesCenterAnchor(world, candidate)) continue;
+                    int pattern = findMatchingPattern(world, candidate);
+                    if (pattern >= 0) {
+                        cachedCenter = candidate;
+                        cachedMazePattern = pattern;
+                        return cachedCenter;
+                    }                }
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesCenterAnchor(World world, BlockPos center) {
         for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
             int[][] expected = MazeLayouts.ALL_MAZES[pattern];
-            if (!matchesMazeOccupancy(world, center, expected)) {
-                continue;
+            boolean possible = true;
+            for (int row = 45; row <= 53 && possible; row++) {
+                for (int col = 45; col <= 53; col++) {
+                    int x = center.getX() - HALF_MAZE + row;
+                    int z = center.getZ() - HALF_MAZE + col;
+                    boolean expectedOccupied = expected[row][col] != 0;
+                    boolean actualOccupied = world.getBlockState(
+                            new BlockPos(x, center.getY() - 1, z)).getBlock()
+                            != net.minecraft.init.Blocks.air;
+                    if (expectedOccupied != actualOccupied) {
+                        possible = false;
+                        break;
+                    }                }
             }
-
-            for (int row = 0; row < MAZE_SIZE; row++) {
-                System.arraycopy(expected[row], 0, raw[row], 0, MAZE_SIZE);
-            }
-            cachedMazePattern = pattern;
-            return true;
+            if (possible) return true;
         }
-
-        cachedMazePattern = -1;
         return false;
     }
 
     private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {
-        int mismatches = 0;
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 int x = center.getX() - HALF_MAZE + row;
                 int z = center.getZ() - HALF_MAZE + col;
                 boolean expectedOccupied = expected[row][col] != 0;
                 boolean actualOccupied = world.getBlockState(
-                        new BlockPos(x, center.getY() - 1, z))
-                        .getBlock() != net.minecraft.init.Blocks.air;
-                if (expectedOccupied != actualOccupied) {
-                    mismatches++;
-                    if (mismatches > 0) {
-                        return false;
-                    }
-                }
+                        new BlockPos(x, center.getY() - 1, z)).getBlock()
+                        != net.minecraft.init.Blocks.air;
+                if (expectedOccupied != actualOccupied) return false;
             }
         }
         return true;
     }
 
-    private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
-        if (cachedCenter != null && isCenterPlausible(world, cachedCenter)) {
-            return cachedCenter;
-        }
-
-        int y = (int) Math.floor(player.posY) - 1;
-        BlockPos best = null;
-        int bestScore = 0;
-
-        for (int x = player.getPosition().getX() - SCAN_RADIUS;
-             x <= player.getPosition().getX() + SCAN_RADIUS; x++) {
-            for (int z = player.getPosition().getZ() - SCAN_RADIUS;
-                 z <= player.getPosition().getZ() + SCAN_RADIUS; z++) {
-                if (world.getBlockState(new BlockPos(x, y, z)).getBlock()
-                        != net.minecraft.init.Blocks.stained_hardened_clay) {
-                    continue;
-                }
-
-                int score = 0;
-                for (int dx = -3; dx <= 3; dx++) {
-                    for (int dz = -3; dz <= 3; dz++) {
-                        if (world.getBlockState(new BlockPos(x + dx, y, z + dz)).getBlock()
-                                == net.minecraft.init.Blocks.stained_hardened_clay) {
-                            score++;
-                        }
-                    }
-                }
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = new BlockPos(x, y + 1, z);
-                }
-            }
-        }
-
-        if (bestScore >= (scoreboardDetected ? 25 : 40)) {
-            cachedCenter = best;
-        }
-        return cachedCenter;
+    private boolean isMonsterMazeMob(Entity entity) {
+        return entity instanceof EntityEnderman
+                || entity instanceof EntityPigZombie
+                || entity instanceof EntitySquid
+                || entity instanceof EntitySnowman
+                || entity instanceof EntityOcelot
+                || entity instanceof EntityVillager
+                || entity instanceof EntityZombie;
     }
 
-    private boolean isCenterPlausible(World world, BlockPos center) {
-        int y = center.getY() - 1;
-        int score = 0;
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                if (world.getBlockState(new BlockPos(center.getX() + dx, y, center.getZ() + dz)).getBlock()
-                        == net.minecraft.init.Blocks.stained_hardened_clay) {
-                    score++;
-                }
-            }
-        }
-        return score >= 8;
+    private void clearRoundState() {
+        cachedCenter = null;
+        cachedPad = null;
+        cachedPadCenter = null;
+        ticksSinceLastPadRefresh = 0;
+        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+        cachedMazeDetected = false;
+        cachedMazePattern = -1;
+        ticksSinceLastMazeRefresh = 0;
+        gameStartWorldTick = -1L;
+        previouslyInMonsterMaze = false;
     }
 
     private PadObservation findActivePad(World world, EntityPlayerSP player, BlockPos center) {
@@ -389,8 +393,7 @@ public final class Minecraft18Observer {
             if (score.getPlayerName() == null || score.getPlayerName().startsWith("#")) {
                 continue;
             }
-            String name = score.getPlayerName();
-            ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
+            String name = score.getPlayerName();            ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
             String formatted = team == null ? name : ScorePlayerTeam.formatPlayerName(team, name);
             lines.add(formatted);
         }
@@ -412,13 +415,11 @@ public final class Minecraft18Observer {
         public final boolean inMonsterMaze;
         public final boolean mazeDetected;
         public final BlockPos center;
-        public final PadObservation pad;
-        public final Minecraft18ObservationRules.ScoreboardData scoreboard;
+        public final PadObservation pad;        public final Minecraft18ObservationRules.ScoreboardData scoreboard;
         public final LegacyWorldObservation state;
 
         private Observation(boolean inMonsterMaze, boolean mazeDetected, BlockPos center,
-                            PadObservation pad,
-                            Minecraft18ObservationRules.ScoreboardData scoreboard,
+                            PadObservation pad,                            Minecraft18ObservationRules.ScoreboardData scoreboard,
                             LegacyWorldObservation state) {
             this.inMonsterMaze = inMonsterMaze;
             this.mazeDetected = mazeDetected;
@@ -436,8 +437,8 @@ public final class Minecraft18Observer {
                 }
                 LegacyWorldObservation.Monster monster = state.monsters.get(i);
                 monsters.append(String.format(Locale.ROOT,
-                        "%d,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
-                        monster.id, monster.x, monster.y, monster.z,
+                        "%d,%s,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%s",
+                        monster.id, monster.type, monster.x, monster.y, monster.z,
                         monster.vx, monster.vy, monster.vz, monster.removed));
             }
             monsters.append("]");
@@ -452,12 +453,12 @@ public final class Minecraft18Observer {
             scoreboardLines.append("]");
 
             return String.format(Locale.ROOT,
-                    "OBS worldTick=%d inMaze=%s mazeDetected=%s alive=%s completed=%s "
+                    "OBS worldTick=%d inMaze=%s mazeDetected=%s mazePattern=%d alive=%s completed=%s "
                             + "stage=%d safePadSeconds=%d liveSeconds=%d "
                             + "player=(x=%.3f,y=%.3f,z=%.3f,vx=%.4f,vy=%.4f,vz=%.4f,yaw=%.2f,pitch=%.2f,grounded=%s,hp=%.1f,maxHp=%.1f) "
                             + "kit=%s jumpCharges=%d abilityCharges=%d "
                             + "center=%s pad=%s monsters=%s scoreboardTitle=\"%s\" scoreboardLines=%s mazePathCells=%d",
-                    state.worldTick, state.inMonsterMaze, state.mazeDetected,
+                    state.worldTick, state.inMonsterMaze, state.mazeDetected, state.mazePattern,
                     state.alive, state.completed, state.stage,
                     state.safePadSeconds, state.liveSeconds,
                     state.player.x, state.player.y, state.player.z,
@@ -530,8 +531,7 @@ public final class Minecraft18Observer {
         }
 
         @Override
-        public String toString() {
-            return String.format(Locale.ROOT, "(%d,%d)", row, column);
+        public String toString() {            return String.format(Locale.ROOT, "(%d,%d)", row, column);
         }
     }
 }

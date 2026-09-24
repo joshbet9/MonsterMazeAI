@@ -33,6 +33,9 @@ jobs:
           distribution: temurin
           java-version: '8'
 
+      - name: Rebuild common dependency for Java 8
+        run: mvn -B -ntp -pl common -am clean package -DskipTests -Dmaven.compiler.release=8
+
       - name: Set up Gradle 2.14.1
         uses: gradle/actions/setup-gradle@v4
         with:

@@ -121,7 +121,6 @@ public final class LegacyProtocol {
         out.writeDouble(a.forward); out.writeDouble(a.strafe);
         out.writeBoolean(a.jump); out.writeBoolean(a.sprint);
         out.writeFloat(a.yawDelta); out.writeBoolean(a.useAbility);
-        out.flush();
     }
 
     public static LegacyAction readAction(DataInput in) throws IOException {

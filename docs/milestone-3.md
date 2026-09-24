@@ -143,3 +143,10 @@ Milestone 12 is complete when the common runtime exposes a cohesive autonomous a
 The Minecraft sidecar now delegates live decisions through AutonomousMonsterMazeAgent. The agent resets on lobby/death/completion and when the observed maze signature changes, preventing controller state from one match/layout leaking into another.
 
 Milestone 12 is validated by AutonomousMonsterMazeAgentTest, including an end-to-end simulated decision loop, objective changes, lifecycle resets, stale observations and ability response. This milestone does not claim real Minecraft gameplay success; that remains the live movement validation scope of Milestone 13.
+
+
+## Milestone 13 — Live movement validation
+
+The 1.8 client now validates the real closed-loop boundary at runtime. After each AI decision, the adapter feeds the issued action and the next Minecraft observation into LiveMovementValidator. The validator checks monotonic world ticks, finite player state, bounded per-tick horizontal displacement, and records observed movement, jump, and ability responses.
+
+This validation is observational and keeps Minecraft physics authoritative. It does not replace the real client/server test: a live Monster Maze run is the acceptance environment, while CI verifies the validator and adapter integration compile and test successfully.

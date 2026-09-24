@@ -9,6 +9,8 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.client.registry.ClientRegistry;
+import org.lwjgl.input.Keyboard;
 
 @Mod(
         modid = MonsterMaze18Mod.MOD_ID,
@@ -23,6 +25,8 @@ public final class MonsterMaze18Mod {
     private Minecraft18ActionExecutor executor;
     private Minecraft18AiRuntime runtime;
     private LiveMovementValidator movementValidator;
+    private net.minecraft.client.settings.KeyBinding toggleAi;
+    private boolean aiEnabled;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -30,13 +34,17 @@ public final class MonsterMaze18Mod {
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
         runtime = new Minecraft18AiRuntime();
         movementValidator = new LiveMovementValidator();
+        toggleAi = new net.minecraft.client.settings.KeyBinding(
+                "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
+        ClientRegistry.registerKeyBinding(toggleAi);
+        aiEnabled = runtime.configured();
 
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
 
         if (runtime.configured()) {
             runtime.startIfConfigured();
-            System.out.println("[MonsterMazeAI/1.8] live AI runtime configured; closed-loop execution enabled");
+            System.out.println("[MonsterMazeAI/1.8] live AI runtime configured; closed-loop execution enabled (F8 toggles control)");
         } else {
             System.out.println("[MonsterMazeAI/1.8] observer-only mode; set MONSTERMAZE_AI_RUNTIME_JAR to enable live AI");
         }
@@ -48,8 +56,19 @@ public final class MonsterMaze18Mod {
             return;
         }
 
+        if (toggleAi != null && toggleAi.isPressed()) {
+            aiEnabled = !aiEnabled;
+            if (!aiEnabled) {
+                executor.releaseAll();
+                System.out.println("[MonsterMazeAI/1.8] AI control disabled (F8)");
+            } else {
+                runtime.startIfConfigured();
+                System.out.println("[MonsterMazeAI/1.8] AI control enabled (F8)");
+            }
+        }
+
         LegacyWorldObservation state = observer.observe().state;
-        LegacyAction action = runtime.decide(state);
+        LegacyAction action = aiEnabled ? runtime.decide(state) : LegacyAction.IDLE;
         executor.apply(action);
         if (state.inMonsterMaze) {
             movementValidator.observe(state, action);

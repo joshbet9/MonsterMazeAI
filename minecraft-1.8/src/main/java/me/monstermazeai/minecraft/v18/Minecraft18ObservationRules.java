@@ -24,9 +24,13 @@ public final class Minecraft18ObservationRules {
 
         int safePadSeconds = 0;
         int stage = 1;
+        boolean completed = false;
         for (int i = 0; i < cleanLines.size(); i++) {
             String line = cleanLines.get(i);
             String lower = line.toLowerCase(Locale.ROOT);
+            if (lower.contains("complete") || lower.contains("victory") || lower.contains("winner")) {
+                completed = true;
+            }
 
             if (lower.contains("safe pad")) {
                 Integer value = firstInteger(line);
@@ -49,7 +53,7 @@ public final class Minecraft18ObservationRules {
             }
         }
 
-        return new ScoreboardData(cleanTitle, safePadSeconds, stage, cleanLines);
+        return new ScoreboardData(cleanTitle, safePadSeconds, stage, completed, cleanLines);
     }
 
     public static Kit detectKit(List<String> displayNames) {
@@ -125,12 +129,14 @@ public final class Minecraft18ObservationRules {
         public final String title;
         public final int safePadSeconds;
         public final int stage;
+        public final boolean completed;
         public final List<String> lines;
 
-        private ScoreboardData(String title, int safePadSeconds, int stage, List<String> lines) {
+        private ScoreboardData(String title, int safePadSeconds, int stage, boolean completed, List<String> lines) {
             this.title = title;
             this.safePadSeconds = safePadSeconds;
             this.stage = stage;
+            this.completed = completed;
             this.lines = Collections.unmodifiableList(new ArrayList<String>(lines));
         }
     }

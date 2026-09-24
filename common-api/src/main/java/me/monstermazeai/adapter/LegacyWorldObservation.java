@@ -97,13 +97,23 @@ public final class LegacyWorldObservation {
 
     public static final class Monster {
         public final int id;
+        /** Vanilla/legacy entity class name, useful for map-specific monster modelling. */
+        public final String type;
         public final double x, y, z;
         public final double vx, vy, vz;
         public final boolean removed;
 
         public Monster(int id, double x, double y, double z,
                        double vx, double vy, double vz, boolean removed) {
-            this.id=id; this.x=x; this.y=y; this.z=z;
+            this(id, "", x, y, z, vx, vy, vz, removed);
+        }
+
+        public Monster(int id, String type, double x, double y, double z,
+                       double vx, double vy, double vz, boolean removed) {
+            if (type == null) {
+                throw new IllegalArgumentException("Monster type must not be null");
+            }
+            this.id=id; this.type=type; this.x=x; this.y=y; this.z=z;
             this.vx=vx; this.vy=vy; this.vz=vz; this.removed=removed;
         }
     }

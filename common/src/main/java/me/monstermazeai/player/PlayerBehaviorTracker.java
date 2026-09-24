@@ -25,7 +25,7 @@ public final class PlayerBehaviorTracker {
             previous = state.player().copy(); previousTick=state.tick(); return;
         }
         if (previous != null) {
-            long dt = Math.max(1, state.tick - previousTick);
+            long dt = Math.max(1, state.tick() - previousTick);
             double dx=state.player().x-previous.x, dz=state.player().z-previous.z;
             double speed=Math.sqrt(dx*dx+dz*dz)/dt;
             speedSum += speed;
@@ -40,7 +40,7 @@ public final class PlayerBehaviorTracker {
             samples++;
             elapsedTicks += dt;
         }
-        previous=state.player.copy(); previousTick=state.tick;
+        previous=state.player().copy(); previousTick=state.tick();
     }
 
     public PlayerBehaviorProfile profile() {

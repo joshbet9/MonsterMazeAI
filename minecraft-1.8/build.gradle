@@ -4,7 +4,7 @@ buildscript {
         maven { url = "https://maven.minecraftforge.net" }
     }
     dependencies {
-        classpath "com.anatawa12.forge:ForgeGradle:2.3-1.0.1"
+        classpath "net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT"
     }
 }
 
@@ -28,9 +28,15 @@ repositories {
     mavenCentral()
 }
 
-dependencies {
-    compile files("../common/target/common-0.1.0-SNAPSHOT.jar")
+// ForgeGradle 2.1 generates the patched Forge binary locally. The exact
+// cache filename/layout is not stable across ForgeGradle patch revisions,
+// so locate the generated forgeBin jar instead of hard-coding its name.
+def forgeBinFiles = fileTree(gradle.gradleUserHomeDir) {
+    include "caches/minecraft/**/forgeBin*.jar"
 }
+
+compileJava.classpath += files(forgeBinFiles)
+compileJava.dependsOn "mergeJars"
 
 processResources {
     inputs.property "version", project.version
@@ -38,7 +44,7 @@ processResources {
 
     from(sourceSets.main.resources.srcDirs) {
         include "mcmod.info"
-        expand "version": project.version, "mcversion": project.minecraft.version
+        expand "version": project.version, "mcversion": minecraft.version
     }
 
     from(sourceSets.main.resources.srcDirs) {

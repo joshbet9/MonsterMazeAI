@@ -4,6 +4,7 @@ import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.common.MinecraftForge;
 
 @Mod(
@@ -20,7 +21,7 @@ public final class MonsterMaze18Mod {
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         observer = new Minecraft18Observer();
-        MinecraftForge.EVENT_BUS.register(observer);
+        MinecraftForge.EVENT_BUS.register(this);
     }
 
     @SubscribeEvent
@@ -28,8 +29,16 @@ public final class MonsterMaze18Mod {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
+
         if (observer != null) {
             observer.tick();
+        }
+    }
+
+    @SubscribeEvent
+    public void chat(ClientChatReceivedEvent event) {
+        if (observer != null && event.message != null) {
+            observer.onChat(event.message.getUnformattedText());
         }
     }
 }

@@ -1,0 +1,61 @@
+name: Minecraft 1.8 Adapter CI
+
+on:
+  push:
+    branches:
+      - main
+      - fix/minecraft-1.8-standalone-adapter
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up Gradle 2.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '2.7'
+
+      - name: Prepare ForgeGradle workspace
+        working-directory: minecraft-1.8
+        run: gradle --no-daemon setupDevWorkspace
+
+      - name: Verify generated Forge compile input
+        working-directory: minecraft-1.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t forge_bins < <(find "$HOME/.gradle/caches/minecraft" -type f -name 'forgeBin*.jar' -print)
+          test "${#forge_bins[@]}" -gt 0
+          printf 'Forge compile input: %s\n' "${forge_bins[@]}"
+          ls -lh "${forge_bins[@]}"
+
+      - name: Build Minecraft 1.8 mod
+        working-directory: minecraft-1.8
+        run: gradle --no-daemon build
+
+      - name: Verify mod artifact
+        working-directory: minecraft-1.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_file="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
+          test -n "$jar_file"
+          echo "Built: $jar_file"
+          jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/MonsterMaze18Mod.class'
+          jar tf "$jar_file" | grep -F 'me/monstermazeai/minecraft/v18/Minecraft18Observer.class'
+          jar tf "$jar_file" | grep -F 'mcmod.info'

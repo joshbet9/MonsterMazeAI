@@ -93,9 +93,14 @@ public final class AiSidecarMain {
                             action.sprint(), action.yawDelta(), action.useAbility());
                     if (observationCount == 1 || observationCount % 20 == 0) {
                         System.err.println("[MonsterMazeAI] action: tick=" + observation.worldTick
+                                + " pos=" + state.player.x + "," + state.player.z
+                                + " yaw=" + state.player.yaw
+                                + " pad=" + state.activePadRow + "," + state.activePadColumn
+                                + " phase=" + state.phaseTicksRemaining
+                                + " reached=" + state.padReached
                                 + " f=" + result.forward + " s=" + result.strafe
                                 + " jump=" + result.jump + " sprint=" + result.sprint
-                                + " yawDelta=" + result.yawDelta + " ability=" + result.useAbility); 
+                                + " yawDelta=" + result.yawDelta + " ability=" + result.useAbility);
                     }
                 } else if (agent != null) {
                     agent.reset();

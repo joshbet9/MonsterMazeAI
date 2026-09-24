@@ -2,6 +2,7 @@ package me.monstermazeai.runtime;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.planner.RobustLiveController;
 
 /**
@@ -60,10 +61,10 @@ public final class AutonomousMonsterMazeAgent {
         h = mix(h, state.activePadRow);
         h = mix(h, state.activePadColumn);
         if (state.maze != null) {
-            h = mix(h, state.maze.size());
+            h = mix(h, MazeModel.SIZE);
             for (int r = 0; r < state.maze.size(); r++) {
                 for (int c = 0; c < state.maze.size(); c++) {
-                    h = mix(h, state.maze.get(r, c));
+                    h = mix(h, state.maze.raw(r, c));
                 }
             }
         }

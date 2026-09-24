@@ -83,9 +83,7 @@ public final class LegacyWorldObservation {
 
     private static int[][] copyMaze(int[][] source) {
         int[][] copy = new int[source.length][];
-        for (int i = 0; i < source.length; i++) {
-            copy[i] = source[i].clone();
-        }
+        for (int i = 0; i < source.length; i++) copy[i] = source[i].clone();
         return copy;
     }
 
@@ -104,14 +102,19 @@ public final class LegacyWorldObservation {
             this.health=health; this.maxHealth=maxHealth;
         }
 
-        public Player copy() {
-            return new Player(x,y,z,vx,vy,vz,yaw,pitch,grounded,health,maxHealth);
-        }
+        public Player copy() { return new Player(x,y,z,vx,vy,vz,yaw,pitch,grounded,health,maxHealth); }
     }
 
     public static final class Monster {
         public final int id;
-        /** Vanilla/legacy entity class name, useful for map-specific monster modelling. */
+        /**
+         * Stable gameplay abstraction: every Monster Maze ghost is the same
+         * underlying maze monster regardless of its client-side skin.
+         */
+        public final String gameplayType;
+        /** Source MobTypes id describing the client-visible visual skin. */
+        public final String visualType;
+        /** Backwards-compatible alias for visualType. */
         public final String type;
         public final double x, y, z;
         public final double vx, vy, vz;
@@ -119,15 +122,25 @@ public final class LegacyWorldObservation {
 
         public Monster(int id, double x, double y, double z,
                        double vx, double vy, double vz, boolean removed) {
-            this(id, "", x, y, z, vx, vy, vz, removed);
+            this(id, "monster_maze_monster", "", x, y, z, vx, vy, vz, removed);
         }
 
         public Monster(int id, String type, double x, double y, double z,
                        double vx, double vy, double vz, boolean removed) {
-            if (type == null) {
-                throw new IllegalArgumentException("Monster type must not be null");
+            this(id, "monster_maze_monster", type, x, y, z, vx, vy, vz, removed);
+        }
+
+        public Monster(int id, String gameplayType, String visualType,
+                       double x, double y, double z, double vx, double vy, double vz,
+                       boolean removed) {
+            if (gameplayType == null || visualType == null) {
+                throw new IllegalArgumentException("Monster types must not be null");
             }
-            this.id=id; this.type=type; this.x=x; this.y=y; this.z=z;
+            this.id=id;
+            this.gameplayType=gameplayType;
+            this.visualType=visualType;
+            this.type=visualType;
+            this.x=x; this.y=y; this.z=z;
             this.vx=vx; this.vy=vy; this.vz=vz; this.removed=removed;
         }
     }

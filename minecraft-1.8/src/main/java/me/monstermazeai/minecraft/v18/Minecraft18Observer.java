@@ -414,16 +414,6 @@ public final class Minecraft18Observer {
         return null;
     }
 
-    private void disablePadArea(int[][] maze, int row, int col) {
-        for (int r = row - 2; r <= row + 2; r++) {
-            for (int c = col - 2; c <= col + 2; c++) {
-                if (r >= 0 && r < MAZE_SIZE && c >= 0 && c < MAZE_SIZE) {
-                    maze[r][c] = 0;
-                }
-            }
-        }
-    }
-
     private boolean matches(World world, BlockPos pos, BlockSignature signature) {
         net.minecraft.block.state.IBlockState state = world.getBlockState(pos);
         return state.getBlock() == signature.block

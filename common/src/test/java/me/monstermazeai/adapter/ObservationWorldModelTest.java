@@ -44,6 +44,9 @@ class ObservationWorldModelTest {
         assertEquals(50, state.activePadRow);
         assertEquals(50, state.activePadColumn);
         assertEquals(1, state.maze.raw(50, 50));
+        assertTrue(state.maze.isDisabled(50, 50));
+        assertTrue(state.maze.isDisabled(48, 48));
+        assertFalse(state.maze.isDisabled(47, 47));
     }
     @Test
     void lobbyObservationDoesNotRequireMazeCenter() {

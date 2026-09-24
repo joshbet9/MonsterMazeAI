@@ -64,7 +64,7 @@ public final class GameState {
         s.centerSafeZoneDecay=centerSafeZoneDecay;
         s.previewPadRequested=previewPadRequested;
         s.pendingMonsterSpawns=pendingMonsterSpawns;
-        s.maze=maze;
+        s.maze=maze == null ? null : maze.copy();
         s.player=player.copy();
         s.kit=kit;
         s.ability=ability.copy();

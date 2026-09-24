@@ -24,7 +24,7 @@ class ObservationWorldModelTest {
                 new LegacyWorldObservation.BlockPoint(23, 13, 15),
                 new LegacyWorldObservation.Pad(50, 50, 4.0, false),
                 maze, List.of(new LegacyWorldObservation.Monster(
-                        77, MonsterSkinTypes.GAMEPLAY_TYPE, "villager",
+                        77, "monster_maze_monster", "villager",
                         23.8, 14.0, 15.4, 0.4, 0.0, -0.2, false)),
                 "Monster Maze",
                 Collections.singletonList("1"));

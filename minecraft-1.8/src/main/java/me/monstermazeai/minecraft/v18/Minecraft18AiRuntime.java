@@ -107,23 +107,31 @@ public final class Minecraft18AiRuntime {
     public synchronized void stop() { closeProcess(); }
     public synchronized LegacyAction lastAction() { return lastAction; }
 
-    private String runtimeJar() {
-        String property = System.getProperty("monstermazeai.runtime.jar");
+    static String resolveRuntimeJar(String property, String environment) {
         if (property != null && !property.trim().isEmpty()) return property.trim();
-        String environment = System.getenv("MONSTERMAZE_AI_RUNTIME_JAR");
         return environment == null || environment.trim().isEmpty() ? null : environment.trim();
     }
 
-    private String javaExecutable() {
-        String property = System.getProperty("monstermazeai.java17");
+    private String runtimeJar() {
+        return resolveRuntimeJar(
+                System.getProperty("monstermazeai.runtime.jar"),
+                System.getenv("MONSTERMAZE_AI_RUNTIME_JAR"));
+    }
+
+    static String resolveJavaExecutable(String property, String environment, String javaHome) {
         if (property != null && !property.trim().isEmpty()) return property.trim();
-        String environment = System.getenv("MONSTERMAZE_AI_JAVA");
         if (environment != null && !environment.trim().isEmpty()) return environment.trim();
-        String javaHome = System.getenv("JAVA_HOME_17_X64");
         if (javaHome != null && !javaHome.trim().isEmpty()) {
             return javaHome + (javaHome.endsWith("\\") ? "bin\\java.exe" : "\\bin\\java.exe");
         }
         return "java";
+    }
+
+    private String javaExecutable() {
+        return resolveJavaExecutable(
+                System.getProperty("monstermazeai.java17"),
+                System.getenv("MONSTERMAZE_AI_JAVA"),
+                System.getenv("JAVA_HOME_17_X64"));
     }
 
     private void closeProcess() {

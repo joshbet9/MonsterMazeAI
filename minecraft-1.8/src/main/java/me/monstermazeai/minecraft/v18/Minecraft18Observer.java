@@ -457,9 +457,17 @@ public final class Minecraft18Observer {
             if (score.getPlayerName() == null || score.getPlayerName().startsWith("#")) {
                 continue;
             }
-            String name = score.getPlayerName();            ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
+            String name = score.getPlayerName();
+            ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
             String formatted = team == null ? name : ScorePlayerTeam.formatPlayerName(team, name);
-            lines.add(formatted);
+
+            // Minecraft's 1.8 scoreboard renderer displays the score value to the
+            // right of each entry, but getPlayerName() only returns the entry text.
+            // Monster Maze uses that numeric score for values such as the Safe Pad
+            // countdown and Stage. Preserve the rendered "Entry: score" form so the
+            // existing pure parser can consume both inline text timers and native
+            // scoreboard score values.
+            lines.add(formatted + ": " + score.getScorePoints());
         }
 
         return Minecraft18ObservationRules.parseScoreboard(objective.getDisplayName(), lines);

@@ -33,9 +33,9 @@ public final class Minecraft18ObservationRules {
             }
 
             if (lower.contains("safe pad")) {
-                Integer value = firstInteger(line);
+                Integer value = timeSeconds(line);
                 if (value == null && i + 1 < cleanLines.size()) {
-                    value = firstInteger(cleanLines.get(i + 1));
+                    value = timeSeconds(cleanLines.get(i + 1));
                 }
                 if (value != null) {
                     safePadSeconds = value;

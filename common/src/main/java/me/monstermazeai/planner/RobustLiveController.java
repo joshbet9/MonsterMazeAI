@@ -7,11 +7,6 @@ import me.monstermazeai.player.Action;
 
 /**
  * Stateful safety wrapper around the one-tick objective controller.
- *
- * The wrapper never executes a cached multi-tick plan. It uses the newest
- * observation to replan, rejects stale ticks, detects lack of displacement,
- * and requests a jump on a persistent stall. Any invalid transition fails
- * closed to IDLE.
  */
 public final class RobustLiveController {
     private static final int STUCK_TICKS = 8;
@@ -24,6 +19,7 @@ public final class RobustLiveController {
     private double lastX;
     private double lastZ;
     private int stuckTicks;
+    private String lastDecisionDetail = "UNSET";
 
     public RobustLiveController(LiveObjectiveController objective) {
         if (objective == null) throw new IllegalArgumentException("objective");
@@ -32,16 +28,20 @@ public final class RobustLiveController {
 
     public Action nextAction(GameState state, boolean allowJump) {
         if (!validLiveState(state)) {
+            lastDecisionDetail = "INVALID_LIVE_STATE";
             reset();
             return Action.IDLE;
         }
-        if (state.tick <= lastTick) return Action.IDLE;
+        if (state.tick <= lastTick) {
+            lastDecisionDetail = "STALE_TICK stateTick=" + state.tick + " lastTick=" + lastTick;
+            return Action.IDLE;
+        }
 
         boolean sameObjective = state.activePadRow >= 0 && state.activePadColumn >= 0;
         double dx = state.player.x - lastX;
         double dz = state.player.z - lastZ;
-        if (lastTick != Long.MIN_VALUE && sameObjective
-                && dx * dx + dz * dz < MIN_PROGRESS_SQ) {
+        double displacementSq = dx * dx + dz * dz;
+        if (lastTick != Long.MIN_VALUE && sameObjective && displacementSq < MIN_PROGRESS_SQ) {
             stuckTicks++;
         } else {
             stuckTicks = 0;
@@ -53,34 +53,60 @@ public final class RobustLiveController {
 
         Action action = objective.nextAction(state, allowJump);
         if (action == Action.IDLE) {
+            lastDecisionDetail = "OBJECTIVE_IDLE reason=" + objective.lastDecisionReason()
+                    + " detail=" + objective.lastDecisionDetail()
+                    + " stuckTicks=" + stuckTicks;
             stuckTicks = 0;
             return Action.IDLE;
         }
 
         if (stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
             stuckTicks = 0;
-            return new Action(action.forward(), action.strafe(), true,
+            Action jump = new Action(action.forward(), action.strafe(), true,
                     action.sprint(), action.yawDelta(), action.useAbility());
+            lastDecisionDetail = "FORCED_JUMP objective=" + objective.lastDecisionReason()
+                    + " stuckTicks=" + STUCK_TICKS
+                    + " base=" + describe(action)
+                    + " output=" + describe(jump);
+            return jump;
         }
 
         if (AbilityDecision.shouldUse(state) && abilityGate.allow(state)) {
             abilityGate.record(state);
-            return new Action(action.forward(), action.strafe(), action.jump(),
+            Action ability = new Action(action.forward(), action.strafe(), action.jump(),
                     action.sprint(), action.yawDelta(), true);
+            lastDecisionDetail = "ABILITY_ADD objective=" + objective.lastDecisionReason()
+                    + " base=" + describe(action) + " output=" + describe(ability);
+            return ability;
         }
 
+        lastDecisionDetail = "PASS objective=" + objective.lastDecisionReason()
+                + " detail=" + objective.lastDecisionDetail()
+                + " stuckTicks=" + stuckTicks
+                + " displacement=" + Math.sqrt(displacementSq)
+                + " output=" + describe(action);
         return action;
     }
+
+    public String lastDecisionDetail() { return lastDecisionDetail; }
 
     public void reset() {
         lastTick = Long.MIN_VALUE;
         stuckTicks = 0;
         lastX = lastZ = 0.0;
+        lastDecisionDetail = "RESET";
     }
 
     private static boolean validLiveState(GameState s) {
         return s != null && s.inMonsterMaze && s.alive && !s.completed
                 && s.maze != null && s.phaseTicksRemaining > 0
                 && s.activePadRow >= 0 && s.activePadColumn >= 0;
+    }
+
+    private static String describe(Action action) {
+        return "f=" + action.forward() + ",s=" + action.strafe()
+                + ",jump=" + action.jump() + ",sprint=" + action.sprint()
+                + ",yawDelta=" + action.yawDelta()
+                + ",ability=" + action.useAbility();
     }
 }

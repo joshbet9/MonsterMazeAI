@@ -121,7 +121,7 @@ public final class Minecraft18AiRuntime {
         if (environment != null && !environment.trim().isEmpty()) return environment.trim();
         String javaHome = System.getenv("JAVA_HOME_17_X64");
         if (javaHome != null && !javaHome.trim().isEmpty()) {
-            return javaHome + (javaHome.endsWith("\") ? "bin\java.exe" : "\bin\java.exe");
+            return javaHome + (javaHome.endsWith("\\") ? "bin\\java.exe" : "\\bin\\java.exe");
         }
         return "java";
     }

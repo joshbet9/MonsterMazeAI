@@ -438,7 +438,11 @@ public final class Minecraft18Observer {
         return null;
     }
 
-    static String formatScoreboardLine(String formatted, int scorePoints) {\n        return (formatted == null ? "" : formatted) + ": " + scorePoints;\n    }\n\n    private boolean matches(World world, BlockPos pos, BlockSignature signature) {
+    static String formatScoreboardLine(String formatted, int scorePoints) {
+        return (formatted == null ? "" : formatted) + ": " + scorePoints;
+    }
+
+    private boolean matches(World world, BlockPos pos, BlockSignature signature) {
         net.minecraft.block.state.IBlockState state = world.getBlockState(pos);
         return state.getBlock() == signature.block
                 && signature.meta == signature.block.getMetaFromState(state);

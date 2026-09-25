@@ -101,7 +101,7 @@ public final class Minecraft18ObservationRules {
 
     private static Integer timeSeconds(String text) {
         if (text == null) return null;
-        int colon = text.indexOf(':');
+        int colon = text.lastIndexOf(':');
         if (colon >= 0) {
             int left = firstInteger(text.substring(0, colon)) == null
                     ? 0 : firstInteger(text.substring(0, colon));

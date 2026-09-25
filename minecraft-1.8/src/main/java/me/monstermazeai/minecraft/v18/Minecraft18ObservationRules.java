@@ -42,7 +42,7 @@ public final class Minecraft18ObservationRules {
                 }
             }
 
-            if (lower.equals("stage") || lower.startsWith("stage ")) {
+            if (lower.equals("stage") || lower.startsWith("stage ") || lower.startsWith("stage:")) {
                 Integer value = firstInteger(line);
                 if (value == null && i + 1 < cleanLines.size()) {
                     value = firstInteger(cleanLines.get(i + 1));
@@ -92,7 +92,7 @@ public final class Minecraft18ObservationRules {
         }
         for (String line : scoreboard.lines) {
             String lower = line.toLowerCase(Locale.ROOT);
-            if (lower.contains("safe pad") || lower.equals("stage") || lower.startsWith("stage ")) {
+            if (lower.contains("safe pad") || lower.equals("stage") || lower.startsWith("stage ") || lower.startsWith("stage:")) {
                 return true;
             }
         }

@@ -102,8 +102,8 @@ public final class AiSidecarMain {
                     }
 
                     Action action = agent.decide(state, true);
-                    result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
-                            action.sprint(), action.yawDelta(), action.useAbility());
+                    result = new LegacyAction(action.forward, action.strafe, action.jump,
+                            action.sprint, action.yawDelta, action.useAbility);
 
                     if (observationCount == 1 || observationCount % 20 == 0) {
                         System.err.println("[MonsterMazeAI] DECISION tick=" + observation.worldTick
@@ -141,11 +141,11 @@ public final class AiSidecarMain {
     }
 
     private static String describe(LegacyAction action) {
-        return "f=" + action.forward()
-                + ",s=" + action.strafe()
-                + ",jump=" + action.jump()
-                + ",sprint=" + action.sprint()
-                + ",yawDelta=" + action.yawDelta()
-                + ",ability=" + action.useAbility();
+        return "f=" + action.forward
+                + ",s=" + action.strafe
+                + ",jump=" + action.jump
+                + ",sprint=" + action.sprint
+                + ",yawDelta=" + action.yawDelta
+                + ",ability=" + action.useAbility;
     }
 }

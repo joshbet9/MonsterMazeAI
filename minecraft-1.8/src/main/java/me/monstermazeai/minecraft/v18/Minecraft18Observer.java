@@ -24,7 +24,12 @@ public final class Minecraft18Observer {
     private static final int MAZE_SIZE = 99;
     private static final int HALF_MAZE = 49;
     private static final int SCAN_RADIUS = 64;
-    private static final int CENTER_SEARCH_RADIUS = 6;
+    private static final int CENTER_SEARCH_RADIUS = 32;
+    // Eye of Ender places the logical arena centre at world X/Z 0,0.
+    // Try that authoritative location first, then retain a broader physical fallback
+    // for maps/test worlds that are translated away from the origin.
+    private static final int KNOWN_CENTER_X = 0;
+    private static final int KNOWN_CENTER_Z = 0;
     private static final int PAD_SCAN_RADIUS = 70;
     private static final int CENTER_ANCHOR_RADIUS = 6;
     private static final int SAFE_PAD_RADIUS = 2;
@@ -248,9 +253,28 @@ public final class Minecraft18Observer {
         // with nearby fallbacks for teleport/interpolation timing.
         int[] candidateCenterYs = new int[] { py, py - 1, py + 1, py - 2 };
 
+        // The Eye of Ender map is explicitly centred on world X/Z 0,0. The old
+        // detector searched only around the player, which failed as soon as the
+        // player was more than six blocks from mid (a normal gameplay position).
+        for (int centerY : candidateCenterYs) {
+            BlockPos knownCenter = new BlockPos(KNOWN_CENTER_X, centerY, KNOWN_CENTER_Z);
+            if (matchesCenterAnchor(world, knownCenter)) {
+                int pattern = findMatchingPattern(world, knownCenter);
+                if (pattern >= 0) {
+                    cachedCenter = knownCenter;
+                    cachedMazePattern = pattern;
+                    return cachedCenter;
+                }
+            }
+        }
+
+        // Fallback for translated/test arenas. This is intentionally broader than
+        // the old six-block search, but only runs until a complete source layout
+        // match is found and is therefore not part of the per-tick hot path.
         for (int centerY : candidateCenterYs) {
             for (int x = px - CENTER_SEARCH_RADIUS; x <= px + CENTER_SEARCH_RADIUS; x++) {
                 for (int z = pz - CENTER_SEARCH_RADIUS; z <= pz + CENTER_SEARCH_RADIUS; z++) {
+                    if (x == KNOWN_CENTER_X && z == KNOWN_CENTER_Z) continue;
                     BlockPos candidate = new BlockPos(x, centerY, z);
                     if (!matchesCenterAnchor(world, candidate)) continue;
                     int pattern = findMatchingPattern(world, candidate);

@@ -1,10 +1,16 @@
 package me.monstermazeai.minecraft.v18;
 
+import me.monstermazeai.adapter.LegacyAction;
+import me.monstermazeai.adapter.LegacyWorldObservation;
+import me.monstermazeai.adapter.LiveMovementValidator;
+import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.client.registry.ClientRegistry;
+import org.lwjgl.input.Keyboard;
 
 @Mod(
         modid = MonsterMaze18Mod.MOD_ID,
@@ -16,22 +22,74 @@ public final class MonsterMaze18Mod {
     public static final String MOD_ID = "monstermazeai";
 
     private Minecraft18Observer observer;
+    private Minecraft18ActionExecutor executor;
+    private Minecraft18AiRuntime runtime;
+    private LiveMovementValidator movementValidator;
+    private net.minecraft.client.settings.KeyBinding toggleAi;
+    private boolean aiEnabled;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         observer = new Minecraft18Observer();
+        executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
+        runtime = new Minecraft18AiRuntime();
+        movementValidator = new LiveMovementValidator();
+        toggleAi = new net.minecraft.client.settings.KeyBinding(
+                "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
+        ClientRegistry.registerKeyBinding(toggleAi);
+        // Manual opt-in: the AI must never take control merely because the sidecar is configured.
+        aiEnabled = false;
+
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
-        System.out.println("[MonsterMazeAI/1.8] observer initialized; client tick handler registered");
+
+        if (runtime.configured()) {
+            runtime.startIfConfigured();
+            System.out.println("[MonsterMazeAI/1.8] live AI runtime configured; closed-loop execution enabled (F8 toggles control)");
+        } else {
+            System.out.println("[MonsterMazeAI/1.8] observer-only mode; set MONSTERMAZE_AI_RUNTIME_JAR to enable live AI");
+        }
     }
 
     @SubscribeEvent
     public void clientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
+        if (event.phase != TickEvent.Phase.END || observer == null) {
             return;
         }
-        if (observer != null) {
-            observer.tick();
+
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.theWorld == null || minecraft.thePlayer == null) {
+            executor.releaseAll();
+            movementValidator.reset();
+            return;
+        }
+
+        if (toggleAi != null && toggleAi.isPressed()) {
+            aiEnabled = !aiEnabled;
+            if (!aiEnabled) {
+                executor.releaseAll();
+                System.out.println("[MonsterMazeAI/1.8] AI control disabled (F8)");
+            } else {
+                runtime.startIfConfigured();
+                System.out.println("[MonsterMazeAI/1.8] AI control enabled (F8)");
+            }
+        }
+
+        if (!aiEnabled) {
+            // Never touch movement KeyBindings while AI is disabled. Minecraft owns
+            // the physical keyboard state; forcing keys false every tick turns a
+            // held W/A/S/D into a one-tick pulse on each press.
+            movementValidator.reset();
+            return;
+        }
+
+        LegacyWorldObservation state = observer.observe().state;
+        LegacyAction action = runtime.decide(state);
+        executor.apply(action);
+        if (state.inMonsterMaze) {
+            movementValidator.observe(state, action);
+        } else {
+            movementValidator.reset();
         }
     }
 }

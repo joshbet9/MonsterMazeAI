@@ -136,8 +136,7 @@ public final class Minecraft18Observer {
                 displayNames, kit, stackSizes);
         int abilityCharges = detectAbilityCharges(displayNames, stackSizes, kit);
         boolean padReached = pad != null && pad.row >= 0 && isOnPad(player, pad, center);
-        if (pad != null && pad.row >= 0 && mazeDetected) {            disablePadArea(raw, pad.row, pad.column);
-        }
+        
         List<LegacyWorldObservation.Monster> monsters = new ArrayList<LegacyWorldObservation.Monster>();
         for (Entity entity : world.loadedEntityList) {
             String visualType = MonsterSkinTypes.visualType(entity);
@@ -413,16 +412,6 @@ public final class Minecraft18Observer {
             }
         }
         return null;
-    }
-
-    private void disablePadArea(int[][] maze, int row, int col) {
-        for (int r = row - 2; r <= row + 2; r++) {
-            for (int c = col - 2; c <= col + 2; c++) {
-                if (r >= 0 && r < MAZE_SIZE && c >= 0 && c < MAZE_SIZE) {
-                    maze[r][c] = 0;
-                }
-            }
-        }
     }
 
     private boolean matches(World world, BlockPos pos, BlockSignature signature) {

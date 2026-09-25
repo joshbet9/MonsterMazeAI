@@ -73,13 +73,13 @@ MonsterMazeAI/
 
 ## Current status
 
-**Milestone 2 is complete.**
+**Milestone 5 is complete.**
 
 The common AI core now has source-grounded game mechanics, tick-level 1.8 movement simulation, maze-aware routing, trajectory beam search, emergency 15-second planning, deterministic search branches, stochastic trajectory evaluation, and a receding-horizon controller. Automated benchmarks include timed jump movement and a 1,000-future Monte Carlo evaluation.
 
-Live Minecraft observation/input adapters remain deliberately separate and are the next phase. No gameplay automation is considered correct until the live adapter is validated against the Monster Maze implementation and in-game behaviour.
+The Minecraft 1.8 observation adapter is validated against all three source maze patterns, the common core has a one-tick closed-loop controller, and the 1.8 client is now connected to that controller through a Java-8/Java-17 binary sidecar boundary. The client observes every tick, sends the normalized state to the AI runtime, receives one action, and executes it through vanilla controls. The bridge is fail-closed and opt-in until an actual game run is deliberately enabled.
 
-See [docs/milestone-2.md](docs/milestone-2.md) for the completed scope.
+See [docs/milestone-2.md](docs/milestone-2.md) and [docs/milestone-3.md](docs/milestone-3.md) for the completed scope.
 ## Long-term deployment vision
 
 The long-term goal is for MonsterMazeAI to become a population of AI-controlled competitor players that can be integrated into the Monster Maze game itself. Rather than having one monolithic "bot difficulty", the eventual system should support distinct AI competitors with configurable difficulty and attribute sliders, allowing their behaviour and capabilities to be tuned independently while using the same underlying AI framework.

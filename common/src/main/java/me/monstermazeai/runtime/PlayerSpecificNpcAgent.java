@@ -1,0 +1,46 @@
+package me.monstermazeai.runtime;
+
+import me.monstermazeai.game.GameState;
+import me.monstermazeai.player.Action;
+import me.monstermazeai.player.PlayerSpecificNpcModel;
+
+/**
+ * Autonomous Monster Maze agent with a player-specific control style.
+ *
+ * Navigation, monster avoidance and ability decisions remain owned by the
+ * autonomous base agent. This layer only emulates the measured player's
+ * control tendencies.
+ */
+public final class PlayerSpecificNpcAgent {
+    private final DecisionSource base;
+    private final PlayerSpecificNpcModel model;
+    private final Runnable resetter;
+
+    public PlayerSpecificNpcAgent(AutonomousMonsterMazeAgent base, PlayerSpecificNpcModel model) {
+        if (base == null || model == null) throw new IllegalArgumentException("base/model");
+        this.base = (state, allowJump) -> base.decide(state, allowJump);
+        this.model = model;
+        this.resetter = base::reset;
+    }
+
+    public PlayerSpecificNpcAgent(DecisionSource base, PlayerSpecificNpcModel model) {
+        if (base == null || model == null) throw new IllegalArgumentException("base/model");
+        this.base = base;
+        this.model = model;
+        this.resetter = () -> {};
+    }
+
+    public Action decide(GameState state, boolean allowJump) {
+        Action action = base.decide(state, allowJump);
+        if (action == Action.IDLE) return action;
+        return model.shape(state, action);
+    }
+
+    public void reset() {
+        resetter.run();
+    }
+
+    public interface DecisionSource {
+        Action decide(GameState state, boolean allowJump);
+    }
+}

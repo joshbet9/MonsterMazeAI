@@ -91,7 +91,7 @@ public final class MazeAwareRecedingHorizonController {
                 + " target=" + targetX + "," + targetZ
                 + " planLen=" + actions.length
                 + " planReached=" + plan.padReached()
-                + " planReason="" + plan.decisionReason() + """
+                + " planReason=\"" + plan.decisionReason() + "\""
                 + " first=" + describe(first);
 
         if (actions.length == 0 || actions[0] == Action.IDLE) {

@@ -6,18 +6,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 
 /**
- * Minecraft 1.8.9 execution bridge.
- *
- * Movement is driven through the normal client KeyBinding state, so vanilla
- * movement processing remains authoritative. Camera yaw is applied as a
- * bounded per-tick delta. Ability execution is deliberately not guessed from
- * a kit: the common command exposes the intent, while the 1.8 adapter keeps
- * ability binding opt-in until the real kit bindings are validated.
+ * Minecraft 1.8.9 execution bridge with explicit diagnostic tracing.
  */
 public final class Minecraft18ActionExecutor implements ActionSink {
     private final Minecraft minecraft;
     private boolean abilityPending;
     private boolean abilityPressed;
+    private long applyCount;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -26,35 +21,49 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     @Override
     public void apply(LegacyAction action) {
-        if (action == null) {
-            action = LegacyAction.IDLE;
-        }
+        if (action == null) action = LegacyAction.IDLE;
+        applyCount++;
 
-        set(minecraft.gameSettings.keyBindForward, action.forward > 0.5);
-        set(minecraft.gameSettings.keyBindBack, action.forward < -0.5);
-        set(minecraft.gameSettings.keyBindRight, action.strafe > 0.5);
-        set(minecraft.gameSettings.keyBindLeft, action.strafe < -0.5);
-        set(minecraft.gameSettings.keyBindJump, action.jump);
-        set(minecraft.gameSettings.keyBindSprint, action.sprint);
+        boolean forward = action.forward > 0.5;
+        boolean back = action.forward < -0.5;
+        boolean right = action.strafe > 0.5;
+        boolean left = action.strafe < -0.5;
+        boolean jump = action.jump;
+        boolean sprint = action.sprint;
+        boolean useItem = action.useAbility && !abilityPressed;
+
+        float yawBefore = minecraft.thePlayer == null ? Float.NaN : minecraft.thePlayer.rotationYaw;
+
+        set(minecraft.gameSettings.keyBindForward, forward);
+        set(minecraft.gameSettings.keyBindBack, back);
+        set(minecraft.gameSettings.keyBindRight, right);
+        set(minecraft.gameSettings.keyBindLeft, left);
+        set(minecraft.gameSettings.keyBindJump, jump);
+        set(minecraft.gameSettings.keyBindSprint, sprint);
 
         if (minecraft.thePlayer != null && action.yawDelta != 0.0f) {
             minecraft.thePlayer.rotationYaw += clampYaw(action.yawDelta);
         }
 
         abilityPending = action.useAbility;
-        // Abilities are represented by the held/selected kit item in Monster Maze.
-        // Pulse the normal Use Item binding for one client tick when the planner requests it.
-        set(minecraft.gameSettings.keyBindUseItem, action.useAbility && !abilityPressed);
+        set(minecraft.gameSettings.keyBindUseItem, useItem);
         abilityPressed = action.useAbility;
+
+        if (applyCount == 1 || applyCount % 20 == 0 || forward || back || left || right || jump || action.yawDelta != 0.0f) {
+            float yawAfter = minecraft.thePlayer == null ? Float.NaN : minecraft.thePlayer.rotationYaw;
+            System.err.println("[MonsterMazeAI/1.8] EXEC apply#" + applyCount
+                    + " action=" + describe(action)
+                    + " keys[fwd=" + forward + ",back=" + back
+                    + ",left=" + left + ",right=" + right
+                    + ",jump=" + jump + ",sprint=" + sprint
+                    + ",use=" + useItem + "]"
+                    + " yaw=" + yawBefore + "->" + yawAfter
+                    + " player=" + (minecraft.thePlayer == null ? "null"
+                        : minecraft.thePlayer.posX + "," + minecraft.thePlayer.posY + "," + minecraft.thePlayer.posZ));
+        }
     }
 
-    /**
-     * True when the planner requested an ability this tick. The flag is
-     * intentionally observable but not auto-bound to a mouse/key action yet.
-     */
-    public boolean isAbilityPending() {
-        return abilityPending;
-    }
+    public boolean isAbilityPending() { return abilityPending; }
 
     @Override
     public void releaseAll() {
@@ -66,6 +75,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         set(minecraft.gameSettings.keyBindSprint, false);
         abilityPending = false;
         abilityPressed = false;
+        System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }
 
     private static void set(KeyBinding binding, boolean pressed) {
@@ -74,5 +84,11 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     private static float clampYaw(float delta) {
         return Math.max(-30.0f, Math.min(30.0f, delta));
+    }
+
+    private static String describe(LegacyAction action) {
+        return "f=" + action.forward + ",s=" + action.strafe
+                + ",jump=" + action.jump + ",sprint=" + action.sprint
+                + ",yawDelta=" + action.yawDelta + ",ability=" + action.useAbility;
     }
 }

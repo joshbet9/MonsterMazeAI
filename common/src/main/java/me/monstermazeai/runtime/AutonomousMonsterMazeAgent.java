@@ -7,35 +7,28 @@ import me.monstermazeai.planner.RobustLiveController;
 
 /**
  * Complete common-core autonomous agent boundary.
- *
- * Every live observation is converted into one fresh decision by the
- * persistent robust controller. Match/lobby transitions reset controller
- * state, and invalid observations fail closed to IDLE. No Minecraft APIs or
- * cached multi-tick commands cross this boundary.
  */
 public final class AutonomousMonsterMazeAgent {
     private final RobustLiveController controller;
     private long lastMazeSignature = Long.MIN_VALUE;
+    private String lastDecisionDetail = "UNSET";
 
     public AutonomousMonsterMazeAgent(RobustLiveController controller) {
         if (controller == null) throw new IllegalArgumentException("controller");
         this.controller = controller;
     }
 
-    /**
-     * Decide exactly one action from the newest observed state.
-     *
-     * A maze signature change resets movement history so stale stuck detection
-     * from a previous match/layout cannot influence the new match.
-     */
     public Action decide(GameState state, boolean allowJump) {
         if (state == null) {
+            lastDecisionDetail = "NULL_STATE -> RESET";
             controller.reset();
             lastMazeSignature = Long.MIN_VALUE;
             return Action.IDLE;
         }
 
         if (!state.inMonsterMaze || !state.alive || state.completed) {
+            lastDecisionDetail = "STATE_GATE inMaze=" + state.inMonsterMaze
+                    + " alive=" + state.alive + " completed=" + state.completed;
             controller.reset();
             lastMazeSignature = Long.MIN_VALUE;
             return Action.IDLE;
@@ -43,16 +36,25 @@ public final class AutonomousMonsterMazeAgent {
 
         long signature = mazeSignature(state);
         if (lastMazeSignature != Long.MIN_VALUE && signature != lastMazeSignature) {
+            lastDecisionDetail = "MAZE_SIGNATURE_CHANGED old=" + lastMazeSignature + " new=" + signature;
             controller.reset();
+        } else {
+            lastDecisionDetail = "SIGNATURE_STABLE=" + signature;
         }
         lastMazeSignature = signature;
 
-        return controller.nextAction(state, allowJump);
+        Action action = controller.nextAction(state, allowJump);
+        lastDecisionDetail += " controller=" + controller.lastDecisionDetail()
+                + " output=" + describe(action);
+        return action;
     }
+
+    public String lastDecisionDetail() { return lastDecisionDetail; }
 
     public void reset() {
         controller.reset();
         lastMazeSignature = Long.MIN_VALUE;
+        lastDecisionDetail = "RESET";
     }
 
     private long mazeSignature(GameState state) {
@@ -74,5 +76,12 @@ public final class AutonomousMonsterMazeAgent {
     private long mix(long h, long value) {
         h ^= value;
         return h * 1099511628211L;
+    }
+
+    private static String describe(Action action) {
+        return "f=" + action.forward() + ",s=" + action.strafe()
+                + ",jump=" + action.jump() + ",sprint=" + action.sprint()
+                + ",yawDelta=" + action.yawDelta()
+                + ",ability=" + action.useAbility();
     }
 }

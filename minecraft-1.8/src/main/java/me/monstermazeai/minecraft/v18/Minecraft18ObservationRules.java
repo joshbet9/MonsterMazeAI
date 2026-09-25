@@ -99,6 +99,30 @@ public final class Minecraft18ObservationRules {
         return false;
     }
 
+    private static Integer timeSeconds(String text) {
+        if (text == null) return null;
+        int colon = text.indexOf(':');
+        if (colon >= 0) {
+            int left = firstInteger(text.substring(0, colon)) == null
+                    ? 0 : firstInteger(text.substring(0, colon));
+            String rightText = text.substring(colon + 1);
+            StringBuilder rightDigits = new StringBuilder();
+            for (int i = 0; i < rightText.length(); i++) {
+                char ch = rightText.charAt(i);
+                if (!Character.isDigit(ch)) break;
+                rightDigits.append(ch);
+            }
+            if (rightDigits.length() > 0) {
+                try {
+                    return left * 60 + Integer.parseInt(rightDigits.toString());
+                } catch (NumberFormatException ignored) {
+                    // Fall through to ordinary integer parsing.
+                }
+            }
+        }
+        return firstInteger(text);
+    }
+
     private static Integer firstInteger(String text) {
         StringBuilder digits = new StringBuilder();
         boolean started = false;

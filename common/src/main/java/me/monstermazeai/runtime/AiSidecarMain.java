@@ -141,11 +141,11 @@ public final class AiSidecarMain {
     }
 
     private static String describe(LegacyAction action) {
-        return "f=" + action.forward
-                + ",s=" + action.strafe
-                + ",jump=" + action.jump
-                + ",sprint=" + action.sprint
-                + ",yawDelta=" + action.yawDelta
-                + ",ability=" + action.useAbility;
+        return "f=" + action.forward()
+                + ",s=" + action.strafe()
+                + ",jump=" + action.jump()
+                + ",sprint=" + action.sprint()
+                + ",yawDelta=" + action.yawDelta()
+                + ",ability=" + action.useAbility();
     }
 }

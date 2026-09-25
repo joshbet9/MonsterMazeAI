@@ -21,7 +21,6 @@ import me.monstermazeai.telemetry.TelemetryEvent;
 import me.monstermazeai.telemetry.TelemetryRecorder;
 
 import java.nio.file.Paths;
-
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
@@ -65,17 +64,28 @@ public final class AiSidecarMain {
                 telemetryState = state;
                 boolean decisionReady = state.inMonsterMaze && state.alive && !state.completed && state.maze != null
                         && state.activePadRow >= 0 && state.activePadColumn >= 0;
-                if (!decisionReady && (observationCount == 1 || observation.worldTick != lastDiagnosticTick)) {
-                    System.err.println("[MonsterMazeAI] gate: tick=" + observation.worldTick
+
+                if (observationCount == 1 || observation.worldTick != lastDiagnosticTick) {
+                    System.err.println("[MonsterMazeAI] OBS tick=" + observation.worldTick
+                            + " count=" + observationCount
                             + " rawInMaze=" + observation.inMonsterMaze
                             + " mazeDetected=" + observation.mazeDetected
                             + " stateInMaze=" + state.inMonsterMaze
                             + " alive=" + state.alive
                             + " completed=" + state.completed
                             + " maze=" + (state.maze != null)
-                            + " pad=" + state.activePadRow + "," + state.activePadColumn);
+                            + " pattern=" + state.mazePattern
+                            + " player=" + state.player.x + "," + state.player.y + "," + state.player.z
+                            + " vel=" + state.player.vx + "," + state.player.vy + "," + state.player.vz
+                            + " yaw=" + state.player.yaw
+                            + " grounded=" + state.player.grounded
+                            + " pad=" + state.activePadRow + "," + state.activePadColumn
+                            + " padReached=" + state.padReached
+                            + " phase=" + state.phaseTicksRemaining
+                            + " monsters=" + state.monsters.size());
                     lastDiagnosticTick = observation.worldTick;
                 }
+
                 if (decisionReady) {
                     if (agent == null) {
                         MazeModel maze = state.maze;
@@ -88,36 +98,54 @@ public final class AiSidecarMain {
                                 new MazeAwareRecedingHorizonController(
                                         new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
                         agent = new AutonomousMonsterMazeAgent(new RobustLiveController(objective));
+                        System.err.println("[MonsterMazeAI] PIPELINE initialized at tick=" + observation.worldTick);
                     }
+
                     Action action = agent.decide(state, true);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
+
                     if (observationCount == 1 || observationCount % 20 == 0) {
-                        System.err.println("[MonsterMazeAI] action: tick=" + observation.worldTick
-                                + " pos=" + state.player.x + "," + state.player.z
-                                + " yaw=" + state.player.yaw
-                                + " pad=" + state.activePadRow + "," + state.activePadColumn
-                                + " phase=" + state.phaseTicksRemaining
-                                + " reached=" + state.padReached
-                                + " f=" + result.forward + " s=" + result.strafe
-                                + " jump=" + result.jump + " sprint=" + result.sprint
-                                + " yawDelta=" + result.yawDelta + " ability=" + result.useAbility
-                                + " reason=" + (objective == null ? "NONE" : objective.lastDecisionReason()));
+                        System.err.println("[MonsterMazeAI] DECISION tick=" + observation.worldTick
+                                + " legacyOut=" + describe(result)
+                                + " objectiveReason=" + objective.lastDecisionReason()
+                                + " objectiveDetail=" + objective.lastDecisionDetail()
+                                + " agentDetail=" + agent.lastDecisionDetail());
                     }
                 } else if (agent != null) {
                     agent.reset();
+                    System.err.println("[MonsterMazeAI] PIPELINE reset by gate at tick=" + observation.worldTick);
                 }
             } catch (RuntimeException failure) {
                 if (agent != null) agent.reset();
                 System.err.println("[MonsterMazeAI] sidecar decision failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+                failure.printStackTrace(System.err);
             }
 
             long latency = System.nanoTime() - decisionStart;
-            if (telemetry != null && telemetryState != null) try { telemetry.record(new TelemetryEvent(observation.worldTick, latency, telemetryState, result, result.useAbility ? "strategic-threat-response" : "")); } catch (java.io.IOException e) { System.err.println("[MonsterMazeAI] telemetry write failed: " + e.getMessage()); }
-            if (replay != null) try { replay.record(observation, result); } catch (java.io.IOException e) { System.err.println("[MonsterMazeAI] replay write failed: " + e.getMessage()); }
+            if (telemetry != null && telemetryState != null) try {
+                telemetry.record(new TelemetryEvent(observation.worldTick, latency, telemetryState, result,
+                        result.useAbility ? "strategic-threat-response" : ""));
+            } catch (java.io.IOException e) {
+                System.err.println("[MonsterMazeAI] telemetry write failed: " + e.getMessage());
+            }
+            if (replay != null) try {
+                replay.record(observation, result);
+            } catch (java.io.IOException e) {
+                System.err.println("[MonsterMazeAI] replay write failed: " + e.getMessage());
+            }
             LegacyProtocol.writeAction(out, result);
             out.flush();
         }
+    }
+
+    private static String describe(LegacyAction action) {
+        return "f=" + action.forward()
+                + ",s=" + action.strafe()
+                + ",jump=" + action.jump()
+                + ",sprint=" + action.sprint()
+                + ",yawDelta=" + action.yawDelta()
+                + ",ability=" + action.useAbility();
     }
 }

@@ -438,7 +438,7 @@ public final class Minecraft18Observer {
         return null;
     }
 
-    private boolean matches(World world, BlockPos pos, BlockSignature signature) {
+    static String formatScoreboardLine(String formatted, int scorePoints) {\n        return (formatted == null ? "" : formatted) + ": " + scorePoints;\n    }\n\n    private boolean matches(World world, BlockPos pos, BlockSignature signature) {
         net.minecraft.block.state.IBlockState state = world.getBlockState(pos);
         return state.getBlock() == signature.block
                 && signature.meta == signature.block.getMetaFromState(state);
@@ -467,7 +467,7 @@ public final class Minecraft18Observer {
             // countdown and Stage. Preserve the rendered "Entry: score" form so the
             // existing pure parser can consume both inline text timers and native
             // scoreboard score values.
-            lines.add(formatted + ": " + score.getScorePoints());
+            lines.add(formatScoreboardLine(formatted, score.getScorePoints()));
         }
 
         return Minecraft18ObservationRules.parseScoreboard(objective.getDisplayName(), lines);

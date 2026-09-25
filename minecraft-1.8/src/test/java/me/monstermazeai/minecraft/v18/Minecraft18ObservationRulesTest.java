@@ -21,6 +21,17 @@ public class Minecraft18ObservationRulesTest {
     }
 
     @Test
+    public void parsesMinuteSecondSafePadTimer() {
+        Minecraft18ObservationRules.ScoreboardData data =
+                Minecraft18ObservationRules.parseScoreboard(
+                        "Monster Maze",
+                        Arrays.asList("Safe Pad: 00:14", "Stage: 3"));
+
+        assertEquals(14, data.safePadSeconds);
+        assertEquals(3, data.stage);
+    }
+
+    @Test
     public void parsesValuesOnFollowingScoreboardLines() {
         Minecraft18ObservationRules.ScoreboardData data =
                 Minecraft18ObservationRules.parseScoreboard(

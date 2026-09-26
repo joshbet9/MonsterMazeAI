@@ -26,6 +26,14 @@ class OptimalMovementControllerTest {
         return new MazeModel(raw);
     }
 
+    private static MazeModel narrowMaze() {
+        MazeModel maze = openMaze();
+        for (int r = 0; r < MazeModel.SIZE; r++) for (int col = 0; col < MazeModel.SIZE; col++) {
+            maze.setPhysicalFloor(r, col, r == 50 && col >= 48 && col <= 52);
+        }
+        return maze;
+    }
+
     private static Simulator simulator(MazeModel maze) {
         return new Simulator(new LegacyMazePhysics(),
                 new MonsterSimulator(maze, new Random(7), 0.0),
@@ -64,10 +72,7 @@ class OptimalMovementControllerTest {
 
     @Test
     void movementDoesNotAccelerateAcrossUnsafeEdge() {
-        MazeModel maze = openMaze();
-        for (int r = 0; r < MazeModel.SIZE; r++) for (int c = 0; c < MazeModel.SIZE; c++) {
-            if (Math.abs(r - 50) > 1 || Math.abs(c - 50) > 2) maze.setPhysicalFloor(r, c, false);
-        }
+        MazeModel maze = narrowMaze();
         Simulator sim = simulator(maze);
         GameState s = state(sim);
         s.maze = maze;
@@ -87,8 +92,10 @@ class OptimalMovementControllerTest {
 
     @Test
     void knockbackRecoveryTurnsBackIntoFloor() {
-        Simulator sim = simulator(openMaze());
+        MazeModel maze = narrowMaze();
+        Simulator sim = simulator(maze);
         GameState s = state(sim);
+        s.maze = maze;
         s.player.x = 50.82;
         s.player.z = 50.5;
         s.player.vx = 0.30;

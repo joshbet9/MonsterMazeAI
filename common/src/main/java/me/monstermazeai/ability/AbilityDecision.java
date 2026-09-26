@@ -7,7 +7,7 @@ import me.monstermazeai.monster.MonsterState;
 import java.util.List;
 
 public final class AbilityDecision {
-    private static final double IMMEDIATE=1.8;
+    private static final double IMMEDIATE=2.5;
     private static final double DANGER=3.5;
     private static final double SPEED=0.115;
     private static final int MAX_TICKS=200;
@@ -25,7 +25,7 @@ public final class AbilityDecision {
         int travel=travelTicks(s);
         boolean deadline=s.phaseTicksRemaining>0&&travel>s.phaseTicksRemaining-10;
         if(s.stage<=1&&s.kit!=Kit.SLOWBALLER&&!immediate&&!lowHealth&&!deadline)return false;
-        return immediate||lowHealth||deadline||(s.kit==Kit.SLOWBALLER&&nearest<=DANGER);
+        return immediate||lowHealth||deadline||(s.kit==Kit.SLOWBALLER&&nearest<=4.0);
     }
 
     private static double nearestMonster(GameState s){

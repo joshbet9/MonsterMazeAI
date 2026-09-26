@@ -64,3 +64,10 @@ This is the intended foundation for later ability optimisation and competitor/NP
 ## Safe Pad objective geometry
 
 The Mineplex Safe Pad is a 5x5 physical surface. The beacon identifies its anchor, but the player does not need to reach the beacon centre. Live routing therefore treats the pad as a goal region and selects the minimum-cost reachable entry cell, then stops as soon as the authoritative observer reports the player on the pad.
+
+
+## Monster tactical routing policy
+
+The baseline route is shortest physical travel to the Safe Pad. Monster proximity is not a global route penalty. Monster interaction cost is evaluated only when a monster is within the local interaction envelope.
+
+A local contact is evaluated using the source-game Monster Maze behaviour: a bump deals 4 damage and applies velocity along the trajectory from monster to player. The decision cost therefore includes expected health loss and pad-arrival travel cost. A contact whose knockback direction is aligned toward the Safe Pad can offset that health cost; a contact that displaces the player away from the objective is treated as a local negative interaction. No generic void/fall penalty is included in this routing cost.

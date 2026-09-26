@@ -63,6 +63,6 @@ public class Minecraft18ObservationRulesTest {
 
         assertFalse(Minecraft18ObservationRules.looksLikeMonsterMaze(data));
         assertEquals(1, data.stage);
-        assertEquals(0, data.safePadSeconds);
+        assertEquals(-1, data.safePadSeconds);
     }
 }

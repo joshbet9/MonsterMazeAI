@@ -100,7 +100,7 @@ class LiveTickControllerTest {
         Action first = live.nextAction(state, false);
 
         state.player.x = 2.5;
-        state.player.z = 1.5;
+        state.player.z = 3.5;
         Action second = live.nextAction(state, false);
 
         assertNotEquals(first, second,

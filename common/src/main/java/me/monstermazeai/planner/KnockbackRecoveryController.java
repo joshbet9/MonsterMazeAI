@@ -113,6 +113,14 @@ public final class KnockbackRecoveryController {
         return best;
     }
 
+    private boolean boundaryHasFloor(GameState state, double x, double z, int row, int col) {
+        final double eps = 0.02;
+        if (x - row < eps && row > 0) return state.maze.isPhysicalFloor(row - 1, col);
+        if (row + 1.0 - x < eps && row + 1 < MazeModel.SIZE) return state.maze.isPhysicalFloor(row + 1, col);
+        if (z - col < eps && col > 0) return state.maze.isPhysicalFloor(row, col - 1);
+        return col + 1 < MazeModel.SIZE && state.maze.isPhysicalFloor(row, col + 1);
+    }
+
     private double[] nearestSafeDirection(GameState state) {
         double best = Double.POSITIVE_INFINITY;
         double bestX = state.player.x, bestZ = state.player.z;

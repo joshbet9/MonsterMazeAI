@@ -7,86 +7,259 @@ import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.sim.Simulator;
 
+/**
+ * Continuous movement layer for the perfect-AI baseline.
+ *
+ * Route generation decides which floor cells to traverse. This class decides
+ * how to traverse that route at Minecraft-physics speed: it cuts corners when
+ * the swept path is safe, anticipates braking, aligns the movement vector with
+ * the route, and hands control to knockback recovery when a mob hit makes the
+ * current trajectory unsafe.
+ */
 public final class OptimalMovementController {
-    private static final double EDGE_MARGIN=0.30D;
-    private static final float MAX_YAW_DELTA=30.0F;
-    private static final double CORNER_LOOKAHEAD=0.45D;
+    private static final double EDGE_MARGIN = 0.20;
+    private static final double LOOKAHEAD = 0.70;
+    private static final double BRAKE_DISTANCE = 1.10;
+    private static final double SAMPLE_STEP = 0.06;
+    private static final float MAX_YAW_DELTA = 18.0F;
+
     private final Simulator simulator;
-    private final MonsterAwareRoutePlanner routePlanner=new MonsterAwareRoutePlanner();
+    private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
+    private final KnockbackRecoveryController recovery;
     private final double tolerance;
-    private String detail="UNSET";
+    private String detail = "UNSET";
 
-    public OptimalMovementController(Simulator simulator,double tolerance){
-        if(simulator==null||tolerance<=0.0)throw new IllegalArgumentException();
-        this.simulator=simulator;this.tolerance=tolerance;
-    }
-    public Action nextAction(GameState state,Cell goal,boolean jump){
-        if(state==null||state.maze==null||goal==null){detail="INVALID_INPUT";return Action.IDLE;}
-        int sr=(int)Math.floor(state.player.x),sc=(int)Math.floor(state.player.z);
-        if(!safeCell(state,sr,sc)||!safeCell(state,goal.row(),goal.column())){
-            detail="UNSAFE_START_OR_GOAL";return Action.IDLE;
-        }
-        PlayerRoute route=routePlanner.route(state,new Cell(sr,sc),goal);
-        if(route.reached(state.player.x,state.player.z,tolerance)){detail="ROUTE_REACHED";return Action.IDLE;}
-        double[] t=target(state,route);
-        Action a=choose(state,route,t[0],t[1],jump);
-        detail="ROUTE size="+route.size()+" target="+t[0]+","+t[1]+" action="+describe(a);
-        return a;
-    }
-    public String lastDecisionDetail(){return detail;}
-
-    private double[] target(GameState state,PlayerRoute route){
-        int index=0;
-        while(index<route.size()-1&&Math.hypot(state.player.x-route.targetX(index),state.player.z-route.targetZ(index))<=tolerance)index++;
-        int furthest=index;
-        for(int i=index+1;i<route.size();i++){
-            if(!visibleSafeSegment(state,state.player.x,state.player.z,route.targetX(i),route.targetZ(i)))break;
-            furthest=i;
-        }
-        double tx=route.targetX(furthest),tz=route.targetZ(furthest);
-        if(furthest<route.size()-1){
-            double nx=route.targetX(furthest+1),nz=route.targetZ(furthest+1),len=Math.hypot(nx-tx,nz-tz);
-            if(len>1e-9){double look=Math.min(CORNER_LOOKAHEAD,len*0.35D);tx+=(nx-tx)*look/len;tz+=(nz-tz)*look/len;}
-        }
-        return new double[]{tx,tz};
+    public OptimalMovementController(Simulator simulator, double tolerance) {
+        if (simulator == null || tolerance <= 0.0) throw new IllegalArgumentException();
+        this.simulator = simulator;
+        this.recovery = new KnockbackRecoveryController(simulator);
+        this.tolerance = tolerance;
     }
 
-    private Action choose(GameState state,PlayerRoute route,double tx,double tz,boolean jump){
-        double dx=tx-state.player.x,dz=tz-state.player.z;
-        float error=wrap((float)Math.toDegrees(Math.atan2(-dx,dz))-state.player.yaw);
-        float yaw=clamp(error,-MAX_YAW_DELTA,MAX_YAW_DELTA);
-        Action[] candidates={
-            new Action(1,0,jump,true,yaw,false),
-            new Action(1,error>15?-1:error<-15?1:0,jump,true,yaw,false),
-            new Action(0,0,jump,true,yaw,false)
+    public Action nextAction(GameState state, Cell goal, boolean allowJump) {
+        if (state == null || state.maze == null || goal == null) {
+            detail = "INVALID_INPUT";
+            return Action.IDLE;
+        }
+
+        Action recoveryAction = recovery.nextAction(state, allowJump);
+        if (recoveryAction != Action.IDLE) {
+            detail = "KNOCKBACK_RECOVERY hitUntil=" + state.player.recentMobHitUntilTick
+                    + " action=" + describe(recoveryAction);
+            return recoveryAction;
+        }
+
+        int row = (int) Math.floor(state.player.x);
+        int col = (int) Math.floor(state.player.z);
+        if (!state.maze.isPhysicalFloor(row, col)
+                || !state.maze.isPhysicalFloor(goal.row(), goal.column())) {
+            detail = "UNSAFE_START_OR_GOAL";
+            return Action.IDLE;
+        }
+
+        PlayerRoute route = routePlanner.route(state, new Cell(row, col), goal);
+        if (route.reached(state.player.x, state.player.z, tolerance)) {
+            detail = "ROUTE_REACHED";
+            return Action.IDLE;
+        }
+
+        int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, tolerance);
+        double[] target = continuousTarget(state, route, waypoint);
+        Action action = choosePhysicsAwareAction(state, route, target[0], target[1], allowJump);
+
+        detail = "ROUTE size=" + route.size()
+                + " waypoint=" + waypoint + "/" + (route.size() - 1)
+                + " target=" + target[0] + "," + target[1]
+                + " speed=" + Math.hypot(state.player.vx, state.player.vz)
+                + " action=" + describe(action);
+        return action;
+    }
+
+    public String lastDecisionDetail() {
+        return detail;
+    }
+
+    private double[] continuousTarget(GameState state, PlayerRoute route, int waypoint) {
+        int anchor = Math.min(waypoint, route.size() - 1);
+        double tx = route.targetX(anchor);
+        double tz = route.targetZ(anchor);
+
+        // Project ahead along the next route segment. This avoids the old
+        // "aim at the centre of the next block" oscillation at corners.
+        if (anchor < route.size() - 1) {
+            double nx = route.targetX(anchor + 1);
+            double nz = route.targetZ(anchor + 1);
+            double len = Math.hypot(nx - tx, nz - tz);
+            if (len > 1.0E-9) {
+                double look = Math.min(LOOKAHEAD, len);
+                double px = tx + (nx - tx) * look / len;
+                double pz = tz + (nz - tz) * look / len;
+                if (safeSegment(state, state.player.x, state.player.z, px, pz)) {
+                    tx = px;
+                    tz = pz;
+                }
+            }
+        }
+
+        // At a corner, look through the corner if the diagonal sweep is safe.
+        for (int i = anchor + 1; i < route.size(); i++) {
+            double nx = route.targetX(i), nz = route.targetZ(i);
+            if (!safeSegment(state, state.player.x, state.player.z, nx, nz)) break;
+            tx = nx;
+            tz = nz;
+            if (Math.hypot(tx - state.player.x, tz - state.player.z) > 2.5) break;
+        }
+        return new double[]{tx, tz};
+    }
+
+    private Action choosePhysicsAwareAction(GameState state, PlayerRoute route,
+                                             double tx, double tz, boolean allowJump) {
+        double dx = tx - state.player.x;
+        double dz = tz - state.player.z;
+        double distance = Math.hypot(dx, dz);
+        if (distance < 1.0E-6) return Action.IDLE;
+
+        // Convert the desired world-space direction into local Minecraft
+        // forward/strafe input. This lets the AI keep moving toward the route
+        // even while its camera is still rotating toward the ideal heading.
+        double desiredYaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double yawError = wrap(desiredYaw - state.player.yaw);
+
+        double currentSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double stoppingDistance = currentSpeed * currentSpeed / 0.028;
+        boolean braking = stoppingDistance > distance + 0.25
+                || (distance < BRAKE_DISTANCE && Math.abs(yawError) > 70.0);
+
+        double localAngle = Math.toRadians(wrap(desiredYaw - state.player.yaw));
+        double forward = Math.cos(localAngle);
+        double strafe = Math.sin(localAngle);
+        if (braking) {
+            forward = -0.35;
+            strafe = 0.0;
+        }
+
+        int f = signInput(forward);
+        int s = signInput(strafe);
+        if (f == 0 && s == 0) f = 1;
+
+        float yawDelta = clamp((float) yawError, -MAX_YAW_DELTA, MAX_YAW_DELTA);
+        boolean jump = allowJump && jumpOpportunity(state, route, tx, tz);
+
+        Action[] candidates = {
+                new Action(f, s, jump, true, yawDelta, false),
+                new Action(f, 0, jump, true, yawDelta, false),
+                new Action(0, s, jump, true, yawDelta, false),
+                new Action(0, 0, jump, true, yawDelta, false)
         };
-        Action best=Action.IDLE;double bestScore=Double.POSITIVE_INFINITY;
-        for(Action c:candidates){
-            GameState next=simulator.forecast(state,c,1,simulator.monsterSeed()^state.tick);
-            if(!safePosition(next.player.x,next.player.z,state))continue;
-            double score=Math.hypot(next.player.x-tx,next.player.z-tz)+2.0*distanceToRoute(next.player.x,next.player.z,route);
-            if(score<bestScore){bestScore=score;best=c;}
+
+        Action best = Action.IDLE;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (Action candidate : candidates) {
+            GameState next = simulator.forecast(
+                    state, candidate, 2, simulator.monsterSeed() ^ state.tick ^ 0x5DEECE66DL);
+            if (!state.alive || !safePredictedTrajectory(state, next)) continue;
+
+            double targetDistance = Math.hypot(next.player.x - tx, next.player.z - tz);
+            double routeDistance = distanceToRoute(next.player.x, next.player.z, route);
+            double edgePenalty = edgePenalty(next);
+            double reversePenalty = braking ? Math.max(0.0, next.player.vx * forward
+                    + next.player.vz * strafe) : 0.0;
+            double score = targetDistance + 0.35 * routeDistance
+                    + 3.0 * edgePenalty + 2.0 * reversePenalty;
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
         }
-        return best==Action.IDLE?new Action(0,0,jump,true,yaw,false):best;
+
+        if (best != Action.IDLE) return best;
+        return new Action(0, 0, jump, false, yawDelta, false);
     }
 
-    private double distanceToRoute(double x,double z,PlayerRoute route){
-        double best=Double.POSITIVE_INFINITY;
-        for(int i=0;i<route.size();i++)best=Math.min(best,Math.hypot(x-route.targetX(i),z-route.targetZ(i)));
-        return best;
+    private boolean jumpOpportunity(GameState state, PlayerRoute route, double tx, double tz) {
+        // Holding jump is the intended movement optimisation for all kits.
+        // Jumper charges are consumed by the ability model; after charges are
+        // exhausted this remains ordinary Minecraft jump timing.
+        if (!state.player.grounded) return true;
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0) return true;
+        return Math.hypot(tx - state.player.x, tz - state.player.z) > 0.20
+                && route.size() > 1;
     }
-    private boolean visibleSafeSegment(GameState state,double x0,double z0,double x1,double z1){
-        int n=Math.max(2,(int)Math.ceil(Math.hypot(x1-x0,z1-z0)/0.08D));
-        for(int i=0;i<=n;i++){double t=i/(double)n;if(!safePosition(x0+(x1-x0)*t,z0+(z1-z0)*t,state))return false;}
+
+    private boolean safePredictedTrajectory(GameState source, GameState next) {
+        if (!next.alive) return false;
+        if (!safePosition(next, next.player.x, next.player.z)) return false;
+
+        int samples = Math.max(2, (int) Math.ceil(
+                Math.hypot(next.player.x - source.player.x, next.player.z - source.player.z)
+                        / SAMPLE_STEP));
+        for (int i = 1; i < samples; i++) {
+            double t = i / (double) samples;
+            double x = source.player.x + (next.player.x - source.player.x) * t;
+            double z = source.player.z + (next.player.z - source.player.z) * t;
+            if (!safePosition(source, x, z)) return false;
+        }
         return true;
     }
-    private boolean safePosition(double x,double z,GameState state){
-        int r=(int)Math.floor(x),c=(int)Math.floor(z);
-        if(!safeCell(state,r,c))return false;
-        return x>=r+EDGE_MARGIN&&x<=r+1.0-EDGE_MARGIN&&z>=c+EDGE_MARGIN&&z<=c+1.0-EDGE_MARGIN;
+
+    private boolean safeSegment(GameState state, double x0, double z0, double x1, double z1) {
+        int samples = Math.max(2, (int) Math.ceil(
+                Math.hypot(x1 - x0, z1 - z0) / SAMPLE_STEP));
+        for (int i = 0; i <= samples; i++) {
+            double t = i / (double) samples;
+            if (!safePosition(state, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return false;
+        }
+        return true;
     }
-    private boolean safeCell(GameState s,int r,int c){return s.maze.isPhysicalFloor(r,c);}
-    private static float clamp(float v,float lo,float hi){return Math.max(lo,Math.min(hi,v));}
-    private static float wrap(float v){while(v>=180)v-=360;while(v<-180)v+=360;return v;}
-    private static String describe(Action a){return "f="+a.forward()+",s="+a.strafe()+",jump="+a.jump()+",sprint="+a.sprint()+",yawDelta="+a.yawDelta();}
+
+    private boolean safePosition(GameState state, double x, double z) {
+        int row = (int) Math.floor(x);
+        int col = (int) Math.floor(z);
+        if (row < 0 || col < 0
+                || row >= me.monstermazeai.maze.MazeModel.SIZE
+                || col >= me.monstermazeai.maze.MazeModel.SIZE) return false;
+        if (!state.maze.isPhysicalFloor(row, col)) return false;
+        double margin = Math.min(Math.min(x - row, row + 1.0 - x),
+                Math.min(z - col, col + 1.0 - z));
+        return margin >= EDGE_MARGIN;
+    }
+
+    private double distanceToRoute(double x, double z, PlayerRoute route) {
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < route.size(); i++) {
+            best = Math.min(best, Math.hypot(x - route.targetX(i), z - route.targetZ(i)));
+        }
+        return best;
+    }
+
+    private double edgePenalty(GameState state) {
+        int row = (int) Math.floor(state.player.x);
+        int col = (int) Math.floor(state.player.z);
+        if (!state.maze.isPhysicalFloor(row, col)) return 100.0;
+        double edge = Math.min(Math.min(state.player.x - row, row + 1.0 - state.player.x),
+                Math.min(state.player.z - col, col + 1.0 - state.player.z));
+        return Math.max(0.0, EDGE_MARGIN - edge);
+    }
+
+    private static int signInput(double value) {
+        if (value > 0.25) return 1;
+        if (value < -0.25) return -1;
+        return 0;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double wrap(double value) {
+        while (value >= 180.0) value -= 360.0;
+        while (value < -180.0) value += 360.0;
+        return value;
+    }
+
+    private static String describe(Action a) {
+        return "f=" + a.forward() + ",s=" + a.strafe()
+                + ",jump=" + a.jump() + ",sprint=" + a.sprint()
+                + ",yawDelta=" + a.yawDelta();
+    }
 }

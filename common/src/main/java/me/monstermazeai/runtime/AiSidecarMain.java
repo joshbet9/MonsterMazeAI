@@ -103,7 +103,7 @@ public final class AiSidecarMain {
                         System.err.println("[MonsterMazeAI] PIPELINE initialized at tick=" + observation.worldTick);
                     }
 
-                    boolean allowJump = state.kit == Kit.JUMPER && state.player.jumpCharges > 0;
+                    boolean allowJump = true;
                     Action action = agent.decide(state, allowJump);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());

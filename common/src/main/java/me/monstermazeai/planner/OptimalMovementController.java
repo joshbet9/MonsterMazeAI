@@ -249,6 +249,7 @@ public final class OptimalMovementController {
         // ordinary jump-spam is enabled for every kit.
         if (state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0) {
             boolean imminentDeadline = state.phaseTicksRemaining >= 0
+                    && state.phaseTicksRemaining > 0
                     && state.phaseTicksRemaining <= 40
                     && Math.hypot(tx - state.player.x, tz - state.player.z) > 1.5;
             boolean recovery = state.player.recentMobHitUntilTick > state.tick

@@ -28,6 +28,24 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void activeSafePadCellsRemainReachableToPlayerRouting() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[0][1] = 1;
+
+        MazeModel maze = new MazeModel(raw);
+        maze.setDisabled(0, 2, true); // Active Safe Pad surface: monster-disabled, player-walkable.
+
+        GameState state = new GameState();
+        state.maze = maze;
+
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(
+                state, new Cell(0, 0), new Cell(0, 2));
+
+        assertEquals(new Cell(0, 2), route.cells().get(route.size() - 1));
+    }
+
+    @Test
     void routeDetoursAroundPredictedMonster() {
         GameState state = new GameState();
         state.maze = openMaze();

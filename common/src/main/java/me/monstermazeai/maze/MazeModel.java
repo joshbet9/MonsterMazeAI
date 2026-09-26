@@ -50,4 +50,27 @@ public final class MazeModel {
         if (isTraversable(r, c - 1)) out.add(new Cell(r, c - 1));
         return out;
     }
+
+    /**
+     * Physical player floor, distinct from the source's monster waypoint graph.
+     *
+     * Monster Maze temporarily marks the active Safe Pad's 5x5 area as disabled
+     * so monsters cannot use it. Players are still allowed to walk onto that
+     * surface. Disabled cells therefore remain valid player-routing cells.
+     */
+    public List<Cell> physicalCardinalNeighbours(Cell cell) {
+        int r = cell.row(), c = cell.column();
+        List<Cell> out = new ArrayList<>(4);
+        if (isPhysicalFloor(r - 1, c)) out.add(new Cell(r - 1, c));
+        if (isPhysicalFloor(r + 1, c)) out.add(new Cell(r + 1, c));
+        if (isPhysicalFloor(r, c + 1)) out.add(new Cell(r, c + 1));
+        if (isPhysicalFloor(r, c - 1)) out.add(new Cell(r, c - 1));
+        return out;
+    }
+
+    public boolean isPhysicalFloor(int row, int col) {
+        return row >= 0 && row < SIZE
+                && col >= 0 && col < SIZE
+                && (isRawPath(row, col) || disabled[row][col]);
+    }
 }

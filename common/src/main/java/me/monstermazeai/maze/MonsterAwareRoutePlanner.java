@@ -34,7 +34,7 @@ public final class MonsterAwareRoutePlanner {
             if (current.cost > known + 1.0E-9) continue;
             if (current.cell.equals(goal)) return reconstruct(previous, start, goal);
 
-            for (Cell next : state.maze.cardinalNeighbours(current.cell)) {
+            for (Cell next : state.maze.physicalCardinalNeighbours(current.cell)) {
                 double arrivalTick = current.cost + 1.0;
                 double cost = current.cost + STEP_COST
                         + riskCost(state, next, arrivalTick);

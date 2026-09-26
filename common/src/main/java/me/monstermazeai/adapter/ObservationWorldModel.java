@@ -112,6 +112,13 @@ public final class ObservationWorldModel {
             state.padReached = observation.pad.reached;
         }
 
+        if (observation.previewPad != null && observation.previewPad.row >= 0 && observation.previewPad.column >= 0) {
+            // The source's preview pad is the movement objective while the current
+            // pad remains the survival checkpoint until the phase expires.
+            state.previewPadRow = observation.previewPad.row;
+            state.previewPadColumn = observation.previewPad.column;
+        }
+
         for (LegacyWorldObservation.Monster observed : observation.monsters) {
             MonsterState monster = new MonsterState(
                     observed.id,

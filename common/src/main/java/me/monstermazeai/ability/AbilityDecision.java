@@ -23,7 +23,7 @@ public final class AbilityDecision {
         boolean immediate=nearest<=IMMEDIATE;
         boolean lowHealth=s.player.health<=4.0&&nearest<=DANGER;
         int travel=travelTicks(s);
-        boolean deadline=s.phaseTicksRemaining>0&&travel>s.phaseTicksRemaining-10;
+        boolean deadline=s.phaseTicksRemaining>0 && travel>s.phaseTicksRemaining-10;
         if(s.stage<=1&&s.kit!=Kit.SLOWBALLER&&!immediate&&!lowHealth&&!deadline)return false;
         return immediate||lowHealth||deadline||(s.kit==Kit.SLOWBALLER&&nearest<=4.0);
     }

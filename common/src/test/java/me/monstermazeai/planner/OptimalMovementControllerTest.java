@@ -9,6 +9,7 @@ import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.sim.Simulator;
 import me.monstermazeai.collision.CollisionModel;
 import me.monstermazeai.kit.Kit;
+import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
 
 import java.util.Random;

@@ -83,6 +83,7 @@ public final class AiSidecarMain {
                             + " pad=" + state.activePadRow + "," + state.activePadColumn
                             + " padReached=" + state.padReached
                             + " phase=" + state.phaseTicksRemaining
+                            + " stage=" + state.stage
                             + " monsters=" + state.monsters.size());
                     lastDiagnosticTick = observation.worldTick;
                 }

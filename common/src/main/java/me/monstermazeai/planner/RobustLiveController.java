@@ -7,6 +7,11 @@ import me.monstermazeai.player.Action;
 
 /**
  * Stateful safety wrapper around the one-tick objective controller.
+ *
+ * Phase time is intentionally not part of the basic live-state validity gate;
+ * the observed active pad remains actionable even when the timer is zero or
+ * temporarily unavailable. The planner can use a positive timer as a deadline
+ * when one is available.
  */
 public final class RobustLiveController {
     private static final int STUCK_TICKS = 8;
@@ -99,7 +104,7 @@ public final class RobustLiveController {
 
     private static boolean validLiveState(GameState s) {
         return s != null && s.inMonsterMaze && s.alive && !s.completed
-                && s.maze != null && s.phaseTicksRemaining != 0
+                && s.maze != null
                 && s.activePadRow >= 0 && s.activePadColumn >= 0;
     }
 

@@ -64,11 +64,11 @@ class LiveObjectiveControllerTest {
     }
 
     @Test
-    void expiredObjectiveFailsClosed() {
+    void zeroPhaseStillUsesObservedActivePad() {
         GameState state = activeState(4, 1);
         state.phaseTicksRemaining = 0;
 
-        assertEquals(Action.IDLE, controller().nextAction(state, false));
+        assertNotEquals(Action.IDLE, controller().nextAction(state, false));
     }
 
     @Test

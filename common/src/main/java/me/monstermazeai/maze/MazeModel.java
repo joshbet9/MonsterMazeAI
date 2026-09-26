@@ -30,7 +30,8 @@ public final class MazeModel {
     public boolean isDisabled(int row, int col) { return disabled[row][col]; }
     public void setDisabled(int row, int col, boolean value) { disabled[row][col] = value; }
     public boolean isPhysicalFloor(int row, int col) {
-        return row >= 0 && row < SIZE && col >= 0 && col < SIZE && physicalFloor[row][col];
+        return row >= 0 && row < SIZE && col >= 0 && col < SIZE
+                && (physicalFloor[row][col] || disabled[row][col]);
     }
     public void setPhysicalFloor(int row, int col, boolean value) { physicalFloor[row][col] = value; }
     public MazeModel copy() {

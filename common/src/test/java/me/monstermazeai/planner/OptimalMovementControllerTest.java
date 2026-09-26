@@ -1,0 +1,117 @@
+package me.monstermazeai.planner;
+
+import me.monstermazeai.game.GameState;
+import me.monstermazeai.maze.Cell;
+import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.monster.MonsterSimulator;
+import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.physics.LegacyMazePhysics;
+import me.monstermazeai.sim.Simulator;
+import me.monstermazeai.collision.CollisionModel;
+import me.monstermazeai.kit.Kit;
+import org.junit.jupiter.api.Test;
+
+import java.util.Random;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class OptimalMovementControllerTest {
+    private static MazeModel openMaze() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        return new MazeModel(raw);
+    }
+
+    private static Simulator simulator(MazeModel maze) {
+        return new Simulator(new LegacyMazePhysics(),
+                new MonsterSimulator(maze, new Random(7), 0.0),
+                new CollisionModel());
+    }
+
+    private static GameState state(Simulator simulator) {
+        GameState s = new GameState();
+        s.maze = openMaze();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.kit = Kit.REPULSOR;
+        s.activePadRow = 50;
+        s.activePadColumn = 56;
+        s.player.x = 50.5;
+        s.player.z = 50.5;
+        s.player.grounded = true;
+        s.player.yaw = 0.0F;
+        return s;
+    }
+
+    @Test
+    void routeAvoidsPredictedMonsterCorridor() {
+        MazeModel maze = openMaze();
+        Simulator sim = simulator(maze);
+        GameState s = state(sim);
+        s.monsters.add(new MonsterState(1, 50.5, 52.5, 0.0));
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .route(s, new Cell(50, 50), new Cell(50, 56));
+
+        assertFalse(route.cells().contains(new Cell(50, 52)),
+                "A directly occupied high-risk cell should not be preferred when a detour exists");
+    }
+
+    @Test
+    void movementDoesNotAccelerateAcrossUnsafeEdge() {
+        Simulator sim = simulator(openMaze());
+        GameState s = state(sim);
+        s.player.x = 50.85;
+        s.player.z = 50.5;
+        s.player.vx = 0.18;
+        s.player.yaw = -90.0F;
+
+        Action action = new OptimalMovementController(sim, 0.65)
+                .nextAction(s, new Cell(50, 56), true);
+
+        GameState next = sim.forecast(s, action, 2, 1234L);
+        assertTrue(next.player.x < 51.0 && next.player.x > 49.0);
+        assertTrue(next.alive);
+    }
+
+    @Test
+    void knockbackRecoveryTurnsBackIntoFloor() {
+        Simulator sim = simulator(openMaze());
+        GameState s = state(sim);
+        s.player.x = 50.82;
+        s.player.z = 50.5;
+        s.player.vx = 0.9;
+        s.player.vz = 0.0;
+        s.player.recentMobHitUntilTick = 20;
+        s.tick = 1;
+
+        KnockbackRecoveryController recovery = new KnockbackRecoveryController(sim);
+        assertTrue(recovery.shouldRecover(s));
+
+        Action action = recovery.nextAction(s, true);
+        GameState next = sim.forecast(s, action, 3, 42L);
+
+        assertTrue(next.alive);
+        assertTrue(next.player.x < 51.0);
+        assertTrue(s.maze.isPhysicalFloor((int) Math.floor(next.player.x),
+                (int) Math.floor(next.player.z)));
+    }
+
+    @Test
+    void nonJumperAndJumperBothHoldJumpForMovementOptimisation() {
+        Simulator sim = simulator(openMaze());
+        GameState normal = state(sim);
+        normal.kit = Kit.REPULSOR;
+        Action normalAction = new OptimalMovementController(sim, 0.65)
+                .nextAction(normal, new Cell(50, 56), true);
+        assertTrue(normalAction.jump());
+
+        GameState jumper = state(sim);
+        jumper.kit = Kit.JUMPER;
+        jumper.player.jumpCharges = 0;
+        Action jumperAction = new OptimalMovementController(sim, 0.65)
+                .nextAction(jumper, new Cell(50, 56), true);
+        assertTrue(jumperAction.jump());
+    }
+}

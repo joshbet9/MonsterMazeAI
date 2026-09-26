@@ -97,6 +97,9 @@ public final class ObservationWorldModel {
                     if (row >= 0 && row < me.monstermazeai.maze.MazeModel.SIZE
                             && column >= 0 && column < me.monstermazeai.maze.MazeModel.SIZE) {
                         state.maze.setDisabled(row, column, true);
+                        // SafePad.build creates a physical 5x5 surface even when
+                        // the canonical maze cell underneath was not a path cell.
+                        state.maze.setPhysicalFloor(row, column, true);
                     }
                 }
             }

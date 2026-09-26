@@ -3,6 +3,8 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.PlayerPathfinder;
+import me.monstermazeai.maze.PlayerRoute;
+import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.monster.MonsterState;
 import java.util.List;
 
@@ -20,12 +22,13 @@ public final class AbilityDecision {
         if(s.kit==Kit.SLOWBALLER&&s.tick<s.ability.cooldownUntilTick)return false;
         double nearest=nearestMonster(s);
         if(Double.isInfinite(nearest))return false;
-        boolean immediate=nearest<=IMMEDIATE;
-        boolean lowHealth=s.player.health<=4.0&&nearest<=DANGER;
+        boolean routeThreat = monsterThreatensChosenRoute(s);
+        boolean immediate=nearest<=IMMEDIATE && routeThreat;
+        boolean lowHealth=s.player.health<=4.0&&nearest<=DANGER&&routeThreat;
         int travel=travelTicks(s);
         boolean deadline=s.phaseTicksRemaining>0 && travel>s.phaseTicksRemaining-10;
         if(s.stage<=1&&s.kit!=Kit.SLOWBALLER&&!immediate&&!lowHealth&&!deadline)return false;
-        return immediate||lowHealth||deadline||(s.kit==Kit.SLOWBALLER&&nearest<=4.0);
+        return immediate||lowHealth||deadline||(s.kit==Kit.SLOWBALLER&&nearest<=4.0&&routeThreat);
     }
 
     private static double nearestMonster(GameState s){
@@ -36,6 +39,22 @@ public final class AbilityDecision {
         }
         return best;
     }
+    private static boolean monsterThreatensChosenRoute(GameState s){
+        if(s.activePadRow<0||s.activePadColumn<0)return false;
+        int r=(int)Math.floor(s.player.x),c=(int)Math.floor(s.player.z);
+        try{
+            PlayerRoute route=new MonsterAwareRoutePlanner().route(
+                    s,new Cell(r,c),new Cell(s.activePadRow,s.activePadColumn));
+            for(MonsterState m:s.monsters){
+                if(m.removed||m.launched(s.tick)||m.frozen(s.tick))continue;
+                for(int i=0;i<route.size();i++){
+                    if(Math.hypot(m.x-route.targetX(i),m.z-route.targetZ(i))<=2.25)return true;
+                }
+            }
+        }catch(IllegalArgumentException ignored){}
+        return false;
+    }
+
     private static int travelTicks(GameState s){
         if(s.activePadRow<0||s.activePadColumn<0)return MAX_TICKS;
         int r=(int)Math.floor(s.player.x),c=(int)Math.floor(s.player.z);

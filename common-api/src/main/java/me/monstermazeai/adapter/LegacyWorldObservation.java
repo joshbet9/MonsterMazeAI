@@ -92,7 +92,7 @@ public final class LegacyWorldObservation {
         return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed,
                 stage, safePadSeconds, liveSeconds, player.copy(), kit, jumpCharges,
                 abilityCharges, center == null ? null : center.copy(),
-                pad == null ? null : pad.copy(), maze, monsters, scoreboardTitle, scoreboardLines);
+                pad == null ? null : pad.copy(), maze, physicalFloor, monsters, scoreboardTitle, scoreboardLines);
     }
 
     private static boolean[][] defaultPhysicalFloor(int[][] source) {

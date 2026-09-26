@@ -3,15 +3,21 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.ActionSink;
 import me.monstermazeai.adapter.LegacyAction;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.settings.KeyBinding;
 
 /**
- * Minecraft 1.8.9 execution bridge with explicit diagnostic tracing.
+ * Minecraft 1.8.9 action state bridge.
+ *
+ * Movement is no longer driven through KeyBinding.setKeyBindState(). Vanilla
+ * rebuilds MovementInput from the physical keyboard during EntityPlayerSP's
+ * living update, so synthetic key states can be overwritten by the client
+ * tick. This class only stores the authoritative AI command; the custom
+ * MovementInput consumes it at the exact point vanilla has finished reading
+ * physical input.
  */
 public final class Minecraft18ActionExecutor implements ActionSink {
     private final Minecraft minecraft;
-    private boolean abilityPending;
-    private boolean abilityPressed;
+    private volatile LegacyAction currentAction = LegacyAction.IDLE;
+    private volatile boolean aiEnabled;
     private long applyCount;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
@@ -20,70 +26,36 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     }
 
     @Override
-    public void apply(LegacyAction action) {
-        if (action == null) action = LegacyAction.IDLE;
+    public synchronized void apply(LegacyAction action) {
+        currentAction = action == null ? LegacyAction.IDLE : action;
         applyCount++;
 
-        boolean forward = action.forward > 0.5;
-        boolean back = action.forward < -0.5;
-        boolean right = action.strafe > 0.5;
-        boolean left = action.strafe < -0.5;
-        boolean jump = action.jump;
-        boolean sprint = action.sprint;
-        boolean useItem = action.useAbility && !abilityPressed;
-
-        float yawBefore = minecraft.thePlayer == null ? Float.NaN : minecraft.thePlayer.rotationYaw;
-
-        set(minecraft.gameSettings.keyBindForward, forward);
-        set(minecraft.gameSettings.keyBindBack, back);
-        set(minecraft.gameSettings.keyBindRight, right);
-        set(minecraft.gameSettings.keyBindLeft, left);
-        set(minecraft.gameSettings.keyBindJump, jump);
-        set(minecraft.gameSettings.keyBindSprint, sprint);
-
-        if (minecraft.thePlayer != null && action.yawDelta != 0.0f) {
-            minecraft.thePlayer.rotationYaw += clampYaw(action.yawDelta);
-        }
-
-        abilityPending = action.useAbility;
-        set(minecraft.gameSettings.keyBindUseItem, useItem);
-        abilityPressed = action.useAbility;
-
-        if (applyCount == 1 || applyCount % 20 == 0 || forward || back || left || right || jump || action.yawDelta != 0.0f) {
-            float yawAfter = minecraft.thePlayer == null ? Float.NaN : minecraft.thePlayer.rotationYaw;
-            System.err.println("[MonsterMazeAI/1.8] EXEC apply#" + applyCount
-                    + " action=" + describe(action)
-                    + " keys[fwd=" + forward + ",back=" + back
-                    + ",left=" + left + ",right=" + right
-                    + ",jump=" + jump + ",sprint=" + sprint
-                    + ",use=" + useItem + "]"
-                    + " yaw=" + yawBefore + "->" + yawAfter
-                    + " player=" + (minecraft.thePlayer == null ? "null"
-                        : minecraft.thePlayer.posX + "," + minecraft.thePlayer.posY + "," + minecraft.thePlayer.posZ));
+        if (applyCount == 1 || applyCount % 20 == 0
+                || currentAction.forward != 0.0 || currentAction.strafe != 0.0
+                || currentAction.jump || currentAction.yawDelta != 0.0f) {
+            System.err.println("[MonsterMazeAI/1.8] EXEC command#" + applyCount
+                    + " enabled=" + aiEnabled
+                    + " action=" + describe(currentAction));
         }
     }
 
-    public boolean isAbilityPending() { return abilityPending; }
+    public LegacyAction currentAction() {
+        return currentAction;
+    }
+
+    public boolean isAiEnabled() {
+        return aiEnabled;
+    }
+
+    public void setAiEnabled(boolean enabled) {
+        aiEnabled = enabled;
+        if (!enabled) currentAction = LegacyAction.IDLE;
+    }
 
     @Override
-    public void releaseAll() {
-        set(minecraft.gameSettings.keyBindForward, false);
-        set(minecraft.gameSettings.keyBindBack, false);
-        set(minecraft.gameSettings.keyBindLeft, false);
-        set(minecraft.gameSettings.keyBindRight, false);
-        set(minecraft.gameSettings.keyBindJump, false);
-        set(minecraft.gameSettings.keyBindSprint, false);
-        abilityPending = false;
-        abilityPressed = false;
+    public synchronized void releaseAll() {
+        currentAction = LegacyAction.IDLE;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
-    }
-
-    private static void set(KeyBinding binding, boolean pressed) {
-        KeyBinding.setKeyBindState(binding.getKeyCode(), pressed);
-    }
-
-    private static float clampYaw(float delta) {
-        return Math.max(-30.0f, Math.min(30.0f, delta));
     }
 
     private static String describe(LegacyAction action) {

@@ -53,7 +53,7 @@ class OptimalMovementControllerTest {
         Simulator sim = simulator(maze);
         GameState s = state(sim);
         s.player.health = 4.0;
-        s.monsters.add(new MonsterState(1, 50.5, 52.5, 0.0));
+        s.monsters.add(new MonsterState(1, 50.5, 0.0, 52.5));
 
         PlayerRoute route = new MonsterAwareRoutePlanner()
                 .route(s, new Cell(50, 50), new Cell(50, 56));

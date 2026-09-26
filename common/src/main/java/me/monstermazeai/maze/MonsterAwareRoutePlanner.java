@@ -6,14 +6,25 @@ import me.monstermazeai.monster.MonsterState;
 import java.util.*;
 
 /**
- * Selects a physical maze route while accounting for short-horizon monster
- * interception risk. The maze graph remains authoritative for walkability;
- * monster risk only changes the route cost.
+ * Selects the shortest physical route to the Safe Pad, with local monster
+ * encounters evaluated as tactical interactions rather than global hazards.
+ * Distant monsters do not distort the baseline route. When a monster is close
+ * enough to matter, expected damage and expected knockback value can alter the
+ * local decision.
  */
 public final class MonsterAwareRoutePlanner {
-    private static final double MONSTER_RISK_RADIUS = 3.0;
-    private static final double RISK_WEIGHT = 20.0;
     private static final double STEP_COST = 1.0;
+    /** Monster Maze bump damage in the source game. */
+    private static final double MONSTER_DAMAGE = 4.0;
+    /** Only evaluate monster interactions when the player is genuinely close. */
+    private static final double LOCAL_INTERACTION_RADIUS = 4.5;
+    private static final double CONTACT_RADIUS = 1.05;
+    /** Health loss is valued as a fraction of the player's remaining health. */
+    private static final double HEALTH_FRACTION_COST = 20.0;
+    /** Approximate value of a useful source-game bump in route-time units. */
+    private static final double USEFUL_KNOCKBACK_VALUE = 5.0;
+    /** Avoiding a non-useful contact is preferred to absorbing its damage. */
+    private static final double CONTACT_DISPLACEMENT_COST = 2.0;
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
@@ -37,7 +48,7 @@ public final class MonsterAwareRoutePlanner {
             for (Cell next : state.maze.physicalCardinalNeighbours(current.cell)) {
                 double arrivalTick = current.cost + 1.0;
                 double cost = current.cost + STEP_COST
-                        + riskCost(state, next, arrivalTick);
+                        + tacticalMobCost(state, next, goal, arrivalTick);
                 double old = distance.getOrDefault(next, Double.POSITIVE_INFINITY);
                 if (cost < old - 1.0E-9) {
                     distance.put(next, cost);
@@ -50,73 +61,58 @@ public final class MonsterAwareRoutePlanner {
         return new PlayerRoute(new PlayerPathfinder().shortestPath(state.maze, start, goal));
     }
 
-    private double riskCost(GameState state, Cell cell, double arrivalTick) {
-        double x = cell.row() + 0.5;
-        double z = cell.column() + 0.5;
-        double risk = 0.0;
+    private double tacticalMobCost(GameState state, Cell cell, Cell goal, double arrivalTick) {
+        // Monsters only enter the route objective when the player is locally
+        // exposed to an interaction. Distant mobs cannot make the first-pad
+        // route unnecessarily conservative.
+        double px = state.player.x;
+        double pz = state.player.z;
+        double cost = 0.0;
+
+        double goalX = goal.row() + 0.5;
+        double goalZ = goal.column() + 0.5;
+        double toGoalX = goalX - (cell.row() + 0.5);
+        double toGoalZ = goalZ - (cell.column() + 0.5);
+        double goalLength = Math.hypot(toGoalX, toGoalZ);
 
         for (MonsterState monster : state.monsters) {
             if (monster.removed || monster.launched(state.tick)
                     || monster.frozen(state.tick)) continue;
 
-            double ticks = Math.min(12.0, Math.max(0.0, arrivalTick));
+            if (Math.hypot(px - monster.x, pz - monster.z) > LOCAL_INTERACTION_RADIUS) continue;
+
+            double ticks = Math.min(8.0, Math.max(0.0, arrivalTick));
             double mx = monster.x + monster.vx * ticks;
             double mz = monster.z + monster.vz * ticks;
-            double distance = Math.hypot(x - mx, z - mz);
+            double distance = Math.hypot(cell.row() + 0.5 - mx, cell.column() + 0.5 - mz);
+            if (distance > CONTACT_RADIUS) continue;
 
-            if (distance >= MONSTER_RISK_RADIUS) continue;
+            // Source Monster Maze uses UtilAlg.getTrajectory(ent, player):
+            // knockback points from the monster toward the player, and the
+            // bump deals exactly 4 damage. Use the player's current relative
+            // direction as the best available contact-direction estimate.
+            double awayX = px - mx;
+            double awayZ = pz - mz;
+            double awayLength = Math.hypot(awayX, awayZ);
+            if (awayLength < 1.0E-9 || goalLength < 1.0E-9) continue;
 
-            double severity = (MONSTER_RISK_RADIUS - distance) / MONSTER_RISK_RADIUS;
-            // Earlier interception is more important than a monster projected
-            // far into the future, while deterministic costs keep route choice
-            // reproducible.
-            risk += severity * severity * RISK_WEIGHT;
-        }
-        return risk;
-    }
+            double alignment = (awayX * toGoalX + awayZ * toGoalZ)
+                    / (awayLength * goalLength);
 
+            boolean hitCooldownActive = state.player.recentMobHitUntilTick > state.tick;
+            double expectedDamage = hitCooldownActive ? 0.0 : MONSTER_DAMAGE;
+            double remainingHealth = Math.max(1.0, state.player.health);
+            double healthCost = (expectedDamage / remainingHealth) * HEALTH_FRACTION_COST;
 
-    /**
-     * Finds the minimum-cost physical route to any cell in a square Safe Pad
-     * region. The source Safe Pad is a 5x5 walkable surface; the beacon cell
-     * is only its anchor, not the required player destination.
-     */
-    public PlayerRoute routeToRegion(GameState state, Cell start, Cell regionCenter, int radius) {
-        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
-        if (start.equals(regionCenter) && radius == 0) return new PlayerRoute(List.of(start));
-
-        Map<Cell, Double> distance = new HashMap<>();
-        Map<Cell, Cell> previous = new HashMap<>();
-        PriorityQueue<Node> queue = new PriorityQueue<>(
-                Comparator.comparingDouble((Node n) -> n.cost)
-                        .thenComparingInt(n -> n.cell.row())
-                        .thenComparingInt(n -> n.cell.column()));
-
-        distance.put(start, 0.0);
-        queue.add(new Node(start, 0.0));
-
-        while (!queue.isEmpty()) {
-            Node current = queue.poll();
-            double known = distance.getOrDefault(current.cell, Double.POSITIVE_INFINITY);
-            if (current.cost > known + 1.0E-9) continue;
-            if (insideRegion(current.cell, regionCenter, radius)) {
-                return reconstruct(previous, start, current.cell);
-            }
-
-            for (Cell next : state.maze.physicalCardinalNeighbours(current.cell)) {
-                double arrivalTick = current.cost + 1.0;
-                double cost = current.cost + STEP_COST
-                        + riskCost(state, next, arrivalTick);
-                double old = distance.getOrDefault(next, Double.POSITIVE_INFINITY);
-                if (cost < old - 1.0E-9) {
-                    distance.put(next, cost);
-                    previous.put(next, current.cell);
-                    queue.add(new Node(next, cost));
-                }
+            if (alignment >= 0.65) {
+                // Deliberate contact can save travel time, but the health cost
+                // remains part of the objective.
+                cost += healthCost - USEFUL_KNOCKBACK_VALUE;
+            } else {
+                cost += healthCost + CONTACT_DISPLACEMENT_COST;
             }
         }
-
-        return new PlayerRoute(new PlayerPathfinder().shortestPath(state.maze, start, regionCenter));
+        return cost;
     }
 
     private static boolean insideRegion(Cell cell, Cell center, int radius) {

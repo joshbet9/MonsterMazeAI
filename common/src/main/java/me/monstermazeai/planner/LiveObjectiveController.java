@@ -9,6 +9,12 @@ import me.monstermazeai.player.Action;
 /**
  * Live-game objective layer above the physical movement controller.
  *
+ * Movement invariant: an alive player in a live maze should receive a movement
+ * action whenever a physical floor direction exists. IDLE is reserved for
+ * terminal states, a genuinely reached terminal objective, or an actual lack
+ * of physical movement options; uncertainty and monster risk must not freeze
+ * the player.
+ *
  * The source's phase timer is a deadline for the current Safe Pad, not a
  * validity flag for the live objective. In particular, zero can be observed
  * during the server's pad-transition tick, and an unavailable timer is also

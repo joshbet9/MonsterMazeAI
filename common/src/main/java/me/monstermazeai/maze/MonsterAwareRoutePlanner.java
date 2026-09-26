@@ -7,34 +7,37 @@ import java.util.*;
 public final class MonsterAwareRoutePlanner {
     private static final double DANGER_RADIUS=3.0;
     private static final double RISK_WEIGHT=7.0;
-    private static final double STEP_TIME=1.0;
 
     public PlayerRoute route(GameState state,Cell start,Cell goal){
         if(state==null||state.maze==null||start==null||goal==null)throw new IllegalArgumentException();
         if(start.equals(goal))return new PlayerRoute(List.of(start));
-        Map<Cell,Double> best=new HashMap<>();
+
+        Map<Cell,Double> bestScore=new HashMap<>();
         Map<Cell,Cell> previous=new HashMap<>();
         PriorityQueue<Node> q=new PriorityQueue<>(Comparator.comparingDouble((Node n)->n.score)
                 .thenComparingInt(n->n.cell.row()).thenComparingInt(n->n.cell.column()));
-        best.put(start,0.0);q.add(new Node(start,0.0,0.0));
+        bestScore.put(start,0.0);
+        q.add(new Node(start,0.0,0.0));
 
         while(!q.isEmpty()){
             Node cur=q.poll();
-            if(cur.time>best.getOrDefault(cur.cell,Double.POSITIVE_INFINITY)+1e-9)continue;
+            if(cur.score>bestScore.getOrDefault(cur.cell,Double.POSITIVE_INFINITY)+1e-9)continue;
             if(cur.cell.equals(goal))return reconstruct(previous,start,goal);
+
             for(Cell next:state.maze.physicalCardinalNeighbours(cur.cell)){
-                double time=cur.time+STEP_TIME;
-                double risk=riskCost(state,next,time);
-                double score=cur.score+STEP_TIME+risk;
-                Double old=best.get(next);
+                double arrival=cur.time+1.0;
+                double score=cur.score+1.0+riskCost(state,next,arrival);
+                Double old=bestScore.get(next);
                 if(old==null||score<old-1e-9){
-                    best.put(next,score);
+                    bestScore.put(next,score);
                     previous.put(next,cur.cell);
-                    q.add(new Node(next,score,time));
+                    q.add(new Node(next,score,arrival));
                 }
             }
         }
-        return new PlayerRoute(new PlayerPathfinder().shortestPath(state.maze,start,goal));
+        List<Cell> fallback=new PlayerPathfinder().shortestPath(state.maze,start,goal);
+        if(fallback.isEmpty())throw new IllegalArgumentException("No player route exists");
+        return new PlayerRoute(fallback);
     }
 
     private double riskCost(GameState state,Cell cell,double arrival){
@@ -43,13 +46,15 @@ public final class MonsterAwareRoutePlanner {
         for(MonsterState m:state.monsters){
             if(m.removed||m.launched(state.tick)||m.frozen(state.tick))continue;
             double t=Math.min(20.0,Math.max(0.0,arrival));
-            double mx=m.x+m.vx*t,mz=m.z+m.vz*t;
-            double d=Math.hypot(x-mx,z-mz);
+            double rx=x-m.x,rz=z-m.z;
+            double d=Math.hypot(rx-m.vx*t,rz-m.vz*t);
             if(d>=DANGER_RADIUS)continue;
             double proximity=(DANGER_RADIUS-d)/DANGER_RADIUS;
-            double closing=Math.max(0.0,
-                    ((m.vx*(x-m.x)+m.vz*(z-m.z))/Math.max(1e-6,Math.hypot(x-m.x,z-m.z))));
-            double predictive=Math.min(1.0,proximity+closing*0.5);
+            double speed=Math.hypot(m.vx,m.vz);
+            double closing=speed>1e-9
+                    ? (m.vx*rx+m.vz*rz)/speed/Math.max(1e-9,Math.hypot(rx,rz))
+                    : 0.0;
+            double predictive=Math.min(1.0,Math.max(0.0,proximity+0.5*closing));
             risk+=RISK_WEIGHT*predictive*predictive;
         }
         return risk;

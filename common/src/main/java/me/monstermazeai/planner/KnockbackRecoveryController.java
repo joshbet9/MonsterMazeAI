@@ -42,22 +42,32 @@ public final class KnockbackRecoveryController {
 
         Candidate best = null;
         double[] dirs = {
-                0, 45, 90, 135, 180, 225, 270, 315
+                Double.NaN, 0, 45, 90, 135, 180, 225, 270, 315
         };
 
         for (double degrees : dirs) {
-            double rad = Math.toRadians(degrees);
-            double tx = state.player.x + Math.cos(rad) * 1.5;
-            double tz = state.player.z + Math.sin(rad) * 1.5;
-            if (!hasSafeCorridor(state, tx, tz)) continue;
+            double tx;
+            double tz;
+            if (Double.isNaN(degrees)) {
+                int row = (int) Math.floor(state.player.x);
+                int col = (int) Math.floor(state.player.z);
+                tx = row + 0.5;
+                tz = col + 0.5;
+            } else {
+                double rad = Math.toRadians(degrees);
+                tx = state.player.x + Math.cos(rad) * 1.5;
+                tz = state.player.z + Math.sin(rad) * 1.5;
+            }
+            if (!safePosition(state, tx, tz) || !hasSafeCorridor(state, tx, tz)) continue;
 
             float desiredYaw = (float) Math.toDegrees(Math.atan2(-(
                     tx - state.player.x), tz - state.player.z));
             float yawDelta = wrap(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawDelta, -MAX_YAW_DELTA, MAX_YAW_DELTA);
 
-            for (int strafe : new int[] {-1, 0, 1}) {
-                Action action = new Action(1, strafe, allowJump && edgeDistance(state, state.player.x, state.player.z) > 0.45,
+            for (int forward : new int[] {-1, 0, 1}) {
+                for (int strafe : new int[] {-1, 0, 1}) {
+                Action action = new Action(forward, strafe, allowJump && edgeDistance(state, state.player.x, state.player.z) > 0.45,
                         true, yawDelta, false);
                 GameState next = simulator.forecast(state, action, 3,
                         simulator.monsterSeed() ^ state.tick ^ Double.doubleToLongBits(degrees));
@@ -69,6 +79,7 @@ public final class KnockbackRecoveryController {
                 double score = targetDistance - clearance * 1.5 + velocity * 0.5;
                 if (best == null || score < best.score) {
                     best = new Candidate(action, score);
+                }
                 }
             }
         }

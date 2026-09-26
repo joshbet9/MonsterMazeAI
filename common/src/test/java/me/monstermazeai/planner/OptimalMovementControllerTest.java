@@ -3,6 +3,8 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.maze.PlayerRoute;
+import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMazePhysics;

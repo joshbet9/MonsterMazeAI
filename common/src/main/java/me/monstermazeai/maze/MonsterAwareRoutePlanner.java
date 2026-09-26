@@ -21,9 +21,9 @@ public final class MonsterAwareRoutePlanner {
     private static final double HIT_DAMAGE = 4.0;
     private static final double HIT_TICKS = 20.0;
     private static final double STEP_TIME = 1.0;
-    private static final double RISK_WEIGHT = 1.35;
-    private static final double DAMAGE_WEIGHT = 0.55;
-    private static final double DEATH_WEIGHT = 18.0;
+    private static final double RISK_WEIGHT = 4.0;
+    private static final double DAMAGE_WEIGHT = 1.5;
+    private static final double DEATH_WEIGHT = 30.0;
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
         if (state == null || state.maze == null) throw new IllegalArgumentException("No maze");

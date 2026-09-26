@@ -29,7 +29,7 @@ import java.util.List;
  * remains the shortest cardinal route selected by the planner.
  */
 public final class StableLiveMovementController {
-    private static final double WAYPOINT_ARRIVAL = 0.32;
+    private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
     private static final double ROUTE_DEVIATION = 0.55;
     private static final int MIN_REPLAN_INTERVAL = 5;
@@ -43,7 +43,7 @@ public final class StableLiveMovementController {
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
-    private static final double MAX_SAFE_LANE_ERROR = 0.42;
+    private static final double MAX_SAFE_LANE_ERROR = 0.28;
 
     private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
 
@@ -52,20 +52,29 @@ public final class StableLiveMovementController {
     private int waypointIndex;
     private int goalRow = -1;
     private int goalColumn = -1;
+    private int goalRadius = 0;
     private long lastRouteTick = Long.MIN_VALUE;
     private String lastDecisionDetail = "UNSET";
 
     public Action nextAction(GameState state, Cell goal, boolean allowJump) {
+        return nextAction(state, goal, allowJump, 0);
+    }
+
+    /** Live Safe Pad variant: goal identifies the beacon anchor, radius identifies its walkable surface. */
+    public Action nextAction(GameState state, Cell goal, boolean allowJump, int regionRadius) {
         if (state == null || state.maze == null || goal == null) {
             reset();
             lastDecisionDetail = "INVALID_INPUT";
             return Action.IDLE;
         }
 
-        if (goal.row() != goalRow || goal.column() != goalColumn) {
+        if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
+
+        if (goal.row() != goalRow || goal.column() != goalColumn || regionRadius != goalRadius) {
             clearRoute();
             goalRow = goal.row();
             goalColumn = goal.column();
+            goalRadius = regionRadius;
         }
 
         int startRow = (int) Math.floor(state.player.x);
@@ -77,10 +86,13 @@ public final class StableLiveMovementController {
         }
 
         if (route == null || shouldReplan(state, startRow, startColumn)) {
-            route = routePlanner.route(state, new Cell(startRow, startColumn), goal);
+            route = regionRadius > 0
+                    ? routePlanner.routeToRegion(state, new Cell(startRow, startColumn), goal, regionRadius)
+                    : routePlanner.route(state, new Cell(startRow, startColumn), goal);
             waypointIndex = firstTurnWaypoint(route);
             lastRouteTick = state.tick;
             lastDecisionDetail = "ROUTE_REPLAN size=" + route.size()
+                    + " regionRadius=" + regionRadius
                     + " start=" + startRow + "," + startColumn
                     + " goal=" + goal.row() + "," + goal.column();
         }
@@ -212,6 +224,7 @@ public final class StableLiveMovementController {
         clearRoute();
         goalRow = -1;
         goalColumn = -1;
+        goalRadius = 0;
         lastRouteTick = Long.MIN_VALUE;
         lastDecisionDetail = "RESET";
     }

@@ -20,7 +20,8 @@ public final class MonsterAwareRoutePlanner {
     private static final double LOCAL_INTERACTION_RADIUS = 4.5;
     private static final double CONTACT_RADIUS = 1.05;
     /** Converts one point of expected damage into equivalent route-time cost. */
-    private static final double HEALTH_COST_PER_POINT = 3.0;
+    /** Health loss is valued as a fraction of the player's remaining health. */
+    private static final double HEALTH_FRACTION_COST = 20.0;
     /** Approximate value of a useful source-game bump in route-time units. */
     private static final double USEFUL_KNOCKBACK_VALUE = 5.0;
     /** Avoiding a non-useful contact is preferred to absorbing its damage. */
@@ -104,7 +105,8 @@ public final class MonsterAwareRoutePlanner {
 
             boolean hitCooldownActive = state.player.recentMobHitUntilTick > state.tick;
             double expectedDamage = hitCooldownActive ? 0.0 : MONSTER_DAMAGE;
-            double healthCost = expectedDamage * HEALTH_COST_PER_POINT;
+            double remainingHealth = Math.max(1.0, state.player.health);
+            double healthCost = (expectedDamage / remainingHealth) * HEALTH_FRACTION_COST;
 
             if (alignment >= 0.65) {
                 // Deliberate contact can be faster than walking around the mob.

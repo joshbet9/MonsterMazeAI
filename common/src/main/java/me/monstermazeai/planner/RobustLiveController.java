@@ -99,7 +99,7 @@ public final class RobustLiveController {
 
     private static boolean validLiveState(GameState s) {
         return s != null && s.inMonsterMaze && s.alive && !s.completed
-                && s.maze != null && s.phaseTicksRemaining != 0
+                && s.maze != null
                 && s.activePadRow >= 0 && s.activePadColumn >= 0;
     }
 

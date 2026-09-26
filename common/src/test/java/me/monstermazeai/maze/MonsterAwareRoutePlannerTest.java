@@ -63,24 +63,27 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
-    void nearbyHarmfulMonsterCanInfluenceLocalRoute() {
+    void nearbyMonsterIsEvaluatedByTrajectorySimulationRatherThanAStaticRadiusPenalty() {
         GameState state = new GameState();
         state.maze = openMaze();
 
         MonsterState monster = new MonsterState(7, 1.5, 0.0, 1.5);
         monster.vx = 0.0;
         monster.vz = 0.0;
+        state.player.x = 0.5;
+        state.player.z = 1.5;
+        state.player.grounded = true;
         state.monsters.add(monster);
 
         PlayerRoute route = new MonsterAwareRoutePlanner().route(
                 state, new Cell(0, 1), new Cell(2, 1));
 
-        assertFalse(route.cells().contains(new Cell(1, 1)),
-                "A nearby stationary monster that would knock the player away from the pad should make the planner choose a local detour.");
-        assertEquals(new Cell(0, 1), route.cells().get(0));
-        assertEquals(new Cell(2, 1), route.cells().get(route.size() - 1));
+        // The new planner must not preemptively avoid a monster merely because
+        // it is nearby. The route simulator decides whether contact actually
+        // changes arrival time/health.
+        assertEquals(List.of(
+                new Cell(0, 1), new Cell(1, 1), new Cell(2, 1)), route.cells());
     }
-
     @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();

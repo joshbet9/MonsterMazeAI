@@ -23,7 +23,7 @@ class AbilityDecisionTest {
     }
     @Test void repulsorIsUsedForAnImmediateRouteThreat() {
         GameState s=state();
-        s.monsters.add(new MonsterState(1,50.9,50.5,0));
+        s.monsters.add(new MonsterState(1,50.9,0,50.5));
         assertTrue(AbilityDecision.shouldUse(s));
     }
 

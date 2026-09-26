@@ -32,23 +32,32 @@ public final class LiveObjectiveController {
             return Action.IDLE;
         }
 
-        if (PadModel.isOn(state.player, state.activePadRow + 0.5,
-                GameState.PAD_SURFACE_Y, state.activePadColumn + 0.5)) {
-            lastDecisionReason = "ON_PAD";
-            lastDecisionDetail = "player is geometrically on active pad";
-            return Action.IDLE;
+        boolean hasPreview = state.previewPadRow >= 0 && state.previewPadColumn >= 0;
+        int goalRow = hasPreview ? state.previewPadRow : state.activePadRow;
+        int goalColumn = hasPreview ? state.previewPadColumn : state.activePadColumn;
+
+        // The source keeps the current pad as the survival checkpoint while a
+        // next pad is built at phaseTimer == 2. Once the preview exists it is
+        // the movement objective; remaining on the current pad would otherwise
+        // make the bot stand still for almost the entire phase.
+        if (!hasPreview && PadModel.isOn(state.player,
+                state.activePadRow + 0.5, GameState.PAD_SURFACE_Y,
+                state.activePadColumn + 0.5)) {
+            Action evasive = prePreviewPadMovement(state, allowJump);
+            lastDecisionReason = "PAD_HOLD_EVASION";
+            lastDecisionDetail = "next Safe Pad not yet spawned; moving within current 5x5 pad to avoid stationary mob exposure | action=" + describe(evasive);
+            return evasive;
         }
 
-        if (state.padReached) {
-            lastDecisionReason = "PAD_REACHED";
-            lastDecisionDetail = "observation says active pad is reached";
-            return Action.IDLE;
+        if (state.padReached && hasPreview) {
+            // Reaching the old pad is no longer an idle condition once the
+            // source has revealed the next objective.
         }
 
         try {
             Action action = movement.nextActions(
                     state,
-                    new Cell(state.activePadRow, state.activePadColumn),
+                    new Cell(goalRow, goalColumn),
                     allowJump)[0];
             lastDecisionReason = "MOVEMENT_PLANNER";
             lastDecisionDetail = movement.lastDecisionDetail()
@@ -61,6 +70,69 @@ public final class LiveObjectiveController {
                     : noRoute.getMessage();
             return Action.IDLE;
         }
+    }
+
+    private Action prePreviewPadMovement(GameState state, boolean allowJump) {
+        double cx = state.activePadRow + 0.5;
+        double cz = state.activePadColumn + 0.5;
+
+        // Stay inside the source's symmetric 5x5 pad while the next beacon is
+        // unavailable. Prefer steering away from the nearest active monster;
+        // otherwise make a small deterministic patrol around the pad centre.
+        double targetX = cx;
+        double targetZ = cz;
+        double nearest = Double.POSITIVE_INFINITY;
+        for (var monster : state.monsters) {
+            if (monster.removed || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            double d = Math.hypot(dx, dz);
+            if (d < nearest) {
+                nearest = d;
+                if (d > 1.0E-6) {
+                    targetX = state.player.x - dx / d * 1.25;
+                    targetZ = state.player.z - dz / d * 1.25;
+                }
+            }
+        }
+
+        double rx = state.player.x - cx;
+        double rz = state.player.z - cz;
+        if (Math.abs(rx) > 1.8 || Math.abs(rz) > 1.8) {
+            targetX = cx - rx * 0.75;
+            targetZ = cz - rz * 0.75;
+        } else if (nearest == Double.POSITIVE_INFINITY) {
+            // A small deterministic orbit prevents a stationary target without
+            // committing the player to an unknown future route.
+            double yaw = Math.toRadians(state.player.yaw + 90.0);
+            targetX = state.player.x + Math.cos(yaw) * 0.8;
+            targetZ = state.player.z + Math.sin(yaw) * 0.8;
+        }
+
+        double dx = targetX - state.player.x;
+        double dz = targetZ - state.player.z;
+        if (Math.hypot(dx, dz) < 0.05) {
+            targetX = cx;
+            targetZ = cz;
+            dx = targetX - state.player.x;
+            dz = targetZ - state.player.z;
+        }
+        double desiredYaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double error = desiredYaw - state.player.yaw;
+        while (error >= 180.0) error -= 360.0;
+        while (error < -180.0) error += 360.0;
+        double local = Math.toRadians(error);
+        int forward = localForward(Math.cos(local));
+        int strafe = localForward(Math.sin(local));
+        if (forward == 0 && strafe == 0) forward = 1;
+        return new Action(forward, strafe, false, true,
+                (float)Math.max(-18.0, Math.min(18.0, error)), false);
+    }
+
+    private int localForward(double value) {
+        if (value > 0.25) return 1;
+        if (value < -0.25) return -1;
+        return 0;
     }
 
     public String lastDecisionReason() { return lastDecisionReason; }

@@ -1,118 +1,138 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
-import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.planner.TacticalRouteSimulator;
 
 import java.util.*;
 
 /**
- * Selects the shortest physical route to the Safe Pad, with local monster
- * encounters evaluated as tactical interactions rather than global hazards.
- * Distant monsters do not distort the baseline route. When a monster is close
- * enough to matter, expected damage and expected knockback value can alter the
- * local decision.
+ * Physical route planner for Monster Maze.
+ *
+ * The route graph is deliberately mob-agnostic. It generates a small set of
+ * physically valid alternatives, then evaluates those alternatives by running
+ * the source-faithful movement/contact simulator against the observed monster
+ * state. A monster therefore matters only when the simulated trajectory
+ * actually encounters it.
+ *
+ * Selection is lexicographic rather than a hand-tuned weighted risk formula:
+ * 1. successful Safe Pad arrival;
+ * 2. earliest simulated arrival tick;
+ * 3. highest remaining health;
+ * 4. lowest damage taken;
+ * 5. shortest physical route as a deterministic tie-break.
  */
 public final class MonsterAwareRoutePlanner {
-    private static final double STEP_COST = 1.0;
-    /** Monster Maze bump damage in the source game. */
-    private static final double MONSTER_DAMAGE = 4.0;
-    /** Only evaluate monster interactions when the player is genuinely close. */
-    private static final double LOCAL_INTERACTION_RADIUS = 4.5;
-    private static final double CONTACT_RADIUS = 1.05;
-    /** Health loss is valued as a fraction of the player's remaining health. */
-    private static final double HEALTH_FRACTION_COST = 20.0;
-    /** Approximate value of a useful source-game bump in route-time units. */
-    private static final double USEFUL_KNOCKBACK_VALUE = 5.0;
-    /** Avoiding a non-useful contact is preferred to absorbing its damage. */
-    private static final double CONTACT_DISPLACEMENT_COST = 2.0;
+    private static final int MAX_ROUTE_CANDIDATES = 8;
+    private static final int MAX_REGION_CANDIDATES = 12;
+
+    private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
+    private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
+        validate(state, start, goal);
+
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
-        Map<Cell, Double> distance = new HashMap<>();
-        Map<Cell, Cell> previous = new HashMap<>();
-        PriorityQueue<Node> queue = new PriorityQueue<>(
-                Comparator.comparingDouble((Node n) -> n.cost)
-                        .thenComparingInt(n -> n.cell.row())
-                        .thenComparingInt(n -> n.cell.column()));
+        List<PlayerRoute> candidates = alternatives.generate(
+                state.maze, start, goal, MAX_ROUTE_CANDIDATES);
 
-        distance.put(start, 0.0);
-        queue.add(new Node(start, 0.0));
+        return choose(state, candidates, goal, false, 0);
+    }
 
-        while (!queue.isEmpty()) {
-            Node current = queue.poll();
-            double known = distance.getOrDefault(current.cell, Double.POSITIVE_INFINITY);
-            if (current.cost > known + 1.0E-9) continue;
-            if (current.cell.equals(goal)) return reconstruct(previous, start, goal);
+    /**
+     * Finds a physical route to the first reachable cell of the Safe Pad
+     * region, then evaluates alternate corridors against the live monster
+     * field. The beacon is only the region anchor.
+     */
+    public PlayerRoute routeToRegion(GameState state, Cell start, Cell regionCenter, int radius) {
+        validate(state, start, regionCenter);
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
 
-            for (Cell next : state.maze.physicalCardinalNeighbours(current.cell)) {
-                double arrivalTick = current.cost + 1.0;
-                double cost = current.cost + STEP_COST
-                        + tacticalMobCost(state, next, goal, arrivalTick);
-                double old = distance.getOrDefault(next, Double.POSITIVE_INFINITY);
-                if (cost < old - 1.0E-9) {
-                    distance.put(next, cost);
-                    previous.put(next, current.cell);
-                    queue.add(new Node(next, cost));
+        if (insideRegion(start, regionCenter, radius)) {
+            return new PlayerRoute(List.of(start));
+        }
+
+        List<PlayerRoute> candidates = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+
+        // Evaluate the shortest physical route to every physical cell in the
+        // 5x5 region (or the requested region), not just the beacon centre.
+        for (int r = regionCenter.row() - radius; r <= regionCenter.row() + radius; r++) {
+            for (int c = regionCenter.column() - radius; c <= regionCenter.column() + radius; c++) {
+                Cell target = new Cell(r, c);
+                if (!state.maze.isPhysicalFloor(r, c)) continue;
+
+                List<Cell> path = new PlayerPathfinder().shortestPath(state.maze, start, target);
+                if (path.isEmpty()) continue;
+
+                addCandidate(candidates, seen, new PlayerRoute(path));
+
+                if (candidates.size() < MAX_REGION_CANDIDATES) {
+                    for (PlayerRoute alt : alternatives.generate(
+                            state.maze, start, target, 3)) {
+                        addCandidate(candidates, seen, alt);
+                        if (candidates.size() >= MAX_REGION_CANDIDATES) break;
+                    }
                 }
             }
         }
 
-        return new PlayerRoute(new PlayerPathfinder().shortestPath(state.maze, start, goal));
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("No physical route to Safe Pad region");
+        }
+
+        candidates.sort(Comparator.comparingInt(PlayerRoute::size));
+        if (candidates.size() > MAX_REGION_CANDIDATES) {
+            candidates = new ArrayList<>(candidates.subList(0, MAX_REGION_CANDIDATES));
+        }
+
+        return choose(state, candidates, regionCenter, true, radius);
     }
 
-    private double tacticalMobCost(GameState state, Cell cell, Cell goal, double arrivalTick) {
-        // Monsters only enter the route objective when the player is locally
-        // exposed to an interaction. Distant mobs cannot make the first-pad
-        // route unnecessarily conservative.
-        double px = state.player.x;
-        double pz = state.player.z;
-        double cost = 0.0;
+    private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
+                               Cell goal, boolean regionGoal, int regionRadius) {
+        PlayerRoute best = null;
+        TacticalRouteSimulator.Result bestResult = null;
 
-        double goalX = goal.row() + 0.5;
-        double goalZ = goal.column() + 0.5;
-        double toGoalX = goalX - (cell.row() + 0.5);
-        double toGoalZ = goalZ - (cell.column() + 0.5);
-        double goalLength = Math.hypot(toGoalX, toGoalZ);
+        for (PlayerRoute candidate : candidates) {
+            TacticalRouteSimulator.Result result =
+                    simulator.simulate(state, candidate, goal, regionGoal, regionRadius);
 
-        for (MonsterState monster : state.monsters) {
-            if (monster.removed || monster.launched(state.tick)
-                    || monster.frozen(state.tick)) continue;
-
-            if (Math.hypot(px - monster.x, pz - monster.z) > LOCAL_INTERACTION_RADIUS) continue;
-
-            double ticks = Math.min(8.0, Math.max(0.0, arrivalTick));
-            double mx = monster.x + monster.vx * ticks;
-            double mz = monster.z + monster.vz * ticks;
-            double distance = Math.hypot(cell.row() + 0.5 - mx, cell.column() + 0.5 - mz);
-            if (distance > CONTACT_RADIUS) continue;
-
-            // Source Monster Maze uses UtilAlg.getTrajectory(ent, player):
-            // knockback points from the monster toward the player, and the
-            // bump deals exactly 4 damage. Use the player's current relative
-            // direction as the best available contact-direction estimate.
-            double awayX = px - mx;
-            double awayZ = pz - mz;
-            double awayLength = Math.hypot(awayX, awayZ);
-            if (awayLength < 1.0E-9 || goalLength < 1.0E-9) continue;
-
-            double alignment = (awayX * toGoalX + awayZ * toGoalZ)
-                    / (awayLength * goalLength);
-
-            boolean hitCooldownActive = state.player.recentMobHitUntilTick > state.tick;
-            double expectedDamage = hitCooldownActive ? 0.0 : MONSTER_DAMAGE;
-            double remainingHealth = Math.max(1.0, state.player.health);
-            double healthCost = (expectedDamage / remainingHealth) * HEALTH_FRACTION_COST;
-
-            if (alignment >= 0.65) {
-                // Deliberate contact can save travel time, but the health cost
-                // remains part of the objective.
-                cost += healthCost - USEFUL_KNOCKBACK_VALUE;
-            } else {
-                cost += healthCost + CONTACT_DISPLACEMENT_COST;
+            if (bestResult == null || better(result, candidate, bestResult, best)) {
+                best = candidate;
+                bestResult = result;
             }
         }
-        return cost;
+
+        return best;
+    }
+
+    private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,
+                           TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute) {
+        if (candidate.reached() != incumbent.reached()) return candidate.reached();
+
+        if (candidate.reached() && candidate.arrivalTicks() != incumbent.arrivalTicks()) {
+            return candidate.arrivalTicks() < incumbent.arrivalTicks();
+        }
+
+        if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {
+            return candidate.remainingHealth() > incumbent.remainingHealth();
+        }
+
+        if (Double.compare(candidate.damageTaken(), incumbent.damageTaken()) != 0) {
+            return candidate.damageTaken() < incumbent.damageTaken();
+        }
+
+        return candidateRoute.size() < incumbentRoute.size();
+    }
+
+    private static void addCandidate(List<PlayerRoute> candidates, Set<String> seen,
+                                     PlayerRoute route) {
+        StringBuilder key = new StringBuilder(route.size() * 8);
+        for (Cell cell : route.cells()) {
+            key.append(cell.row()).append(':').append(cell.column()).append(';');
+        }
+        if (seen.add(key.toString())) candidates.add(route);
     }
 
     private static boolean insideRegion(Cell cell, Cell center, int radius) {
@@ -120,20 +140,21 @@ public final class MonsterAwareRoutePlanner {
                 && Math.abs(cell.column() - center.column()) <= radius;
     }
 
-    private PlayerRoute reconstruct(Map<Cell, Cell> previous, Cell start, Cell goal) {
-        ArrayList<Cell> path = new ArrayList<>();
-        Cell current = goal;
-        while (current != null) {
-            path.add(current);
-            if (current.equals(start)) break;
-            current = previous.get(current);
+    private static void validate(GameState state, Cell start, Cell goal) {
+        if (state == null || state.maze == null) {
+            throw new IllegalArgumentException("Maze state is required");
         }
-        if (!path.get(path.size() - 1).equals(start)) {
-            throw new IllegalArgumentException("No player route exists");
+        if (start == null || goal == null) {
+            throw new IllegalArgumentException("Start and goal are required");
         }
-        Collections.reverse(path);
-        return new PlayerRoute(path);
+        if (!state.maze.isPhysicalFloor(start.row(), start.column())) {
+            throw new IllegalArgumentException("Start is not physical floor: " + start);
+        }
+        if (!state.maze.isPhysicalFloor(goal.row(), goal.column())) {
+            // Region centres may be an anchor whose exact block is not the
+            // player's required destination, so callers to routeToRegion can
+            // still use it. Exact route() requires a real floor goal.
+            throw new IllegalArgumentException("Goal is not physical floor: " + goal);
+        }
     }
-
-    private record Node(Cell cell, double cost) {}
 }

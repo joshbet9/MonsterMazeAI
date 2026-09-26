@@ -405,8 +405,24 @@ public final class Minecraft18Observer {
     }
 
     private PadObservation findActivePad(World world, EntityPlayerSP player, BlockPos center) {
-        PadObservation best = null;
+        // Source behaviour: when the phase timer reaches 2 seconds the server
+        // builds _nextSafePad while leaving _safePad active. That creates two
+        // beacons briefly. The active objective is still _safePad until the
+        // phase reaches zero, so never switch to the nearest beacon merely
+        // because the preview pad was built.
+        if (cachedPad != null && cachedPad.row >= 0 && cachedPad.column >= 0) {
+            int cachedX = center.getX() - HALF_MAZE + cachedPad.row;
+            int cachedZ = center.getZ() - HALF_MAZE + cachedPad.column;
+            BlockPos cachedBeacon = new BlockPos(cachedX, center.getY() - 1, cachedZ);
+            if (world.getBlockState(cachedBeacon).getBlock() == net.minecraft.init.Blocks.beacon) {
+                return new PadObservation(
+                        cachedPad.row,
+                        cachedPad.column,
+                        player.getDistanceSq(cachedX + 0.5, center.getY(), cachedZ + 0.5));
+            }
+        }
 
+        PadObservation best = null;
         for (int x = center.getX() - PAD_SCAN_RADIUS; x <= center.getX() + PAD_SCAN_RADIUS; x++) {
             for (int z = center.getZ() - PAD_SCAN_RADIUS; z <= center.getZ() + PAD_SCAN_RADIUS; z++) {
                 BlockPos beacon = new BlockPos(x, center.getY() - 1, z);

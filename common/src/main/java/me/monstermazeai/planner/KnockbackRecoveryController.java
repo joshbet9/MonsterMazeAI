@@ -57,7 +57,7 @@ public final class KnockbackRecoveryController {
             yawDelta = clamp(yawDelta, -MAX_YAW_DELTA, MAX_YAW_DELTA);
 
             for (int strafe : new int[] {-1, 0, 1}) {
-                Action action = new Action(1, strafe, allowJump,
+                Action action = new Action(1, strafe, allowJump && edgeDistance(state, state.player.x, state.player.z) > 0.45,
                         true, yawDelta, false);
                 GameState next = simulator.forecast(state, action, 3,
                         simulator.monsterSeed() ^ state.tick ^ Double.doubleToLongBits(degrees));

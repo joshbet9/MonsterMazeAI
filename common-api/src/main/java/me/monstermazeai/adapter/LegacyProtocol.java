@@ -49,6 +49,12 @@ public final class LegacyProtocol {
             out.writeDouble(o.pad.distanceSq); out.writeBoolean(o.pad.reached);
         }
 
+        out.writeBoolean(o.previewPad != null);
+        if (o.previewPad != null) {
+            out.writeInt(o.previewPad.row); out.writeInt(o.previewPad.column);
+            out.writeDouble(o.previewPad.distanceSq); out.writeBoolean(o.previewPad.reached);
+        }
+
         writeMaze(out, o.maze);
         writeString(out, o.scoreboardTitle);
         out.writeInt(o.scoreboardLines.size());
@@ -94,6 +100,10 @@ public final class LegacyProtocol {
         if (in.readBoolean()) pad = new LegacyWorldObservation.Pad(
                 in.readInt(), in.readInt(), in.readDouble(), in.readBoolean());
 
+        LegacyWorldObservation.Pad previewPad = null;
+        if (in.readBoolean()) previewPad = new LegacyWorldObservation.Pad(
+                in.readInt(), in.readInt(), in.readDouble(), in.readBoolean());
+
         int[][] maze = readMaze(in);
         String title = readString(in);
         int lineCount = readCount(in, 1000, "scoreboard lines");
@@ -112,7 +122,7 @@ public final class LegacyProtocol {
         }
 
         return new LegacyWorldObservation(tick, inMaze, detected, pattern, alive, completed,
-                stage, safe, live, player, kit, jumpCharges, abilityCharges, center, pad,
+                stage, safe, live, player, kit, jumpCharges, abilityCharges, center, pad, previewPad,
                 maze, monsters, title, lines);
     }
 

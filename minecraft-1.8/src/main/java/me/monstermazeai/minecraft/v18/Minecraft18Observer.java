@@ -88,6 +88,7 @@ public final class Minecraft18Observer {
             pad = new PadObservation(pad.row, pad.column,
                     player.getDistanceSq(x, center.getY(), z));
         }
+        PadObservation previewPad = center == null ? null : findPreviewPad(world, player, center, pad);
 
         ticksSinceLastMazeRefresh++;
         // Keep the authoritative pattern cached for the whole round. The source mutates the center
@@ -173,6 +174,7 @@ public final class Minecraft18Observer {
                 kit, jumpCharges, abilityCharges,
                 center == null ? null : new LegacyWorldObservation.BlockPoint(center.getX(), center.getY(), center.getZ()),
                 pad == null ? null : new LegacyWorldObservation.Pad(pad.row, pad.column, pad.distanceSq, padReached),
+                previewPad == null ? null : new LegacyWorldObservation.Pad(previewPad.row, previewPad.column, previewPad.distanceSq, false),
                 raw, physicalFloor, monsters, scoreboard.title, scoreboard.lines);
 
         return new Observation(
@@ -180,6 +182,7 @@ public final class Minecraft18Observer {
                 mazeDetected,
                 center,
                 pad,
+                previewPad,
                 scoreboard,
                 observation
         );
@@ -488,6 +491,40 @@ public final class Minecraft18Observer {
         return best;
     }
 
+    /**
+     * Source semantics expose two beacons briefly: _safePad remains the
+     * survival pad while _nextSafePad is built at phaseTimer == 2. The AI's
+     * movement objective must target the preview pad, not the current pad.
+     */
+    private PadObservation findPreviewPad(World world, EntityPlayerSP player,
+                                          BlockPos center, PadObservation active) {
+        int activeX = Integer.MIN_VALUE;
+        int activeZ = Integer.MIN_VALUE;
+        if (active != null && active.row >= 0 && active.column >= 0) {
+            activeX = center.getX() - HALF_MAZE + active.row;
+            activeZ = center.getZ() - HALF_MAZE + active.column;
+        }
+
+        PadObservation best = null;
+        for (int x = center.getX() - PAD_SCAN_RADIUS; x <= center.getX() + PAD_SCAN_RADIUS; x++) {
+            for (int z = center.getZ() - PAD_SCAN_RADIUS; z <= center.getZ() + PAD_SCAN_RADIUS; z++) {
+                if (x == activeX && z == activeZ) continue;
+                BlockPos beacon = new BlockPos(x, center.getY() - 1, z);
+                if (world.getBlockState(beacon).getBlock() != net.minecraft.init.Blocks.beacon) continue;
+
+                int row = x - (center.getX() - HALF_MAZE);
+                int col = z - (center.getZ() - HALF_MAZE);
+                if (row < 0 || row >= MAZE_SIZE || col < 0 || col >= MAZE_SIZE) continue;
+
+                double distance = player.getDistanceSq(x + 0.5, center.getY(), z + 0.5);
+                if (best == null || distance < best.distanceSq) {
+                    best = new PadObservation(row, col, distance);
+                }
+            }
+        }
+        return best;
+    }
+
     private PadObservation findActivePadWithoutCenter(World world, EntityPlayerSP player) {
         int px = player.getPosition().getX();
         int pz = player.getPosition().getZ();
@@ -557,16 +594,20 @@ public final class Minecraft18Observer {
         public final boolean inMonsterMaze;
         public final boolean mazeDetected;
         public final BlockPos center;
-        public final PadObservation pad;        public final Minecraft18ObservationRules.ScoreboardData scoreboard;
+        public final PadObservation pad;
+        public final PadObservation previewPad;
+        public final Minecraft18ObservationRules.ScoreboardData scoreboard;
         public final LegacyWorldObservation state;
 
         private Observation(boolean inMonsterMaze, boolean mazeDetected, BlockPos center,
-                            PadObservation pad,                            Minecraft18ObservationRules.ScoreboardData scoreboard,
+                            PadObservation pad, PadObservation previewPad,
+                            Minecraft18ObservationRules.ScoreboardData scoreboard,
                             LegacyWorldObservation state) {
             this.inMonsterMaze = inMonsterMaze;
             this.mazeDetected = mazeDetected;
             this.center = center;
             this.pad = pad;
+            this.previewPad = previewPad;
             this.scoreboard = scoreboard;
             this.state = state;
         }

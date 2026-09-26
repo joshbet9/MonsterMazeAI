@@ -55,12 +55,14 @@ class LiveObjectiveControllerTest {
     }
 
     @Test
-    void arrivingInsidePadGeometryCompletesObjectiveEvenIfAdapterFlagIsStale() {
+    void arrivingInsidePadGeometryStillMovesBeforePreviewExists() {
         GameState state = activeState(4, 1);
         state.player.x = 4.5;
         state.player.z = 1.5;
 
-        assertEquals(Action.IDLE, controller().nextAction(state, false));
+        Action action = controller().nextAction(state, false);
+        assertNotEquals(Action.IDLE, action,
+                "The live controller must not park on the current pad while the next pad is unknown.");
     }
 
     @Test

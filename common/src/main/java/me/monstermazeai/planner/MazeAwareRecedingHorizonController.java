@@ -37,12 +37,16 @@ public final class MazeAwareRecedingHorizonController {
     }
 
     public Action[] nextActions(GameState state, Cell goal, boolean allowJump) {
+        return nextActions(state, goal, allowJump, 0);
+    }
+
+    public Action[] nextActions(GameState state, Cell goal, boolean allowJump, int regionRadius) {
         if (state == null || goal == null) {
             lastDecisionDetail = "INVALID_INPUT";
             return new Action[]{Action.IDLE};
         }
 
-        Action first = stableMovement.nextAction(state, goal, allowJump);
+        Action first = stableMovement.nextAction(state, goal, allowJump, regionRadius);
         lastDecisionDetail = stableMovement.lastDecisionDetail();
 
         /*

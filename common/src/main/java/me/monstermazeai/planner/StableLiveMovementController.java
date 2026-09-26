@@ -85,6 +85,15 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
+        // Entering any physical cell of the Safe Pad completes the movement
+        // objective. Do not continue toward the beacon centre or re-route back
+        // out of the pad after a monster-risk update.
+        if (regionRadius > 0 && insideRegion(startRow, startColumn, goal, regionRadius)) {
+            clearRoute();
+            lastDecisionDetail = "REACHED_SAFE_PAD cell=" + startRow + "," + startColumn;
+            return Action.IDLE;
+        }
+
         if (route == null || shouldReplan(state, startRow, startColumn)) {
             route = regionRadius > 0
                     ? routePlanner.routeToRegion(state, new Cell(startRow, startColumn), goal, regionRadius)
@@ -335,6 +344,11 @@ public final class StableLiveMovementController {
             return Math.abs(state.player.z - startZ);
         }
         return Math.abs(state.player.x - startX);
+    }
+
+    private static boolean insideRegion(int row, int column, Cell center, int radius) {
+        return Math.abs(row - center.row()) <= radius
+                && Math.abs(column - center.column()) <= radius;
     }
 
     private static boolean inBounds(int row, int column) {

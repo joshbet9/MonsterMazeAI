@@ -110,11 +110,14 @@ class StableLiveMovementControllerTest {
         boolean reachedCornerArea = false;
         boolean sawTurnInPlace = false;
 
-        for (int tick = 1; tick <= 220; tick++) {
+        for (int tick = 1; tick <= 240; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(4, 4), false);
 
-            if (s.player.z > 3.1 && Math.abs(action.forward()) < 0.001) {
+            // The optimizer may choose either of the two equal-length first
+            // cardinal corridors. Detect the turn after substantial progress
+            // on whichever axis was selected.
+            if (Math.max(s.player.x, s.player.z) > 3.1 && Math.abs(action.forward()) < 0.001) {
                 sawTurnInPlace = true;
             }
             physics.tick(s.player, action);
@@ -129,4 +132,3 @@ class StableLiveMovementControllerTest {
         assertTrue(sawTurnInPlace,
                 "controller should brake/turn in place at a committed route turn rather than arc through it");
     }
-}

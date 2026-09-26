@@ -35,13 +35,19 @@ public final class Heuristic {
 
         double routeBlocks = routeDistance(s, targetX, targetZ);
         double projectedTicks = estimateTimeToPad(s, routeBlocks);
-        double timerSlack = s.phaseTicksRemaining - projectedTicks;
 
         double value = projectedTicks;
-        if (timerSlack < 0) {
-            value += FAILED_TIMER_PENALTY + (-timerSlack * 250.0);
-        } else if (timerSlack < 20) {
-            value += (20 - timerSlack) * 35.0;
+        // A negative phase means the live observer has not received a usable
+        // Safe Pad timer. It must not be scored as an impossible deadline.
+        // Zero remains a genuine expired timer and therefore retains the
+        // deadline penalty.
+        if (s.phaseTicksRemaining >= 0) {
+            double timerSlack = s.phaseTicksRemaining - projectedTicks;
+            if (timerSlack < 0) {
+                value += FAILED_TIMER_PENALTY + (-timerSlack * 250.0);
+            } else if (timerSlack < 20) {
+                value += (20 - timerSlack) * 35.0;
+            }
         }
 
         double incoming = projectedIncomingDamage(s, (int)Math.min(

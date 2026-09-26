@@ -91,6 +91,8 @@ public final class MonsterAwareRoutePlanner {
             double pHit = 1.0 - distance / effectiveRadius;
             pHit *= pHit;
 
+            if (state.player.health <= HIT_DAMAGE && pHit >= 0.5) return 1000.0;
+
             double expectedDamage = pHit * HIT_DAMAGE;
             double deathProbability = state.player.health <= HIT_DAMAGE
                     ? pHit : 0.0;

@@ -29,7 +29,7 @@ class AbilityDecisionTest {
 
     @Test void repulsorIsNotUsedForAThreatTheRouteAvoids() {
         GameState s=state();
-        s.monsters.add(new MonsterState(1,50.5,55.5,0));
+        s.monsters.add(new MonsterState(1,50.5,0,55.5));
         assertFalse(AbilityDecision.shouldUse(s));
     }
 

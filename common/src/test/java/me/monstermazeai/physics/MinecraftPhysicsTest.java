@@ -59,7 +59,7 @@ class MinecraftPhysicsTest {
 
         physics.tick(p, new Action(1, 1, false, false, 0, false));
 
-        assertTrue(p.x < 0.0 && p.z > 0.0);
+        assertTrue(p.x > 0.0 && p.z > 0.0);
         assertTrue(Math.hypot(p.vx, p.vz) < 0.10,
                 "Diagonal input must not exceed the normalized vanilla input magnitude");
     }

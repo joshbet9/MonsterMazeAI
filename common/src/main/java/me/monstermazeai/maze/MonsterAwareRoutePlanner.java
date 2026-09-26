@@ -75,6 +75,55 @@ public final class MonsterAwareRoutePlanner {
         return risk;
     }
 
+
+    /**
+     * Finds the minimum-cost physical route to any cell in a square Safe Pad
+     * region. The source Safe Pad is a 5x5 walkable surface; the beacon cell
+     * is only its anchor, not the required player destination.
+     */
+    public PlayerRoute routeToRegion(GameState state, Cell start, Cell regionCenter, int radius) {
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+        if (start.equals(regionCenter) && radius == 0) return new PlayerRoute(List.of(start));
+
+        Map<Cell, Double> distance = new HashMap<>();
+        Map<Cell, Cell> previous = new HashMap<>();
+        PriorityQueue<Node> queue = new PriorityQueue<>(
+                Comparator.comparingDouble((Node n) -> n.cost)
+                        .thenComparingInt(n -> n.cell.row())
+                        .thenComparingInt(n -> n.cell.column()));
+
+        distance.put(start, 0.0);
+        queue.add(new Node(start, 0.0));
+
+        while (!queue.isEmpty()) {
+            Node current = queue.poll();
+            double known = distance.getOrDefault(current.cell, Double.POSITIVE_INFINITY);
+            if (current.cost > known + 1.0E-9) continue;
+            if (insideRegion(current.cell, regionCenter, radius)) {
+                return reconstruct(previous, start, current.cell);
+            }
+
+            for (Cell next : state.maze.physicalCardinalNeighbours(current.cell)) {
+                double arrivalTick = current.cost + 1.0;
+                double cost = current.cost + STEP_COST
+                        + riskCost(state, next, arrivalTick);
+                double old = distance.getOrDefault(next, Double.POSITIVE_INFINITY);
+                if (cost < old - 1.0E-9) {
+                    distance.put(next, cost);
+                    previous.put(next, current.cell);
+                    queue.add(new Node(next, cost));
+                }
+            }
+        }
+
+        return new PlayerRoute(new PlayerPathfinder().shortestPath(state.maze, start, regionCenter));
+    }
+
+    private static boolean insideRegion(Cell cell, Cell center, int radius) {
+        return Math.abs(cell.row() - center.row()) <= radius
+                && Math.abs(cell.column() - center.column()) <= radius;
+    }
+
     private PlayerRoute reconstruct(Map<Cell, Cell> previous, Cell start, Cell goal) {
         ArrayList<Cell> path = new ArrayList<>();
         Cell current = goal;

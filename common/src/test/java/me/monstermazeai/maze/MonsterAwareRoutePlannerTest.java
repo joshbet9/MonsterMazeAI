@@ -45,6 +45,21 @@ class MonsterAwareRoutePlannerTest {
         assertEquals(new Cell(0, 2), route.cells().get(route.size() - 1));
     }
 
+
+    @Test
+    void safePadRouteStopsAtFirstReachableCellOfFiveByFiveSurface() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        PlayerRoute route = new MonsterAwareRoutePlanner().routeToRegion(
+                state, new Cell(0, 5), new Cell(4, 5), 2);
+
+        assertEquals(new Cell(0, 5), route.cells().get(0));
+        assertEquals(new Cell(2, 5), route.cells().get(route.size() - 1),
+                "The player only needs to enter the 5x5 Safe Pad; routing to its beacon centre adds unnecessary travel.");
+        assertEquals(3, route.size());
+    }
+
     @Test
     void routeDetoursAroundPredictedMonster() {
         GameState state = new GameState();

@@ -59,3 +59,8 @@ observed player state -> monster-aware physical route -> committed waypoint -> h
 The controller deliberately uses one authoritative movement dimension (forward) and rotates the player toward the waypoint. It does not use strafe to compensate for a simultaneous yaw command. It also holds a waypoint until it is reached/passed, and only replans early for meaningful route deviation or an imminent monster threat. Near a waypoint it removes drive and lets vanilla friction brake the player instead of issuing reverse commands.
 
 This is the intended foundation for later ability optimisation and competitor/NPC modelling: tactical decisions may change, but the motor layer must remain temporally stable and physically grounded.
+
+
+## Safe Pad objective geometry
+
+The Mineplex Safe Pad is a 5x5 physical surface. The beacon identifies its anchor, but the player does not need to reach the beacon centre. Live routing therefore treats the pad as a goal region and selects the minimum-cost reachable entry cell, then stops as soon as the authoritative observer reports the player on the pad.

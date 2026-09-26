@@ -25,14 +25,14 @@ public final class LiveAiController {
     public void tick() {
         GameState state = adapter.observe().state();
 
-        if (!state.alive || state.activePadRow < 0 || state.activePadColumn < 0) {
+        if (!state.alive || state.padReached || state.activePadRow < 0 || state.activePadColumn < 0) {
             adapter.execute(Action.IDLE);
             return;
         }
 
         Cell goal = new Cell(state.activePadRow, state.activePadColumn);
         boolean allowJump = state.kit == Kit.JUMPER && state.player.jumpCharges > 0;
-        Action[] actions = controller.nextActions(state, goal, allowJump);
+        Action[] actions = controller.nextActions(state, goal, allowJump, 2);
         adapter.execute(actions);
     }
 }

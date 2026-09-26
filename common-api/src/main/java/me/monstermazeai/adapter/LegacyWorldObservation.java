@@ -49,6 +49,17 @@ public final class LegacyWorldObservation {
                             int mazePattern, boolean alive, boolean completed, int stage,
                             int safePadSeconds, int liveSeconds, Player player, Kit kit,
                             int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
+                            int[][] maze, List<Monster> monsters, String scoreboardTitle,
+                            List<String> scoreboardLines) {
+        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed, stage,
+                safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
+                center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
+    }
+
+    public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
+                            int mazePattern, boolean alive, boolean completed, int stage,
+                            int safePadSeconds, int liveSeconds, Player player, Kit kit,
+                            int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
                             int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
                             String scoreboardTitle, List<String> scoreboardLines) {
         if (player == null || kit == null || maze == null || physicalFloor == null || monsters == null

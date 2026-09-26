@@ -74,7 +74,7 @@ class OptimalMovementControllerTest {
         s.activePadColumn = 48;
         s.player.x = 50.85;
         s.player.z = 50.5;
-        s.player.vx = 0.18;
+        s.player.vx = 0.0;
         s.player.yaw = -90.0F;
 
         Action action = new OptimalMovementController(sim, 0.65)
@@ -91,7 +91,7 @@ class OptimalMovementControllerTest {
         GameState s = state(sim);
         s.player.x = 50.82;
         s.player.z = 50.5;
-        s.player.vx = 0.9;
+        s.player.vx = 0.30;
         s.player.vz = 0.0;
         s.player.recentMobHitUntilTick = 20;
         s.tick = 1;

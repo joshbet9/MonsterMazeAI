@@ -114,7 +114,7 @@ public final class KnockbackRecoveryController {
     }
 
     private boolean boundaryHasFloor(GameState state, double x, double z, int row, int col) {
-        final double eps = 0.02;
+        final double eps = EDGE_MARGIN;
         if (x - row < eps && row > 0) return state.maze.isPhysicalFloor(row - 1, col);
         if (row + 1.0 - x < eps && row + 1 < MazeModel.SIZE) return state.maze.isPhysicalFloor(row + 1, col);
         if (z - col < eps && col > 0) return state.maze.isPhysicalFloor(row, col - 1);

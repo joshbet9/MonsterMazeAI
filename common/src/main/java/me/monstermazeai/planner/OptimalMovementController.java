@@ -181,6 +181,7 @@ public final class OptimalMovementController {
         // Jumper charges are consumed by the ability model; after charges are
         // exhausted this remains ordinary Minecraft jump timing.
         if (!state.player.grounded) return true;
+        if (edgeDistance(state) < 0.40 && outwardVelocity(state) > 0.02) return false;
         if (state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0) return true;
         return Math.hypot(tx - state.player.x, tz - state.player.z) > 0.20
                 && route.size() > 1;
@@ -243,6 +244,23 @@ public final class OptimalMovementController {
         return col + 1 < me.monstermazeai.maze.MazeModel.SIZE
                 && z >= col + (1.0 - EDGE_MARGIN)
                 && state.maze.isPhysicalFloor(row, col + 1);
+    }
+
+    private double edgeDistance(GameState state) {
+        int row = (int) Math.floor(state.player.x);
+        int col = (int) Math.floor(state.player.z);
+        if (!state.maze.isPhysicalFloor(row, col)) return 0.0;
+        return Math.min(Math.min(state.player.x - row, row + 1.0 - state.player.x),
+                Math.min(state.player.z - col, col + 1.0 - state.player.z));
+    }
+
+    private double outwardVelocity(GameState state) {
+        int row = (int) Math.floor(state.player.x);
+        int col = (int) Math.floor(state.player.z);
+        double nx = state.player.x - (row + 0.5);
+        double nz = state.player.z - (col + 0.5);
+        double len = Math.hypot(nx, nz);
+        return len < 1.0E-9 ? 0.0 : (state.player.vx * nx + state.player.vz * nz) / len;
     }
 
     private double distanceToRoute(double x, double z, PlayerRoute route) {

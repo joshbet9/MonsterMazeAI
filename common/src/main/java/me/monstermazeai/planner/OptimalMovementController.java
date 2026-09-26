@@ -221,7 +221,28 @@ public final class OptimalMovementController {
         if (!state.maze.isPhysicalFloor(row, col)) return false;
         double margin = Math.min(Math.min(x - row, row + 1.0 - x),
                 Math.min(z - col, col + 1.0 - z));
-        return margin >= EDGE_MARGIN;
+        return margin >= EDGE_MARGIN || boundaryHasFloor(state, x, z, row, col);
+    }
+
+    private boolean boundaryHasFloor(GameState state, double x, double z, int row, int col) {
+        final double eps = 1.0E-6;
+        if (x - row < eps && row > 0)
+            return state.maze.isPhysicalFloor(row - 1, col);
+        if (row + 1.0 - x < eps && row + 1 < me.monstermazeai.maze.MazeModel.SIZE)
+            return state.maze.isPhysicalFloor(row + 1, col);
+        if (z - col < eps && col > 0)
+            return state.maze.isPhysicalFloor(row, col - 1);
+        if (col + 1.0 - z < eps && col + 1 < me.monstermazeai.maze.MazeModel.SIZE)
+            return state.maze.isPhysicalFloor(row, col + 1);
+        if (x - row < 0.02 && row > 0)
+            return state.maze.isPhysicalFloor(row - 1, col);
+        if (row + 1.0 - x < 0.02 && row + 1 < me.monstermazeai.maze.MazeModel.SIZE)
+            return state.maze.isPhysicalFloor(row + 1, col);
+        if (z - col < 0.02 && col > 0)
+            return state.maze.isPhysicalFloor(row, col - 1);
+        return col + 1 < me.monstermazeai.maze.MazeModel.SIZE
+                && z >= col + 0.98
+                && state.maze.isPhysicalFloor(row, col + 1);
     }
 
     private double distanceToRoute(double x, double z, PlayerRoute route) {

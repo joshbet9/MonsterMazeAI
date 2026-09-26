@@ -116,6 +116,35 @@ class OptimalMovementControllerTest {
     }
 
     @Test
+    void jumperChargesAreConservedDuringNormalRouteTravel() {
+        Simulator sim = simulator(openMaze());
+        GameState jumper = state(sim);
+        jumper.kit = Kit.JUMPER;
+        jumper.player.jumpCharges = 5;
+
+        Action action = new OptimalMovementController(sim, 0.65)
+                .nextAction(jumper, new Cell(50, 56), true);
+
+        assertFalse(action.jump(),
+                "A normal route must not burn a finite Jumper charge immediately");
+    }
+
+    @Test
+    void jumperChargeIsConsumedOncePerActualJump() {
+        Simulator sim = simulator(openMaze());
+        GameState jumper = state(sim);
+        jumper.kit = Kit.JUMPER;
+        jumper.player.jumpCharges = 5;
+
+        sim.tick(jumper, new Action(1, 0, true, true, 0.0F, false));
+        assertEquals(4, jumper.player.jumpCharges);
+
+        sim.tick(jumper, new Action(1, 0, true, true, 0.0F, false));
+        assertEquals(4, jumper.player.jumpCharges,
+                "Airborne ticks must not consume additional Jumper charges");
+    }
+
+    @Test
     void nonJumperAndJumperBothHoldJumpForMovementOptimisation() {
         Simulator sim = simulator(openMaze());
         GameState normal = state(sim);

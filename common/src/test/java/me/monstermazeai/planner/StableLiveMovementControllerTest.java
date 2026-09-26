@@ -13,8 +13,7 @@ class StableLiveMovementControllerTest {
     private static MazeModel openMaze() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r < MazeModel.SIZE; r++)
-            for (int c = 0; c < MazeModel.SIZE; c++)
-                raw[r][c] = 1;
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
         return new MazeModel(raw);
     }
 
@@ -39,14 +38,11 @@ class StableLiveMovementControllerTest {
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         int reachedTick = -1;
-
         for (int tick = 1; tick <= 240; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(0, 8), false);
             physics.tick(s.player, action);
-
-            double distance = Math.hypot(s.player.x - 0.5, s.player.z - 8.5);
-            if (distance < 0.55) {
+            if (Math.hypot(s.player.x - 0.5, s.player.z - 8.5) < 0.55) {
                 reachedTick = tick;
                 break;
             }
@@ -64,21 +60,18 @@ class StableLiveMovementControllerTest {
 
         boolean sawForward = false;
         boolean sawStrafe = false;
-
         for (int tick = 1; tick <= 180; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(8, 0), false);
             sawForward |= action.forward() > 0.0;
             sawStrafe |= Math.abs(action.strafe()) > 0.0;
             physics.tick(s.player, action);
-
             if (Math.hypot(s.player.x - 8.5, s.player.z - 0.5) < 0.55) break;
         }
 
         assertTrue(sawForward);
-        assertFalse(sawStrafe,
-                "stable steering should use one authoritative heading dimension, not strafe/yaw competition");
-        assertTrue(s.player.x > 7.9, "player did not turn and travel toward the sideways objective");
+        assertFalse(sawStrafe);
+        assertTrue(s.player.x > 7.9);
     }
 
     @Test
@@ -90,10 +83,7 @@ class StableLiveMovementControllerTest {
         for (int tick = 1; tick <= 220; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(8, 8), false);
-
-            assertFalse(action.forward() > 0.0 && Math.abs(action.yawDelta()) > 0.0,
-                    "forward movement must never be combined with a turn: " + action);
-
+            assertFalse(action.forward() > 0.0 && Math.abs(action.yawDelta()) > 0.0);
             physics.tick(s.player, action);
             if (Math.hypot(s.player.x - 8.5, s.player.z - 8.5) < 0.55) return;
         }
@@ -109,14 +99,10 @@ class StableLiveMovementControllerTest {
 
         boolean reachedCornerArea = false;
         boolean sawTurnInPlace = false;
-
         for (int tick = 1; tick <= 240; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(4, 4), false);
 
-            // The optimizer may choose either of the two equal-length first
-            // cardinal corridors. Detect the turn after substantial progress
-            // on whichever axis was selected.
             if (Math.max(s.player.x, s.player.z) > 3.1 && Math.abs(action.forward()) < 0.001) {
                 sawTurnInPlace = true;
             }
@@ -128,7 +114,8 @@ class StableLiveMovementControllerTest {
             }
         }
 
-        assertTrue(reachedCornerArea, "controller did not traverse the straight corridor");
+        assertTrue(reachedCornerArea);
         assertTrue(sawTurnInPlace,
                 "controller should brake/turn in place at a committed route turn rather than arc through it");
     }
+}

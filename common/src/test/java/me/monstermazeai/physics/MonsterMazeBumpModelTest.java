@@ -12,7 +12,7 @@ class MonsterMazeBumpModelTest {
     @Test
     void bumpUsesMonsterToPlayerTrajectoryAndSourceVelocity() {
         PlayerState p = new PlayerState();
-        p.x = 1.5; p.y = 0.0; p.z = 0.5; p.grounded = true;
+        p.x = 1.49; p.y = 0.0; p.z = 0.5; p.grounded = true;\n        p.health = 20.0;
         MonsterState m = new MonsterState(1, 0.5, 0.0, 0.5);
 
         assertEquals(1, MonsterMazeBumpModel.apply(p, List.of(m), 100));
@@ -26,13 +26,13 @@ class MonsterMazeBumpModelTest {
     @Test
     void contactGeometryChangesKnockbackDirection() {
         PlayerState p = new PlayerState();
-        p.x = 1.2; p.y = 0.0; p.z = 1.3; p.grounded = true;
+        p.x = 1.1; p.y = 0.0; p.z = 1.1; p.grounded = true;\n        p.health = 20.0;
         MonsterState m = new MonsterState(1, 0.5, 0.0, 0.5);
 
         MonsterMazeBumpModel.apply(p, List.of(m), 0);
         double firstX = p.vx, firstZ = p.vz;
 
-        p.x = 1.3; p.z = 1.2; p.health = 20.0;
+        p.x = 1.2; p.z = 1.0; p.health = 20.0;
         p.damageTaken = 0.0; p.recentMobHitUntilTick = 0;
         MonsterMazeBumpModel.apply(p, List.of(m), 0);
 
@@ -43,7 +43,7 @@ class MonsterMazeBumpModelTest {
     @Test
     void overlappingMonstersCanBothDamageOnOneSourceTick() {
         PlayerState p = new PlayerState();
-        p.x = 0.5; p.y = 0.0; p.z = 0.5; p.grounded = true;
+        p.x = 0.5; p.y = 0.0; p.z = 0.5; p.grounded = true;\n        p.health = 20.0;
         MonsterState a = new MonsterState(1, 0.0, 0.0, 0.5);
         MonsterState b = new MonsterState(2, 0.5, 0.0, 0.0);
 

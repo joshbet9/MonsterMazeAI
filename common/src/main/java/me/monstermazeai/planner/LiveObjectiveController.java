@@ -79,7 +79,7 @@ public final class LiveObjectiveController {
                 && state.alive
                 && !state.completed
                 && state.maze != null
-                && state.phaseTicksRemaining > 0
+                && state.phaseTicksRemaining != 0
                 && state.activePadRow >= 0
                 && state.activePadColumn >= 0
                 && state.activePadRow < MazeModel.SIZE

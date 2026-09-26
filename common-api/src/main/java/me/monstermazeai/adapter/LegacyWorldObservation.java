@@ -27,6 +27,8 @@ public final class LegacyWorldObservation {
     public final int abilityCharges;
     public final BlockPoint center;
     public final Pad pad;
+    /** Next Safe Pad preview exposed by the source at the end of each phase. */
+    public final Pad previewPad;
     public final int[][] maze;
     /** Physical player floor observed in the live world; separate from logical monster waypoints. */
     public final boolean[][] physicalFloor;
@@ -42,7 +44,7 @@ public final class LegacyWorldObservation {
                             List<String> scoreboardLines) {
         this(worldTick, inMonsterMaze, mazeDetected, -1, alive, completed, stage,
                 safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
-                center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
+                center, pad, null, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
     }
 
     public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
@@ -53,14 +55,14 @@ public final class LegacyWorldObservation {
                             List<String> scoreboardLines) {
         this(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed, stage,
                 safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
-                center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
+                center, pad, null, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
     }
 
     public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
                             int mazePattern, boolean alive, boolean completed, int stage,
                             int safePadSeconds, int liveSeconds, Player player, Kit kit,
                             int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
-                            int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
+                            Pad previewPad, int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
                             String scoreboardTitle, List<String> scoreboardLines) {
         if (player == null || kit == null || maze == null || physicalFloor == null || monsters == null
                 || scoreboardTitle == null || scoreboardLines == null) {
@@ -81,6 +83,7 @@ public final class LegacyWorldObservation {
         this.abilityCharges = abilityCharges;
         this.center = center;
         this.pad = pad;
+        this.previewPad = previewPad;
         this.maze = copyMaze(maze);
         this.physicalFloor = copyPhysicalFloor(physicalFloor);
         this.monsters = Collections.unmodifiableList(new ArrayList<Monster>(monsters));
@@ -92,7 +95,7 @@ public final class LegacyWorldObservation {
         return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed,
                 stage, safePadSeconds, liveSeconds, player.copy(), kit, jumpCharges,
                 abilityCharges, center == null ? null : center.copy(),
-                pad == null ? null : pad.copy(), maze, physicalFloor, monsters, scoreboardTitle, scoreboardLines);
+                pad == null ? null : pad.copy(), previewPad == null ? null : previewPad.copy(), maze, physicalFloor, monsters, scoreboardTitle, scoreboardLines);
     }
 
     private static boolean[][] defaultPhysicalFloor(int[][] source) {

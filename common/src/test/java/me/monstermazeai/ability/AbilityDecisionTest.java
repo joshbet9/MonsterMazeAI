@@ -21,4 +21,46 @@ class AbilityDecisionTest {
         GameState s=state();s.monsters.add(new MonsterState(1,60.5,50.5,0));
         assertFalse(AbilityDecision.shouldUse(s));
     }
+    @Test void repulsorIsUsedForAnImmediateRouteThreat() {
+        GameState s=state();
+        s.monsters.add(new MonsterState(1,50.9,50.5,0));
+        assertTrue(AbilityDecision.shouldUse(s));
+    }
+
+    @Test void repulsorIsNotUsedForAThreatTheRouteAvoids() {
+        GameState s=state();
+        s.monsters.add(new MonsterState(1,50.5,55.5,0));
+        assertFalse(AbilityDecision.shouldUse(s));
+    }
+
+    @Test void slowballerUsesItsCooldownForAConcreteImmediateThreat() {
+        GameState s=state();
+        s.kit=Kit.SLOWBALLER;
+        s.ability.charges=16;
+        s.monsters.add(new MonsterState(1,50.9,50.5,0));
+        assertTrue(AbilityDecision.shouldUse(s));
+    }
+
+    @Test void bodyBuilderUsesAFiniteActivationOnlyForAConcreteThreat() {
+        GameState s=state();
+        s.kit=Kit.BODY_BUILDER;
+        s.ability.activations=2;
+        s.monsters.add(new MonsterState(1,50.9,50.5,0));
+        assertTrue(AbilityDecision.shouldUse(s));
+    }
+
+    @Test void bodyBuilderConservesFiniteActivationWithoutThreat() {
+        GameState s=state();
+        s.kit=Kit.BODY_BUILDER;
+        s.ability.activations=2;
+        assertFalse(AbilityDecision.shouldUse(s));
+    }
+
+    @Test void jumperAndMaverickHaveNoFalseActivationPath() {
+        GameState jumper=state(); jumper.kit=Kit.JUMPER;
+        assertFalse(AbilityDecision.shouldUse(jumper));
+
+        GameState maverick=state(); maverick.kit=Kit.MAVERICK;
+        assertFalse(AbilityDecision.shouldUse(maverick));
+    }
 }

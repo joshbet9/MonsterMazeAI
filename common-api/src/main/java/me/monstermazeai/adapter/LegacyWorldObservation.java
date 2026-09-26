@@ -70,6 +70,18 @@ public final class LegacyWorldObservation {
                 scoreboardTitle, scoreboardLines);
     }
 
+    /** Backwards-compatible constructor retaining the pre-preview signature. */
+    public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
+                            int mazePattern, boolean alive, boolean completed, int stage,
+                            int safePadSeconds, int liveSeconds, Player player, Kit kit,
+                            int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
+                            int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
+                            String scoreboardTitle, List<String> scoreboardLines) {
+        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed, stage,
+                safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
+                center, pad, null, maze, physicalFloor, monsters, scoreboardTitle, scoreboardLines);
+    }
+
     public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
                             int mazePattern, boolean alive, boolean completed, int stage,
                             int safePadSeconds, int liveSeconds, Player player, Kit kit,

@@ -86,13 +86,13 @@ class MonsterAwareRoutePlannerTest {
         GameState state = new GameState();
         state.maze = openMaze();
         state.player.x = 2.5;
-        state.player.z = 1.5;
+        state.player.z = 3.5;
 
-        MonsterState monster = new MonsterState(8, 1.5, 0.0, 1.5);
+        MonsterState monster = new MonsterState(8, 2.5, 0.0, 2.5);
         state.monsters.add(monster);
 
         PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(2, 1), new Cell(2, 3));
+                state, new Cell(2, 3), new Cell(2, 5));
 
         assertEquals(new Cell(2, 1), route.cells().get(0));
         assertEquals(new Cell(2, 3), route.cells().get(route.size() - 1));

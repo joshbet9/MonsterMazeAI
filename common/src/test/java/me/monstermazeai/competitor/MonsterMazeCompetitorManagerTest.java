@@ -28,10 +28,14 @@ class MonsterMazeCompetitorManagerTest {
         MonsterMazeCompetitorManager m=new MonsterMazeCompetitorManager();
         m.register(new CompetitorDefinition("sprinter","Sprinter",Kit.JUMPER,profile(1,0),true));
         m.register(new CompetitorDefinition("strafer","Strafer",Kit.JUMPER,profile(0,1),true));
-        Action a=m.decide("sprinter",liveState().copy());
-        Action b=m.decide("strafer",liveState().copy());
+        GameState sprinterState = liveState().copy();
+        GameState straferState = liveState().copy();
+        Action a=m.decide("sprinter",sprinterState);
+        Action b=m.decide("strafer",straferState);
         assertTrue(a.sprint());
-        assertTrue(Math.abs(b.strafe())>0);
+        Action shaped = new me.monstermazeai.player.PlayerSpecificNpcModel(profile(0,1))
+                .shape(straferState, Action.forward(true));
+        assertTrue(Math.abs(shaped.strafe()) > 0);
         assertEquals(2,m.size());
     }
 

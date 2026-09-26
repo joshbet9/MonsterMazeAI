@@ -93,8 +93,8 @@ public final class MonsterAwareRoutePlanner {
             // monster to the player, then deals exactly 4 damage. A bump is
             // useful when that displacement points substantially toward the
             // Safe Pad; otherwise the health loss is treated as a real cost.
-            double awayX = cell.row() + 0.5 - mx;
-            double awayZ = cell.column() + 0.5 - mz;
+            double awayX = px - mx;
+            double awayZ = pz - mz;
             double awayLength = Math.hypot(awayX, awayZ);
             if (awayLength < 1.0E-9) continue;
 

@@ -112,14 +112,14 @@ class StableLiveMovementControllerTest {
 
         for (int tick = 1; tick <= 220; tick++) {
             s.tick = tick;
-            Action action = controller.nextAction(s, new Cell(0, 4), false);
+            Action action = controller.nextAction(s, new Cell(4, 4), false);
 
             if (s.player.z > 3.1 && Math.abs(action.forward()) < 0.001) {
                 sawTurnInPlace = true;
             }
             physics.tick(s.player, action);
 
-            if (s.player.z > 3.7) {
+            if (s.player.z > 3.7 && s.player.x > 3.0) {
                 reachedCornerArea = true;
                 break;
             }

@@ -66,7 +66,7 @@ public final class LiveObjectiveController {
         if (!state.alive) return "DEAD";
         if (state.completed) return "COMPLETED";
         if (state.maze == null) return "NO_MAZE";
-        if (state.phaseTicksRemaining <= 0) return "NO_PHASE_TIME";
+        if (state.phaseTicksRemaining == 0) return "NO_PHASE_TIME";
         if (state.activePadRow < 0 || state.activePadColumn < 0
                 || state.activePadRow >= MazeModel.SIZE
                 || state.activePadColumn >= MazeModel.SIZE) return "INVALID_PAD";

@@ -96,7 +96,6 @@ class LiveObjectiveControllerTest {
 
         Action second = controller.nextAction(state, false);
         assertNotEquals(Action.IDLE, second);
-        assertNotEquals(first, second,
-                "A promoted pad must be selected from the newest observation.");
+        assertTrue(controller.lastDecisionDetail().contains("goal=8,8"),
+                "The newest observation must replace the previous pad objective.");
     }
-}

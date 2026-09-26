@@ -140,21 +140,38 @@ public final class AbilityDecision {
             for (MonsterState m : s.monsters) {
                 if (m.removed || m.launched(s.tick) || m.frozen(s.tick)) continue;
 
-                boolean threatens = false;
-                for (int i = 0; i < route.size(); i++) {
-                    double d = Math.hypot(
-                            m.x - route.targetX(i),
-                            m.z - route.targetZ(i));
-                    if (d <= ROUTE_THREAT_DISTANCE) {
-                        threatens = true;
-                        nearest = Math.min(nearest, d);
-                        break;
+                double currentDistance = Math.hypot(
+                        m.x - s.player.x,
+                        m.z - s.player.z);
+
+                // A monster already inside the collision envelope is an
+                // immediate tactical threat even if the planner can nominate
+                // a different future route. Waiting for route geometry to
+                // represent an already-developing collision is too late.
+                boolean immediateCollision = currentDistance <= IMMEDIATE;
+
+                boolean routeConflict = false;
+                if (!immediateCollision) {
+                    for (int i = 0; i < route.size(); i++) {
+                        double d = Math.hypot(
+                                m.x - route.targetX(i),
+                                m.z - route.targetZ(i));
+                        if (d <= ROUTE_THREAT_DISTANCE) {
+                            routeConflict = true;
+                            break;
+                        }
                     }
                 }
-                if (threatens) count++;
+
+                if (immediateCollision || routeConflict) {
+                    count++;
+                    nearest = Math.min(nearest, currentDistance);
+                }
             }
 
-            return count == 0 ? Threat.NONE : new Threat(true, count, nearest);
+            return count == 0
+                    ? Threat.NONE
+                    : new Threat(true, count, nearest);
         } catch (IllegalArgumentException ignored) {
             return Threat.NONE;
         }

@@ -185,7 +185,20 @@ public final class OptimalMovementController {
             detail += " RELAXED_FALLBACK";
             return relaxed;
         }
-        return new Action(0, 0, false, false, yawDelta, false);
+
+        // Hard movement invariant: a live player must not become stationary
+        // merely because the prediction model cannot certify a candidate. If
+        // the current physical cell has at least one physical neighbour, issue
+        // the route-directed input toward the best available neighbour. This
+        // is deliberately below the physics-aware planner and therefore cannot
+        // replace a valid optimised action; it only prevents planner uncertainty
+        // from becoming a death-by-idle failure.
+        Action lastResort = localPhysicalMovement(state, tx, tz, yawDelta);
+        if (lastResort != Action.IDLE) {
+            detail += " LAST_RESORT_PHYSICAL_MOVE";
+            return lastResort;
+        }
+        return Action.IDLE;
     }
 
     private Action relaxedRouteFallback(GameState state, double tx, double tz, float yawDelta) {
@@ -211,6 +224,39 @@ public final class OptimalMovementController {
             if (next.alive && floorOnlyTrajectory(state, next)) return candidate;
         }
         return Action.IDLE;
+    }
+
+    private Action localPhysicalMovement(GameState state, double tx, double tz, float yawDelta) {
+        int row = (int) Math.floor(state.player.x);
+        int col = (int) Math.floor(state.player.z);
+        if (row < 0 || col < 0 || row >= me.monstermazeai.maze.MazeModel.SIZE
+                || col >= me.monstermazeai.maze.MazeModel.SIZE) return Action.IDLE;
+
+        java.util.List<Cell> neighbours = state.maze.physicalCardinalNeighbours(new Cell(row, col));
+        if (neighbours.isEmpty()) return Action.IDLE;
+
+        Cell best = neighbours.get(0);
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (Cell candidate : neighbours) {
+            double score = Math.abs(candidate.row() + 0.5 - tx)
+                    + Math.abs(candidate.column() + 0.5 - tz);
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+
+        double dx = best.row() + 0.5 - state.player.x;
+        double dz = best.column() + 0.5 - state.player.z;
+        if (Math.hypot(dx, dz) < 1.0E-6) return Action.IDLE;
+        double desiredYaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double error = wrap(desiredYaw - state.player.yaw);
+        double local = Math.toRadians(error);
+        int f = signInput(Math.cos(local));
+        int s = signInput(Math.sin(local));
+        if (f == 0 && s == 0) f = 1;
+        return new Action(f, s, false, true,
+                clamp((float) error, -MAX_YAW_DELTA, MAX_YAW_DELTA), false);
     }
 
     private boolean floorOnlyTrajectory(GameState source, GameState next) {

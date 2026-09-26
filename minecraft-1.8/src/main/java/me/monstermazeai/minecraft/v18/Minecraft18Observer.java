@@ -182,6 +182,7 @@ public final class Minecraft18Observer {
                 mazeDetected,
                 center,
                 pad,
+                previewPad,
                 scoreboard,
                 observation
         );
@@ -606,6 +607,7 @@ public final class Minecraft18Observer {
             this.mazeDetected = mazeDetected;
             this.center = center;
             this.pad = pad;
+            this.previewPad = previewPad;
             this.scoreboard = scoreboard;
             this.state = state;
         }

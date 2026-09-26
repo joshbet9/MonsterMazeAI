@@ -31,15 +31,14 @@ public final class PlayerSpecificNpcModel {
 
         // Preserve navigation direction while biasing mixed movement toward
         // the measured player's preferred input balance.
-        if (Math.abs(forward) > 1e-9 || Math.abs(strafe) > 1e-9) {
-            double fb = clamp(profile.forwardBias, -1, 1);
-            double sb = clamp(profile.strafeBias, -1, 1);
-            if (Math.abs(strafe) < 1e-9 && Math.abs(sb) > 0.15) {
-                strafe = 0.25 * sb;
-            }
-            if (Math.abs(forward) < 1e-9 && Math.abs(fb) > 0.15) {
-                forward = 0.25 * fb;
-            }
+        double fb = clamp(profile.forwardBias, -1, 1);
+        double sb = clamp(profile.strafeBias, -1, 1);
+
+        if (Math.abs(strafe) < 1e-9 && Math.abs(sb) > 0.15) {
+            strafe = 0.25 * sb;
+        }
+        if (Math.abs(forward) < 1e-9 && Math.abs(fb) > 0.15) {
+            forward = 0.25 * fb;
         }
 
         // A measured jump tendency is sampled deterministically from the

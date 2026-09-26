@@ -67,6 +67,15 @@ class RobustLiveControllerTest {
         assertTrue(c.nextAction(s, true).jump());
     }
 
+    @Test void unknownPhaseStillAllowsMovement() {
+        RobustLiveController c = controller();
+        GameState s = live();
+        s.tick = 1;
+        s.phaseTicksRemaining = -1;
+
+        assertNotEquals(Action.IDLE, c.nextAction(s, true));
+    }
+
     @Test void invalidOrExpiredStateFailsClosed() {
         RobustLiveController c = controller();
         GameState s = live();

@@ -28,8 +28,6 @@ public final class LegacyMovementModel implements PhysicsModel {
         while (p.yaw >= 180.0F) p.yaw -= 360.0F;
         while (p.yaw < -180.0F) p.yaw += 360.0F;
 
-        // EntityLivingBase.onLivingUpdate decrements an existing jump delay
-        // before evaluating the current jump input.
         if (p.jumpTicks > 0) p.jumpTicks--;
 
         if (action.jump() && p.grounded && p.jumpTicks == 0) {
@@ -39,24 +37,24 @@ public final class LegacyMovementModel implements PhysicsModel {
             p.jumpTicks = 0;
         }
 
-        // Vanilla decays movement input immediately before travel.
         double strafe = action.strafe() * 0.98D;
         double forward = action.forward() * 0.98D;
 
-        float friction = p.grounded
+        // A bump velocity can be written while onGround is still true. Keep
+        // the ground movement/friction calculation for this tick, but remember
+        // that the positive Y displacement will make the entity airborne after
+        // moveEntity resolves the movement.
+        boolean sourceGrounded = p.grounded;
+        float friction = sourceGrounded
                 ? DEFAULT_SLIPPERINESS * LAND_FRICTION
                 : LAND_FRICTION;
 
-        float movementFactor;
-        if (p.grounded) {
-            movementFactor = (float) (WALK_SPEED
+        float movementFactor = sourceGrounded
+                ? (float) (WALK_SPEED
                     * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
-                    * (0.16277136F / (friction * friction * friction)));
-        } else {
-            // EntityPlayer raises jumpMovementFactor by 30% while sprinting.
-            movementFactor = AIR_MOVE_FACTOR
+                    * (0.16277136F / (friction * friction * friction)))
+                : AIR_MOVE_FACTOR
                     * (action.sprint() ? (1.0F + 0.3F) : 1.0F);
-        }
 
         moveFlying(p, strafe, forward, movementFactor);
 
@@ -64,21 +62,25 @@ public final class LegacyMovementModel implements PhysicsModel {
         p.y += p.vy;
         p.z += p.vz;
 
-        // EntityLivingBase applies gravity after movement, then air drag.
-        if (!p.grounded) {
+        boolean airborne = !sourceGrounded || p.pendingAirborne;
+        if (airborne) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
 
-            if (p.y <= 0.0D) {
+            if (p.y <= 0.0D && p.vy <= 0.0D) {
                 p.y = 0.0D;
                 p.vy = 0.0D;
                 p.grounded = true;
+            } else {
+                p.grounded = false;
             }
         } else {
             p.y = 0.0D;
             p.vy = 0.0D;
+            p.grounded = true;
         }
 
+        p.pendingAirborne = false;
         p.vx *= friction;
         p.vz *= friction;
 
@@ -90,6 +92,7 @@ public final class LegacyMovementModel implements PhysicsModel {
     private void jump(PlayerState p, boolean sprinting) {
         p.vy = JUMP_VELOCITY;
         p.grounded = false;
+        p.pendingAirborne = false;
 
         if (sprinting) {
             float yaw = p.yaw * 0.017453292F;

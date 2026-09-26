@@ -23,7 +23,9 @@ public final class BeamSearchPlanner {
         this.monsterPredictor=new MonsterTrajectoryPredictor(simulator);
     }
 
-    public Simulator simulator() { return simulator; }\n\n    public Plan plan(GameState source,double targetX,double targetZ,boolean allowJump) {
+    public Simulator simulator() { return simulator; }
+
+    public Plan plan(GameState source,double targetX,double targetZ,boolean allowJump) {
         List<Node> beam=List.of(new Node(source.copy(),new ArrayList<>(),heuristic.evaluate(source,targetX,targetZ)));
         Node bestNode=beam.get(0); Score best=beam.get(0).score;
         int searchHorizon=effectiveHorizon(source);

@@ -7,123 +7,49 @@ import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 
 /**
- * Closed-loop controller that combines the maze graph with physical planning.
+ * Objective-to-motion bridge. Route selection and continuous movement are
+ * deliberately separated: the route planner decides where to go and
+ * OptimalMovementController decides the safest fastest input for this tick.
  */
 public final class MazeAwareRecedingHorizonController {
-    private final BeamSearchPlanner planner;
-    private final int executionTicks;
+    private final OptimalMovementController movement;
     private final double waypointTolerance;
-    private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
-    private String lastDecisionDetail = "UNSET";
+    private final MonsterAwareRoutePlanner routePlanner=new MonsterAwareRoutePlanner();
+    private String lastDecisionDetail="UNSET";
 
-    public MazeAwareRecedingHorizonController(BeamSearchPlanner planner, int executionTicks) {
-        this(planner, executionTicks, 0.75);
+    public MazeAwareRecedingHorizonController(BeamSearchPlanner planner,int executionTicks){
+        this(planner,executionTicks,0.75);
     }
 
-    public MazeAwareRecedingHorizonController(BeamSearchPlanner planner,
-                                               int executionTicks,
-                                               double waypointTolerance) {
-        if (executionTicks < 1 || waypointTolerance <= 0.0) throw new IllegalArgumentException();
-        this.planner = planner;
-        this.executionTicks = executionTicks;
-        this.waypointTolerance = waypointTolerance;
+    public MazeAwareRecedingHorizonController(BeamSearchPlanner planner,int executionTicks,double waypointTolerance){
+        if(planner==null||executionTicks<1||waypointTolerance<=0.0)throw new IllegalArgumentException();
+        this.movement=new OptimalMovementController(planner.simulator(),waypointTolerance);
+        this.waypointTolerance=waypointTolerance;
     }
 
-    public String lastDecisionDetail() { return lastDecisionDetail; }
+    public String lastDecisionDetail(){return lastDecisionDetail;}
 
-    public Action[] nextActions(GameState state, Cell goal, boolean allowJump) {
-        if (state == null) {
-            lastDecisionDetail = "NULL_STATE";
+    public Action[] nextActions(GameState state,Cell goal,boolean allowJump){
+        if(state==null){lastDecisionDetail="NULL_STATE";return new Action[]{Action.IDLE};}
+        if(state.maze==null){lastDecisionDetail="NO_MAZE";return new Action[]{Action.IDLE};}
+        int sr=(int)Math.floor(state.player.x),sc=(int)Math.floor(state.player.z);
+        if(sr<0||sc<0||sr>=99||sc>=99){
+            lastDecisionDetail="PLAYER_CELL_OUT_OF_BOUNDS row="+sr+" col="+sc;
             return new Action[]{Action.IDLE};
         }
-        if (state.maze == null) {
-            lastDecisionDetail = "NO_MAZE";
+        PlayerRoute route=routePlanner.route(state,new Cell(sr,sc),goal);
+        if(route.reached(state.player.x,state.player.z,waypointTolerance)){
+            lastDecisionDetail="ROUTE_REACHED size="+route.size()+" goal="+goal.row()+","+goal.column();
             return new Action[]{Action.IDLE};
         }
-
-        int startRow = (int) Math.floor(state.player.x);
-        int startColumn = (int) Math.floor(state.player.z);
-        if (startRow < 0 || startColumn < 0
-                || startRow >= MazeModelSize() || startColumn >= MazeModelSize()) {
-            lastDecisionDetail = "PLAYER_CELL_OUT_OF_BOUNDS row=" + startRow + " col=" + startColumn;
-            return new Action[]{Action.IDLE};
-        }
-
-        PlayerRoute route;
-        try {
-            route = routePlanner.route(state, new Cell(startRow, startColumn), goal);
-        } catch (RuntimeException ex) {
-            lastDecisionDetail = "ROUTE_EXCEPTION " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
-            throw ex;
-        }
-
-        int waypoint = route.nextWaypoint(
-                state.player.x, state.player.z, 0, waypointTolerance);
-
-        if (route.reached(state.player.x, state.player.z, waypointTolerance)) {
-            lastDecisionDetail = "ROUTE_REACHED size=" + route.size()
-                    + " start=" + startRow + "," + startColumn
-                    + " goal=" + goal.row() + "," + goal.column();
-            return new Action[]{Action.IDLE};
-        }
-
-        double targetX = route.targetX(waypoint);
-        double targetZ = route.targetZ(waypoint);
-
-        BeamSearchPlanner.Plan plan;
-        try {
-            plan = planner.plan(state, targetX, targetZ, allowJump);
-        } catch (RuntimeException ex) {
-            lastDecisionDetail = "PLANNER_EXCEPTION " + ex.getClass().getSimpleName()
-                    + ": " + ex.getMessage()
-                    + " routeSize=" + route.size()
-                    + " waypoint=" + waypoint
-                    + " target=" + targetX + "," + targetZ;
-            throw ex;
-        }
-
-        Action[] actions = plan.sequence().actions();
-        Action first = actions.length == 0 ? Action.IDLE : actions[0];
-        lastDecisionDetail = "ROUTE size=" + route.size()
-                + " start=" + startRow + "," + startColumn
-                + " goal=" + goal.row() + "," + goal.column()
-                + " waypoint=" + waypoint + "/" + (route.size() - 1)
-                + " target=" + targetX + "," + targetZ
-                + " planLen=" + actions.length
-                + " planReached=" + plan.padReached()
-                + " planReason=\"" + plan.decisionReason() + "\""
-                + " first=" + describe(first);
-
-        if (actions.length == 0 || actions[0] == Action.IDLE) {
-            double dx = targetX - state.player.x;
-            double dz = targetZ - state.player.z;
-            if (Math.hypot(dx, dz) > 1.0E-6) {
-                float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-                float delta = desiredYaw - state.player.yaw;
-                while (delta >= 180.0F) delta -= 360.0F;
-                while (delta < -180.0F) delta += 360.0F;
-                Action fallback = new Action(1, 0,
-                        allowJump && !state.player.grounded, true, delta, false);
-                lastDecisionDetail += " FALLBACK=" + describe(fallback);
-                return new Action[]{fallback};
-            }
-            lastDecisionDetail += " FALLBACK_SUPPRESSED_ZERO_VECTOR";
-            return new Action[]{Action.IDLE};
-        }
-
-        return java.util.Arrays.copyOf(actions, Math.min(executionTicks, actions.length));
+        Action action=movement.nextAction(state,goal,allowJump);
+        lastDecisionDetail=movement.lastDecisionDetail()+" routeGoal="+goal.row()+","+goal.column()
+                +" action="+describe(action);
+        return new Action[]{action};
     }
 
-    private static int MazeModelSize() {
-        return me.monstermazeai.maze.MazeModel.SIZE;
-    }
-
-    private static String describe(Action action) {
-        return "f=" + action.forward()
-                + ",s=" + action.strafe()
-                + ",jump=" + action.jump()
-                + ",sprint=" + action.sprint()
-                + ",yawDelta=" + action.yawDelta()
-                + ",ability=" + action.useAbility();
+    private static String describe(Action a){
+        return "f="+a.forward()+",s="+a.strafe()+",jump="+a.jump()+",sprint="+a.sprint()
+                +",yawDelta="+a.yawDelta()+",ability="+a.useAbility();
     }
 }

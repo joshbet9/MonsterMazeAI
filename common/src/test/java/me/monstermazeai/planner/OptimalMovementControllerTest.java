@@ -98,7 +98,7 @@ class OptimalMovementControllerTest {
         s.maze = maze;
         s.player.x = 50.82;
         s.player.z = 50.5;
-        s.player.vx = 0.30;
+        s.player.vx = 0.05;
         s.player.vz = 0.0;
         s.player.recentMobHitUntilTick = 20;
         s.tick = 1;

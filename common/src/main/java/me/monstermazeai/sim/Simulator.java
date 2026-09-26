@@ -29,11 +29,20 @@ public final class Simulator {
     public void tick(GameState state, Action action) {
         if(!state.alive) return;
         if(action.useAbility()) abilities.activate(state);
+        boolean wasGrounded = state.player.grounded;
+        int jumpChargesBefore = state.player.jumpCharges;
         physics.tick(state.player, action);
         monsters.tick(state);
         for(MonsterState monster: state.monsters) collision.tryMonsterHit(state, monster, abilities);
         progression.tick(state);
-        if(state.player.y>0.0 && state.kit==me.monstermazeai.kit.Kit.JUMPER) abilities.consumeJumperCharge(state);
+        // A Jumper charge is consumed by the jump itself, not by every airborne
+        // tick. The previous implementation consumed one charge on each tick
+        // while y>0, so a single jump burned the entire five-charge pool.
+        if(wasGrounded && !state.player.grounded
+                && action.jump() && state.kit==me.monstermazeai.kit.Kit.JUMPER
+                && state.player.jumpCharges == jumpChargesBefore) {
+            abilities.consumeJumperCharge(state);
+        }
         state.tick++;
     }
 

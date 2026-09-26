@@ -50,6 +50,43 @@ public final class ObservationWorldModel {
         state.player.jumpCharges = observation.jumpCharges;
 
         state.maze = new me.monstermazeai.maze.MazeModel(observation.maze);
+        for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
+            for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
+                state.maze.setPhysicalFloor(row, column, observation.physicalFloor[row][column]);
+                // Source Monster Maze disables centre-safe-zone path cells for
+                // monster movement until the final deterioration pass.
+                int value = observation.maze[row][column];
+                if (value == 5 || value == 6) {
+                    state.maze.setDisabled(row, column, true);
+                }
+            }
+        }
+
+        // On the source's final centre-deterioration pass, the non-path centre
+        // cells (3/4) disappear while path cells (5/6) are rebuilt as normal
+        // maze blocks and re-enter the monster waypoint graph. Because all
+        // centre cells are changed in that same pass, a single missing 3/4
+        // physical cell is an unambiguous completion signal.
+        boolean centreDeteriorated = false;
+        for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE && !centreDeteriorated; row++) {
+            for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
+                int value = observation.maze[row][column];
+                if ((value == 3 || value == 4) && !observation.physicalFloor[row][column]) {
+                    centreDeteriorated = true;
+                    break;
+                }
+            }
+        }
+        if (centreDeteriorated) {
+            for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
+                for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
+                    int value = observation.maze[row][column];
+                    if ((value == 5 || value == 6) && observation.physicalFloor[row][column]) {
+                        state.maze.setDisabled(row, column, false);
+                    }
+                }
+            }
+        }
 
         if (observation.pad != null && observation.pad.row >= 0 && observation.pad.column >= 0) {
             // Keep the authoritative raw layout intact for physical player routing.
@@ -60,6 +97,9 @@ public final class ObservationWorldModel {
                     if (row >= 0 && row < me.monstermazeai.maze.MazeModel.SIZE
                             && column >= 0 && column < me.monstermazeai.maze.MazeModel.SIZE) {
                         state.maze.setDisabled(row, column, true);
+                        // SafePad.build creates a physical 5x5 surface even when
+                        // the canonical maze cell underneath was not a path cell.
+                        state.maze.setPhysicalFloor(row, column, true);
                     }
                 }
             }

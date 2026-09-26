@@ -28,6 +28,8 @@ public final class LegacyWorldObservation {
     public final BlockPoint center;
     public final Pad pad;
     public final int[][] maze;
+    /** Physical player floor observed in the live world; separate from logical monster waypoints. */
+    public final boolean[][] physicalFloor;
     public final List<Monster> monsters;
     public final String scoreboardTitle;
     public final List<String> scoreboardLines;
@@ -40,7 +42,7 @@ public final class LegacyWorldObservation {
                             List<String> scoreboardLines) {
         this(worldTick, inMonsterMaze, mazeDetected, -1, alive, completed, stage,
                 safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
-                center, pad, maze, monsters, scoreboardTitle, scoreboardLines);
+                center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
     }
 
     public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
@@ -49,7 +51,18 @@ public final class LegacyWorldObservation {
                             int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
                             int[][] maze, List<Monster> monsters, String scoreboardTitle,
                             List<String> scoreboardLines) {
-        if (player == null || kit == null || maze == null || monsters == null
+        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed, stage,
+                safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
+                center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
+    }
+
+    public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
+                            int mazePattern, boolean alive, boolean completed, int stage,
+                            int safePadSeconds, int liveSeconds, Player player, Kit kit,
+                            int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
+                            int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
+                            String scoreboardTitle, List<String> scoreboardLines) {
+        if (player == null || kit == null || maze == null || physicalFloor == null || monsters == null
                 || scoreboardTitle == null || scoreboardLines == null) {
             throw new IllegalArgumentException("Observation fields must not be null");
         }
@@ -69,6 +82,7 @@ public final class LegacyWorldObservation {
         this.center = center;
         this.pad = pad;
         this.maze = copyMaze(maze);
+        this.physicalFloor = copyPhysicalFloor(physicalFloor);
         this.monsters = Collections.unmodifiableList(new ArrayList<Monster>(monsters));
         this.scoreboardTitle = scoreboardTitle;
         this.scoreboardLines = Collections.unmodifiableList(new ArrayList<String>(scoreboardLines));
@@ -78,7 +92,22 @@ public final class LegacyWorldObservation {
         return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed,
                 stage, safePadSeconds, liveSeconds, player.copy(), kit, jumpCharges,
                 abilityCharges, center == null ? null : center.copy(),
-                pad == null ? null : pad.copy(), maze, monsters, scoreboardTitle, scoreboardLines);
+                pad == null ? null : pad.copy(), maze, physicalFloor, monsters, scoreboardTitle, scoreboardLines);
+    }
+
+    private static boolean[][] defaultPhysicalFloor(int[][] source) {
+        boolean[][] floor = new boolean[source.length][];
+        for (int i = 0; i < source.length; i++) {
+            floor[i] = new boolean[source[i].length];
+            for (int j = 0; j < source[i].length; j++) floor[i][j] = source[i][j] != 0;
+        }
+        return floor;
+    }
+
+    private static boolean[][] copyPhysicalFloor(boolean[][] source) {
+        boolean[][] copy = new boolean[source.length][];
+        for (int i = 0; i < source.length; i++) copy[i] = source[i].clone();
+        return copy;
     }
 
     private static int[][] copyMaze(int[][] source) {

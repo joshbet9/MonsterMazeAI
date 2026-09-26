@@ -106,6 +106,7 @@ public final class Minecraft18Observer {
         }
         int[][] raw = cachedMaze;
         boolean mazeDetected = cachedMazeDetected && center != null;
+        boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw);
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
         if (inMonsterMaze && !previouslyInMonsterMaze) {
@@ -169,7 +170,7 @@ public final class Minecraft18Observer {
                 kit, jumpCharges, abilityCharges,
                 center == null ? null : new LegacyWorldObservation.BlockPoint(center.getX(), center.getY(), center.getZ()),
                 pad == null ? null : new LegacyWorldObservation.Pad(pad.row, pad.column, pad.distanceSq, padReached),
-                raw, monsters, scoreboard.title, scoreboard.lines);
+                raw, physicalFloor, monsters, scoreboard.title, scoreboard.lines);
 
         return new Observation(
                 matchedMaze,
@@ -179,6 +180,44 @@ public final class Minecraft18Observer {
                 scoreboard,
                 observation
         );
+    }
+
+    /**
+     * Build the player's currently usable floor from the live centre state.
+     *
+     * The source keeps every centre-safe-zone block physically present through
+     * the first nine deterioration passes. Only on the final pass are the
+     * non-path centre cells removed; centre path cells are rebuilt into normal
+     * maze blocks and become monster waypoints again. This is identical for
+     * Maze 1, Maze 2 and Maze 3; only the source layout determines which cells
+     * are centre-safe-zone cells.
+     */
+    private boolean[][] buildPhysicalFloor(World world, BlockPos center, int[][] raw) {
+        boolean[][] floor = new boolean[MAZE_SIZE][MAZE_SIZE];
+        for (int row = 0; row < MAZE_SIZE; row++) {
+            for (int col = 0; col < MAZE_SIZE; col++) {
+                floor[row][col] = raw[row][col] != 0;
+            }
+        }
+        if (center == null || !cachedMazeDetected) return floor;
+
+        int surfaceY = center.getY() - 1;
+        for (int row = 49 - CENTER_ANCHOR_RADIUS; row <= 49 + CENTER_ANCHOR_RADIUS; row++) {
+            for (int col = 49 - CENTER_ANCHOR_RADIUS; col <= 49 + CENTER_ANCHOR_RADIUS; col++) {
+                int value = raw[row][col];
+                if (value < 3 || value > 6) continue;
+                int x = center.getX() - HALF_MAZE + row;
+                int z = center.getZ() - HALF_MAZE + col;
+                floor[row][col] = world.getBlockState(new BlockPos(x, surfaceY, z)).getBlock() != Blocks.air;
+            }
+        }
+
+        // The source's once-per-second task starts at 20s with decay=10 and
+        // reaches its final decay=1 pass at ~29s. Keep the live block reading
+        // authoritative, but expose the source lifecycle explicitly for the
+        // common model so centre path cells can be re-enabled for monsters only
+        // after deterioration has completed.
+        return floor;
     }
 
     private void reset() {

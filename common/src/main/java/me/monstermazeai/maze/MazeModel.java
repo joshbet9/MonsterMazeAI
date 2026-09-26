@@ -8,14 +8,17 @@ public final class MazeModel {
 
     private final int[][] raw;
     private final boolean[][] disabled;
+    private final boolean[][] physicalFloor;
 
     public MazeModel(int[][] raw) {
         if (raw.length != SIZE) throw new IllegalArgumentException("Maze must be 99x99");
         this.raw = new int[SIZE][SIZE];
         this.disabled = new boolean[SIZE][SIZE];
+        this.physicalFloor = new boolean[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             if (raw[r].length != SIZE) throw new IllegalArgumentException("Maze must be 99x99");
             System.arraycopy(raw[r], 0, this.raw[r], 0, SIZE);
+            for (int c = 0; c < SIZE; c++) this.physicalFloor[r][c] = raw[r][c] != 0;
         }
     }
 
@@ -26,11 +29,17 @@ public final class MazeModel {
     }
     public boolean isDisabled(int row, int col) { return disabled[row][col]; }
     public void setDisabled(int row, int col, boolean value) { disabled[row][col] = value; }
+    public boolean isPhysicalFloor(int row, int col) {
+        return row >= 0 && row < SIZE && col >= 0 && col < SIZE
+                && (physicalFloor[row][col] || disabled[row][col]);
+    }
+    public void setPhysicalFloor(int row, int col, boolean value) { physicalFloor[row][col] = value; }
     public MazeModel copy() {
         MazeModel copy = new MazeModel(raw);
         for (int r = 0; r < SIZE; r++) {
             for (int c = 0; c < SIZE; c++) {
                 copy.disabled[r][c] = disabled[r][c];
+                copy.physicalFloor[r][c] = physicalFloor[r][c];
             }
         }
         return copy;
@@ -68,9 +77,4 @@ public final class MazeModel {
         return out;
     }
 
-    public boolean isPhysicalFloor(int row, int col) {
-        return row >= 0 && row < SIZE
-                && col >= 0 && col < SIZE
-                && (isRawPath(row, col) || disabled[row][col]);
-    }
 }

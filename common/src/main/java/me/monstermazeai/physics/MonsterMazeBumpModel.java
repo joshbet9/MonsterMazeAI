@@ -14,6 +14,10 @@ import java.util.List;
  *
  * The source's "Monster Hit" recharge is wall-clock based at 1000 ms.
  * The deterministic 20 TPS simulator represents that as 20 ticks.
+ *
+ * Importantly, Maze.bump iterates its active monster map without excluding
+ * frozen or launched monsters. Those states affect movement elsewhere, not
+ * bump eligibility, so this model only excludes removed entities.
  */
 public final class MonsterMazeBumpModel {
     public static final double CONTACT_DISTANCE = 1.0;
@@ -30,7 +34,7 @@ public final class MonsterMazeBumpModel {
 
         int hits = 0;
         for (MonsterState monster : monsters) {
-            if (monster.removed || monster.launched(tick)) continue;
+            if (monster.removed) continue;
 
             double dx = player.x - monster.x;
             double dy = player.y - monster.y;

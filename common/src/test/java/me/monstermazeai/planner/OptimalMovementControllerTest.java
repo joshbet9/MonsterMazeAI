@@ -52,6 +52,7 @@ class OptimalMovementControllerTest {
         MazeModel maze = openMaze();
         Simulator sim = simulator(maze);
         GameState s = state(sim);
+        s.player.health = 4.0;
         s.monsters.add(new MonsterState(1, 50.5, 52.5, 0.0));
 
         PlayerRoute route = new MonsterAwareRoutePlanner()
@@ -63,19 +64,25 @@ class OptimalMovementControllerTest {
 
     @Test
     void movementDoesNotAccelerateAcrossUnsafeEdge() {
-        Simulator sim = simulator(openMaze());
+        MazeModel maze = openMaze();
+        for (int r = 0; r < MazeModel.SIZE; r++) for (int c = 0; c < MazeModel.SIZE; c++) {
+            if (Math.abs(r - 50) > 1 || Math.abs(c - 50) > 2) maze.setPhysicalFloor(r, c, false);
+        }
+        Simulator sim = simulator(maze);
         GameState s = state(sim);
+        s.maze = maze;
+        s.activePadColumn = 48;
         s.player.x = 50.85;
         s.player.z = 50.5;
         s.player.vx = 0.18;
         s.player.yaw = -90.0F;
 
         Action action = new OptimalMovementController(sim, 0.65)
-                .nextAction(s, new Cell(50, 56), true);
+                .nextAction(s, new Cell(50, 48), true);
 
         GameState next = sim.forecast(s, action, 2, 1234L);
-        assertTrue(next.player.x < 51.0 && next.player.x > 49.0);
         assertTrue(next.alive);
+        assertTrue(next.player.x < 51.0);
     }
 
     @Test

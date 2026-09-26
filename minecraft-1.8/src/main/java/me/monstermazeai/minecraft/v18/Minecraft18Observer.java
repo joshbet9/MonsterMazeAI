@@ -118,7 +118,10 @@ public final class Minecraft18Observer {
 
         long worldTick = world.getTotalWorldTime();
         int stage = Math.max(1, scoreboard.stage);
-        int safePadSeconds = Math.max(0, scoreboard.safePadSeconds);
+        // Preserve -1 as "timer unavailable". Zero is a real source state at the
+        // instant the phase expires; collapsing -1 to zero made the common
+        // controller treat an otherwise valid live objective as expired.
+        int safePadSeconds = scoreboard.safePadSeconds;
         int liveSeconds = gameStartWorldTick < 0
                 ? 0
                 : (int) Math.max(0, (worldTick - gameStartWorldTick) / 20L);

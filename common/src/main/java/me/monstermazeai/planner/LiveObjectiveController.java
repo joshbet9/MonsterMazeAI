@@ -8,6 +8,12 @@ import me.monstermazeai.player.Action;
 
 /**
  * Live-game objective layer above the physical movement controller.
+ *
+ * The source's phase timer is a deadline for the current Safe Pad, not a
+ * validity flag for the live objective. In particular, zero can be observed
+ * during the server's pad-transition tick, and an unavailable timer is also
+ * represented separately as -1. The active pad itself is the authoritative
+ * objective gate.
  */
 public final class LiveObjectiveController {
     private final MazeAwareRecedingHorizonController movement;

@@ -53,7 +53,7 @@ public final class MonsterMaze18Mod {
 
     @SubscribeEvent
     public void clientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || observer == null) {
+        if (event.phase != TickEvent.Phase.START || observer == null) {
             return;
         }
 

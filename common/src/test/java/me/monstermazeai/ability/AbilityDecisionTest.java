@@ -45,7 +45,7 @@ class AbilityDecisionTest {
         GameState s=state();
         s.kit=Kit.BODY_BUILDER;
         s.ability.activations=2;
-        s.monsters.add(new MonsterState(1,50.9,50.5,0));
+        s.monsters.add(new MonsterState(1,50.9,0,50.5));
         assertTrue(AbilityDecision.shouldUse(s));
     }
 

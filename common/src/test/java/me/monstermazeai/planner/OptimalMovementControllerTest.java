@@ -121,6 +121,7 @@ class OptimalMovementControllerTest {
         GameState jumper = state(sim);
         jumper.kit = Kit.JUMPER;
         jumper.player.jumpCharges = 5;
+        jumper.ability.charges = 5;
 
         Action action = new OptimalMovementController(sim, 0.65)
                 .nextAction(jumper, new Cell(50, 56), true);
@@ -135,6 +136,7 @@ class OptimalMovementControllerTest {
         GameState jumper = state(sim);
         jumper.kit = Kit.JUMPER;
         jumper.player.jumpCharges = 5;
+        jumper.ability.charges = 5;
 
         sim.tick(jumper, new Action(1, 0, true, true, 0.0F, false));
         assertEquals(4, jumper.player.jumpCharges);

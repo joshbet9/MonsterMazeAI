@@ -4,6 +4,8 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class MonsterAwareRoutePlannerTest {
@@ -46,7 +48,7 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
-    void routeDetoursAroundPredictedMonster() {
+    void nearbyHarmfulMonsterCanInfluenceLocalRoute() {
         GameState state = new GameState();
         state.maze = openMaze();
 
@@ -59,30 +61,41 @@ class MonsterAwareRoutePlannerTest {
                 state, new Cell(0, 1), new Cell(2, 1));
 
         assertFalse(route.cells().contains(new Cell(1, 1)),
-                "A stationary monster occupying the direct corridor should make the planner choose a safe detour.");
+                "A nearby stationary monster that would knock the player away from the pad should make the planner choose a local detour.");
         assertEquals(new Cell(0, 1), route.cells().get(0));
         assertEquals(new Cell(2, 1), route.cells().get(route.size() - 1));
     }
 
     @Test
-    void removedFrozenAndLaunchedMonstersDoNotAddRouteRisk() {
+    void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();
 
-        MonsterState removed = new MonsterState(1, 1.5, 0.0, 1.5);
-        removed.removed = true;
-        MonsterState frozen = new MonsterState(2, 1.5, 0.0, 1.5);
-        frozen.frozenUntilTick = 20;
-        MonsterState launched = new MonsterState(3, 1.5, 0.0, 1.5);
-        launched.launchedUntilTick = 20;
-
-        state.monsters.add(removed);
-        state.monsters.add(frozen);
-        state.monsters.add(launched);
+        MonsterState distant = new MonsterState(1, 20.5, 0.0, 20.5);
+        state.monsters.add(distant);
 
         PlayerRoute route = new MonsterAwareRoutePlanner().route(
                 state, new Cell(0, 1), new Cell(2, 1));
 
-        assertTrue(route.cells().contains(new Cell(1, 1)));
+        assertEquals(List.of(new Cell(0, 1), new Cell(1, 1), new Cell(2, 1)), route.cells(),
+                "A distant monster must not distort the optimal baseline route.");
+    }
+
+    @Test
+    void usefulKnockbackIsNotPenalizedAsAThreat() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 2.5;
+        state.player.z = 3.5;
+
+        MonsterState monster = new MonsterState(8, 2.5, 0.0, 2.5);
+        state.monsters.add(monster);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(
+                state, new Cell(2, 3), new Cell(2, 5));
+
+        assertEquals(new Cell(2, 1), route.cells().get(0));
+        assertEquals(new Cell(2, 3), route.cells().get(route.size() - 1));
     }
 }
+

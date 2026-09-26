@@ -76,13 +76,21 @@ class RobustLiveControllerTest {
         assertNotEquals(Action.IDLE, c.nextAction(s, true));
     }
 
-    @Test void invalidOrExpiredStateFailsClosed() {
+    @Test void zeroPhaseStillAllowsObservedObjectiveToRun() {
+        RobustLiveController c = controller();
+        GameState s = live();
+        s.tick = 1;
+        s.phaseTicksRemaining = 0;
+        assertNotEquals(Action.IDLE, c.nextAction(s, true));
+    }
+
+    @Test void invalidOrMissingObjectiveFailsClosed() {
         RobustLiveController c = controller();
         GameState s = live();
         s.tick = 1;
         assertNotEquals(Action.IDLE, c.nextAction(s, true));
         s.tick = 2;
-        s.phaseTicksRemaining = 0;
+        s.activePadRow = -1;
         assertEquals(Action.IDLE, c.nextAction(s, true));
     }
 }

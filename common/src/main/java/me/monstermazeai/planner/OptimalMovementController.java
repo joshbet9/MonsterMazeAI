@@ -173,16 +173,89 @@ public final class OptimalMovementController {
         }
 
         if (best != Action.IDLE) return best;
-        return new Action(0, 0, jump, false, yawDelta, false);
+
+        // Never turn a route-planning disagreement into a frozen player. The
+        // simulator includes conservative edge margins that are useful for
+        // scoring, but live 1.8 geometry can legitimately permit a trajectory
+        // that the simplified common model rejects. If every strict candidate
+        // was rejected, take the safest route-directed action whose projected
+        // path still remains on physical floor.
+        Action relaxed = relaxedRouteFallback(state, tx, tz, yawDelta);
+        if (relaxed != Action.IDLE) {
+            detail += " RELAXED_FALLBACK";
+            return relaxed;
+        }
+        return new Action(0, 0, false, false, yawDelta, false);
+    }
+
+    private Action relaxedRouteFallback(GameState state, double tx, double tz, float yawDelta) {
+        double dx = tx - state.player.x;
+        double dz = tz - state.player.z;
+        double distance = Math.hypot(dx, dz);
+        if (distance < 1.0E-6) return Action.IDLE;
+
+        double desiredYaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double localAngle = Math.toRadians(wrap(desiredYaw - state.player.yaw));
+        int f = signInput(Math.cos(localAngle));
+        int s = signInput(Math.sin(localAngle));
+        if (f == 0 && s == 0) f = 1;
+
+        Action[] candidates = {
+                new Action(f, s, false, true, yawDelta, false),
+                new Action(f, 0, false, true, yawDelta, false),
+                new Action(0, s, false, true, yawDelta, false)
+        };
+        for (Action candidate : candidates) {
+            GameState next = simulator.forecast(
+                    state, candidate, 2, simulator.monsterSeed() ^ state.tick ^ 0x2F6E2B1L);
+            if (next.alive && floorOnlyTrajectory(state, next)) return candidate;
+        }
+        return Action.IDLE;
+    }
+
+    private boolean floorOnlyTrajectory(GameState source, GameState next) {
+        if (!next.alive) return false;
+        if (!isPhysicalFloor(next, next.player.x, next.player.z)) return false;
+        int samples = Math.max(2, (int) Math.ceil(
+                Math.hypot(next.player.x - source.player.x, next.player.z - source.player.z)
+                        / SAMPLE_STEP));
+        for (int i = 1; i < samples; i++) {
+            double t = i / (double) samples;
+            if (!isPhysicalFloor(source,
+                    source.player.x + (next.player.x - source.player.x) * t,
+                    source.player.z + (next.player.z - source.player.z) * t)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isPhysicalFloor(GameState state, double x, double z) {
+        int row = (int) Math.floor(x);
+        int col = (int) Math.floor(z);
+        return row >= 0 && col >= 0
+                && row < me.monstermazeai.maze.MazeModel.SIZE
+                && col < me.monstermazeai.maze.MazeModel.SIZE
+                && state.maze.isPhysicalFloor(row, col);
     }
 
     private boolean jumpOpportunity(GameState state, PlayerRoute route, double tx, double tz) {
-        // Holding jump is the intended movement optimisation for all kits.
-        // Jumper charges are consumed by the ability model; after charges are
-        // exhausted this remains ordinary Minecraft jump timing.
-        if (!state.player.grounded) return true;
+        if (!state.player.grounded) return false;
         if (edgeDistance(state) < 0.40 && outwardVelocity(state) > 0.02) return false;
-        if (state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0) return true;
+
+        // Jumper's five charges are strategic resources. A normal route does
+        // not justify spending one. Reserve them for an imminent deadline or
+        // a genuine recovery/emergency situation; once the charges are gone,
+        // ordinary jump-spam is enabled for every kit.
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0) {
+            boolean imminentDeadline = state.phaseTicksRemaining >= 0
+                    && state.phaseTicksRemaining <= 40
+                    && Math.hypot(tx - state.player.x, tz - state.player.z) > 1.5;
+            boolean recovery = state.player.recentMobHitUntilTick > state.tick
+                    && edgeDistance(state) < 0.75;
+            return imminentDeadline || recovery;
+        }
+
         return Math.hypot(tx - state.player.x, tz - state.player.z) > 0.20
                 && route.size() > 1;
     }

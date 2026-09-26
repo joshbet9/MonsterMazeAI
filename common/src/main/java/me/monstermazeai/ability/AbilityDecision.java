@@ -1,54 +1,46 @@
 package me.monstermazeai.ability;
-
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
+import me.monstermazeai.maze.Cell;
+import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.monster.MonsterState;
+import java.util.List;
 
-/**
- * Strategic ability-use policy. It deliberately returns an intent only when
- * an ability has a concrete defensive purpose; the execution layer is still
- * responsible for emitting the one-tick input pulse.
- */
 public final class AbilityDecision {
-    private static final double REPULSOR_TRIGGER_SQ = 12.25;
-    private static final double BODY_RUSH_TRIGGER_SQ = 6.25;
-    private static final double CRYO_TRIGGER_SQ = 36.0;
+    private static final double IMMEDIATE=1.8;
+    private static final double DANGER=3.5;
+    private static final double SPEED=0.115;
+    private static final int MAX_TICKS=200;
+    private AbilityDecision(){}
 
-    private AbilityDecision() {}
-
-    public static boolean shouldUse(GameState state) {
-        if (state == null || !state.alive || state.completed
-                || state.kit == Kit.JUMPER || state.kit == Kit.MAVERICK) {
-            return false;
-        }
-
-        if (state.kit == Kit.REPULSOR && state.ability.charges <= 0) return false;
-        if (state.kit == Kit.BODY_BUILDER && state.ability.activations <= 0) return false;
-        if (state.kit == Kit.SLOWBALLER && state.tick < state.ability.cooldownUntilTick) return false;
-
-        double nearestSq = nearestActiveMonsterDistanceSq(state);
-        switch (state.kit) {
-            case REPULSOR:
-                return nearestSq <= REPULSOR_TRIGGER_SQ;
-            case BODY_BUILDER:
-                return nearestSq <= BODY_RUSH_TRIGGER_SQ
-                        && state.ability.activeUntilTick <= state.tick;
-            case SLOWBALLER:
-                return nearestSq <= CRYO_TRIGGER_SQ;
-            default:
-                return false;
-        }
+    public static boolean shouldUse(GameState s){
+        if(s==null||!s.alive||s.completed||s.maze==null||s.kit==Kit.JUMPER||s.kit==Kit.MAVERICK)return false;
+        if(s.kit==Kit.REPULSOR&&s.ability.charges<=0)return false;
+        if(s.kit==Kit.BODY_BUILDER&&s.ability.activations<=0)return false;
+        if(s.kit==Kit.SLOWBALLER&&s.tick<s.ability.cooldownUntilTick)return false;
+        double nearest=nearestMonster(s);
+        if(Double.isInfinite(nearest))return false;
+        boolean immediate=nearest<=IMMEDIATE;
+        boolean lowHealth=s.player.health<=4.0&&nearest<=DANGER;
+        int travel=travelTicks(s);
+        boolean deadline=s.phaseTicksRemaining>0&&travel>s.phaseTicksRemaining-10;
+        if(s.stage<=1&&s.kit!=Kit.SLOWBALLER&&!immediate&&!lowHealth&&!deadline)return false;
+        return immediate||lowHealth||deadline||(s.kit==Kit.SLOWBALLER&&nearest<=DANGER);
     }
 
-    private static double nearestActiveMonsterDistanceSq(GameState state) {
-        double best = Double.POSITIVE_INFINITY;
-        for (MonsterState m : state.monsters) {
-            if (m.removed || m.launched(state.tick) || m.frozen(state.tick)) continue;
-            double dx = state.player.x - m.x;
-            double dy = state.player.y - m.y;
-            double dz = state.player.z - m.z;
-            best = Math.min(best, dx * dx + dy * dy + dz * dz);
+    private static double nearestMonster(GameState s){
+        double best=Double.POSITIVE_INFINITY;
+        for(MonsterState m:s.monsters){
+            if(m.removed||m.launched(s.tick)||m.frozen(s.tick))continue;
+            best=Math.min(best,Math.hypot(s.player.x-m.x,s.player.z-m.z));
         }
         return best;
+    }
+    private static int travelTicks(GameState s){
+        if(s.activePadRow<0||s.activePadColumn<0)return MAX_TICKS;
+        int r=(int)Math.floor(s.player.x),c=(int)Math.floor(s.player.z);
+        List<Cell> path=new PlayerPathfinder().shortestPath(s.maze,new Cell(r,c),new Cell(s.activePadRow,s.activePadColumn));
+        if(path.isEmpty())return MAX_TICKS;
+        return Math.min(MAX_TICKS,(int)Math.ceil(Math.max(0,path.size()-1)/SPEED));
     }
 }

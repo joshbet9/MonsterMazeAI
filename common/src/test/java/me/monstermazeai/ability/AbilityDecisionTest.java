@@ -37,7 +37,7 @@ class AbilityDecisionTest {
         GameState s=state();
         s.kit=Kit.SLOWBALLER;
         s.ability.charges=16;
-        s.monsters.add(new MonsterState(1,50.9,50.5,0));
+        s.monsters.add(new MonsterState(1,50.9,0,50.5));
         assertTrue(AbilityDecision.shouldUse(s));
     }
 

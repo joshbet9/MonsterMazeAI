@@ -22,7 +22,7 @@ public final class Minecraft18ObservationRules {
             cleanLines.add(stripFormatting(line));
         }
 
-        int safePadSeconds = 0;
+        // -1 means the scoreboard did not expose a usable timer. Zero is a real expired timer.\n        int safePadSeconds = -1;
         int stage = 1;
         boolean completed = false;
         for (int i = 0; i < cleanLines.size(); i++) {

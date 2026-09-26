@@ -6,6 +6,7 @@ import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.adapter.ObservationWorldModel;
 import me.monstermazeai.collision.CollisionModel;
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.physics.LegacyMazePhysics;
@@ -101,7 +102,8 @@ public final class AiSidecarMain {
                         System.err.println("[MonsterMazeAI] PIPELINE initialized at tick=" + observation.worldTick);
                     }
 
-                    Action action = agent.decide(state, true);
+                    boolean allowJump = state.kit == Kit.JUMPER && state.player.jumpCharges > 0;
+                    Action action = agent.decide(state, allowJump);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
 

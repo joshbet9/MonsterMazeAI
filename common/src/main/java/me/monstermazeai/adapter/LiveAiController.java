@@ -1,6 +1,7 @@
 package me.monstermazeai.adapter;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
 import me.monstermazeai.player.Action;
@@ -30,7 +31,8 @@ public final class LiveAiController {
         }
 
         Cell goal = new Cell(state.activePadRow, state.activePadColumn);
-        Action[] actions = controller.nextActions(state, goal, true);
+        boolean allowJump = state.kit == Kit.JUMPER && state.player.jumpCharges > 0;
+        Action[] actions = controller.nextActions(state, goal, allowJump);
         adapter.execute(actions);
     }
 }

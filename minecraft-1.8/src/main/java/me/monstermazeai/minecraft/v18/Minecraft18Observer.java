@@ -202,14 +202,23 @@ public final class Minecraft18Observer {
     }
 
     private boolean isOnPad(EntityPlayerSP player, PadObservation pad, BlockPos center) {
-        if (center == null || pad.row < 0) {
+        if (center == null || pad.row < 0 || pad.column < 0) {
             return false;
         }
-        double x = center.getX() - HALF_MAZE + pad.row + 0.5;
-        double z = center.getZ() - HALF_MAZE + pad.column + 0.5;
-        double dx = player.posX - x;
-        double dz = player.posZ - z;
-        return dx * dx + dz * dz <= 2.25;
+
+        // Mirror SafePad.isOn() from the source plugin exactly. SafePad is
+        // constructed at (nextX, centerY-1, nextZ) and accepts the player
+        // anywhere inside its 5x5 surface bounding box, not a 1.5-block radius.
+        double baseX = center.getX() - HALF_MAZE + pad.row;
+        double baseY = center.getY() - 1.0D;
+        double baseZ = center.getZ() - HALF_MAZE + pad.column;
+
+        return player.posX >= baseX - 2.0D
+                && player.posX <= baseX + 2.999D
+                && player.posY >= baseY
+                && player.posY <= baseY + 5.0D
+                && player.posZ >= baseZ - 2.999D
+                && player.posZ <= baseZ + 2.0D;
     }
 
     /**
@@ -396,8 +405,24 @@ public final class Minecraft18Observer {
     }
 
     private PadObservation findActivePad(World world, EntityPlayerSP player, BlockPos center) {
-        PadObservation best = null;
+        // Source behaviour: when the phase timer reaches 2 seconds the server
+        // builds _nextSafePad while leaving _safePad active. That creates two
+        // beacons briefly. The active objective is still _safePad until the
+        // phase reaches zero, so never switch to the nearest beacon merely
+        // because the preview pad was built.
+        if (cachedPad != null && cachedPad.row >= 0 && cachedPad.column >= 0) {
+            int cachedX = center.getX() - HALF_MAZE + cachedPad.row;
+            int cachedZ = center.getZ() - HALF_MAZE + cachedPad.column;
+            BlockPos cachedBeacon = new BlockPos(cachedX, center.getY() - 1, cachedZ);
+            if (world.getBlockState(cachedBeacon).getBlock() == net.minecraft.init.Blocks.beacon) {
+                return new PadObservation(
+                        cachedPad.row,
+                        cachedPad.column,
+                        player.getDistanceSq(cachedX + 0.5, center.getY(), cachedZ + 0.5));
+            }
+        }
 
+        PadObservation best = null;
         for (int x = center.getX() - PAD_SCAN_RADIUS; x <= center.getX() + PAD_SCAN_RADIUS; x++) {
             for (int z = center.getZ() - PAD_SCAN_RADIUS; z <= center.getZ() + PAD_SCAN_RADIUS; z++) {
                 BlockPos beacon = new BlockPos(x, center.getY() - 1, z);
@@ -438,8 +463,8 @@ public final class Minecraft18Observer {
         return null;
     }
 
-    static String formatScoreboardLine(String formatted, int scorePoints) {
-        return (formatted == null ? "" : formatted) + ": " + scorePoints;
+    static String formatScoreboardLine(String formatted) {
+        return formatted == null ? "" : formatted;
     }
 
     private boolean matches(World world, BlockPos pos, BlockSignature signature) {
@@ -465,13 +490,12 @@ public final class Minecraft18Observer {
             ScorePlayerTeam team = scoreboard.getPlayersTeam(name);
             String formatted = team == null ? name : ScorePlayerTeam.formatPlayerName(team, name);
 
-            // Minecraft's 1.8 scoreboard renderer displays the score value to the
-            // right of each entry, but getPlayerName() only returns the entry text.
-            // Monster Maze uses that numeric score for values such as the Safe Pad
-            // countdown and Stage. Preserve the rendered "Entry: score" form so the
-            // existing pure parser can consume both inline text timers and native
-            // scoreboard score values.
-            lines.add(formatScoreboardLine(formatted, score.getScorePoints()));
+            // Mineplex does NOT store the visible line value in Score.getScorePoints().
+            // ScoreboardElement uses the score points only as the line's ordering
+            // number and stores the actual visible text in the Team prefix/suffix.
+            // Reconstruct that rendered line exactly; the pure parser then sees
+            // "Safe Pad", "60 Seconds", "Stage", "1", etc.
+            lines.add(formatScoreboardLine(formatted));
         }
 
         return Minecraft18ObservationRules.parseScoreboard(objective.getDisplayName(), lines);

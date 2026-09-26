@@ -6,16 +6,18 @@ import static org.junit.Assert.assertEquals;
 
 public class Minecraft18ObserverTest {
     @Test
-    public void rendersNativeScoreboardEntryAndScoreTogether() {
-        assertEquals("Safe Pad: 14",
-                Minecraft18Observer.formatScoreboardLine("Safe Pad", 14));
-        assertEquals("Stage: 3",
-                Minecraft18Observer.formatScoreboardLine("Stage", 3));
+    public void preservesNativeScoreboardTeamTextWithoutAppendingLineNumber() {
+        assertEquals("Safe Pad",
+                Minecraft18Observer.formatScoreboardLine("Safe Pad"));
+        assertEquals("60 Seconds",
+                Minecraft18Observer.formatScoreboardLine("60 Seconds"));
+        assertEquals("Stage",
+                Minecraft18Observer.formatScoreboardLine("Stage"));
     }
 
     @Test
-    public void preservesAlreadyFormattedEntryText() {
-        assertEquals("Safe Pad: 00:14: 14",
-                Minecraft18Observer.formatScoreboardLine("Safe Pad: 00:14", 14));
+    public void preservesFormattedVisibleEntryText() {
+        assertEquals("Safe Pad: 00:14",
+                Minecraft18Observer.formatScoreboardLine("Safe Pad: 00:14"));
     }
 }

@@ -8,6 +8,18 @@ import static org.junit.Assert.*;
 
 public class Minecraft18ObservationRulesTest {
     @Test
+    public void parsesNativeMineplexScoreboardLineSequence() {
+        Minecraft18ObservationRules.ScoreboardData data =
+                Minecraft18ObservationRules.parseScoreboard(
+                        "Monster Maze",
+                        Arrays.asList("Safe Pad", "60 Seconds", "Stage", "3"));
+
+        assertEquals(60, data.safePadSeconds);
+        assertEquals(3, data.stage);
+        assertTrue(Minecraft18ObservationRules.looksLikeMonsterMaze(data));
+    }
+
+    @Test
     public void parsesInlineSafePadAndStage() {
         Minecraft18ObservationRules.ScoreboardData data =
                 Minecraft18ObservationRules.parseScoreboard(

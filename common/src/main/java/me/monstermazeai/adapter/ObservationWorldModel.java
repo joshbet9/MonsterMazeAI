@@ -25,7 +25,8 @@ public final class ObservationWorldModel {
         state.alive = observation.alive;
         state.completed = observation.completed;
         state.kit = observation.kit;
-        state.ability.charges = observation.abilityCharges;
+        state.ability.charges = observation.kit == me.monstermazeai.kit.Kit.JUMPER
+                ? observation.jumpCharges : observation.abilityCharges;
         if (!state.inMonsterMaze) {
             return state;
         }

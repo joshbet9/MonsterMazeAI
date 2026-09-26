@@ -25,7 +25,7 @@ public final class LiveAiController {
     public void tick() {
         GameState state = adapter.observe().state();
 
-        if (!state.alive || state.activePadRow < 0 || state.activePadColumn < 0) {
+        if (!state.alive || state.padReached || state.activePadRow < 0 || state.activePadColumn < 0) {
             adapter.execute(Action.IDLE);
             return;
         }

@@ -34,6 +34,7 @@ public final class MonsterAwareRoutePlanner {
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
         Map<Cell, Double> cost = new HashMap<>();
+        Map<Cell, Double> travelTime = new HashMap<>();
         Map<Cell, Cell> previous = new HashMap<>();
         PriorityQueue<Node> queue = new PriorityQueue<>(
                 Comparator.comparingDouble((Node n) -> n.cost)
@@ -41,6 +42,7 @@ public final class MonsterAwareRoutePlanner {
                         .thenComparingInt(n -> n.cell.column()));
 
         cost.put(start, 0.0);
+        travelTime.put(start, 0.0);
         queue.add(new Node(start, 0.0));
 
         while (!queue.isEmpty()) {
@@ -50,12 +52,13 @@ public final class MonsterAwareRoutePlanner {
             if (current.cell.equals(goal)) return reconstruct(previous, start, goal);
 
             for (Cell next : state.maze.physicalCardinalNeighbours(current.cell)) {
-                double arrival = current.cost + STEP_TIME;
+                double arrival = travelTime.get(current.cell) + STEP_TIME;
                 double edge = STEP_TIME + riskCost(state, next, arrival);
                 double nextCost = current.cost + edge;
                 double old = cost.getOrDefault(next, Double.POSITIVE_INFINITY);
                 if (nextCost < old - 1.0E-9) {
                     cost.put(next, nextCost);
+                    travelTime.put(next, arrival);
                     previous.put(next, current.cell);
                     queue.add(new Node(next, nextCost));
                 }

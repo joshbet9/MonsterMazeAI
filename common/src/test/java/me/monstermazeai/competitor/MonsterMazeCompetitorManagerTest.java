@@ -15,7 +15,7 @@ class MonsterMazeCompetitorManagerTest {
 
     private static GameState liveState() {
         GameState s=new GameState();
-        s.inMonsterMaze=true; s.alive=true; s.mazePattern=1; s.phaseTicksRemaining=100;
+        s.inMonsterMaze=true; s.alive=true; s.tick=1; s.mazePattern=1; s.phaseTicksRemaining=100;
         int[][] raw=new int[99][99];
         for(int r=0;r<99;r++) for(int c=0;c<99;c++) raw[r][c]=1;
         s.maze=new me.monstermazeai.maze.MazeModel(raw);

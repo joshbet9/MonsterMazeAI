@@ -106,7 +106,7 @@ public final class Minecraft18Observer {
         }
         int[][] raw = cachedMaze;
         boolean mazeDetected = cachedMazeDetected && center != null;
-        boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw, worldTick);
+        boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw);
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
         if (inMonsterMaze && !previouslyInMonsterMaze) {
@@ -192,7 +192,7 @@ public final class Minecraft18Observer {
      * Maze 1, Maze 2 and Maze 3; only the source layout determines which cells
      * are centre-safe-zone cells.
      */
-    private boolean[][] buildPhysicalFloor(World world, BlockPos center, int[][] raw, long worldTick) {
+    private boolean[][] buildPhysicalFloor(World world, BlockPos center, int[][] raw) {
         boolean[][] floor = new boolean[MAZE_SIZE][MAZE_SIZE];
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {

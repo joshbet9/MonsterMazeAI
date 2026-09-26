@@ -121,21 +121,34 @@ public final class AbilityDecision {
     }
 
     private static Threat routeThreat(GameState s) {
-        if (s.activePadRow < 0 || s.activePadColumn < 0) {
-            return Threat.NONE;
+        if (s.activePadRow < 0 || s.activePadColumn < 0) return Threat.NONE;
+
+        int count = 0;
+        double nearest = Double.POSITIVE_INFINITY;
+
+        // First evaluate the player's present collision envelope. This is
+        // intentionally independent of route generation: if a monster is
+        // already close enough to hit, changing the route on paper does not
+        // remove the immediate physical threat.
+        for (MonsterState m : s.monsters) {
+            if (m.removed || m.launched(s.tick) || m.frozen(s.tick)) continue;
+            double currentDistance = Math.hypot(
+                    m.x - s.player.x,
+                    m.z - s.player.z);
+            if (currentDistance <= IMMEDIATE) {
+                count++;
+                nearest = Math.min(nearest, currentDistance);
+            }
         }
 
+        // Then evaluate predicted conflicts on the currently selected route.
         int r = (int) Math.floor(s.player.x);
         int c = (int) Math.floor(s.player.z);
-
         try {
             PlayerRoute route = new MonsterAwareRoutePlanner().route(
                     s,
                     new Cell(r, c),
                     new Cell(s.activePadRow, s.activePadColumn));
-
-            int count = 0;
-            double nearest = Double.POSITIVE_INFINITY;
 
             for (MonsterState m : s.monsters) {
                 if (m.removed || m.launched(s.tick) || m.frozen(s.tick)) continue;
@@ -144,37 +157,28 @@ public final class AbilityDecision {
                         m.x - s.player.x,
                         m.z - s.player.z);
 
-                // A monster already inside the collision envelope is an
-                // immediate tactical threat even if the planner can nominate
-                // a different future route. Waiting for route geometry to
-                // represent an already-developing collision is too late.
-                boolean immediateCollision = currentDistance <= IMMEDIATE;
+                // Already counted as an immediate threat.
+                if (currentDistance <= IMMEDIATE) continue;
 
-                boolean routeConflict = false;
-                if (!immediateCollision) {
-                    for (int i = 0; i < route.size(); i++) {
-                        double d = Math.hypot(
-                                m.x - route.targetX(i),
-                                m.z - route.targetZ(i));
-                        if (d <= ROUTE_THREAT_DISTANCE) {
-                            routeConflict = true;
-                            break;
-                        }
+                for (int i = 0; i < route.size(); i++) {
+                    double d = Math.hypot(
+                            m.x - route.targetX(i),
+                            m.z - route.targetZ(i));
+                    if (d <= ROUTE_THREAT_DISTANCE) {
+                        count++;
+                        nearest = Math.min(nearest, currentDistance);
+                        break;
                     }
                 }
-
-                if (immediateCollision || routeConflict) {
-                    count++;
-                    nearest = Math.min(nearest, currentDistance);
-                }
             }
-
-            return count == 0
-                    ? Threat.NONE
-                    : new Threat(true, count, nearest);
         } catch (IllegalArgumentException ignored) {
-            return Threat.NONE;
+            // Present collision threats remain actionable even if route
+            // generation temporarily has no valid path.
         }
+
+        return count == 0
+                ? Threat.NONE
+                : new Threat(true, count, nearest);
     }
 
     private static int travelTicks(GameState s) {

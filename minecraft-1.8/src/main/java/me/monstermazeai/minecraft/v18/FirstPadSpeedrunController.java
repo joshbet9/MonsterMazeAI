@@ -266,6 +266,12 @@ public final class FirstPadSpeedrunController {
             p = parent[p];
         }
 
+        // Capture this before resetting targetReached. A pad identity change
+        // is the authoritative stage transition; the observer's numeric stage
+        // counter is not sufficient to decide whether this is a pad-to-pad
+        // transition.
+        boolean transitioningFromReachedPad = targetReached;
+
         routeLength = count;
         routeIndex = 1;
         goalRow = targetRow;
@@ -273,9 +279,11 @@ public final class FirstPadSpeedrunController {
         centerX = state.center.x;
         centerZ = state.center.z;
         targetReached = false;
-        // Preserve the existing first-stage speedrun. Pre-alignment is for
-        // transitions where the new route is revealed after a safe-pad wait.
-        aligningForStage = state.stage > 1;
+        // Pre-align whenever a new route is revealed after we were already
+        // safely stopped on the previous pad. Do not key this off state.stage:
+        // the active-pad transition is the authoritative stage boundary and
+        // the observer's stage value may remain unchanged across that update.
+        aligningForStage = transitioningFromReachedPad;
         startedAtTick = state.worldTick;
 
         if (lastLoggedStage != state.stage) {

@@ -82,6 +82,7 @@ public final class TacticalRouteSimulator {
     private void step(GameState state, Action action, MonsterSimulator monsters) {
         if (action.useAbility()) abilities.activate(state);
 
+        GameState beforeContact = state.copy();
         boolean wasGrounded = state.player.grounded;
         physics.tick(state.player, action);
 
@@ -94,7 +95,17 @@ public final class TacticalRouteSimulator {
         }
 
         monsters.tick(state);
+        double healthBeforeBump = state.player.health;
         MonsterMazeBumpModel.apply(state);
+
+        // A direct, high-speed forward approach can produce the observed
+        // "speeding into the mob" slide: the horizontal knockback carries the
+        // player toward the void while vertical recovery is weak or absent.
+        // Keep the source bump authoritative, then conservatively evaluate that
+        // contact as a no-vertical-recovery outcome when the projected path
+        // leaves the physical maze floor.
+        SpeedContactModel.applyConservativeSlideOutcome(
+                beforeContact, state, action, state.player.health < healthBeforeBump);
 
         // Source pad healing is applied by GameManager when the active pad is
         // reached. Route simulation ends at the current objective, so the

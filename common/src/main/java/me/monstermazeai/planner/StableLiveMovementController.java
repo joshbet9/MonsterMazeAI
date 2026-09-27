@@ -351,7 +351,6 @@ public final class StableLiveMovementController {
         bootstrapRoutePending = true;
         fullRouteEvaluationPending = true;
         lastTacticalSignature = Long.MIN_VALUE;
-        cachedTacticalAction = null;
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
         lastDecisionDetail = "RESET";

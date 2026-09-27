@@ -216,7 +216,7 @@ public final class TacticalRouteSimulator {
         // Ability is an independent right-click action; include it separately
         // so the source item is not implicitly consumed on every movement tick.
         out.add(new Action(0, 0, false, false, 0, true));
-        out.add(new Action(1, 0, jump, true, 0, true));
+        out.add(new Action(1, 0, true, true, 0, true));
         out.add(new Action(-1, 0, false, false, 0, true));
         return out;
     }

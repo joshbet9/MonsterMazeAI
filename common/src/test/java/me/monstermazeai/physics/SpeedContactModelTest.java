@@ -43,7 +43,7 @@ class SpeedContactModelTest {
     void sameSpeedContactAwayFromVoidKeepsSourceVerticalRecovery() {
         GameState before = new GameState();
         before.maze = floorStrip();
-        before.player.x = 2.5;
+        before.player.x = 4.5;
         before.player.z = 2.5;
         before.player.vx = -0.12;
 

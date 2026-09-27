@@ -156,8 +156,8 @@ public final class FirstPadMovementController {
             int nextColumn = Integer.signum(next.column() - target.column());
 
             if (nextRow != dirRow || nextColumn != dirColumn) {
-                distanceToCorner = distanceToCellCenter(
-                        state.player.x, state.player.z, target);
+                distanceToCorner = distanceToCellEntryBoundary(
+                        state.player.x, state.player.z, target, dirRow, dirColumn);
                 float nextYaw = cardinalYaw(nextRow, nextColumn);
                 float turnError = normalise(nextYaw - state.player.yaw);
                 int turnTicks = (int) Math.ceil(
@@ -186,8 +186,20 @@ public final class FirstPadMovementController {
                  * waiting until the corner centre before starting a 90-degree
                  * yaw acquisition.
                  */
-                double minimumTurnLead = Math.min(0.80, turnTicks * 0.25);
-                turnTravel = Math.max(turnTravel, minimumTurnLead);
+                /*
+                 * The predicted travel is measured from the corner cell's
+                 * centre above, but the safety-critical event is entering the
+                 * target cell. Do not invent a large geometric lead here:
+                 * with W released, 1.8 friction rapidly removes the remaining
+                 * velocity and can leave the player asymptotically just outside
+                 * the corner (the deterministic regression previously stalled
+                 * at x ~= 59.94 before entering row 60).
+                 *
+                 * A tiny floor only avoids a zero-velocity divide-by-policy
+                 * edge case. The actual turn lead below is still constrained by
+                 * the distance to the target-cell entry boundary.
+                 */
+                turnTravel = Math.max(turnTravel, 0.02);
 
                 /*
                  * Start the yaw turn while coasting. Forward is then held at
@@ -435,6 +447,23 @@ public final class FirstPadMovementController {
     private static double distanceToCellCenter(double x, double z, Cell cell) {
         return Math.hypot(x - (cell.row() + 0.5), z - (cell.column() + 0.5));
     }
+\n    private static double distanceToCellEntryBoundary(
+            double x, double z, Cell target, int incomingRowDirection, int incomingColumnDirection) {
+        double boundaryX = target.row() + 0.5;
+        double boundaryZ = target.column() + 0.5;
+
+        if (incomingRowDirection > 0) boundaryX = target.row();
+        else if (incomingRowDirection < 0) boundaryX = target.row() + 1.0;
+
+        if (incomingColumnDirection > 0) boundaryZ = target.column();
+        else if (incomingColumnDirection < 0) boundaryZ = target.column() + 1.0;
+
+        double dx = incomingRowDirection == 0 ? 0.0 : x - boundaryX;
+        double dz = incomingColumnDirection == 0 ? 0.0 : z - boundaryZ;
+        double longitudinal = Math.abs(dx) + Math.abs(dz);
+        return longitudinal;
+    }
+
 
     private static double projectedIncomingSpeed(
             double vx, double vz, int rowDirection, int columnDirection) {

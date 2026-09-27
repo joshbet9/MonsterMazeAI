@@ -20,11 +20,13 @@ import java.util.List;
  * remaining failure mode after the authoritative MovementInput bridge fixed the
  * old keyboard-overwrite problem.
  *
- * The controller therefore uses a strict invariant:
+ * The controller preserves the cardinal route topology while allowing the
+ * Minecraft motor to steer and drive concurrently. Small/medium heading errors
+ * are corrected with yaw input while forward movement continues, because that
+ * is the natural player control model and avoids unnecessary stop-turn-go
+ * cycles. Large corner turns and unsafe lane situations still fail closed so
+ * the player cannot cut across an air cell.
  *
- *   forward movement => zero yaw delta and a cardinal heading
- *
- * Turns happen in place after horizontal velocity has been allowed to decay.
  * Consecutive collinear route cells are compressed into a single movement
  * segment, so the AI does not brake/turn at every cell and the resulting path
  * remains the shortest cardinal route selected by the planner.
@@ -41,8 +43,13 @@ public final class StableLiveMovementController {
 
     /** Minecraft 1.8 yaw is allowed to turn at most 12 degrees per tick. */
     private static final float MAX_TURN_PER_TICK = 12.0F;
-    /** Forward input is only permitted when the heading is effectively exact. */
+    /** Once inside this error, forward + steering is safe for the corridor. */
     private static final float HEADING_TOLERANCE = 2.0F;
+    /**
+     * Maximum heading error for simultaneous forward movement and cursor
+     * steering. Larger errors are reserved for in-place corner acquisition.
+     */
+    private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
@@ -244,19 +251,35 @@ public final class StableLiveMovementController {
             }
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
-             * Corner protocol:
-             *  1. stop supplying forward input;
-             *  2. let vanilla friction reduce existing momentum;
-             *  3. only then rotate in place;
-             *  4. resume forward once the heading is cardinal.
+             * Normal steering is concurrent with forward movement. This is
+             * deliberately not a time/cadence throttle: every fresh
+             * observation can adjust both axes immediately.
              *
-             * This prevents the continuous-yaw controller from arcing across
-             * the diagonal outside of a 1-cell maze corridor.
+             * For moderate errors, Minecraft receives forward input and a
+             * bounded cursor/yaw correction in the same tick. This lets the
+             * player naturally arc onto the cardinal corridor instead of
+             * stopping for several ticks at every heading correction.
+             *
+             * A large error is different: a 90-degree corner cannot safely
+             * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = speed <= MAX_TURNING_SPEED
-                    ? clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, 0.0, false, false, turn, false);
+            float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
+                boolean brake = distance < WAYPOINT_BRAKE
+                        && closingSpeed(state, dx, dz) > 0.04;
+                double forward = brake ? 0.0 : 1.0;
+                boolean jump = allowJump
+                        && state.player.grounded
+                        && forward > 0.0
+                        && distance > WAYPOINT_ARRIVAL;
+                action = new Action(forward, 0.0, jump, forward > 0.0, turn, false);
+                lastDecisionDetail += " STEER_DRIVE";
+            } else {
+                action = new Action(
+                        0.0, 0.0, false, false,
+                        speed <= MAX_TURNING_SPEED ? turn : 0.0F,
+                        false);
+            }
         } else {
             boolean brake = distance < WAYPOINT_BRAKE
                     && closingSpeed(state, dx, dz) > 0.04;
@@ -314,10 +337,15 @@ public final class StableLiveMovementController {
             return true;
         }
 
-        // A valid route is still recomputed from every fresh observation. This
-        // deliberately has no time-based throttle: the route planner is where
-        // computation is optimised, while new monster/player state remains
-        // immediately actionable.
+        /*
+         * Keep route replanning continuous. New observations may change the
+         * physical start cell, corridor safety, or relevant monster situation,
+         * so the planner remains eligible on every fresh observation.
+         *
+         * The expensive part is optimized inside MonsterAwareRoutePlanner:
+         * threat-free routes bypass source-faithful monster simulation, while
+         * threatened corridors retain the full evaluation.
+         */
         return true;
     }
 

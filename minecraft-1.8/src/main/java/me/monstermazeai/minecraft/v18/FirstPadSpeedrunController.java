@@ -24,6 +24,14 @@ public final class FirstPadSpeedrunController {
     private static final float MAX_YAW_STEP = 30.0F;
     private static final float ALIGNMENT_TOLERANCE = 10.0F;
     private static final int LOOKAHEAD_CELLS = 3;
+    // Monster Maze source bumps when player/monster positions overlap within
+    // 1 block in all three dimensions. We use a small horizontal safety margin
+    // because the observer is sampled once per client tick and both entities
+    // can move between observations.
+    private static final double MOB_HAZARD_RADIUS = 1.25D;
+    private static final double MOB_PREDICT_SECONDS = 0.35D;
+    private static final int MOB_DODGE_CELLS = 1;
+    private static final float MOB_DODGE_MAX_YAW = 38.0F;
 
     private int[] routeRows;
     private int[] routeColumns;
@@ -145,6 +153,31 @@ public final class FirstPadSpeedrunController {
                 targetWorldX, targetWorldZ);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+
+        /*
+         * Monster logic is deliberately layered on top of the proven route
+         * follower. We do not change the route for every distant mob. Only an
+         * imminent collision gets a local dodge, preserving the shortest-route
+         * speedrun everywhere else.
+         *
+         * The source collision/knockback is position based (< 1 block in X/Y/Z)
+         * and has a 1-second player bump cooldown. The observer supplies the
+         * live monster velocity, so we can predict the short-term crossing
+         * instead of reacting only after contact.
+         */
+        MobDodge dodge = findMobDodge(state);
+        if (dodge != null) {
+            yawDelta = dodge.yawDelta;
+            if (state.worldTick % 5L == 0L) {
+                System.out.println("[MonsterMazeAI/1.8] MOB DODGE"
+                        + " tick=" + state.worldTick
+                        + " monster=" + dodge.monsterId
+                        + " type=" + dodge.visualType
+                        + " distance=" + format(dodge.distance)
+                        + " side=" + dodge.side
+                        + " yawDelta=" + format(yawDelta));
+            }
+        }
 
         // Deliberately jump-spam: one tick pressed, one tick released.
         boolean jumpPulse = (state.worldTick & 1L) == 0L;
@@ -313,6 +346,168 @@ public final class FirstPadSpeedrunController {
 
         parent[next] = from;
         queue.addLast(next);
+    }
+
+    private MobDodge findMobDodge(LegacyWorldObservation state) {
+        if (state.monsters == null || state.monsters.isEmpty()) {
+            return null;
+        }
+
+        /*
+         * Only consider monsters that are actually on the player's current
+         * horizontal corridor. A mob several cells away is not a reason to
+         * disturb an optimal route.
+         */
+        LegacyWorldObservation.Monster threat = null;
+        double bestTime = Double.POSITIVE_INFINITY;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (LegacyWorldObservation.Monster monster : state.monsters) {
+            if (monster.removed) continue;
+
+            double rx = monster.x - state.player.x;
+            double rz = monster.z - state.player.z;
+            double horizontalDistance = Math.sqrt(rx * rx + rz * rz);
+            if (horizontalDistance > 5.0D) continue;
+
+            double rvx = monster.vx - state.player.vx;
+            double rvz = monster.vz - state.player.vz;
+            double rvSquared = rvx * rvx + rvz * rvz;
+
+            double t = 0.0D;
+            if (rvSquared > 1.0E-6D) {
+                t = -(rx * rvx + rz * rvz) / rvSquared;
+                t = Math.max(0.0D, Math.min(MOB_PREDICT_SECONDS, t));
+            }
+
+            double closestX = rx + rvx * t;
+            double closestZ = rz + rvz * t;
+            double closestHorizontal = Math.sqrt(closestX * closestX + closestZ * closestZ);
+
+            double verticalAtClosest = (monster.y - state.player.y)
+                    + (monster.vy - state.player.vy) * t;
+
+            // Mirror the source's 3D collision requirement conservatively.
+            if (Math.abs(verticalAtClosest) >= 1.15D
+                    || closestHorizontal >= MOB_HAZARD_RADIUS) {
+                continue;
+            }
+
+            if (t < bestTime || (Math.abs(t - bestTime) < 1.0E-4D
+                    && closestHorizontal < bestDistance)) {
+                threat = monster;
+                bestTime = t;
+                bestDistance = closestHorizontal;
+            }
+        }
+
+        if (threat == null) return null;
+
+        /*
+         * Pick a one-cell lateral dodge relative to the current route heading.
+         * We only use cells that are physically traversable. This keeps the
+         * dodge inside the same floor topology and avoids turning toward an
+         * edge simply because a mob is nearby.
+         */
+        int playerRow = row(state.player.x, state.center.x);
+        int playerColumn = row(state.player.z, state.center.z);
+        int headingIndex = Math.min(routeLength - 1, Math.max(routeIndex, routeIndex + 1));
+        int nextRow = routeRows[headingIndex];
+        int nextColumn = routeColumns[headingIndex];
+
+        int dr = Integer.signum(nextRow - playerRow);
+        int dc = Integer.signum(nextColumn - playerColumn);
+
+        // If the route point is currently in the same cell, use the next
+        // distinct route segment to establish the local forward direction.
+        if (dr == 0 && dc == 0) {
+            for (int i = headingIndex + 1; i < routeLength; i++) {
+                dr = Integer.signum(routeRows[i] - playerRow);
+                dc = Integer.signum(routeColumns[i] - playerColumn);
+                if (dr != 0 || dc != 0) break;
+            }
+        }
+
+        if (dr == 0 && dc == 0) return null;
+
+        // Cardinal route direction -> two perpendicular candidate cells.
+        int leftRow = playerRow - dc * MOB_DODGE_CELLS;
+        int leftColumn = playerColumn + dr * MOB_DODGE_CELLS;
+        int rightRow = playerRow + dc * MOB_DODGE_CELLS;
+        int rightColumn = playerColumn - dr * MOB_DODGE_CELLS;
+
+        boolean leftSafe = inBounds(leftRow, leftColumn)
+                && state.physicalFloor[leftRow][leftColumn];
+        boolean rightSafe = inBounds(rightRow, rightColumn)
+                && state.physicalFloor[rightRow][rightColumn];
+
+        if (!leftSafe && !rightSafe) {
+            /*
+             * A one-cell corridor leaves no lateral escape. Do not invent a
+             * strafe or intentionally hit the mob here; the source knockback
+             * can slide the player off the maze edge. The normal route action
+             * is retained and the next tick gets another prediction.
+             */
+            return null;
+        }
+
+        double leftWorldX = worldX(leftRow, state.center.x);
+        double leftWorldZ = worldZ(leftColumn, state.center.z);
+        double rightWorldX = worldX(rightRow, state.center.x);
+        double rightWorldZ = worldZ(rightColumn, state.center.z);
+
+        double leftMobDistance = distanceSquared(leftWorldX, leftWorldZ, threat.x, threat.z);
+        double rightMobDistance = distanceSquared(rightWorldX, rightWorldZ, threat.x, threat.z);
+
+        int dodgeRow;
+        int dodgeColumn;
+        int side;
+
+        if (leftSafe && (!rightSafe || leftMobDistance >= rightMobDistance)) {
+            dodgeRow = leftRow;
+            dodgeColumn = leftColumn;
+            side = -1;
+        } else {
+            dodgeRow = rightRow;
+            dodgeColumn = rightColumn;
+            side = 1;
+        }
+
+        float dodgeYaw = desiredYawTo(
+                state.player.x, state.player.z,
+                worldX(dodgeRow, state.center.x),
+                worldZ(dodgeColumn, state.center.z));
+        float dodgeError = normalise(dodgeYaw - state.player.yaw);
+
+        return new MobDodge(
+                threat.id,
+                threat.visualType,
+                Math.min(bestDistance, MOB_HAZARD_RADIUS),
+                side,
+                clamp(dodgeError, -MOB_DODGE_MAX_YAW, MOB_DODGE_MAX_YAW));
+    }
+
+    private static double distanceSquared(double ax, double az, double bx, double bz) {
+        double dx = ax - bx;
+        double dz = az - bz;
+        return dx * dx + dz * dz;
+    }
+
+    private static final class MobDodge {
+        private final int monsterId;
+        private final String visualType;
+        private final double distance;
+        private final int side;
+        private final float yawDelta;
+
+        private MobDodge(int monsterId, String visualType, double distance,
+                         int side, float yawDelta) {
+            this.monsterId = monsterId;
+            this.visualType = visualType;
+            this.distance = distance;
+            this.side = side;
+            this.yawDelta = yawDelta;
+        }
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {

@@ -3,6 +3,7 @@ package me.monstermazeai.runtime;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyProtocol;
 import me.monstermazeai.adapter.LegacyWorldObservation;
+import me.monstermazeai.planner.FirstPadMovementController;
 import me.monstermazeai.adapter.ObservationWorldModel;
 import me.monstermazeai.collision.CollisionModel;
 import me.monstermazeai.game.GameState;
@@ -34,8 +35,7 @@ public final class AiSidecarMain {
     public static void main(String[] args) throws Exception {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
-        AutonomousMonsterMazeAgent agent = null;
-        LiveObjectiveController objective = null;
+        FirstPadMovementController firstPadController = null;
         TelemetryRecorder telemetry = null;
         ReplayRecorder replay = null;
         String telemetryPath = System.getProperty("monstermazeai.telemetry");
@@ -89,38 +89,33 @@ public final class AiSidecarMain {
                 }
 
                 if (decisionReady) {
-                    if (agent == null) {
-                        MazeModel maze = state.maze;
-                        Simulator simulator = new Simulator(
-                                new LegacyMazePhysics(),
-                                new MonsterSimulator(maze,
-                                        new Random(observation.worldTick ^ 0x4D4D4159L), 0.0),
-                                new CollisionModel());
-                        objective = new LiveObjectiveController(
-                                new MazeAwareRecedingHorizonController(
-                                        new BeamSearchPlanner(simulator, new Heuristic(), 8, 4), 1));
-                        agent = new AutonomousMonsterMazeAgent(new RobustLiveController(objective));
-                        System.err.println("[MonsterMazeAI] PIPELINE initialized at tick=" + observation.worldTick);
+                    if (firstPadController == null) {
+                        firstPadController = new FirstPadMovementController();
+                        System.err.println("[MonsterMazeAI] FIRST_PAD_MOVEMENT_ONLY initialized at tick="
+                                + observation.worldTick
+                                + " source=MonsterMaze 1.8 physical-floor + jump-spam parity");
                     }
 
-                    boolean allowJump = state.kit == Kit.JUMPER && state.player.jumpCharges > 0;
-                    Action action = agent.decide(state, allowJump);
+                    Action action = firstPadController.nextAction(state);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
-                            action.sprint(), action.yawDelta(), action.useAbility());
+                            action.sprint(), action.yawDelta(), false);
 
-                    if (observationCount <= 3 || observationCount % 20 == 0) {
+                    if (observationCount <= 3 || observationCount % 20 == 0
+                            || action.yawDelta() != 0.0F) {
                         long decisionMicros = (System.nanoTime() - decisionStart) / 1000L;
-                        System.err.println("[MonsterMazeAI] DECISION tick=" + observation.worldTick
+                        System.err.println("[MonsterMazeAI] FIRST_PAD_DECISION tick=" + observation.worldTick
                                 + " legacyOut=" + describe(result)
-                                + " objectiveReason=" + objective.lastDecisionReason()
-                                + " objectiveDetail=" + objective.lastDecisionDetail()
-                                + " agentDetail=" + agent.lastDecisionDetail()
+                                + " detail=" + firstPadController.lastDecisionDetail()
+                                + " routeSize=" + firstPadController.routeSize()
+                                + " segment=" + firstPadController.segmentIndex()
                                 + " decisionUs=" + decisionMicros
-                                + " localMonsters=" + state.monsters.size());
+                                + " localMonsters=" + state.monsters.size()
+                                + " mode=movement-only");
                     }
-                } else if (agent != null) {
-                    agent.reset();
-                    System.err.println("[MonsterMazeAI] PIPELINE reset by gate at tick=" + observation.worldTick);
+                } else if (firstPadController != null) {
+                    firstPadController.reset();
+                    System.err.println("[MonsterMazeAI] FIRST_PAD_MOVEMENT reset by gate at tick="
+                            + observation.worldTick);
                 }
             } catch (RuntimeException failure) {
                 if (agent != null) agent.reset();

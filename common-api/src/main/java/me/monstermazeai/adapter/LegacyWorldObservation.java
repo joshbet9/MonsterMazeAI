@@ -88,6 +88,30 @@ public final class LegacyWorldObservation {
         this.scoreboardLines = Collections.unmodifiableList(new ArrayList<String>(scoreboardLines));
     }
 
+    /**
+     * Returns an observation carrying only monsters inside the AI's local
+     * interaction sphere. The live observer can still retain the complete
+     * world population for diagnostics; this is the process-boundary view used
+     * by the planner so 150 distant monsters never cross the IPC boundary.
+     */
+    public LegacyWorldObservation localInteractionView(double radius) {
+        if (radius < 0.0) throw new IllegalArgumentException("radius must be non-negative");
+        double radiusSquared = radius * radius;
+        ArrayList<Monster> local = new ArrayList<Monster>();
+        for (Monster monster : monsters) {
+            if (monster.removed) continue;
+            double dx = monster.x - player.x;
+            double dy = monster.y - player.y;
+            double dz = monster.z - player.z;
+            if (dx * dx + dy * dy + dz * dz <= radiusSquared) local.add(monster);
+        }
+        return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, mazePattern,
+                alive, completed, stage, safePadSeconds, liveSeconds, player.copy(), kit,
+                jumpCharges, abilityCharges, center == null ? null : center.copy(),
+                pad == null ? null : pad.copy(), maze, physicalFloor, local,
+                scoreboardTitle, scoreboardLines);
+    }
+
     public LegacyWorldObservation copy() {
         return new LegacyWorldObservation(worldTick, inMonsterMaze, mazeDetected, mazePattern, alive, completed,
                 stage, safePadSeconds, liveSeconds, player.copy(), kit, jumpCharges,

@@ -192,7 +192,7 @@ public final class FirstPadSpeedrunController {
                 + " start=" + startRow + "," + startColumn
                 + " pad=" + targetRow + "," + targetColumn
                 + " length=" + routeLength
-                + " mode=W+sprint+jump+yaw-only");
+                + " mode=W+sprint+jump-spam+yaw-only");
 
         return true;
     }

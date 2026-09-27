@@ -1,6 +1,7 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.monster.MonsterRelevance;
 import me.monstermazeai.planner.TacticalRouteSimulator;
 import me.monstermazeai.player.Action;
 
@@ -103,6 +104,31 @@ public final class MonsterAwareRoutePlanner {
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
+        /*
+         * If no observed monster intersects the 20-block envelope of any
+         * candidate corridor, source-faithful monster simulation cannot change
+         * the route ordering. Select the shortest physical candidate directly.
+         *
+         * This is a structural fast path, not a reduction in replanning
+         * frequency: fresh observations still reach this method immediately,
+         * and any route with a relevant future monster takes the full simulator.
+         */
+        boolean hasRelevantMonster = false;
+        for (PlayerRoute candidate : candidates) {
+            for (var monster : state.monsters) {
+                if (MonsterRelevance.withinRouteEnvelope(monster, candidate)) {
+                    hasRelevantMonster = true;
+                    break;
+                }
+            }
+            if (hasRelevantMonster) break;
+        }
+        if (!hasRelevantMonster) {
+            return candidates.stream()
+                    .min(Comparator.comparingInt(PlayerRoute::size))
+                    .orElseThrow(() -> new IllegalArgumentException("No route candidates"));
+        }
+
         /*
          * Candidate routes are independent simulations. Evaluate them in parallel
          * so the AI can use the available CPU cores instead of serialising the

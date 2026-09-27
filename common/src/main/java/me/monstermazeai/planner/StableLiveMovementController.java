@@ -338,16 +338,15 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * Route topology is persistent state; it does not need to be rebuilt
-         * merely because yaw, velocity, or a monster observation changed.
-         * The motor and tactical layers consume every fresh observation below.
+         * Keep route replanning continuous. New observations may change the
+         * physical start cell, corridor safety, or relevant monster situation,
+         * so the planner remains eligible on every fresh observation.
          *
-         * This is intentionally not a planning cadence throttle: immediate
-         * tactical evaluation remains available on every observation. It only
-         * prevents repeating the expensive maze/path search when the existing
-         * graph route is still valid.
+         * The expensive part is optimized inside MonsterAwareRoutePlanner:
+         * threat-free routes bypass source-faithful monster simulation, while
+         * threatened corridors retain the full evaluation.
          */
-        return false;
+        return true;
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

@@ -81,9 +81,11 @@ public class FirstPadMovementControllerTest {
     public void enteringCurrentRouteCellDoesNotSkipAheadToFutureCorner() {
         FirstPadMovementController controller = new FirstPadMovementController();
 
-        // We are inside route cell (59,49), approaching (60,49). The next
-        // segment is the +column turn at (60,49), but that corner has not been
-        // entered yet.
+        // First commit to the route from its original start, then move the
+        // simulated player into route cell (59,49). The controller must retain
+        // the committed route and segment progress; proximity to the future
+        // corner must not jump directly to the turn segment.
+        controller.nextAction(state(Kit.REPULSOR, 0, 50.5, 49.5, -90.0F));
         Action action = controller.nextAction(state(Kit.REPULSOR, 0, 59.2, 49.5, -90.0F));
 
         assertEquals(10, controller.segmentIndex());

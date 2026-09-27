@@ -32,7 +32,7 @@ class MonsterMazeBumpModelTest {
         PlayerState p = new PlayerState();
         p.x = 1.49; p.y = 0.0; p.z = 0.5; p.grounded = true;
         p.health = 20.0;
-        MonsterState m = new MonsterState(1, 0.0, 0.0, 0.5);
+        MonsterState m = new MonsterState(1, 0.5, 0.0, 0.5);
 
         assertEquals(1, MonsterMazeBumpModel.apply(p, List.of(m), 100));
         assertEquals(0.95, p.vy, 1.0E-9);

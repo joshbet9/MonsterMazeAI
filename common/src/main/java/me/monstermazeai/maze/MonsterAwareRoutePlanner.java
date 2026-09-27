@@ -45,6 +45,7 @@ public final class MonsterAwareRoutePlanner {
     private int cachedGoalRow = Integer.MIN_VALUE;
     private int cachedGoalColumn = Integer.MIN_VALUE;
     private int cachedRegionRadius = Integer.MIN_VALUE;
+    private boolean cachedRegionGoal;
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
@@ -84,6 +85,7 @@ public final class MonsterAwareRoutePlanner {
                 && start.row() == cachedStartRow && start.column() == cachedStartColumn
                 && goal.row() == cachedGoalRow && goal.column() == cachedGoalColumn
                 && regionRadius == cachedRegionRadius
+                && regionGoal == cachedRegionGoal
                 && !cachedCandidates.isEmpty()) {
             return cachedCandidates;
         }
@@ -133,6 +135,7 @@ public final class MonsterAwareRoutePlanner {
         cachedGoalRow = goal.row();
         cachedGoalColumn = goal.column();
         cachedRegionRadius = regionRadius;
+        cachedRegionGoal = regionGoal;
         cachedCandidates = List.copyOf(candidates);
         return cachedCandidates;
     }

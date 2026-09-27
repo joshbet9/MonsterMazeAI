@@ -89,9 +89,10 @@ public final class MonsterSimulator {
         Cell terminal = chosen;
         Cell cursor = chosen;
         while (true) {
-            List<Cell> forward = new ArrayList<>(maze.cardinalNeighbours(cursor));
+            Cell cursorCell = cursor;
+            List<Cell> forward = new ArrayList<>(maze.cardinalNeighbours(cursorCell));
             forward.removeIf(c -> CardinalDirection.between(
-                    c.row() - cursor.row(), c.column() - cursor.column()) != direction);
+                    c.row() - cursorCell.row(), c.column() - cursorCell.column()) != direction);
             if (forward.isEmpty()) break;
 
             Cell next = forward.get(0);

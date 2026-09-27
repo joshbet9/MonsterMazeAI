@@ -142,15 +142,19 @@ class StableLiveMovementControllerTest {
         assertTrue(controller.lastDecisionDetail().contains("BOOTSTRAP_ROUTE"));
 
         s.tick = 2;
-        controller.nextAction(s, new Cell(0, 8), false);
-        assertTrue(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
-                "the first post-bootstrap observation should complete the source-faithful evaluation");
+        Action second = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
+                "the live motor must continue controlling while the strategic planner evaluates in the background");
+        assertFalse(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
+                "the live control thread must never synchronously execute the expensive route simulation");
 
-        long plansAfterEvaluation = controller.routePlanCount();
+        long plansAfterSecondObservation = controller.routePlanCount();
         s.tick = 3;
-        controller.nextAction(s, new Cell(0, 8), false);
-        assertEquals(plansAfterEvaluation, controller.routePlanCount(),
-                "unchanged local world state must not restart expensive global route simulation");
+        Action third = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(third.forward() > 0.0 || Math.abs(third.yawDelta()) > 0.0,
+                "a slow strategic plan must not leave the motor idle");
+        assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
+                "unchanged local world state must not start another strategic simulation");
     }
 
 }

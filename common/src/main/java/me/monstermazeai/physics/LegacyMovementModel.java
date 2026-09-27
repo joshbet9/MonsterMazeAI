@@ -3,17 +3,10 @@ package me.monstermazeai.physics;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.PlayerState;
 
-/**
- * Flat-ground Minecraft 1.8 player movement model.
- *
- * Constants and ordering mirror the 1.8 EntityLivingBase/EntityPlayer path
- * used by Monster Maze. Ordinary block collision is intentionally excluded
- * from this common model; Monster Maze's player surface is represented by the
- * physical floor graph.
- */
+/** Minecraft 1.8 EntityLivingBase movement ordering on the Monster Maze floor. */
 public final class LegacyMovementModel implements PhysicsModel {
-    private static final float DEFAULT_SLIPPERINESS = 0.6F;
-    private static final float LAND_FRICTION = 0.91F;
+    private static final float SLIPPERINESS = 0.6F;
+    private static final float GROUND_FRICTION = 0.91F;
     private static final float WALK_SPEED = 0.10F;
     private static final float SPRINT_MULTIPLIER = 1.30F;
     private static final float AIR_MOVE_FACTOR = 0.02F;
@@ -28,55 +21,56 @@ public final class LegacyMovementModel implements PhysicsModel {
         while (p.yaw >= 180.0F) p.yaw -= 360.0F;
         while (p.yaw < -180.0F) p.yaw += 360.0F;
 
-        if (p.jumpTicks > 0) p.jumpTicks--;
+        boolean groundedAtStart = p.grounded;
+        float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
-        if (action.jump() && p.grounded && p.jumpTicks == 0) {
-            jump(p, action.sprint());
+        if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
+            p.vy = JUMP_VELOCITY;
+            p.grounded = false;
+            if (action.sprint()) {
+                float yaw = p.yaw * 0.017453292F;
+                p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+            }
             p.jumpTicks = 10;
         } else if (!action.jump()) {
             p.jumpTicks = 0;
+        } else if (p.jumpTicks > 0) {
+            p.jumpTicks--;
         }
 
-        double strafe = action.strafe() * 0.98D;
-        double forward = action.forward() * 0.98D;
-
-        // A bump velocity can be written while onGround is still true. Keep
-        // the ground movement/friction calculation for this tick, but remember
-        // that the positive Y displacement will make the entity airborne after
-        // moveEntity resolves the movement.
-        boolean sourceGrounded = p.grounded;
-        float friction = sourceGrounded
-                ? DEFAULT_SLIPPERINESS * LAND_FRICTION
-                : LAND_FRICTION;
-
-        float movementFactor = sourceGrounded
-                ? (float) (WALK_SPEED
+        float movementFactor;
+        if (groundedAtStart) {
+            movementFactor = WALK_SPEED
                     * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
-                    * (0.16277136F / (friction * friction * friction)))
-                : AIR_MOVE_FACTOR
-                    * (action.sprint() ? (1.0F + 0.3F) : 1.0F);
+                    * (0.16277136F / (friction * friction * friction));
+        } else {
+            movementFactor = AIR_MOVE_FACTOR
+                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F);
+        }
 
-        moveFlying(p, strafe, forward, movementFactor);
+        moveFlying(p, action.strafe(), action.forward(), movementFactor);
 
+        // The source client resolves movement before the post-move gravity/
+        // drag update. The common maze has no side walls, so Y is the only
+        // continuous collision axis here.
         p.x += p.vx;
         p.y += p.vy;
         p.z += p.vz;
 
-        boolean airborne = !sourceGrounded || p.pendingAirborne;
-        if (airborne) {
+        if (!groundedAtStart || p.pendingAirborne || !p.grounded) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
-
-            if (p.y <= 0.0D && p.vy <= 0.0D) {
-                p.y = 0.0D;
-                p.vy = 0.0D;
+            if (p.y <= 0.0 && p.vy <= 0.0) {
+                p.y = 0.0;
+                p.vy = 0.0;
                 p.grounded = true;
             } else {
                 p.grounded = false;
             }
         } else {
-            p.y = 0.0D;
-            p.vy = 0.0D;
+            p.y = 0.0;
+            p.vy = 0.0;
             p.grounded = true;
         }
 
@@ -84,38 +78,23 @@ public final class LegacyMovementModel implements PhysicsModel {
         p.vx *= friction;
         p.vz *= friction;
 
-        if (Math.abs(p.vx) < 0.005D) p.vx = 0.0D;
-        if (Math.abs(p.vy) < 0.005D) p.vy = 0.0D;
-        if (Math.abs(p.vz) < 0.005D) p.vz = 0.0D;
+        if (Math.abs(p.vx) < 0.005) p.vx = 0;
+        if (Math.abs(p.vy) < 0.005) p.vy = 0;
+        if (Math.abs(p.vz) < 0.005) p.vz = 0;
     }
 
-    private void jump(PlayerState p, boolean sprinting) {
-        p.vy = JUMP_VELOCITY;
-        p.grounded = false;
-        p.pendingAirborne = false;
-
-        if (sprinting) {
-            float yaw = p.yaw * 0.017453292F;
-            p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-            p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
-        }
-    }
-
-    private void moveFlying(PlayerState p, double strafe, double forward, float friction) {
+    private static void moveFlying(PlayerState p, double strafe, double forward, float factor) {
         double magnitude = strafe * strafe + forward * forward;
-        if (magnitude < 1.0E-4D) return;
-
+        if (magnitude < 1.0E-4) return;
         magnitude = Math.sqrt(magnitude);
-        if (magnitude < 1.0D) magnitude = 1.0D;
-
-        double scale = friction / magnitude;
+        if (magnitude < 1.0) magnitude = 1.0;
+        double scale = factor / magnitude;
         strafe *= scale;
         forward *= scale;
 
         double yaw = Math.toRadians(p.yaw);
         double sin = Math.sin(yaw);
         double cos = Math.cos(yaw);
-
         p.vx += strafe * cos - forward * sin;
         p.vz += forward * cos + strafe * sin;
     }

@@ -19,6 +19,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private volatile LegacyAction currentAction = LegacyAction.IDLE;
     private volatile boolean aiEnabled;
     private long applyCount;
+    private boolean abilityPulsePending;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -27,7 +28,9 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     @Override
     public synchronized void apply(LegacyAction action) {
-        currentAction = action == null ? LegacyAction.IDLE : action;
+        LegacyAction next = action == null ? LegacyAction.IDLE : action;
+        if (next.useAbility && !currentAction.useAbility) abilityPulsePending = true;
+        currentAction = next;
         applyCount++;
 
         if (applyCount == 1 || applyCount % 20 == 0
@@ -43,18 +46,26 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         return currentAction;
     }
 
+    /** Called on the Minecraft client thread to consume one right-click pulse. */
+    public synchronized boolean consumeAbilityPulse() {
+        if (!abilityPulsePending) return false;
+        abilityPulsePending = false;
+        return true;
+    }
+
     public boolean isAiEnabled() {
         return aiEnabled;
     }
 
     public void setAiEnabled(boolean enabled) {
         aiEnabled = enabled;
-        if (!enabled) currentAction = LegacyAction.IDLE;
+        if (!enabled) { currentAction = LegacyAction.IDLE; abilityPulsePending = false; }
     }
 
     @Override
     public synchronized void releaseAll() {
         currentAction = LegacyAction.IDLE;
+        abilityPulsePending = false;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }
 

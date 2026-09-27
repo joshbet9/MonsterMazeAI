@@ -19,6 +19,8 @@ public final class PlayerState {
     public int jumpCharges;
     public long nextJumpChargeTick;
     public long recentMobHitUntilTick;
+    /** Source KitManager lastMobHit grace used by Jumper/Slowball QOL. */
+    public long mobHitGraceUntilTick;
     public int jumpTicks;
 
     public PlayerState copy() {
@@ -28,7 +30,7 @@ public final class PlayerState {
         p.pendingAirborne=pendingAirborne;
         p.health=health; p.maxHealth=maxHealth; p.damageTaken=damageTaken;
         p.jumpCharges=jumpCharges; p.nextJumpChargeTick=nextJumpChargeTick;
-        p.recentMobHitUntilTick=recentMobHitUntilTick; p.jumpTicks=jumpTicks;
+        p.recentMobHitUntilTick=recentMobHitUntilTick; p.mobHitGraceUntilTick=mobHitGraceUntilTick; p.jumpTicks=jumpTicks;
         return p;
     }
 }

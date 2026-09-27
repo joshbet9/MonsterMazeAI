@@ -31,7 +31,7 @@ public final class Simulator {
         if(action.useAbility()) abilities.activate(state);
         physics.tick(state.player, action);
         monsters.tick(state);
-        for(MonsterState monster: state.monsters) collision.tryMonsterHit(state, monster, abilities);
+        // CollisionModel's compatibility facade may temporarily mutate the monster list\n        // while applying the authoritative bump model. Iterate a snapshot so a\n        // collision cannot invalidate this loop.\n        for(MonsterState monster: new java.util.ArrayList<>(state.monsters)) collision.tryMonsterHit(state, monster, abilities);
         progression.tick(state);
         if(state.player.y>0.0 && state.kit==me.monstermazeai.kit.Kit.JUMPER) abilities.consumeJumperCharge(state);
         state.tick++;

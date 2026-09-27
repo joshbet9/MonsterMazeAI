@@ -190,7 +190,8 @@ public final class FirstPadMovementController {
                     + " size=" + route.size()
                     + " start=" + startRow + "," + startColumn
                     + " pad=" + pad.row() + "," + pad.column()
-                    + " radius=" + SAFE_PAD_RADIUS;
+                    + " radius=" + SAFE_PAD_RADIUS
+                    + " cells=" + describeRoute(route);
             return true;
         } catch (RuntimeException failure) {
             reset();
@@ -232,6 +233,17 @@ public final class FirstPadMovementController {
 
     private boolean routeIsPhysical(MazeModel maze) {
         return route != null && validRoute(maze, route.cells());
+    }
+
+
+    private static String describeRoute(PlayerRoute route) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < route.size(); i++) {
+            if (i > 0) out.append("->");
+            Cell cell = route.cells().get(i);
+            out.append(cell.row()).append(',').append(cell.column());
+        }
+        return out.toString();
     }
 
     private static boolean validRoute(MazeModel maze, List<Cell> cells) {

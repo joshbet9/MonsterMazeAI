@@ -122,9 +122,6 @@ public final class MonsterMaze18Mod {
              * previous walk-off-edge failure.
              */
             executor.applyForTicks(completed, state.worldTick, 1L);
-            if (runtime.lastCompletedWasStaleTurn()) {
-                System.err.println("[MonsterMazeAI/1.8] RUNTIME accepted one-tick stale turn recovery");
-            }
         }
         executor.expireIfNeeded(state.worldTick);
 

@@ -39,7 +39,7 @@ public final class MazeModel {
     }
     public boolean isPhysicalFloor(int row, int col) {
         return row >= 0 && row < SIZE && col >= 0 && col < SIZE
-                && (physicalFloor[row][col] || disabled[row][col]);
+                && physicalFloor[row][col];
     }
     public void setPhysicalFloor(int row, int col, boolean value) {
         if (physicalFloor[row][col] == value) return;

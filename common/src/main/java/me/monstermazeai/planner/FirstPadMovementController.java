@@ -29,8 +29,13 @@ public final class FirstPadMovementController {
     private static final double ARRIVAL_TOLERANCE = 0.30;
     /** Maximum lateral distance from the planned polyline before recovery/replan. */
     private static final double ROUTE_CORRIDOR_RADIUS = 1.20;
-    /** Start turning for the next cardinal segment this far from the corner. */
-    private static final double TURN_LEAD = 1.15;
+    /**
+     * Small tolerance around the continuous corner centre. The actual turn
+     * lead is velocity-derived; this is only a minimum safety margin.
+     */
+    private static final double CORNER_TOLERANCE = 0.20;
+    /** Conservative horizontal drag used when predicting travel during a turn. */
+    private static final double MAX_HORIZONTAL_DRAG = 0.91;
 
     /*
      * Action accepts +/-30 degrees. The old 12 degree cap required 7-8 ticks
@@ -128,13 +133,21 @@ public final class FirstPadMovementController {
         }
 
         /*
-         * Look one segment ahead. The target heading changes before the corner,
-         * but only after the player is close enough that the turn can finish
-         * before the corner is crossed.
+         * Look one segment ahead, but do NOT turn a fixed distance before the
+         * corner. That cuts across the corner and can put the player's centre
+         * over air. Instead, calculate how far the current horizontal velocity
+         * can carry the player while the required yaw change is completed.
+         *
+         * We deliberately use 0.91 as the drag bound: it is more conservative
+         * than normal ground friction and therefore remains safe when the live
+         * observer reports the player airborne during a jump-spam tick.
          */
         boolean approachingCorner = false;
+        boolean cornerBraking = false;
+        boolean atCorner = false;
         int steeringRow = dirRow;
         int steeringColumn = dirColumn;
+        double distanceToCorner = Double.MAX_VALUE;
 
         int nextSegmentIndex = segmentIndex + 1;
         if (nextSegmentIndex < route.size()) {
@@ -143,12 +156,34 @@ public final class FirstPadMovementController {
             int nextColumn = Integer.signum(next.column() - target.column());
 
             if (nextRow != dirRow || nextColumn != dirColumn) {
-                double distanceToCorner = distanceToCellCenter(
+                distanceToCorner = distanceToCellCenter(
                         state.player.x, state.player.z, target);
-                approachingCorner = distanceToCorner <= TURN_LEAD;
+                float nextYaw = cardinalYaw(nextRow, nextColumn);
+                float turnError = normalise(nextYaw - state.player.yaw);
+                int turnTicks = (int) Math.ceil(
+                        Math.abs(turnError) / MAX_YAW_PER_TICK);
+
+                double speed = Math.hypot(state.player.vx, state.player.vz);
+                double turnTravel = 0.0;
+                double retainedSpeed = speed;
+                for (int i = 0; i < turnTicks; i++) {
+                    turnTravel += retainedSpeed;
+                    retainedSpeed *= MAX_HORIZONTAL_DRAG;
+                }
+
+                /*
+                 * Start the yaw turn while coasting. Forward is then held at
+                 * zero until the player reaches the corner centre, so the
+                 * camera can rotate without adding a diagonal input vector.
+                 */
+                approachingCorner = distanceToCorner
+                        <= turnTravel + CORNER_TOLERANCE;
                 if (approachingCorner) {
                     steeringRow = nextRow;
                     steeringColumn = nextColumn;
+                    cornerBraking = true;
+                    atCorner = distanceToCorner <= 0.30
+                            || containingCell(state.player.x, state.player.z).equals(target);
                 }
             }
         }
@@ -161,18 +196,19 @@ public final class FirstPadMovementController {
         boolean sprint = true;
         double absError = Math.abs(yawError);
 
-        if (absError > BRAKE_FORWARD_ERROR) {
+        if (cornerBraking && !atCorner) {
             /*
-             * Do not spend five blocks of travel acquiring a heading. The
-             * previous motor did exactly that with 12 deg/tick.
+             * Coast into the exact corner while the yaw pulse rotates the
+             * camera. This is the critical difference from the failed motor:
+             * we do not apply W toward the next segment before reaching the
+             * corner cell.
              */
             forward = 0.0;
             sprint = false;
+        } else if (absError > BRAKE_FORWARD_ERROR) {
+            forward = 0.0;
+            sprint = false;
         } else if (absError > FULL_FORWARD_ERROR) {
-            /*
-             * Keep some forward acceleration, but make the turn dominant.
-             * This avoids throwing away all momentum at every corner.
-             */
             forward = 0.35;
         } else {
             forward = 1.0;
@@ -199,6 +235,8 @@ public final class FirstPadMovementController {
                 + " cornerLead=" + approachingCorner
                 + " yawError=" + format(yawError)
                 + " yawDelta=" + format(yawDelta)
+                + " cornerBrake=" + cornerBraking
+                + " cornerDistance=" + format(distanceToCorner)
                 + " f=" + format(forward)
                 + " sprint=" + sprint
                 + " jump=" + jump

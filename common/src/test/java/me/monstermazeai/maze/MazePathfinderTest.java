@@ -58,7 +58,7 @@ class MazePathfinderTest {
     }
 
     @Test
-    void playerCanReachSafePadWhenUnderlyingLayoutIsAir() {
+    void playerCannotReachAirEvenWhenWaypointIsDisabled() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[49][48] = 1;
         raw[49][49] = 0;
@@ -68,7 +68,7 @@ class MazePathfinderTest {
         List<Cell> path = new PlayerPathfinder().shortestPath(
                 maze, new Cell(49, 48), new Cell(49, 49));
 
-        assertEquals(List.of(new Cell(49, 48), new Cell(49, 49)), path);
+        assertTrue(path.isEmpty());
     }
 
     @Test

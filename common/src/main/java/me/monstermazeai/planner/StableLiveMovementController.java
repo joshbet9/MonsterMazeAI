@@ -445,8 +445,6 @@ public final class StableLiveMovementController {
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] background strategic route failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
-            } finally {
-                pendingRoutePlan = null;
             }
         });
     }

@@ -12,6 +12,9 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Java-8 Minecraft-side process bridge with explicit sidecar I/O tracing.
@@ -22,6 +25,12 @@ public final class Minecraft18AiRuntime {
     private DataOutputStream output;
     private LegacyAction lastAction = LegacyAction.IDLE;
     private long decideCount;
+    private final ExecutorService decisionExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MonsterMazeAI-1.8-planner");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private Future<DecisionResult> pendingDecision;
 
     public boolean configured() { return runtimeJar() != null; }
 
@@ -52,6 +61,36 @@ public final class Minecraft18AiRuntime {
             System.err.println("[MonsterMazeAI/1.8] RUNTIME start failed: "
                     + failure.getClass().getSimpleName() + ": " + failure.getMessage());
         }
+    }
+
+
+    /** Submit one blocking sidecar decision away from the Minecraft client thread. */
+    public synchronized void submit(LegacyWorldObservation observation) {
+        if (observation == null || process == null || output == null || input == null) return;
+        if (pendingDecision != null && !pendingDecision.isDone()) return;
+        final LegacyWorldObservation submitted = observation;
+        pendingDecision = decisionExecutor.submit(() -> new DecisionResult(submitted.worldTick, decide(submitted)));
+    }
+
+    /** Poll a completed decision without ever blocking the Minecraft client thread. */
+    public synchronized LegacyAction pollCompleted(long currentTick) {
+        if (pendingDecision == null || !pendingDecision.isDone()) return null;
+        try {
+            DecisionResult result = pendingDecision.get();
+            pendingDecision = null;
+            if (result.action == null) return null;
+            if (currentTick - result.tick > 40) return null;
+            return result.action;
+        } catch (Exception failure) {
+            pendingDecision = null;
+            System.err.println("[MonsterMazeAI/1.8] RUNTIME async decision failed: "
+                    + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            return null;
+        }
+    }
+
+    public synchronized boolean decisionPending() {
+        return pendingDecision != null && !pendingDecision.isDone();
     }
 
     public synchronized LegacyAction decide(LegacyWorldObservation observation) {
@@ -104,7 +143,7 @@ public final class Minecraft18AiRuntime {
         }
     }
 
-    public synchronized void stop() { closeProcess(); }
+    public synchronized void stop() { closeProcess(); decisionExecutor.shutdownNow(); }
     public synchronized LegacyAction lastAction() { return lastAction; }
 
     static String resolveRuntimeJar(String property, String environment) {
@@ -142,6 +181,12 @@ public final class Minecraft18AiRuntime {
         input = null;
         process = null;
         lastAction = LegacyAction.IDLE;
+    }
+
+    private static final class DecisionResult {
+        final long tick;
+        final LegacyAction action;
+        DecisionResult(long tick, LegacyAction action) { this.tick = tick; this.action = action; }
     }
 
     private static String describe(LegacyAction action) {

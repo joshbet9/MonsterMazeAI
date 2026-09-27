@@ -146,9 +146,10 @@ class StableLiveMovementControllerTest {
         assertTrue(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
                 "the first post-bootstrap observation should complete the source-faithful evaluation");
 
+        long plansAfterEvaluation = controller.routePlanCount();
         s.tick = 3;
         controller.nextAction(s, new Cell(0, 8), false);
-        assertFalse(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
+        assertEquals(plansAfterEvaluation, controller.routePlanCount(),
                 "unchanged local world state must not restart expensive global route simulation");
     }
 

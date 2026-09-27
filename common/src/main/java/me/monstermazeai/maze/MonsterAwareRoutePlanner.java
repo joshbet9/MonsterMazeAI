@@ -101,7 +101,8 @@ public final class MonsterAwareRoutePlanner {
             for (int r = goal.row() - regionRadius; r <= goal.row() + regionRadius; r++) {
                 for (int c = goal.column() - regionRadius; c <= goal.column() + regionRadius; c++) {
                     Cell target = new Cell(r, c);
-                    if (!inBounds(r, c) || !state.maze.isPhysicalFloor(r, c)) continue;
+                    if (r < 0 || r >= MazeModel.SIZE || c < 0 || c >= MazeModel.SIZE
+                            || !state.maze.isPhysicalFloor(r, c)) continue;
 
                     List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
                     if (path.isEmpty()) continue;

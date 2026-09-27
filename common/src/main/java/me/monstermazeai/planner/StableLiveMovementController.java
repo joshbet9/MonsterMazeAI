@@ -45,6 +45,15 @@ public final class StableLiveMovementController {
     private static final double MAX_TURNING_SPEED = 0.035;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
+    /*
+     * Monster Maze SafePads are centred on integer block coordinates, while
+     * PlayerRoute cells use half-block cell centres. The live player can
+     * therefore legitimately enter the first route cell with a 0.5-block
+     * cross-track offset (the observed 50.0,50.0 spawn is exactly this case).
+     * Preserve that physical lane when a segment begins instead of treating
+     * the pad-to-maze coordinate transition as a dangerous deviation.
+     */
+    private static final double MAX_INITIAL_LANE_OFFSET = 0.65;
 
     private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
 
@@ -56,6 +65,9 @@ public final class StableLiveMovementController {
     private int goalRadius = 0;
     private long lastRouteTick = Long.MIN_VALUE;
     private String lastDecisionDetail = "UNSET";
+    private int anchoredSegmentIndex = -1;
+    private double laneAnchorX;
+    private double laneAnchorZ;
 
     public Action nextAction(GameState state, Cell goal, boolean allowJump) {
         return nextAction(state, goal, allowJump, 0);
@@ -117,7 +129,11 @@ public final class StableLiveMovementController {
         // to the next segment. Never skip over a corner and then turn back.
         while (waypointIndex < route.size() - 1
                 && distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL) {
+            int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
+            if (waypointIndex != previousWaypoint) {
+                anchoredSegmentIndex = -1;
+            }
         }
 
         if (waypointIndex >= route.size()) {
@@ -174,8 +190,32 @@ public final class StableLiveMovementController {
          * inside the current cell; near an edge we stop rather than drive into
          * an unknown/air cell.
          */
+        if (anchoredSegmentIndex != waypointIndex) {
+            /*
+             * Anchor the corridor to the player's actual cross-axis position
+             * when a segment begins. This is important at a source-accurate
+             * SafePad transition: SafePad.isOn() is centred on integer block
+             * coordinates, whereas route cell centres are half-block positions.
+             * Only accept a modest offset; larger deviations still fail closed.
+             */
+            double nominalLaneX = startCellRow + 0.5;
+            double nominalLaneZ = startCellColumn + 0.5;
+            if (dirRow == 0) {
+                double offset = state.player.x - nominalLaneX;
+                laneAnchorX = Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
+                        ? state.player.x : nominalLaneX;
+                laneAnchorZ = nominalLaneZ;
+            } else {
+                laneAnchorX = nominalLaneX;
+                double offset = state.player.z - nominalLaneZ;
+                laneAnchorZ = Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
+                        ? state.player.z : nominalLaneZ;
+            }
+            anchoredSegmentIndex = waypointIndex;
+        }
+
         double crossTrack = crossTrackError(
-                state.player.x, state.player.z, startCellRow + 0.5, startCellColumn + 0.5,
+                state.player.x, state.player.z, laneAnchorX, laneAnchorZ,
                 dirRow, dirColumn);
 
         Action action;
@@ -184,8 +224,8 @@ public final class StableLiveMovementController {
             action = new Action(0.0, 0.0, false, false, 0.0F, false);
             lastDecisionDetail += " SAFETY_STOP crossTrack=" + format(crossTrack);
         } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? startCellRow + 0.5 : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? startCellColumn + 0.5 : state.player.z;
+            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
+            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
             float correctionYaw = (float) Math.toDegrees(
                     Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
             float correctionError = normalise(correctionYaw - state.player.yaw);
@@ -250,6 +290,9 @@ public final class StableLiveMovementController {
         goalColumn = -1;
         goalRadius = 0;
         lastRouteTick = Long.MIN_VALUE;
+        anchoredSegmentIndex = -1;
+        laneAnchorX = 0.0;
+        laneAnchorZ = 0.0;
         lastDecisionDetail = "RESET";
     }
 
@@ -375,5 +418,6 @@ public final class StableLiveMovementController {
     private void clearRoute() {
         route = null;
         waypointIndex = 0;
+        anchoredSegmentIndex = -1;
     }
 }

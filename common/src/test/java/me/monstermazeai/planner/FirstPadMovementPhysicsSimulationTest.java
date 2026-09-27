@@ -120,6 +120,8 @@ public class FirstPadMovementPhysicsSimulationTest {
         result.ticks = MAX_TICKS;
         result.x = state.player.x;
         result.z = state.player.z;
+        result.remainingJumpCharges = state.player.jumpCharges;
+        result.lastDecisionDetail = controller.lastDecisionDetail();
         return result;
     }
 

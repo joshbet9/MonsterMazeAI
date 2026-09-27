@@ -11,29 +11,46 @@ import me.monstermazeai.player.Action;
 import java.util.List;
 
 /**
- * Movement-only controller for the first Safe Pad milestone.
+ * Deterministic movement-only controller for the first Safe Pad milestone.
  *
- * This controller intentionally does NOT inspect monsters, abilities, tactical
- * simulations, risk scores, alternate routes, or competitor state. Its only
- * job is to prove the physical movement stack:
+ * The controller is deliberately narrower than the eventual tactical AI:
+ * physical-floor BFS + W-first sprint motor + source-compatible jump input.
+ * Monsters, abilities, threat scoring and alternate tactical routes are out of
+ * scope for this branch.
  *
- *   live observation -> physical shortest route -> fast forward/sprint motor
- *   -> source-compatible jump input -> first 5x5 Safe Pad.
- *
- * The route is shortest in the authoritative physical-floor graph. The motor
- * is W-first: it never uses strafe as a normal steering primitive. Heading is
- * changed with yaw while forward and sprint remain asserted. A turn is
- * anticipated shortly before a route corner so the player does not have to
- * stop, turn in place, then accelerate again.
+ * The important distinction from the original motor is that route following
+ * is continuous. Integer cell changes do not invalidate a good route, and
+ * corner steering is based on the continuous position/yaw rather than on a
+ * single-cell "current cell == route cell" invariant.
  */
 public final class FirstPadMovementController {
     public static final int SAFE_PAD_RADIUS = 2;
 
     private static final double ARRIVAL_TOLERANCE = 0.30;
-    private static final double ROUTE_DEVIATION = 0.48;
-    private static final double TURN_LEAD = 0.82;
-    private static final double HEADING_TOLERANCE = 2.0;
-    private static final float MAX_YAW_PER_TICK = 12.0F;
+    /** Maximum lateral distance from the planned polyline before recovery/replan. */
+    private static final double ROUTE_CORRIDOR_RADIUS = 1.20;
+    /** Start turning for the next cardinal segment this far from the corner. */
+    private static final double TURN_LEAD = 1.15;
+
+    /*
+     * Action accepts +/-30 degrees. The old 12 degree cap required 7-8 ticks
+     * for a 90 degree turn while the player was still sprinting, which is
+     * physically incompatible with one-block-wide corridors.
+     */
+    private static final float MAX_YAW_PER_TICK = 30.0F;
+
+    /*
+     * Forward shaping is intentionally only used while the heading is being
+     * acquired. Once the yaw error is small, the motor returns to full W.
+     *
+     * >55 degrees: turn in place. This is only normally used at bootstrap or
+     * immediately after a sharp recovery.
+     * 25..55 degrees: retain a small amount of forward input so momentum is not
+     * discarded completely.
+     * <=25 degrees: full-speed W+sprint.
+     */
+    private static final float FULL_FORWARD_ERROR = 25.0F;
+    private static final float BRAKE_FORWARD_ERROR = 55.0F;
 
     private PlayerRoute route;
     private int segmentIndex = -1;
@@ -68,16 +85,31 @@ public final class FirstPadMovementController {
         }
 
         long signature = routeSignature(state, pad);
-        if (route == null || goalRow != pad.row() || goalColumn != pad.column()
-                || routeSignature != signature || !routeContainsStart(startRow, startColumn)
-                || !routeIsPhysical(state.maze)) {
+        boolean needsBootstrap = route == null
+                || goalRow != pad.row()
+                || goalColumn != pad.column()
+                || routeSignature != signature
+                || !routeIsPhysical(state.maze);
+
+        if (needsBootstrap) {
             if (!buildRoute(state, startRow, startColumn, pad)) {
                 lastDecisionDetail = "NO_ROUTE bootstrap";
                 return Action.IDLE;
             }
+        } else if (routeDeviation(state.player.x, state.player.z) > ROUTE_CORRIDOR_RADIUS) {
+            /*
+             * This is a real route departure, not merely an integer-cell
+             * transition. Replan only now. Small lateral drift during a turn
+             * remains attached to the original shortest path.
+             */
+            if (!buildRoute(state, startRow, startColumn, pad)) {
+                lastDecisionDetail = "NO_ROUTE corridor_departure="
+                        + format(routeDeviation(state.player.x, state.player.z));
+                return Action.IDLE;
+            }
         }
 
-        advanceSegment(state);
+        reanchorSegment(state);
 
         if (segmentIndex < 1 || segmentIndex >= route.size()) {
             lastDecisionDetail = "FIRST_PAD_REACHED route_end";
@@ -96,77 +128,83 @@ public final class FirstPadMovementController {
         }
 
         /*
-         * At a corner, start steering toward the next segment while the
-         * player's centre is still inside the current route cell. This keeps
-         * forward+sprint active instead of paying a stop/turn/go penalty.
+         * Look one segment ahead. The target heading changes before the corner,
+         * but only after the player is close enough that the turn can finish
+         * before the corner is crossed.
          */
-        int nextSegmentIndex = segmentIndex + 1;
         boolean approachingCorner = false;
+        int steeringRow = dirRow;
+        int steeringColumn = dirColumn;
+
+        int nextSegmentIndex = segmentIndex + 1;
         if (nextSegmentIndex < route.size()) {
             Cell next = route.cells().get(nextSegmentIndex);
             int nextRow = Integer.signum(next.row() - target.row());
             int nextColumn = Integer.signum(next.column() - target.column());
+
             if (nextRow != dirRow || nextColumn != dirColumn) {
-                double distanceToCorner = Math.hypot(
-                        state.player.x - (target.row() + 0.5),
-                        state.player.z - (target.column() + 0.5));
+                double distanceToCorner = distanceToCellCenter(
+                        state.player.x, state.player.z, target);
                 approachingCorner = distanceToCorner <= TURN_LEAD;
                 if (approachingCorner) {
-                    dirRow = nextRow;
-                    dirColumn = nextColumn;
+                    steeringRow = nextRow;
+                    steeringColumn = nextColumn;
                 }
             }
         }
 
-        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float desiredYaw = cardinalYaw(steeringRow, steeringColumn);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_PER_TICK, MAX_YAW_PER_TICK);
 
-        /*
-         * W-first motor. Strafe is deliberately zero: the source-compatible
-         * fastest baseline is forward+sprint, with the cursor doing the
-         * steering. We keep driving during bounded turns so acceleration and
-         * sprint momentum are not thrown away.
-         */
-        double forward = 1.0;
+        double forward;
         boolean sprint = true;
+        double absError = Math.abs(yawError);
 
-        /*
-         * Never drive toward a cell that the authoritative physical graph says
-         * is air. The planned route is cardinal and physical, so this is mainly
-         * a final live-world guard against an unexpected floor change or a
-         * player being pushed away from the route.
-         */
+        if (absError > BRAKE_FORWARD_ERROR) {
+            /*
+             * Do not spend five blocks of travel acquiring a heading. The
+             * previous motor did exactly that with 12 deg/tick.
+             */
+            forward = 0.0;
+            sprint = false;
+        } else if (absError > FULL_FORWARD_ERROR) {
+            /*
+             * Keep some forward acceleration, but make the turn dominant.
+             * This avoids throwing away all momentum at every corner.
+             */
+            forward = 0.35;
+        } else {
+            forward = 1.0;
+        }
+
         if (!routeForwardCellIsPhysical(state.maze, state.player.x, state.player.z)) {
             lastDecisionDetail = "EDGE_GUARD current="
                     + startRow + "," + startColumn
-                    + " dir=" + dirRow + "," + dirColumn;
+                    + " dir=" + steeringRow + "," + steeringColumn;
             return Action.IDLE;
         }
 
         /*
          * Movement-only test policy:
-         * - non-Jumper kits may hold jump to exercise the source 1.8
-         *   jump-spam "speeding" mechanic;
-         * - Jumper never presses jump in this branch. Real charged jumps belong
-         *   to the future ability layer and must not be consumed by this motor
-         *   proof. This keeps the first-pad test deterministic and preserves
-         *   the charges for the later ability-aware controller.
+         * - non-Jumper kits hold jump to exercise source 1.8 jump-spam speeding;
+         * - Jumper never consumes a charged jump in this branch.
          */
         boolean jump = state.kit != Kit.JUMPER;
 
         lastDecisionDetail = "FIRST_PAD_MOTOR"
                 + " segment=" + segmentIndex + "/" + (route.size() - 1)
                 + " target=" + target.row() + "," + target.column()
-                + " dir=" + dirRow + "," + dirColumn
+                + " dir=" + steeringRow + "," + steeringColumn
                 + " cornerLead=" + approachingCorner
                 + " yawError=" + format(yawError)
                 + " yawDelta=" + format(yawDelta)
-                + " f=1.0"
-                + " sprint=true"
+                + " f=" + format(forward)
+                + " sprint=" + sprint
                 + " jump=" + jump
                 + " strafe=0"
-                + " routeSize=" + route.size();
+                + " routeSize=" + route.size()
+                + " deviation=" + format(routeDeviation(state.player.x, state.player.z));
 
         return new Action(forward, 0.0, jump, sprint, yawDelta, false);
     }
@@ -184,7 +222,7 @@ public final class FirstPadMovementController {
             goalRow = pad.row();
             goalColumn = pad.column();
             routeSignature = routeSignature(state, pad);
-            segmentIndex = 1;
+            segmentIndex = Math.min(1, route.size() - 1);
             lastDecisionDetail = "FIRST_PAD_ROUTE"
                     + " size=" + route.size()
                     + " start=" + startRow + "," + startColumn
@@ -200,22 +238,48 @@ public final class FirstPadMovementController {
         }
     }
 
+    /**
+     * Keep the existing shortest route while the player is inside its
+     * recoverable corridor. Re-anchor the active segment to the closest route
+     * cell instead of requiring floor(x),floor(z) to equal a route cell.
+     */
+    private void reanchorSegment(GameState state) {
+        if (route == null || route.size() <= 1) return;
+
+        int closestIndex = 0;
+        double closestDistance = Double.MAX_VALUE;
+        for (int i = 0; i < route.size(); i++) {
+            Cell cell = route.cells().get(i);
+            double distance = distanceToCellCenter(
+                    state.player.x, state.player.z, cell);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = i;
+            }
+        }
+
+        int desiredSegment = Math.min(route.size() - 1, Math.max(1, closestIndex + 1));
+
+        /*
+         * Never jump all the way back toward the beginning because a corner
+         * caused a transient lateral offset. Progress can advance freely;
+         * backwards re-anchoring is only permitted when the player is actually
+         * closer to an earlier route point than the committed one.
+         */
+        if (desiredSegment > segmentIndex || closestDistance < 0.45) {
+            segmentIndex = desiredSegment;
+        }
+        advanceSegment(state);
+    }
+
     private void advanceSegment(GameState state) {
         while (segmentIndex < route.size() - 1) {
             Cell current = route.cells().get(segmentIndex);
-            double distance = Math.hypot(
-                    state.player.x - (current.row() + 0.5),
-                    state.player.z - (current.column() + 0.5));
+            double distance = distanceToCellCenter(
+                    state.player.x, state.player.z, current);
 
-            /*
-             * Also detect crossing a waypoint between observations. The route
-             * is one cell wide, so once the player is clearly inside the next
-             * route cell, turning back toward the old centre is slower and can
-             * be fatal at a corner.
-             */
             Cell next = route.cells().get(segmentIndex + 1);
-            boolean insideNext = containingCell(state.player.x, state.player.z)
-                    .equals(next);
+            boolean insideNext = containingCell(state.player.x, state.player.z).equals(next);
 
             if (distance <= ARRIVAL_TOLERANCE || insideNext) {
                 segmentIndex++;
@@ -225,15 +289,39 @@ public final class FirstPadMovementController {
         }
     }
 
-    private boolean routeContainsStart(int row, int column) {
-        return route != null && segmentIndex < route.size()
-                && route.cells().contains(new Cell(row, column));
+    private double routeDeviation(double x, double z) {
+        if (route == null || route.size() == 0) return Double.MAX_VALUE;
+        if (route.size() == 1) {
+            return distanceToCellCenter(x, z, route.cells().get(0));
+        }
+
+        double best = Double.MAX_VALUE;
+        for (int i = 0; i < route.size() - 1; i++) {
+            Cell a = route.cells().get(i);
+            Cell b = route.cells().get(i + 1);
+            double ax = a.row() + 0.5;
+            double az = a.column() + 0.5;
+            double bx = b.row() + 0.5;
+            double bz = b.column() + 0.5;
+
+            double dx = bx - ax;
+            double dz = bz - az;
+            double lengthSquared = dx * dx + dz * dz;
+            double t = lengthSquared == 0.0
+                    ? 0.0
+                    : ((x - ax) * dx + (z - az) * dz) / lengthSquared;
+            t = Math.max(0.0, Math.min(1.0, t));
+
+            double px = ax + t * dx;
+            double pz = az + t * dz;
+            best = Math.min(best, Math.hypot(x - px, z - pz));
+        }
+        return best;
     }
 
     private boolean routeIsPhysical(MazeModel maze) {
         return route != null && validRoute(maze, route.cells());
     }
-
 
     private static String describeRoute(PlayerRoute route) {
         StringBuilder out = new StringBuilder();
@@ -262,7 +350,10 @@ public final class FirstPadMovementController {
     private boolean routeForwardCellIsPhysical(MazeModel maze, double x, double z) {
         Cell current = containingCell(x, z);
         if (!maze.isPhysicalFloor(current.row(), current.column())) return false;
-        if (route == null || segmentIndex <= 0 || segmentIndex >= route.size()) return true;
+
+        if (route == null || segmentIndex <= 0 || segmentIndex >= route.size()) {
+            return true;
+        }
 
         Cell previous = route.cells().get(segmentIndex - 1);
         Cell target = route.cells().get(segmentIndex);
@@ -274,11 +365,20 @@ public final class FirstPadMovementController {
             Cell next = route.cells().get(segmentIndex + 1);
             return maze.isPhysicalFloor(next.row(), next.column());
         }
-        return route.cells().contains(current);
+
+        /*
+         * We deliberately do not require current to be an exact route cell.
+         * The continuous corridor check above decides whether recovery is safe.
+         */
+        return routeDeviation(x, z) <= ROUTE_CORRIDOR_RADIUS;
     }
 
     private static Cell containingCell(double x, double z) {
         return new Cell((int) Math.floor(x), (int) Math.floor(z));
+    }
+
+    private static double distanceToCellCenter(double x, double z, Cell cell) {
+        return Math.hypot(x - (cell.row() + 0.5), z - (cell.column() + 0.5));
     }
 
     private static boolean isOnPad(GameState state, Cell pad) {
@@ -288,8 +388,7 @@ public final class FirstPadMovementController {
     }
 
     private static boolean inBounds(int row, int column) {
-        return row >= 0 && row < MazeModel.SIZE
-                && column >= 0 && column < MazeModel.SIZE;
+        return row >= 0 && row < MazeModel.SIZE && column >= 0 && column < MazeModel.SIZE;
     }
 
     private static long routeSignature(GameState state, Cell pad) {

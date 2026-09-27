@@ -1,19 +1,16 @@
 package me.monstermazeai.physics;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.PlayerState;
 
 /**
  * Conservative planning model for the observed 1.8 "speed into a mob" case.
  *
- * The authoritative MonsterManager bump still supplies the source knockback.
- * This model only changes the tactical simulation when a high-speed forward
- * approach makes a contact vulnerable to becoming a horizontal slide. In that
- * case the planner evaluates the contact with no guaranteed vertical recovery.
- *
- * This is deliberately conservative: it is not presented as a replacement
- * for the source UtilAction.velocity() implementation.
+ * MonsterManager/UtilAction remains authoritative for the actual bump. This
+ * class only changes the tactical consequence when a high-speed forward
+ * approach projects into non-floor space.
  */
 public final class SpeedContactModel {
     private static final double MIN_SPEEDING_SPEED = 0.10;
@@ -24,13 +21,20 @@ public final class SpeedContactModel {
 
     public static void applyConservativeSlideOutcome(
             GameState before, GameState after, Action action, boolean wasHit) {
-        if (!wasHit || before.maze == null) return;
-        if (!isDirectSpeedApproach(before.player, after.player, action)) return;
-        if (!projectsOffPhysicalFloor(after)) return;
+        if (before == null || before.maze == null) return;
+        applyConservativeSlideOutcome(before.player, after, before.maze, action, wasHit);
+    }
 
-        // The source bump has already supplied horizontal knockback. The
-        // conservative branch removes the vertical recovery rather than
-        // inventing a new horizontal force.
+    /**
+     * Allocation-free hot-path overload. Only the pre-contact player state is
+     * copied by the caller; the immutable maze model is reused.
+     */
+    public static void applyConservativeSlideOutcome(
+            PlayerState before, GameState after, MazeModel maze, Action action, boolean wasHit) {
+        if (!wasHit || before == null || after == null || maze == null) return;
+        if (!isDirectSpeedApproach(before, after.player, action)) return;
+        if (!projectsOffPhysicalFloor(maze, after.player)) return;
+
         after.player.vy = 0.0;
         after.player.pendingAirborne = true;
         after.player.grounded = false;
@@ -50,10 +54,15 @@ public final class SpeedContactModel {
     }
 
     static boolean projectsOffPhysicalFloor(GameState state) {
-        double x = state.player.x + state.player.vx * LOOKAHEAD_TICKS;
-        double z = state.player.z + state.player.vz * LOOKAHEAD_TICKS;
+        return state != null && state.maze != null
+                && projectsOffPhysicalFloor(state.maze, state.player);
+    }
+
+    static boolean projectsOffPhysicalFloor(MazeModel maze, PlayerState player) {
+        double x = player.x + player.vx * LOOKAHEAD_TICKS;
+        double z = player.z + player.vz * LOOKAHEAD_TICKS;
         int row = (int) Math.floor(x);
         int col = (int) Math.floor(z);
-        return !state.maze.isPhysicalFloor(row, col);
+        return !maze.isPhysicalFloor(row, col);
     }
 }

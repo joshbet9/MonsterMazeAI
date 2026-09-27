@@ -11,31 +11,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class GameState {
-    /**
-     * Common-simulator Y origin.
-     *
-     * The real 1.8 maze path points are at the maze center Y. The player stands
-     * with feet at that same Y, while SafePad's surface is one block below it.
-     */
     public static final double PATH_Y = 0.0;
     public static final double PAD_SURFACE_Y = -1.0;
 
     public long tick;
     public Mode mode = Mode.MODERN;
     public int stage = 1;
-    /** Source Monster Maze layout number (1-3), or -1 when not identified. */
     public int mazePattern = -1;
-    /** Remaining phase time represented in simulation ticks (20 ticks = 1 second). */
     public int phaseTicksRemaining;
-    /** Counts simulation ticks toward the server's once-per-second phase task. */
     public int phaseSecondAccumulatorTicks;
-    /** Seconds elapsed since the live game began. */
     public int liveSeconds;
-    /** Source center deterioration counter: starts at 11 and decrements after 20 live seconds. */
     public int centerSafeZoneDecay = 11;
-    /** Set when the source reaches the 2-second preview-pad event. */
     public boolean previewPadRequested;
-    /** Number of newly spawned monsters the adapter must create at the next wave event. */
     public int pendingMonsterSpawns;
 
     public MazeModel maze;
@@ -43,13 +30,11 @@ public final class GameState {
     public Kit kit = Kit.JUMPER;
     public AbilityState ability = new AbilityState();
     public final List<MonsterState> monsters = new ArrayList<>();
-    /** Safe pads retained by GameManager after a phase transition; used for bump immunity. */
     public final List<Cell> oldPads = new ArrayList<>();
     public int activePadRow = -1, activePadColumn = -1;
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
     public boolean completed = false;
-    /** True when the live adapter positively identifies a Monster Maze match. */
     public boolean inMonsterMaze = false;
     public boolean padReached = false;
 
@@ -69,6 +54,27 @@ public final class GameState {
     }
 
     public GameState copy() {
+        GameState s = copyScalarsAndEntities();
+        s.maze = maze == null ? null : maze.copy();
+        return s;
+    }
+
+    /**
+     * Simulation copy with the maze model shared.
+     *
+     * MazeModel is immutable for the AI simulation path: movement, bump and
+     * ability simulation only read it. The live adapter must provide a stable
+     * observation snapshot before handing the state to the planner. Sharing the
+     * 99x99 model avoids copying nearly 20,000 primitive entries for every
+     * tactical branch while preserving independent player/monster/ability state.
+     */
+    public GameState copyForSimulation() {
+        GameState s = copyScalarsAndEntities();
+        s.maze = maze;
+        return s;
+    }
+
+    private GameState copyScalarsAndEntities() {
         GameState s = new GameState();
         s.tick=tick;
         s.mode=mode;
@@ -80,7 +86,6 @@ public final class GameState {
         s.centerSafeZoneDecay=centerSafeZoneDecay;
         s.previewPadRequested=previewPadRequested;
         s.pendingMonsterSpawns=pendingMonsterSpawns;
-        s.maze=maze == null ? null : maze.copy();
         s.player=player.copy();
         s.kit=kit;
         s.ability=ability.copy();

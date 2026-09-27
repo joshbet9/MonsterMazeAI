@@ -53,10 +53,10 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         currentAction = next;
 
         /*
-         * forward/strafe/jump/sprint are held inputs, but yawDelta is a
-         * per-command cursor step. The command itself may remain active for
-         * several ticks; applying the same yawDelta on every tick would turn
-         * 12 degrees into 240 degrees over a 20-tick hold.
+         * forward/strafe/jump/sprint are held inputs for this client tick,
+         * while yawDelta is a per-command cursor step. Binding the yaw value
+         * to the command snapshot prevents a later command from replacing the
+         * pulse before MovementInput consumes it.
          */
         pendingYawDelta = next.yawDelta;
         yawPulsePending = next.yawDelta != 0.0f;

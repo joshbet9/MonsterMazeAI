@@ -20,9 +20,9 @@ import java.util.concurrent.Future;
  * Java-8 Minecraft-side process bridge with explicit sidecar I/O tracing.
  */
 public final class Minecraft18AiRuntime {
-    private Process process;
-    private DataInputStream input;
-    private DataOutputStream output;
+    private volatile Process process;
+    private volatile DataInputStream input;
+    private volatile DataOutputStream output;
     private LegacyAction lastAction = LegacyAction.IDLE;
     private long decideCount;
     private final ExecutorService decisionExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -31,6 +31,9 @@ public final class Minecraft18AiRuntime {
         return thread;
     });
     private Future<DecisionResult> pendingDecision;
+    private long lastSubmittedTick = Long.MIN_VALUE;
+    private long lastCompletedTick = Long.MIN_VALUE;
+    private static final long MAX_ACTION_AGE_TICKS = 40L;
 
     public boolean configured() { return runtimeJar() != null; }
 
@@ -69,6 +72,7 @@ public final class Minecraft18AiRuntime {
         if (observation == null || process == null || output == null || input == null) return;
         if (pendingDecision != null && !pendingDecision.isDone()) return;
         final LegacyWorldObservation submitted = observation;
+        lastSubmittedTick = submitted.worldTick;
         pendingDecision = decisionExecutor.submit(() -> new DecisionResult(submitted.worldTick, decide(submitted)));
     }
 
@@ -79,7 +83,11 @@ public final class Minecraft18AiRuntime {
             DecisionResult result = pendingDecision.get();
             pendingDecision = null;
             if (result.action == null) return null;
-            if (currentTick - result.tick > 40) return null;
+            if (currentTick - result.tick > MAX_ACTION_AGE_TICKS) {
+                lastCompletedTick = result.tick;
+                return LegacyAction.IDLE;
+            }
+            lastCompletedTick = result.tick;
             return result.action;
         } catch (Exception failure) {
             pendingDecision = null;
@@ -93,7 +101,7 @@ public final class Minecraft18AiRuntime {
         return pendingDecision != null && !pendingDecision.isDone();
     }
 
-    public synchronized LegacyAction decide(LegacyWorldObservation observation) {
+    public LegacyAction decide(LegacyWorldObservation observation) {
         if (observation == null) {
             System.err.println("[MonsterMazeAI/1.8] RUNTIME decide(null) -> IDLE");
             return LegacyAction.IDLE;
@@ -143,7 +151,18 @@ public final class Minecraft18AiRuntime {
         }
     }
 
-    public synchronized void stop() { closeProcess(); decisionExecutor.shutdownNow(); }
+    public synchronized void stop() {
+        /*
+         * Close the process streams first. A worker may currently be blocked in
+         * readAction(); closing the streams releases that blocking I/O without
+         * making the Minecraft client wait for the worker's decide() monitor.
+         */
+        closeProcess();
+        decisionExecutor.shutdownNow();
+        pendingDecision = null;
+        lastSubmittedTick = Long.MIN_VALUE;
+        lastCompletedTick = Long.MIN_VALUE;
+    }
     public synchronized LegacyAction lastAction() { return lastAction; }
 
     static String resolveRuntimeJar(String property, String environment) {

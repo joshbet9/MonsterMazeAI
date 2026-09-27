@@ -31,6 +31,16 @@ public final class TacticalRouteSimulator {
     private final LegacyMovementModel physics = new LegacyMovementModel();
     private final AbilityModel abilities = new AbilityModel();
 
+    public Action nextAction(GameState source, PlayerRoute route, Cell goal,
+                              boolean regionGoal, int regionRadius) {
+        if (!needsTacticalSearch(source)) return routeFollowerAction(source, route, 0);
+        return chooseTacticalAction(source, route, 0, goal, regionGoal, regionRadius);
+    }
+
+    public boolean shouldUseTacticalAction(GameState state) {
+        return needsTacticalSearch(state);
+    }
+
     public Result simulate(GameState source, PlayerRoute route, Cell goal,
                            boolean regionGoal, int regionRadius) {
         GameState state = source.copy();

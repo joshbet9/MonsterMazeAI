@@ -75,6 +75,8 @@ public class FirstPadMovementPhysicsSimulationTest {
                 result.ticks = tick;
                 result.x = state.player.x;
                 result.z = state.player.z;
+                result.remainingJumpCharges = state.player.jumpCharges;
+                result.lastDecisionDetail = controller.lastDecisionDetail();
                 return result;
             }
 
@@ -95,6 +97,8 @@ public class FirstPadMovementPhysicsSimulationTest {
                 result.ticks = tick + 1;
                 result.x = state.player.x;
                 result.z = state.player.z;
+                result.remainingJumpCharges = state.player.jumpCharges;
+                result.lastDecisionDetail = controller.lastDecisionDetail();
                 return result;
             }
 
@@ -105,6 +109,8 @@ public class FirstPadMovementPhysicsSimulationTest {
                 result.ticks = tick + 1;
                 result.x = state.player.x;
                 result.z = state.player.z;
+                result.remainingJumpCharges = state.player.jumpCharges;
+                result.lastDecisionDetail = controller.lastDecisionDetail();
                 return result;
             }
         }
@@ -209,5 +215,6 @@ public class FirstPadMovementPhysicsSimulationTest {
         double x;
         double z;
         double maxRouteDeviation;
+        String lastDecisionDetail = "";
     }
 }

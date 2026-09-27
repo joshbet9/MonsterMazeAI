@@ -8,6 +8,7 @@ import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.physics.PhysicsModel;
+import me.monstermazeai.physics.MonsterMazeBumpModel;
 
 public final class Simulator {
     private final PhysicsModel physics;
@@ -31,7 +32,8 @@ public final class Simulator {
         if(action.useAbility()) abilities.activate(state);
         physics.tick(state.player, action);
         monsters.tick(state);
-        for(MonsterState monster: state.monsters) collision.tryMonsterHit(state, monster, abilities);
+        // Use the authoritative source bump model directly in the closed-loop simulator.
+        MonsterMazeBumpModel.apply(state);
         progression.tick(state);
         if(state.player.y>0.0 && state.kit==me.monstermazeai.kit.Kit.JUMPER) abilities.consumeJumperCharge(state);
         state.tick++;

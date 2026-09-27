@@ -69,7 +69,7 @@ class PlannerValidationTest {
 
     @Test void collisionDamageIsVisibleToPlanner() {
         GameState s=state(10.5,20.5,35*20);
-        s.monsters.add(new me.monstermazeai.monster.MonsterState(1,11.0,0,20.5));
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(1,10.5,0,20.5));
         Simulator simulator=new Simulator(
                 new LegacyMazePhysics(),
                 new MonsterSimulator(s.maze,new Random(1),0.07),

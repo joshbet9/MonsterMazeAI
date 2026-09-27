@@ -16,11 +16,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class LiveObjectiveControllerTest {
     private static MazeModel openMaze() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
-        for (int row = 0; row < MazeModel.SIZE; row++) {
-            for (int column = 0; column < MazeModel.SIZE; column++) {
+        for (int row = 0; row < MazeModel.SIZE; row++)
+            for (int column = 0; column < MazeModel.SIZE; column++)
                 raw[row][column] = 1;
-            }
-        }
         return new MazeModel(raw);
     }
 
@@ -59,7 +57,6 @@ class LiveObjectiveControllerTest {
         GameState state = activeState(4, 1);
         state.player.x = 4.5;
         state.player.z = 1.5;
-
         assertEquals(Action.IDLE, controller().nextAction(state, false));
     }
 
@@ -67,7 +64,6 @@ class LiveObjectiveControllerTest {
     void zeroPhaseStillUsesObservedActivePad() {
         GameState state = activeState(4, 1);
         state.phaseTicksRemaining = 0;
-
         assertNotEquals(Action.IDLE, controller().nextAction(state, false));
     }
 
@@ -77,7 +73,6 @@ class LiveObjectiveControllerTest {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][1] = 1;
         state.maze = new MazeModel(raw);
-
         assertEquals(Action.IDLE, controller().nextAction(state, false));
     }
 
@@ -96,7 +91,7 @@ class LiveObjectiveControllerTest {
 
         Action second = controller.nextAction(state, false);
         assertNotEquals(Action.IDLE, second);
-        assertNotEquals(first, second,
-                "A promoted pad must be selected from the newest observation.");
+        assertTrue(controller.lastDecisionDetail().contains("goal=8,8"),
+                "The newest observation must replace the previous pad objective.");
     }
 }

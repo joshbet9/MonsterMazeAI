@@ -4,6 +4,7 @@ import me.monstermazeai.ability.AbilityState;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.maze.Cell;
 import me.monstermazeai.player.PlayerState;
 
 import java.util.ArrayList;
@@ -42,6 +43,8 @@ public final class GameState {
     public Kit kit = Kit.JUMPER;
     public AbilityState ability = new AbilityState();
     public final List<MonsterState> monsters = new ArrayList<>();
+    /** Safe pads retained by GameManager after a phase transition; used for bump immunity. */
+    public final List<Cell> oldPads = new ArrayList<>();
     public int activePadRow = -1, activePadColumn = -1;
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
@@ -52,6 +55,13 @@ public final class GameState {
 
     public double targetPadX() {
         return activePadRow < 0 ? Double.NaN : activePadRow + 0.5;
+    }
+
+    public boolean oldPadContains(PlayerState p) {
+        for (Cell pad : oldPads) {
+            if (PadModel.isOn(p, pad.row() + 0.5, PAD_SURFACE_Y, pad.column() + 0.5)) return true;
+        }
+        return false;
     }
 
     public double targetPadZ() {
@@ -82,6 +92,7 @@ public final class GameState {
         s.completed=completed;
         s.inMonsterMaze=inMonsterMaze;
         s.padReached=padReached;
+        s.oldPads.addAll(oldPads);
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;
     }

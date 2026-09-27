@@ -5,6 +5,7 @@ import me.monstermazeai.game.Mode;
 import me.monstermazeai.game.PadModel;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.player.PlayerState;
 
 public final class AbilityModel {
     private static final long JUMPER_RECHARGE_TICKS = 15;
@@ -13,12 +14,11 @@ public final class AbilityModel {
     private static final long CRYO_FREEZE_TICKS = 60;
     private static final long BODY_RUSH_TICKS = 200;
     private static final long BODY_RUSH_CONTACT_PENALTY_TICKS = 40;
-    private static final double LAUNCH_GROUND_BOOST = 0.2;
 
     public void initialise(AbilityState state, Kit kit) {
         state.charges = switch (kit) {
             case JUMPER -> 3;
-            case SLOWBALLER -> 16;
+            case SLOWBALLER -> 1;
             case BODY_BUILDER -> 0;
             case REPULSOR -> 3;
             case MAVERICK -> 0;
@@ -41,7 +41,7 @@ public final class AbilityModel {
     public boolean canConsumeJumperCharge(GameState game) {
         if (game.kit != Kit.JUMPER || game.ability.charges <= 0) return false;
         if (game.tick < game.player.nextJumpChargeTick) return false;
-        if (game.player.recentMobHitUntilTick > 0 && game.tick < game.player.recentMobHitUntilTick + JUMPER_POST_HIT_GRACE_TICKS) return false;
+        if (game.tick < game.player.mobHitGraceUntilTick) return false;
         return !qolEnabled(game) || !isOnAnyPad(game);
     }
 
@@ -67,11 +67,8 @@ public final class AbilityModel {
     private boolean activateCryo(GameState game) {
         if (!qolEnabled(game) || game.tick < game.ability.cooldownUntilTick) return false;
         game.ability.cooldownUntilTick = game.tick + CRYO_COOLDOWN_TICKS;
-
         for (MonsterState m : game.monsters) {
-            double dx = game.player.x - m.x;
-            double dy = game.player.y - m.y;
-            double dz = game.player.z - m.z;
+            double dx = game.player.x - m.x, dy = game.player.y - m.y, dz = game.player.z - m.z;
             if (dx*dx + dy*dy + dz*dz <= 36.0) {
                 m.frozenUntilTick = Math.max(m.frozenUntilTick, game.tick + CRYO_FREEZE_TICKS);
                 m.vx = m.vy = m.vz = 0.0;
@@ -91,25 +88,15 @@ public final class AbilityModel {
     private boolean activateRepulsor(GameState game) {
         if (game.ability.charges <= 0) return false;
         game.ability.charges--;
-
         for (MonsterState m : game.monsters) {
-            double dx = m.x - game.player.x;
-            double dz = m.z - game.player.z;
+            double dx = m.x - game.player.x, dz = m.z - game.player.z;
             double distSq = dx*dx + dz*dz;
             if (distSq > 36.0) continue;
-
             double len = Math.sqrt(distSq);
-            if (len < 1e-9) {
-                dx = 1.0;
-                dz = 0.0;
-                len = 1.0;
-            }
-            dx /= len;
-            dz /= len;
-
-            m.vx = dx;
-            m.vz = dz;
-            m.vy = 1.0; // UtilAction yAdd=0.8 plus +0.2 grounded boost.
+            if (len < 1.0E-9) { dx = 1; dz = 0; len = 1; }
+            m.vx = dx / len;
+            m.vz = dz / len;
+            m.vy = 1.0;
             m.launchedAtTick = game.tick;
             m.launchedUntilTick = game.tick + 30;
             m.waypointRow = -1;
@@ -123,7 +110,6 @@ public final class AbilityModel {
             game.ability.charges = 3;
             game.player.jumpCharges = 3;
         }
-
         if (game.kit == Kit.BODY_BUILDER && first) {
             game.player.maxHealth = Math.min(30.0, game.player.maxHealth + 2.0);
             game.player.health = Math.min(game.player.maxHealth, game.player.health + 4.0);
@@ -134,23 +120,23 @@ public final class AbilityModel {
         }
     }
 
+    /** Compatibility helper used by collision tests; real contacts call this through bump semantics. */
+    public void consumeBodyRushContact(GameState game) {
+        if (isBodyRushActive(game)) game.ability.activeUntilTick = Math.max(game.tick, game.ability.activeUntilTick - 40L);
+    }
+
     public boolean isBodyRushActive(GameState game) {
         return game.kit == Kit.BODY_BUILDER && qolEnabled(game)
                 && game.ability.activeUntilTick > game.tick;
     }
 
-    public void consumeBodyRushContact(GameState game) {
-        if (!isBodyRushActive(game)) return;
-        game.ability.activeUntilTick -= BODY_RUSH_CONTACT_PENALTY_TICKS;
-    }
-
     public boolean isOnAnyPad(GameState game) {
         boolean active = game.activePadRow >= 0 && game.activePadColumn >= 0
-                && PadModel.isOn(game.player, game.activePadRow + 0.5,
-                GameState.PAD_SURFACE_Y, game.activePadColumn + 0.5);
+                && PadModel.isOn(game.player, game.activePadRow + 0.5, GameState.PAD_SURFACE_Y,
+                game.activePadColumn + 0.5);
         boolean preview = game.previewPadRow >= 0 && game.previewPadColumn >= 0
-                && PadModel.isOn(game.player, game.previewPadRow + 0.5,
-                GameState.PAD_SURFACE_Y, game.previewPadColumn + 0.5);
-        return active || preview;
+                && PadModel.isOn(game.player, game.previewPadRow + 0.5, GameState.PAD_SURFACE_Y,
+                game.previewPadColumn + 0.5);
+        return active || preview || game.oldPadContains(game.player);
     }
 }

@@ -57,6 +57,24 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
             // resulting forward input. Explicitly clear sprint when the AI
             // does not request it so a previous sprint cannot leak through.
             minecraft.thePlayer.setSprinting(action.sprint);
+
+            // Monster Maze abilities are right-click item abilities in the source
+            // plugin. Send one real item-use pulse per AI ability action; do not
+            // synthesize a held mouse state that could repeat every client tick.
+            if (executor.consumeAbilityPulse()
+                    && minecraft.playerController != null
+                    && minecraft.theWorld != null) {
+                net.minecraft.item.ItemStack stack = minecraft.thePlayer.getCurrentEquippedItem();
+                if (stack != null) {
+                    // Source kits use different input events: Repulsor and Body
+                    // Rush are right-click abilities; Cryo Blitz is Q-drop.
+                    if (stack.getItem() == net.minecraft.init.Items.snowball) {
+                        minecraft.thePlayer.dropOneItem(false);
+                    } else {
+                        minecraft.playerController.sendUseItem(minecraft.thePlayer, minecraft.theWorld, stack);
+                    }
+                }
+            }
         }
     }
 }

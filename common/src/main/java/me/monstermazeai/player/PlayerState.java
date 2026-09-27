@@ -5,6 +5,13 @@ public final class PlayerState {
     public double vx, vy, vz;
     public float yaw, pitch;
     public boolean grounded;
+    /**
+     * A source-game velocity write can occur while Minecraft still reports the
+     * player onGround for the remainder of the current tick. The next movement
+     * step must therefore use the ground input/friction path, then transition
+     * airborne after the positive Y displacement.
+     */
+    public boolean pendingAirborne;
     public double health = 20.0;
     public double maxHealth = 20.0;
     /** Cumulative damage received in this simulated run, independent of healing. */
@@ -12,15 +19,18 @@ public final class PlayerState {
     public int jumpCharges;
     public long nextJumpChargeTick;
     public long recentMobHitUntilTick;
+    /** Source KitManager lastMobHit grace used by Jumper/Slowball QOL. */
+    public long mobHitGraceUntilTick;
     public int jumpTicks;
 
     public PlayerState copy() {
         PlayerState p = new PlayerState();
         p.x=x; p.y=y; p.z=z; p.vx=vx; p.vy=vy; p.vz=vz;
         p.yaw=yaw; p.pitch=pitch; p.grounded=grounded;
+        p.pendingAirborne=pendingAirborne;
         p.health=health; p.maxHealth=maxHealth; p.damageTaken=damageTaken;
         p.jumpCharges=jumpCharges; p.nextJumpChargeTick=nextJumpChargeTick;
-        p.recentMobHitUntilTick=recentMobHitUntilTick; p.jumpTicks=jumpTicks;
+        p.recentMobHitUntilTick=recentMobHitUntilTick; p.mobHitGraceUntilTick=mobHitGraceUntilTick; p.jumpTicks=jumpTicks;
         return p;
     }
 }

@@ -255,12 +255,14 @@ public final class Minecraft18Observer {
         double baseY = center.getY() - 1.0D;
         double baseZ = center.getZ() - HALF_MAZE + pad.column;
 
-        return player.posX >= baseX - 2.0D
-                && player.posX <= baseX + 2.999D
-                && player.posY >= baseY
-                && player.posY <= baseY + 5.0D
-                && player.posZ >= baseZ - 2.999D
-                && player.posZ <= baseZ + 2.0D;
+        // Exact SafePad.isOn() semantics from the source plugin:
+        // dx > -2.5, dx < 2.5, dz > -2.5, dz < 2.5, y > padY, y < padY+5.
+        double dx = player.posX - (baseX + 0.0D);
+        double dz = player.posZ - (baseZ + 0.0D);
+        return dx > -2.5D && dx < 2.5D
+                && player.posY > baseY
+                && player.posY < baseY + 5.0D
+                && dz > -2.5D && dz < 2.5D;
     }
 
     /**

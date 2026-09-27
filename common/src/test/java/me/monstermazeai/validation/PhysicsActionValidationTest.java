@@ -140,7 +140,7 @@ class PhysicsActionValidationTest {
     void bodyBuilderAbilityConvertsMonsterContactIntoLaunch() {
         GameState s = state(Kit.BODY_BUILDER);
         s.ability.activations = 2;
-        MonsterState monster = new MonsterState(8, 50.5, GameState.PATH_Y, 51.0);
+        MonsterState monster = new MonsterState(8, 50.5, GameState.PATH_Y, 50.5);
         s.monsters.add(monster);
         Simulator simulator = simulator(s);
 

@@ -399,9 +399,10 @@ public final class Minecraft18AiRuntime {
         if (property != null && !property.trim().isEmpty()) return property.trim();
         if (environment != null && !environment.trim().isEmpty()) return environment.trim();
         if (javaHome != null && !javaHome.trim().isEmpty()) {
-            String separator = javaHome.endsWith("\\") || javaHome.endsWith("/")
-                    ? "" : java.io.File.separator;
-            return javaHome + separator + "bin" + java.io.File.separator + "java.exe";
+            String slash = javaHome.indexOf('\\\\') >= 0 ? "\\\\" : "/";
+            String separator = javaHome.endsWith("\\\\") || javaHome.endsWith("/")
+                    ? "" : slash;
+            return javaHome + separator + "bin" + slash + "java.exe";
         }
         return "java";
     }

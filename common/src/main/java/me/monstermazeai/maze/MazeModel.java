@@ -22,7 +22,6 @@ public final class MazeModel {
             for (int c = 0; c < SIZE; c++) this.physicalFloor[r][c] = raw[r][c] != 0;
         }
         dynamicSignature = 0x9E3779B97F4A7C15L;
-        }
     }
 
     public int raw(int row, int col) { return raw[row][col]; }

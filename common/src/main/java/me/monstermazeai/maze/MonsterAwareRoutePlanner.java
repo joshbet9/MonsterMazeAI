@@ -157,7 +157,8 @@ public final class MonsterAwareRoutePlanner {
          *
          * This is a structural fast path, not a reduction in replanning
          * frequency: fresh observations still reach this method immediately,
-         * and any route with a relevant future monster takes the full simulator.
+         * and a monster entering the local interaction radius takes the full
+         * simulator on that fresh observation.
          */
         boolean hasRelevantMonster = false;
         for (var monster : state.monsters) {

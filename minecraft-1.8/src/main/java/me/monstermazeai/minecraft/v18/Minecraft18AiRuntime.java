@@ -35,7 +35,8 @@ import java.util.regex.Pattern;
 public final class Minecraft18AiRuntime {
     private static final String EMBEDDED_RUNTIME_RESOURCE =
             "/runtime/monster-maze-ai-runtime.jar";
-    private static final long MAX_ACTION_AGE_TICKS = 40L;
+    /** Movement-only branch: never execute a decision more than two client ticks late. */
+    private static final long MAX_ACTION_AGE_TICKS = 2L;
 
     private volatile Process process;
     private volatile DataInputStream input;

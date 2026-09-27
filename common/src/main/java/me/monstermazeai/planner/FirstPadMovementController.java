@@ -137,7 +137,7 @@ public final class FirstPadMovementController {
          * a final live-world guard against an unexpected floor change or a
          * player being pushed away from the route.
          */
-        if (!nextPhysicalCell(state.maze, state.player.x, state.player.z, dirRow, dirColumn)) {
+        if (!routeForwardCellIsPhysical(state.maze, state.player.x, state.player.z)) {
             lastDecisionDetail = "EDGE_GUARD current="
                     + startRow + "," + startColumn
                     + " dir=" + dirRow + "," + dirColumn;
@@ -248,12 +248,22 @@ public final class FirstPadMovementController {
         return true;
     }
 
-    private static boolean nextPhysicalCell(
-            MazeModel maze, double x, double z, int dirRow, int dirColumn) {
+    private boolean routeForwardCellIsPhysical(MazeModel maze, double x, double z) {
         Cell current = containingCell(x, z);
         if (!maze.isPhysicalFloor(current.row(), current.column())) return false;
-        Cell next = new Cell(current.row() + dirRow, current.column() + dirColumn);
-        return maze.isPhysicalFloor(next.row(), next.column());
+        if (route == null || segmentIndex <= 0 || segmentIndex >= route.size()) return true;
+
+        Cell previous = route.cells().get(segmentIndex - 1);
+        Cell target = route.cells().get(segmentIndex);
+        if (current.equals(previous)) {
+            return maze.isPhysicalFloor(target.row(), target.column());
+        }
+        if (current.equals(target)) {
+            if (segmentIndex + 1 >= route.size()) return true;
+            Cell next = route.cells().get(segmentIndex + 1);
+            return maze.isPhysicalFloor(next.row(), next.column());
+        }
+        return route.cells().contains(current);
     }
 
     private static Cell containingCell(double x, double z) {

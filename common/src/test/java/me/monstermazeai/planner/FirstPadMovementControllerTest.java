@@ -4,9 +4,9 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.player.Action;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class FirstPadMovementControllerTest {
     private static GameState state(Kit kit, int jumpCharges, double x, double z, float yaw) {

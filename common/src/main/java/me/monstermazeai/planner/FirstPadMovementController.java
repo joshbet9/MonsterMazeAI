@@ -145,16 +145,15 @@ public final class FirstPadMovementController {
         }
 
         /*
-         * Source cross-check:
-         * - non-Jumper kits are jump-locked server-side, but the 1.8 source
-         *   explicitly preserves the jump-spam "speeding" behaviour;
-         * - Jumper is the only kit with charged real jumps.
-         *
-         * Holding jump is therefore intentional here, rather than a generic
-         * ability action. Vanilla MovementInput supplies the jump state every
-         * tick; the server-side kit code decides whether it becomes a real jump.
+         * Movement-only test policy:
+         * - non-Jumper kits may hold jump to exercise the source 1.8
+         *   jump-spam "speeding" mechanic;
+         * - Jumper never presses jump in this branch. Real charged jumps belong
+         *   to the future ability layer and must not be consumed by this motor
+         *   proof. This keeps the first-pad test deterministic and preserves
+         *   the charges for the later ability-aware controller.
          */
-        boolean jump = state.kit != Kit.JUMPER || state.player.jumpCharges > 0;
+        boolean jump = state.kit != Kit.JUMPER;
 
         lastDecisionDetail = "FIRST_PAD_MOTOR"
                 + " segment=" + segmentIndex + "/" + (route.size() - 1)

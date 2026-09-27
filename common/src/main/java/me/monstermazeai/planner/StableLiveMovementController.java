@@ -125,6 +125,19 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
+        // When a source interaction is close enough to matter this tick, hand
+        // control to the same tactical simulator used during route selection.
+        // This is what makes deliberate contact and ability use real live actions,
+        // rather than merely simulated route preferences.
+        if (routePlanner.shouldUseTacticalAction(state)) {
+            Action tactical = routePlanner.tacticalAction(
+                    state, route, goal, regionRadius);
+            if (tactical != null) {
+                lastDecisionDetail += " TACTICAL=" + tactical;
+                return tactical;
+            }
+        }
+
         double targetX = route.targetX(waypointIndex);
         double targetZ = route.targetZ(waypointIndex);
         double dx = targetX - state.player.x;

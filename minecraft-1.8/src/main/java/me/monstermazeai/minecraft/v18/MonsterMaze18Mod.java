@@ -91,15 +91,19 @@ public final class MonsterMaze18Mod {
         }
 
         LegacyWorldObservation state = observer.observe().state;
-        LegacyAction action = runtime.decide(state);
 
-        // Store the command for the next vanilla movement-input update.
-        // The custom MovementInput consumes it after Minecraft has read the
-        // physical keyboard, so human WASD cannot overwrite the AI command.
-        executor.apply(action);
+        // Never block the Minecraft client tick on the planner/sidecar. Submit
+        // the newest observation when the previous decision has completed, then
+        // apply only completed results. Until a result arrives, the executor
+        // retains its last command; this keeps the render/client thread alive.
+        runtime.submit(state);
+        LegacyAction completed = runtime.pollCompleted(state.worldTick);
+        if (completed != null) {
+            executor.apply(completed);
+        }
 
         if (state.inMonsterMaze) {
-            movementValidator.observe(state, action);
+            movementValidator.observe(state, executor.currentAction());
         } else {
             movementValidator.reset();
         }

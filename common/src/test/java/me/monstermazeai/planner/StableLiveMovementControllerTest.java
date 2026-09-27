@@ -53,6 +53,34 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
+        GameState s = state(0.0, 0.0, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action first = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertEquals(0.0, first.forward(), 1.0e-6);
+        assertEquals(0.0, first.strafe(), 1.0e-6);
+        assertEquals(-12.0F, first.yawDelta(), 1.0e-6F,
+                "the initial 90-degree heading error must turn in place rather than safety-stop");
+        assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
+    }
+
+    @Test
+    void sourceSafePadLaneOffsetIsPreservedAfterHeadingAligns() {
+        GameState s = state(0.0, 0.0, -90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(action.forward() > 0.0,
+                "a legitimate integer-centred SafePad spawn must be allowed to enter the cardinal route");
+        assertEquals(0.0, action.strafe(), 1.0e-6);
+        assertEquals(0.0F, action.yawDelta(), 1.0e-6F);
+        assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
+    }
+
+    @Test
     void turnsTowardSidewaysObjectiveWithoutStrafingBackAndForth() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -36,7 +36,9 @@ public class FirstPadMovementPhysicsSimulationTest {
 
             assertTrue(result.reachedPad,
                     "did not reach pad from yaw " + initialYaw
-                            + " after " + result.ticks + " ticks");
+                            + " after " + result.ticks + " ticks at "
+                            + result.x + "," + result.z
+                            + " decision=" + result.lastDecisionDetail);
             assertFalse(result.leftPhysicalFloor,
                     "left physical floor from yaw " + initialYaw
                             + " at " + result.x + "," + result.z);

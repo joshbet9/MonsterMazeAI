@@ -18,15 +18,17 @@ import java.util.Random;
 /**
  * Closed-loop source-world simulator.
  *
- * Every candidate action is executed through the same player movement model,
- * source-derived monster movement, kit ability model and MonsterManager bump
- * rules. The live motor supports the same action dimensions, so the planner
- * cannot select an action that the adapter cannot execute.
+ * Performance optimisations are deliberately outside authoritative mechanics:
+ * irrelevant tactical branches are pruned before expensive physics while the
+ * route simulator retains the complete observed monster population.
  */
 public final class TacticalRouteSimulator {
-    private static final int TACTICAL_HORIZON = 8;
-    private static final int TACTICAL_BEAM = 20;
+    private static final int TACTICAL_HORIZON = 6;
+    private static final int TACTICAL_BEAM = 10;
     private static final int MAX_SIMULATION_TICKS = 2400;
+    private static final double ROUTE_TICKS_PER_CELL = 12.0;
+    private static final int ROUTE_TICK_MARGIN = 40;
+    private static final double TACTICAL_RELEVANCE_RADIUS = 16.0;
     private static final double WAYPOINT_TOLERANCE = 0.30;
 
     private final LegacyMovementModel physics = new LegacyMovementModel();
@@ -48,8 +50,9 @@ public final class TacticalRouteSimulator {
         initialiseMissingAbilityState(state);
         int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, WAYPOINT_TOLERANCE);
         MonsterSimulator monsters = monsterSimulator(state, source.tick);
+        int simulationLimit = simulationLimit(route);
 
-        for (int elapsed = 1; elapsed <= MAX_SIMULATION_TICKS; elapsed++) {
+        for (int elapsed = 1; elapsed <= simulationLimit; elapsed++) {
             state.tick = source.tick + elapsed;
             waypoint = route.nextWaypoint(state.player.x, state.player.z, waypoint, WAYPOINT_TOLERANCE);
 
@@ -63,7 +66,7 @@ public final class TacticalRouteSimulator {
 
             step(state, action, monsters);
 
-            if (state.player.health <= 0.0) {
+            if (state.player.health <= 0.0 || !state.alive) {
                 state.alive = false;
                 return new Result(false, Integer.MAX_VALUE, state.player.health,
                         state.player.damageTaken, state, waypoint);
@@ -72,6 +75,11 @@ public final class TacticalRouteSimulator {
 
         return new Result(false, Integer.MAX_VALUE, state.player.health,
                 state.player.damageTaken, state, waypoint);
+    }
+
+    private int simulationLimit(PlayerRoute route) {
+        int routeBudget = (int) Math.ceil(route.size() * ROUTE_TICKS_PER_CELL) + ROUTE_TICK_MARGIN;
+        return Math.min(MAX_SIMULATION_TICKS, Math.max(80, routeBudget));
     }
 
     private Result success(int ticks, GameState state, int waypoint) {
@@ -87,18 +95,14 @@ public final class TacticalRouteSimulator {
         boolean wasGrounded = state.player.grounded;
         physics.tick(state.player, action, state.maze);
 
-        // If a knockback/speeding trajectory carries the player over the
-        // physical maze edge, keep simulating it so the controller can steer
-        // back onto the maze. It becomes a failed branch only after the player
-        // has actually fallen far enough to be unrecoverable.
+        // Preserve source recovery/fall behaviour; only unrecoverable fall ends
+        // a branch.
         if (state.player.y < -3.0) {
             state.alive = false;
             return;
         }
 
-        // Source jumpEvent runs once per server tick. It consumes a Jumper
-        // charge only after the player is airborne above the maze floor and
-        // never while in the source's post-bump grace window.
+        // Source jumpEvent semantics: consume only after becoming airborne.
         if (state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && !wasGrounded && state.player.y > GameState.PATH_Y) {
             abilities.consumeJumperCharge(state);
@@ -108,18 +112,10 @@ public final class TacticalRouteSimulator {
         double healthBeforeBump = state.player.health;
         MonsterMazeBumpModel.apply(state);
 
-        // A direct, high-speed forward approach can produce the observed
-        // "speeding into the mob" slide: the horizontal knockback carries the
-        // player toward the void while vertical recovery is weak or absent.
-        // Keep the source bump authoritative, then conservatively evaluate that
-        // contact as a no-vertical-recovery outcome when the projected path
-        // leaves the physical maze floor.
+        // MonsterManager/UtilAction remains authoritative for the bump itself.
         SpeedContactModel.applyConservativeSlideOutcome(
                 beforeContact, state, action, state.player.health < healthBeforeBump);
 
-        // Source pad healing is applied by GameManager when the active pad is
-        // reached. Route simulation ends at the current objective, so the
-        // transition is applied here to make the returned state authoritative.
         if (isOnActivePad(state)) {
             abilities.onReachedPad(state, true);
             state.padReached = true;
@@ -144,8 +140,14 @@ public final class TacticalRouteSimulator {
 
     private Action chooseTacticalAction(GameState source, PlayerRoute route, int waypoint,
                                         Cell goal, boolean regionGoal, int regionRadius) {
+        /*
+         * A six-tick branch cannot be affected by a monster outside this
+         * conservative envelope. This trims only the branch copy; route
+         * simulation and live observations retain the full monster population.
+         */
+        GameState tacticalSource = tacticalState(source);
         List<Node> beam = new ArrayList<>();
-        beam.add(new Node(source.copy(), waypoint, List.of()));
+        beam.add(new Node(tacticalSource, waypoint, List.of()));
 
         for (int depth = 0; depth < TACTICAL_HORIZON; depth++) {
             List<Node> next = new ArrayList<>();
@@ -156,7 +158,7 @@ public final class TacticalRouteSimulator {
                     MonsterSimulator branchMonsters = monsterSimulator(s, source.tick + depth + 1);
                     int wp = route.nextWaypoint(s.player.x, s.player.z, node.waypoint, WAYPOINT_TOLERANCE);
                     step(s, action, branchMonsters);
-                    if (s.player.health <= 0.0) continue;
+                    if (s.player.health <= 0.0 || !s.alive) continue;
                     next.add(new Node(s, wp, append(node.actions, action)));
                 }
             }
@@ -172,6 +174,19 @@ public final class TacticalRouteSimulator {
                 : beam.get(0).actions.get(0);
     }
 
+    private GameState tacticalState(GameState source) {
+        GameState state = source.copy();
+        double radiusSq = TACTICAL_RELEVANCE_RADIUS * TACTICAL_RELEVANCE_RADIUS;
+        state.monsters.removeIf(m -> {
+            if (m.removed || m.launched(source.tick) || m.frozen(source.tick)) return true;
+            double dx = source.player.x - m.x;
+            double dy = source.player.y - m.y;
+            double dz = source.player.z - m.z;
+            return dx * dx + dy * dy + dz * dz > radiusSq;
+        });
+        return state;
+    }
+
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
@@ -182,55 +197,61 @@ public final class TacticalRouteSimulator {
     }
 
     private boolean needsTacticalSearch(GameState state) {
-        double reach = 0.45 + Math.hypot(state.player.vx, state.player.vz) * TACTICAL_HORIZON;
+        double playerReach = 0.45 + Math.hypot(state.player.vx, state.player.vz) * TACTICAL_HORIZON;
+        double contactReach = MonsterMazeBumpModel.CONTACT_DISTANCE + playerReach;
+
         for (var m : state.monsters) {
             if (m.removed || m.launched(state.tick) || m.frozen(state.tick)) continue;
-            double separation = Math.sqrt(
-                    sq(state.player.x - m.x) + sq(state.player.y - m.y) + sq(state.player.z - m.z));
+            double separationSq = sq(state.player.x - m.x)
+                    + sq(state.player.y - m.y)
+                    + sq(state.player.z - m.z);
             double monsterReach = Math.hypot(m.vx, m.vz) * TACTICAL_HORIZON;
-            if (separation <= MonsterMazeBumpModel.CONTACT_DISTANCE + reach + monsterReach) return true;
+            double threshold = contactReach + monsterReach;
+            if (separationSq <= threshold * threshold) return true;
         }
-        // Ability use can be strategically useful before contact. Let the beam
-        // search decide when a QOL ability is available and monsters are within
-        // its actual source radius.
+
+        // Source ability range is six blocks. Preserve the opportunity to use
+        // an ability without making every distant monster a tactical trigger.
         if (state.kit != me.monstermazeai.kit.Kit.JUMPER) {
             for (var m : state.monsters) {
-                double d = Math.sqrt(sq(state.player.x-m.x)+sq(state.player.y-m.y)+sq(state.player.z-m.z));
-                if (d <= 6.0) return true;
+                if (m.removed || m.launched(state.tick) || m.frozen(state.tick)) continue;
+                if (sq(state.player.x - m.x) + sq(state.player.y - m.y)
+                        + sq(state.player.z - m.z) <= 36.0) return true;
             }
         }
         return false;
     }
 
     private List<Action> tacticalActions(GameState state) {
-        List<Action> out = new ArrayList<>();
-        double[] turns = {-30, 0, 30};
-        double[] inputs = {-1, 0, 1};
-        for (double forward : inputs) {
-            for (double strafe : inputs) {
-                for (double turn : turns) {
-                    if (forward == 0 && strafe == 0 && turn != 0) continue;
-
-                    // Normal control candidate.
-                    out.add(new Action(forward, strafe, false, forward != 0, (float)turn, false));
-
-                    // "Speeding" candidate: hold jump while sprinting. Vanilla
-                    // only converts this into an actual jump when grounded;
-                    // while airborne it is still the real held-jump state.
-                    // That distinction is critical for mob contact because the
-                    // source bump gets +0.2 vertical boost only while grounded.
-                    if (forward > 0) {
-                        out.add(new Action(forward, strafe, true, true, (float)turn, false));
-                    }
-                }
-            }
-        }
-        // Ability is an independent right-click action; include it separately
-        // so the source item is not implicitly consumed on every movement tick.
+        /*
+         * Preserve the source interaction classes while removing redundant
+         * Cartesian combinations. In particular, keep direct strafe and
+         * forward-strafe contacts because they are part of the speeding/contact
+         * model; StableLiveMovementController remains the normal motor authority.
+         */
+        List<Action> out = new ArrayList<>(20);
+        addMovement(out, 1, 0, false, 0);
+        addMovement(out, 1, 0, true, 0);
+        addMovement(out, 1, -1, false, 0);
+        addMovement(out, 1, -1, true, 0);
+        addMovement(out, 1, 1, false, 0);
+        addMovement(out, 1, 1, true, 0);
+        addMovement(out, 0, -1, false, 0);
+        addMovement(out, 0, 1, false, 0);
+        addMovement(out, -1, 0, false, 0);
+        addMovement(out, 1, 0, false, -30);
+        addMovement(out, 1, 0, false, 30);
+        addMovement(out, 1, 0, true, -30);
+        addMovement(out, 1, 0, true, 30);
         out.add(new Action(0, 0, false, false, 0, true));
         out.add(new Action(1, 0, true, true, 0, true));
-        out.add(new Action(-1, 0, false, false, 0, true));
         return out;
+    }
+
+    private static void addMovement(List<Action> out, double forward, double strafe,
+                                    boolean jump, float turn) {
+        boolean moving = Math.abs(forward) > 1.0E-9 || Math.abs(strafe) > 1.0E-9;
+        out.add(new Action(forward, strafe, jump, moving, turn, false));
     }
 
     private Action routeFollowerAction(GameState state, PlayerRoute route, int waypoint) {
@@ -250,9 +271,7 @@ public final class TacticalRouteSimulator {
 
     private boolean goalReached(GameState state, PlayerRoute route, int waypoint,
                                 Cell goal, boolean regionGoal, int radius) {
-        if (regionGoal) {
-            return isOnExactPadRegion(state, goal);
-        }
+        if (regionGoal) return isOnExactPadRegion(state, goal);
         return waypoint >= route.size() - 1
                 && distanceToWaypoint(state, route, route.size() - 1) <= WAYPOINT_TOLERANCE;
     }

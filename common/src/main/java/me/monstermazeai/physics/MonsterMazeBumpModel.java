@@ -141,6 +141,16 @@ public final class MonsterMazeBumpModel {
         monster.waypointColumn = -1;
     }
 
+    private static boolean isOnAnyPad(GameState game) {
+        return game.oldPadContains(game.player)
+                || (game.activePadRow >= 0 && game.activePadColumn >= 0
+                && me.monstermazeai.game.PadModel.isOn(game.player, game.activePadRow + 0.5,
+                GameState.PAD_SURFACE_Y, game.activePadColumn + 0.5))
+                || (game.previewPadRow >= 0 && game.previewPadColumn >= 0
+                && me.monstermazeai.game.PadModel.isOn(game.player, game.previewPadRow + 0.5,
+                GameState.PAD_SURFACE_Y, game.previewPadColumn + 0.5));
+    }
+
     private static boolean contact(PlayerState player, MonsterState monster) {
         double dx = player.x - monster.x;
         double dy = player.y - monster.y;

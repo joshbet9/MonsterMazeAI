@@ -22,6 +22,7 @@ public final class FirstPadSpeedrunController {
     private static final int SIZE = 99;
     private static final int PAD_RADIUS = 2;
     private static final float MAX_YAW_STEP = 30.0F;
+    private static final float ALIGNMENT_TOLERANCE = 10.0F;
     private static final int LOOKAHEAD_CELLS = 3;
 
     private int[] routeRows;
@@ -34,6 +35,7 @@ public final class FirstPadSpeedrunController {
     private int centerZ = Integer.MIN_VALUE;
     private long lastLogTick = Long.MIN_VALUE;
     private boolean targetReached;
+    private boolean aligningForStage;
     private int lastLoggedStage = -1;
     private long startedAtTick = Long.MIN_VALUE;
 
@@ -82,6 +84,45 @@ public final class FirstPadSpeedrunController {
             }
         }
 
+        /*
+         * A new active pad can be a large heading change from the previous
+         * stage. Do the turn while stationary before allowing any forward
+         * movement. The next pad is intentionally unknown before the server
+         * transition, so this is the earliest safe point at which the new
+         * route can be used for pre-alignment.
+         */
+        if (aligningForStage) {
+            int headingIndex = firstRouteHeadingIndex();
+            double headingWorldX = worldX(routeRows[headingIndex], state.center.x);
+            double headingWorldZ = worldZ(routeColumns[headingIndex], state.center.z);
+
+            float desiredYaw = desiredYawTo(state.player.x, state.player.z,
+                    headingWorldX, headingWorldZ);
+            float yawError = normalise(desiredYaw - state.player.yaw);
+            float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+
+            if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE) {
+                aligningForStage = false;
+                System.out.println("[MonsterMazeAI/1.8] PAD ALIGNED"
+                        + " stage=" + state.stage
+                        + " tick=" + state.worldTick
+                        + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
+                        + " yaw=" + format(state.player.yaw)
+                        + " desiredYaw=" + format(desiredYaw));
+            } else {
+                if (state.worldTick % 2L == 0L) {
+                    System.out.println("[MonsterMazeAI/1.8] PAD ALIGN"
+                            + " stage=" + state.stage
+                            + " tick=" + state.worldTick
+                            + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
+                            + " yaw=" + format(state.player.yaw)
+                            + " desiredYaw=" + format(desiredYaw)
+                            + " yawDelta=" + format(yawDelta));
+                }
+                return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
+            }
+        }
+
         if (targetReached || routeLength <= 1) {
             return LegacyAction.IDLE;
         }
@@ -100,14 +141,8 @@ public final class FirstPadSpeedrunController {
         double targetWorldX = worldX(routeRows[targetIndex], state.center.x);
         double targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
 
-        double dx = targetWorldX - state.player.x;
-        double dz = targetWorldZ - state.player.z;
-
-        /*
-         * Minecraft yaw:
-         * 0 = +Z, -90 = +X, 180 = -Z, 90 = -X.
-         */
-        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float desiredYaw = desiredYawTo(state.player.x, state.player.z,
+                targetWorldX, targetWorldZ);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
@@ -141,6 +176,7 @@ public final class FirstPadSpeedrunController {
         centerZ = Integer.MIN_VALUE;
         startedAtTick = Long.MIN_VALUE;
         targetReached = false;
+        aligningForStage = false;
         lastLoggedStage = -1;
         lastLogTick = Long.MIN_VALUE;
     }
@@ -212,6 +248,7 @@ public final class FirstPadSpeedrunController {
         centerX = state.center.x;
         centerZ = state.center.z;
         targetReached = false;
+        aligningForStage = true;
         startedAtTick = state.worldTick;
 
         if (lastLoggedStage != state.stage) {
@@ -279,6 +316,31 @@ public final class FirstPadSpeedrunController {
                 && Math.abs(z - state.pad.column) < 2.5D
                 && state.player.y > baseY
                 && state.player.y < baseY + 5.0D;
+    }
+
+
+    private int firstRouteHeadingIndex() {
+        if (routeLength <= 1) {
+            return 0;
+        }
+
+        int startRow = routeRows[0];
+        int startColumn = routeColumns[0];
+
+        for (int i = 1; i < routeLength; i++) {
+            if (routeRows[i] != startRow || routeColumns[i] != startColumn) {
+                return i;
+            }
+        }
+
+        return Math.min(1, routeLength - 1);
+    }
+
+    private static float desiredYawTo(double fromX, double fromZ,
+                                      double targetX, double targetZ) {
+        double dx = targetX - fromX;
+        double dz = targetZ - fromZ;
+        return (float) Math.toDegrees(Math.atan2(-dx, dz));
     }
 
     private static int row(double world, int center) {

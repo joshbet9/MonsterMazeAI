@@ -404,7 +404,7 @@ public final class FirstPadSpeedrunController {
          * transition, but every newly entered cell must pass both static floor
          * and dynamic monster safety checks.
          */
-        if (isMobBlockedAtArrival(state, r, c, arrivalTicks)) {
+        if (isMobBlockedAlongEdge(state, fromRow, fromColumn, r, c, node.gTicks)) {
             return currentGoal;
         }
 
@@ -418,6 +418,90 @@ public final class FirstPadSpeedrunController {
         double heuristic = heuristicTicks(r, c, targetRow, targetColumn);
         open.add(new RouteNode(next, arrivalTicks, arrivalTicks + heuristic));
         return currentGoal;
+    }
+
+    private boolean isMobBlockedAlongEdge(LegacyWorldObservation state,
+                                           int fromRow,
+                                           int fromColumn,
+                                           int toRow,
+                                           int toColumn,
+                                           double startTicks) {
+        /*
+         * Do not only test the cell centre at the estimated arrival time.
+         * Player and monster can cross between two cell centres during the
+         * same sprint. Sample the complete one-cell transition at one-tick
+         * intervals so a crossing mob also invalidates the edge.
+         */
+        double fromX = worldX(fromRow, state.center.x);
+        double fromZ = worldZ(fromColumn, state.center.z);
+        double toX = worldX(toRow, state.center.x);
+        double toZ = worldZ(toColumn, state.center.z);
+
+        for (int tick = 1; tick <= (int) Math.ceil(ESTIMATED_TICKS_PER_CELL); tick++) {
+            double fraction = tick / ESTIMATED_TICKS_PER_CELL;
+            if (fraction > 1.0D) {
+                fraction = 1.0D;
+            }
+
+            double playerX = fromX + (toX - fromX) * fraction;
+            double playerZ = fromZ + (toZ - fromZ) * fraction;
+            double arrivalTicks = startTicks + tick;
+
+            if (isMobBlockedAtPosition(state, playerX, playerZ, arrivalTicks)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isMobBlockedAtPosition(LegacyWorldObservation state,
+                                            double playerX,
+                                            double playerZ,
+                                            double arrivalTicks) {
+        if (state.monsters == null || state.monsters.isEmpty()) {
+            return false;
+        }
+
+        double predictionTicks = Math.min(arrivalTicks, MOB_PREDICT_TICKS);
+
+        for (LegacyWorldObservation.Monster monster : state.monsters) {
+            if (monster.removed) {
+                continue;
+            }
+
+            double predictedX = monster.x + monster.vx * predictionTicks;
+            double predictedZ = monster.z + monster.vz * predictionTicks;
+
+            double dx = predictedX - playerX;
+            double dz = predictedZ - playerZ;
+            double horizontalDistanceSquared = dx * dx + dz * dz;
+
+            /*
+             * Contact is a hard failure for this benchmark. We intentionally
+             * do not rely on future jump height to declare a mob safe.
+             */
+            if (horizontalDistanceSquared < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS) {
+                return true;
+            }
+
+            /*
+             * Beyond the velocity-prediction horizon, a stationary monster is
+             * still a permanent obstacle. Moving monsters will be reconsidered
+             * from fresh observations as the player advances.
+             */
+            if (arrivalTicks > MOB_PREDICT_TICKS) {
+                double currentDx = monster.x - playerX;
+                double currentDz = monster.z - playerZ;
+                if (currentDx * currentDx + currentDz * currentDz
+                        < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS
+                        && Math.abs(monster.vx) + Math.abs(monster.vz) < 0.03D) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private boolean routeNeedsMobReplan(LegacyWorldObservation state) {
@@ -440,68 +524,6 @@ public final class FirstPadSpeedrunController {
             if (isMobBlockedAtArrival(state,
                     routeRows[i], routeColumns[i], arrivalTicks)) {
                 return true;
-            }
-        }
-
-        return false;
-    }
-
-    private boolean isMobBlockedAtArrival(LegacyWorldObservation state,
-                                          int routeRow,
-                                          int routeColumn,
-                                          double arrivalTicks) {
-        if (state.monsters == null || state.monsters.isEmpty()) {
-            return false;
-        }
-
-        /*
-         * We only trust short-horizon velocity prediction. Beyond that horizon
-         * the route is deliberately left open and will be replanned as the
-         * player advances and receives newer monster observations.
-         */
-        double predictionTicks = Math.min(arrivalTicks, MOB_PREDICT_TICKS);
-        double seconds = predictionTicks / 20.0D;
-        double cellX = worldX(routeRow, state.center.x);
-        double cellZ = worldZ(routeColumn, state.center.z);
-
-        for (LegacyWorldObservation.Monster monster : state.monsters) {
-            if (monster.removed) {
-                continue;
-            }
-
-            double predictedX = monster.x + monster.vx * predictionTicks;
-            double predictedZ = monster.z + monster.vz * predictionTicks;
-
-            double dx = predictedX - cellX;
-            double dz = predictedZ - cellZ;
-            double horizontalDistanceSquared = dx * dx + dz * dz;
-
-            /*
-             * The benchmark intentionally treats any plausible contact as
-             * forbidden. We therefore use a conservative horizontal envelope
-             * rather than depending on the player's exact future jump phase.
-             * This prevents the planner from "solving" a mob by jumping into
-             * its hitbox and is safer than reproducing a partial future physics
-             * state in this live client-thread planner.
-             */
-            if (horizontalDistanceSquared < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS) {
-                return true;
-            }
-
-            /*
-             * Stationary mobs are hard obstacles even beyond the prediction
-             * horizon: if the monster is currently sitting on the route cell,
-             * waiting for the velocity horizon to expire must not make that
-             * cell appear safe.
-             */
-            if (arrivalTicks > MOB_PREDICT_TICKS) {
-                double currentDx = monster.x - cellX;
-                double currentDz = monster.z - cellZ;
-                if (currentDx * currentDx + currentDz * currentDz
-                        < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS
-                        && Math.abs(monster.vx) + Math.abs(monster.vz) < 0.03D) {
-                    return true;
-                }
             }
         }
 

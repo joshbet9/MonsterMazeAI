@@ -33,14 +33,10 @@ public final class StableLiveMovementController {
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
     private static final double ROUTE_DEVIATION = 0.55;
-    /** Re-evaluate the complete tactical world often enough to account for monster motion.
-     * This is a cadence, not a monster-distance cutoff. */
-    private static final int MIN_REPLAN_INTERVAL = 100;
     /**
-     * Route topology is deliberately held longer than the tactical control loop.
-     * Tactical actions are still reconsidered on every live decision, so monsters
-     * and abilities remain reactive without forcing an expensive full route search
-     * on every delayed sidecar request.
+     * Every fresh observation is eligible for route replanning. Computational
+     * optimisation belongs inside the planner, never in an artificial cadence
+     * that discards newer world state.
      */
 
     /** Minecraft 1.8 yaw is allowed to turn at most 12 degrees per tick. */
@@ -318,13 +314,10 @@ public final class StableLiveMovementController {
             return true;
         }
 
-        if (state.tick - lastRouteTick < MIN_REPLAN_INTERVAL) {
-            return false;
-        }
-
-        // Once the commitment interval expires, re-evaluate the complete
-        // tactical world. There is deliberately no local monster-distance gate:
-        // a monster far from the player can still intersect a future route segment.
+        // A valid route is still recomputed from every fresh observation. This
+        // deliberately has no time-based throttle: the route planner is where
+        // computation is optimised, while new monster/player state remains
+        // immediately actionable.
         return true;
     }
 

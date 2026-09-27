@@ -5,6 +5,7 @@ import me.monstermazeai.planner.TacticalRouteSimulator;
 import me.monstermazeai.player.Action;
 
 import java.util.*;
+import java.util.stream.IntStream;
 
 /**
  * Physical route planner for Monster Maze.
@@ -102,19 +103,28 @@ public final class MonsterAwareRoutePlanner {
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
+        /*
+         * Candidate routes are independent simulations. Evaluate them in parallel
+         * so the AI can use the available CPU cores instead of serialising the
+         * most expensive part of planning. Results are then selected in candidate
+         * order so route choice remains deterministic.
+         */
+        TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
+        IntStream.range(0, candidates.size()).parallel().forEach(i -> {
+            results[i] = simulator.simulate(
+                    state, candidates.get(i), goal, regionGoal, regionRadius);
+        });
+
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
-
-        for (PlayerRoute candidate : candidates) {
-            TacticalRouteSimulator.Result result =
-                    simulator.simulate(state, candidate, goal, regionGoal, regionRadius);
-
+        for (int i = 0; i < candidates.size(); i++) {
+            PlayerRoute candidate = candidates.get(i);
+            TacticalRouteSimulator.Result result = results[i];
             if (bestResult == null || better(result, candidate, bestResult, best)) {
                 best = candidate;
                 bestResult = result;
             }
         }
-
         return best;
     }
 

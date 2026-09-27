@@ -25,11 +25,9 @@ public final class Minecraft18Observer {
     private static final int HALF_MAZE = 49;
     private static final int SCAN_RADIUS = 64;
     private static final int CENTER_SEARCH_RADIUS = 32;
-    // Eye of Ender places the logical arena centre at world X/Z 0,0.
-    // Try that authoritative location first, then retain a broader physical fallback
-    // for maps/test worlds that are translated away from the origin.
-    private static final int KNOWN_CENTER_X = 0;
-    private static final int KNOWN_CENTER_Z = 0;
+    // MonsterMaze source stores an arbitrary physical arena centre. The maze
+    // array is mapped relative to that centre (center - 49 + array index), so
+    // world 0,0 is not authoritative and must never be hard-coded.
     private static final int PAD_SCAN_RADIUS = 70;
     private static final int CENTER_ANCHOR_RADIUS = 6;
     private static final int SAFE_PAD_RADIUS = 2;
@@ -325,7 +323,24 @@ public final class Minecraft18Observer {
     }
 
     private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
-        if (cachedCenter != null && cachedMazeDetected) return cachedCenter;
+        if (cachedCenter != null && cachedMazeDetected) {
+            int playerY = player.getPosition().getY();
+            if (Math.abs(playerY - cachedCenter.getY()) <= 3
+                    && matchesCenterAnchor(world, cachedCenter)) {
+                return cachedCenter;
+            }
+            System.out.println("[MonsterMazeAI/1.8] CENTER CACHE INVALID old="
+                    + cachedCenter.getX() + "," + cachedCenter.getY() + "," + cachedCenter.getZ()
+                    + " player=" + player.posX + "," + player.posY + "," + player.posZ);
+            cachedCenter = null;
+            cachedMazeDetected = false;
+            cachedMazePattern = -1;
+            cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+            cachedPhysicalFloor = null;
+            cachedPhysicalPad = null;
+            cachedPad = null;
+            cachedPadCenter = null;
+        }
 
         int px = player.getPosition().getX();
         int pz = player.getPosition().getZ();
@@ -336,34 +351,27 @@ public final class Minecraft18Observer {
         // with nearby fallbacks for teleport/interpolation timing.
         int[] candidateCenterYs = new int[] { py, py - 1, py + 1, py - 2 };
 
-        // The Eye of Ender map is explicitly centred on world X/Z 0,0. The old
-        // detector searched only around the player, which failed as soon as the
-        // player was more than six blocks from mid (a normal gameplay position).
-        for (int centerY : candidateCenterYs) {
-            BlockPos knownCenter = new BlockPos(KNOWN_CENTER_X, centerY, KNOWN_CENTER_Z);
-            if (matchesCenterAnchor(world, knownCenter)) {
-                int pattern = findMatchingPattern(world, knownCenter);
-                if (pattern >= 0) {
-                    cachedCenter = knownCenter;
-                    cachedMazePattern = pattern;
-                    return cachedCenter;
-                }
-            }
-        }
-
-        // Fallback for translated/test arenas. This is intentionally broader than
-        // the old six-block search, but only runs until a complete source layout
-        // match is found and is therefore not part of the per-tick hot path.
+        // MonsterMaze's source centre is configured by the server and may be
+        // translated. Search around the player for the authoritative centre marker
+        // instead of assuming world origin. This only runs until a complete source
+        // layout match is found and is not part of the per-tick hot path.
         for (int centerY : candidateCenterYs) {
             for (int x = px - CENTER_SEARCH_RADIUS; x <= px + CENTER_SEARCH_RADIUS; x++) {
                 for (int z = pz - CENTER_SEARCH_RADIUS; z <= pz + CENTER_SEARCH_RADIUS; z++) {
-                    if (x == KNOWN_CENTER_X && z == KNOWN_CENTER_Z) continue;
                     BlockPos candidate = new BlockPos(x, centerY, z);
                     if (!matchesCenterAnchor(world, candidate)) continue;
                     int pattern = findMatchingPattern(world, candidate);
                     if (pattern >= 0) {
                         cachedCenter = candidate;
                         cachedMazePattern = pattern;
+                        cachedMazeDetected = false;
+                        cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+                        cachedPhysicalFloor = null;
+                        cachedPhysicalPad = null;
+                        System.out.println("[MonsterMazeAI/1.8] CENTER DETECTED center="
+                                + candidate.getX() + "," + candidate.getY() + "," + candidate.getZ()
+                                + " pattern=" + (pattern + 1)
+                                + " player=" + player.posX + "," + player.posY + "," + player.posZ);
                         return cachedCenter;
                     }
                 }

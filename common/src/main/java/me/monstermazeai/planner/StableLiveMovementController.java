@@ -33,9 +33,9 @@ public final class StableLiveMovementController {
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
     private static final double ROUTE_DEVIATION = 0.55;
-    private static final int MIN_REPLAN_INTERVAL = 5;
-    private static final double THREAT_RADIUS = 3.0;
-    private static final double THREAT_TIME = 6.0;
+    /** Re-evaluate the complete tactical world often enough to account for monster motion.
+     * This is a cadence, not a monster-distance cutoff. */
+    private static final int MIN_REPLAN_INTERVAL = 10;
 
     /** Minecraft 1.8 yaw is allowed to turn at most 12 degrees per tick. */
     private static final float MAX_TURN_PER_TICK = 12.0F;
@@ -260,23 +260,10 @@ public final class StableLiveMovementController {
             return false;
         }
 
-        // Replan only for an imminent threat. Normal monster motion must not
-        // cause the route target to flip every tick.
-        double threatSq = THREAT_RADIUS * THREAT_RADIUS;
-        for (var monster : state.monsters) {
-            if (monster.removed || monster.launched(state.tick)
-                    || monster.frozen(state.tick)) {
-                continue;
-            }
-
-            double mx = monster.x + monster.vx * THREAT_TIME;
-            double mz = monster.z + monster.vz * THREAT_TIME;
-            double mdx = state.player.x - mx;
-            double mdz = state.player.z - mz;
-            if (mdx * mdx + mdz * mdz <= threatSq) return true;
-        }
-
-        return false;
+        // Once the commitment interval expires, re-evaluate the complete
+        // tactical world. There is deliberately no local monster-distance gate:
+        // a monster far from the player can still intersect a future route segment.
+        return true;
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

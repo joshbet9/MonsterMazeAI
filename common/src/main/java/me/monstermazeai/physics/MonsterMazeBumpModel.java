@@ -72,9 +72,10 @@ public final class MonsterMazeBumpModel {
             player.y = GameState.PATH_Y + 0.7;
         }
 
-        double vx = dx / distance;
-        double vy = dy / distance;
-        double vz = dz / distance;
+        double horizontal = Math.hypot(dx, dz);
+        double vx = horizontal > 1.0E-12 ? dx / horizontal : 1.0;
+        double vy = 0.0;
+        double vz = horizontal > 1.0E-12 ? dz / horizontal : 0.0;
 
         if (game.kit == Kit.MAVERICK && game.mode != me.monstermazeai.game.Mode.ORIGINAL
                 && game.activePadRow >= 0 && game.activePadColumn >= 0) {
@@ -111,9 +112,11 @@ public final class MonsterMazeBumpModel {
         double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (distance <= 1.0E-12) return;
 
-        double vx = dx / distance;
-        double vy = dy / distance + 0.75;
-        double vz = dz / distance;
+        double horizontal = Math.hypot(dx, dz);
+        double vx = horizontal > 1.0E-12 ? dx / horizontal : 1.0;
+        double vy = 0.0;
+        double vz = horizontal > 1.0E-12 ? dz / horizontal : 0.0;
+        vy += 0.75;
         if (vy > 1.2) vy = 1.2;
         if (player.grounded) vy += 0.2;
 

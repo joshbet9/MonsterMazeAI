@@ -9,13 +9,14 @@ import me.monstermazeai.player.PlayerState;
  *
  * Monster Maze's authoritative monster/contact mechanics remain unchanged. This
  * class only decides which observed monsters are worth carrying into expensive
- * AI simulation. A monster is relevant when it is within the local interaction
- * radius of the player's current/future route corridor.
+ * AI simulation.
  *
- * The route-aware form deliberately includes future route cells so the planner
- * can still avoid a monster that is currently outside the player's immediate
- * radius but lies directly on a candidate corridor. Monsters outside that
- * envelope cannot interact with the candidate during the local planning model.
+ * The planner deliberately uses a strict local interaction sphere around the
+ * player's current position. This keeps the expensive source-faithful simulator
+ * bounded to the world that can affect the next decisions. Fresh observations
+ * are still processed continuously, so a monster entering the 20-block sphere
+ * is considered on the next planning pass rather than being carried through a
+ * long future-route simulation.
  */
 public final class MonsterRelevance {
     public static final double INTERACTION_RADIUS = 20.0;
@@ -24,9 +25,20 @@ public final class MonsterRelevance {
 
     private MonsterRelevance() {}
 
+    /**
+     * Copy only monsters that can currently interact with the player.
+     *
+     * The route argument is retained for source/binary compatibility with the
+     * planner call sites, but relevance is intentionally based on the player's
+     * current position rather than the entire future route. A 49-cell route
+     * must not turn a 20-block local interaction model into a 49-block-wide
+     * monster simulation.
+     */
     public static GameState copyForRoute(GameState source, PlayerRoute route) {
         GameState state = source.copyForSimulation();
-        state.monsters.removeIf(m -> m.removed || !withinRouteEnvelope(m, route));
+        state.monsters.removeIf(m ->
+                m.removed || !withinPlayerRadius(
+                        m, state.player, INTERACTION_RADIUS));
         return state;
     }
 

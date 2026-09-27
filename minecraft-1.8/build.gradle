@@ -36,16 +36,39 @@ repositories {
 }
 
 def commonApiJar = file("../common-api/target/common-api-0.1.0-SNAPSHOT.jar")
+def commonRuntimeJar = file("../common/target/common-0.1.0-SNAPSHOT-runtime.jar")
 
 dependencies {
     compile files(commonApiJar)
     testCompile "junit:junit:4.13.2"
 }
 
+task verifyCommonRuntime {
+    doLast {
+        if (!commonRuntimeJar.isFile()) {
+            throw new GradleException(
+                    "Missing common runtime sidecar: " + commonRuntimeJar.absolutePath
+                    + ". Build the Java-17 common module first with: mvn -B -ntp -pl common -am package"
+            )
+        }
+    }
+}
+
 jar {
+    dependsOn verifyCommonRuntime
+
     // Forge loads the adapter as a single mod JAR. Package the tiny Java-8
     // common API inside it so runtime classes such as Kit are available.
     from zipTree(commonApiJar)
+
+    // Also carry the Java-17 sidecar inside the mod. The Java-8 adapter never
+    // loads these classes; Minecraft18AiRuntime extracts this nested JAR and
+    // launches it with Java 17. This removes the fragile dependency on a
+    // developer-specific environment variable or working directory.
+    from(commonRuntimeJar) {
+        into "runtime"
+        rename { "monster-maze-ai-runtime.jar" }
+    }
 }
 
 processResources {

@@ -31,14 +31,28 @@ public final class MonsterAwareRoutePlanner {
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
 
+    /*
+     * Candidate topology is independent of monster positions. Cache it by the
+     * physical start cell, objective region and the maze's compact dynamic
+     * signature, then re-evaluate the cached corridors against every fresh
+     * monster observation. This preserves continuous replanning without paying
+     * for repeated A-star/BFS route generation when only monsters moved.
+     */
+    private List<PlayerRoute> cachedCandidates = List.of();
+    private long cachedTopologySignature = Long.MIN_VALUE;
+    private int cachedStartRow = Integer.MIN_VALUE;
+    private int cachedStartColumn = Integer.MIN_VALUE;
+    private int cachedGoalRow = Integer.MIN_VALUE;
+    private int cachedGoalColumn = Integer.MIN_VALUE;
+    private int cachedRegionRadius = Integer.MIN_VALUE;
+
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
 
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
-        List<PlayerRoute> candidates = alternatives.generate(
-                state.maze, start, goal, MAX_ROUTE_CANDIDATES);
-
+        List<PlayerRoute> candidates = cachedCandidatesFor(
+                state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
         return choose(state, candidates, goal, false, 0);
     }
 
@@ -57,41 +71,70 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
-        List<PlayerRoute> candidates = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        List<PlayerRoute> candidates = cachedCandidatesFor(
+                state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
+        return choose(state, candidates, regionCenter, true, radius);
+    }
 
-        // Evaluate the shortest physical route to every physical cell in the
-        // 5x5 region (or the requested region), not just the beacon centre.
-        for (int r = regionCenter.row() - radius; r <= regionCenter.row() + radius; r++) {
-            for (int c = regionCenter.column() - radius; c <= regionCenter.column() + radius; c++) {
-                Cell target = new Cell(r, c);
-                if (!state.maze.isPhysicalFloor(r, c)) continue;
+    private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,
+                                                       int regionRadius, int limit,
+                                                       boolean regionGoal) {
+        long topology = state.maze.dynamicSignature();
+        if (topology == cachedTopologySignature
+                && start.row() == cachedStartRow && start.column() == cachedStartColumn
+                && goal.row() == cachedGoalRow && goal.column() == cachedGoalColumn
+                && regionRadius == cachedRegionRadius
+                && !cachedCandidates.isEmpty()) {
+            return cachedCandidates;
+        }
 
-                List<Cell> path = new PlayerPathfinder().shortestPath(state.maze, start, target);
-                if (path.isEmpty()) continue;
+        List<PlayerRoute> candidates;
+        if (!regionGoal) {
+            candidates = alternatives.generate(state.maze, start, goal, limit);
+        } else {
+            ArrayList<PlayerRoute> generated = new ArrayList<>();
+            Set<String> seen = new HashSet<>();
+            PlayerPathfinder pathfinder = new PlayerPathfinder();
 
-                addCandidate(candidates, seen, new PlayerRoute(path));
+            // Evaluate the shortest physical route to every physical cell in
+            // the Safe Pad region, not just the beacon centre.
+            for (int r = goal.row() - regionRadius; r <= goal.row() + regionRadius; r++) {
+                for (int c = goal.column() - regionRadius; c <= goal.column() + regionRadius; c++) {
+                    Cell target = new Cell(r, c);
+                    if (r < 0 || r >= MazeModel.SIZE || c < 0 || c >= MazeModel.SIZE
+                            || !state.maze.isPhysicalFloor(r, c)) continue;
 
-                if (candidates.size() < MAX_REGION_CANDIDATES) {
-                    for (PlayerRoute alt : alternatives.generate(
-                            state.maze, start, target, 3)) {
-                        addCandidate(candidates, seen, alt);
-                        if (candidates.size() >= MAX_REGION_CANDIDATES) break;
+                    List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
+                    if (path.isEmpty()) continue;
+                    addCandidate(generated, seen, new PlayerRoute(path));
+
+                    if (generated.size() < limit) {
+                        for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {
+                            addCandidate(generated, seen, alt);
+                            if (generated.size() >= limit) break;
+                        }
                     }
                 }
             }
+
+            if (generated.isEmpty()) {
+                throw new IllegalArgumentException("No physical route to Safe Pad region");
+            }
+            generated.sort(Comparator.comparingInt(PlayerRoute::size));
+            if (generated.size() > limit) {
+                generated = new ArrayList<>(generated.subList(0, limit));
+            }
+            candidates = generated;
         }
 
-        if (candidates.isEmpty()) {
-            throw new IllegalArgumentException("No physical route to Safe Pad region");
-        }
-
-        candidates.sort(Comparator.comparingInt(PlayerRoute::size));
-        if (candidates.size() > MAX_REGION_CANDIDATES) {
-            candidates = new ArrayList<>(candidates.subList(0, MAX_REGION_CANDIDATES));
-        }
-
-        return choose(state, candidates, regionCenter, true, radius);
+        cachedTopologySignature = topology;
+        cachedStartRow = start.row();
+        cachedStartColumn = start.column();
+        cachedGoalRow = goal.row();
+        cachedGoalColumn = goal.column();
+        cachedRegionRadius = regionRadius;
+        cachedCandidates = List.copyOf(candidates);
+        return cachedCandidates;
     }
 
     public Action tacticalAction(GameState state, PlayerRoute route, Cell goal, int regionRadius) {

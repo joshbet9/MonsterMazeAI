@@ -108,9 +108,9 @@ public final class MonsterMaze18Mod {
         }
 
         // Never block the Minecraft client tick on the planner/sidecar. Submit
-        // the newest observation when the previous decision has completed, then
-        // apply only completed results. Until a result arrives, the executor
-        // retains its last command; this keeps the render/client thread alive.
+        // the newest observation and apply only a decision tagged for this exact
+        // client tick. If the planner is late, the executor fails closed rather
+        // than carrying a stale W/jump/sprint/yaw command into a new world state.
         runtime.submit(state);
         LegacyAction completed = runtime.pollCompleted(state.worldTick);
         if (completed != null) {

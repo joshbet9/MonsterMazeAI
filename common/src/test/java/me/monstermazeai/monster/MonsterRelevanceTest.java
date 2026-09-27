@@ -37,7 +37,7 @@ class MonsterRelevanceTest {
     }
 
     @Test
-    void retainsFutureRouteThreatsEvenWhenCurrentlyOutsidePlayerRadius() {
+    void excludesFutureRouteThreatsOutsideCurrentInteractionRadius() {
         GameState state = new GameState();
         state.maze = openMaze();
         state.player.x = 50.5;
@@ -51,6 +51,9 @@ class MonsterRelevanceTest {
                 new Cell(50, 54)
         ));
 
+        // More than 20 blocks from the player: do not pay the expensive
+        // simulator cost yet. A later observation will pick it up when it
+        // enters the local interaction sphere.
         MonsterState futureThreat = new MonsterState(1, 50.5, 0.0, 72.0);
         MonsterState irrelevant = new MonsterState(2, 80.0, 0.0, 80.0);
         state.monsters.add(futureThreat);
@@ -58,8 +61,29 @@ class MonsterRelevanceTest {
 
         GameState filtered = MonsterRelevance.copyForRoute(state, route);
 
+        assertTrue(filtered.monsters.isEmpty());
+        assertEquals(2, state.monsters.size());
+    }
+
+    @Test
+    void retainsMonsterInsideCurrentInteractionRadiusRegardlessOfFutureRoutePosition() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 50.5;
+        state.player.z = 50.5;
+
+        PlayerRoute route = new PlayerRoute(List.of(
+                new Cell(50, 50),
+                new Cell(50, 51)
+        ));
+
+        MonsterState nearby = new MonsterState(3, 50.5, 0.0, 69.5);
+        state.monsters.add(nearby);
+
+        GameState filtered = MonsterRelevance.copyForRoute(state, route);
+
         assertEquals(1, filtered.monsters.size());
-        assertEquals(1, filtered.monsters.get(0).id);
+        assertEquals(3, filtered.monsters.get(0).id);
     }
 
     @Test

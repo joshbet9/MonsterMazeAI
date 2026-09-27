@@ -117,7 +117,8 @@ public final class TacticalRouteSimulator {
     private MonsterSimulator monsterSimulator(GameState state, long seed) {
         long stableSeed = 0x4D4D5AL ^ seed;
         for (var m : state.monsters) stableSeed = stableSeed * 31L + m.id;
-        return new MonsterSimulator(state.maze, new Random(stableSeed), 1.4);
+        double speedMultiplier = 1.0 + 0.2 * ((Math.max(1, state.stage) - 1) / 5);
+        return new MonsterSimulator(state.maze, new Random(stableSeed), 1.4 * speedMultiplier);
     }
 
     private Action chooseTacticalAction(GameState source, PlayerRoute route, int waypoint,

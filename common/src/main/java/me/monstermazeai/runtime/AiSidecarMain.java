@@ -5,19 +5,8 @@ import me.monstermazeai.adapter.LegacyProtocol;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.planner.FirstPadMovementController;
 import me.monstermazeai.adapter.ObservationWorldModel;
-import me.monstermazeai.collision.CollisionModel;
 import me.monstermazeai.game.GameState;
-import me.monstermazeai.kit.Kit;
-import me.monstermazeai.maze.MazeModel;
-import me.monstermazeai.monster.MonsterSimulator;
-import me.monstermazeai.physics.LegacyMazePhysics;
-import me.monstermazeai.planner.BeamSearchPlanner;
-import me.monstermazeai.planner.Heuristic;
-import me.monstermazeai.planner.LiveObjectiveController;
-import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
-import me.monstermazeai.planner.RobustLiveController;
 import me.monstermazeai.player.Action;
-import me.monstermazeai.sim.Simulator;
 import me.monstermazeai.telemetry.ReplayRecorder;
 import me.monstermazeai.telemetry.TelemetryEvent;
 import me.monstermazeai.telemetry.TelemetryRecorder;
@@ -27,7 +16,6 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.util.Random;
 
 public final class AiSidecarMain {
     private AiSidecarMain() {}
@@ -118,7 +106,7 @@ public final class AiSidecarMain {
                             + observation.worldTick);
                 }
             } catch (RuntimeException failure) {
-                if (agent != null) agent.reset();
+                if (firstPadController != null) firstPadController.reset();
                 System.err.println("[MonsterMazeAI] sidecar decision failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
                 failure.printStackTrace(System.err);

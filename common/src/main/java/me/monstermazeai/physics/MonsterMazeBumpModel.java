@@ -32,10 +32,13 @@ public final class MonsterMazeBumpModel {
     /** Full game-aware bump including Body Builder and Maverick QOL behaviour. */
     public static int apply(GameState game) {
         PlayerState player = game.player;
-        if (player.recentMobHitUntilTick > game.tick || player.health <= 0.0) return 0;
+        boolean bodyRush = game.kit == Kit.BODY_BUILDER && game.mode != me.monstermazeai.game.Mode.ORIGINAL
+                && game.ability.activeUntilTick > game.tick;
+        if ((!bodyRush && player.recentMobHitUntilTick > game.tick) || player.health <= 0.0) return 0;
+        if (isOnAnyPad(game)) return 0;
 
         for (MonsterState monster : game.monsters) {
-            if (monster.removed) continue;
+            if (monster.removed || monster.launched(game.tick)) continue;
             if (!contact(player, monster)) continue;
 
             if (game.kit == Kit.BODY_BUILDER && game.mode != me.monstermazeai.game.Mode.ORIGINAL
@@ -44,6 +47,7 @@ public final class MonsterMazeBumpModel {
                 // the monster is launched and the active duration loses 2 seconds.
                 launchMonsterAwayFromPlayer(monster, player, game.tick);
                 game.ability.activeUntilTick = Math.max(game.tick, game.ability.activeUntilTick - 40L);
+                player.mobHitGraceUntilTick = game.tick + 40L;
                 return 1;
             }
 
@@ -90,6 +94,7 @@ public final class MonsterMazeBumpModel {
         player.health -= DAMAGE;
         player.damageTaken += DAMAGE;
         player.recentMobHitUntilTick = game.tick + RECHARGE_TICKS;
+        player.mobHitGraceUntilTick = game.tick + 40L;
     }
 
     private static void applyNormalBump(PlayerState player, MonsterState monster, long tick) {
@@ -112,6 +117,7 @@ public final class MonsterMazeBumpModel {
         player.health -= DAMAGE;
         player.damageTaken += DAMAGE;
         player.recentMobHitUntilTick = tick + RECHARGE_TICKS;
+        player.mobHitGraceUntilTick = tick + 40L;
     }
 
     private static void launchMonsterAwayFromPlayer(MonsterState monster, PlayerState player, long tick) {

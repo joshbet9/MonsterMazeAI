@@ -55,9 +55,14 @@ public final class MonsterAwareRoutePlanner {
     public PlayerRoute routeFast(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
-        List<PlayerRoute> candidates = cachedCandidatesFor(
-                state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
-        return shortest(candidates);
+        /*
+         * Bootstrap is on the live-control critical path. A single BFS is
+         * sufficient to obtain a physically valid cardinal route; K-route
+         * generation is reserved for the background source-faithful planner.
+         */
+        List<Cell> path = new PlayerPathfinder().shortestPath(state.maze, start, goal);
+        if (path.isEmpty()) throw new IllegalArgumentException("No physical route from start to goal");
+        return new PlayerRoute(path);
     }
 
     /** Low-latency Safe Pad bootstrap counterpart. */
@@ -69,9 +74,20 @@ public final class MonsterAwareRoutePlanner {
                 regionCenter.column() + 0.5)) {
             return new PlayerRoute(List.of(start));
         }
-        List<PlayerRoute> candidates = cachedCandidatesFor(
-                state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
-        return shortest(candidates);
+        PlayerPathfinder pathfinder = new PlayerPathfinder();
+        PlayerRoute shortest = null;
+        for (int r = regionCenter.row() - radius; r <= regionCenter.row() + radius; r++) {
+            for (int col = regionCenter.column() - radius; col <= regionCenter.column() + radius; col++) {
+                if (r < 0 || r >= MazeModel.SIZE || col < 0 || col >= MazeModel.SIZE
+                        || !state.maze.isPhysicalFloor(r, col)) continue;
+                List<Cell> path = pathfinder.shortestPath(state.maze, start, new Cell(r, col));
+                if (!path.isEmpty() && (shortest == null || path.size() < shortest.size())) {
+                    shortest = new PlayerRoute(path);
+                }
+            }
+        }
+        if (shortest == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
+        return shortest;
     }
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {

@@ -47,7 +47,7 @@ public final class TacticalRouteSimulator {
 
     public Result simulate(GameState source, PlayerRoute route, Cell goal,
                            boolean regionGoal, int regionRadius) {
-        GameState state = source.copy();
+        GameState state = source.copyForSimulation();
         initialiseMissingAbilityState(state);
         int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, WAYPOINT_TOLERANCE);
         MonsterSimulator monsters = monsterSimulator(state, source.tick);
@@ -154,7 +154,7 @@ public final class TacticalRouteSimulator {
             List<Node> next = new ArrayList<>();
             for (Node node : beam) {
                 for (Action action : tacticalActions(node.state)) {
-                    GameState s = node.state.copy();
+                    GameState s = node.state.copyForSimulation();
                     s.tick = source.tick + depth + 1;
                     MonsterSimulator branchMonsters = monsterSimulator(s, source.tick + depth + 1);
                     int wp = route.nextWaypoint(s.player.x, s.player.z, node.waypoint, WAYPOINT_TOLERANCE);
@@ -176,7 +176,7 @@ public final class TacticalRouteSimulator {
     }
 
     private GameState tacticalState(GameState source) {
-        GameState state = source.copy();
+        GameState state = source.copyForSimulation();
         double radiusSq = TACTICAL_RELEVANCE_RADIUS * TACTICAL_RELEVANCE_RADIUS;
         state.monsters.removeIf(m -> {
             if (m.removed) return true;

@@ -44,6 +44,8 @@ public final class Minecraft18Observer {
     private long gameStartWorldTick = -1L;
     private BlockPos cachedCenter;
     private boolean previouslyInMonsterMaze;
+    private boolean[][] cachedPhysicalFloor;
+    private BlockPos cachedPhysicalPad;
 
     public void tick() {
         if (MC.theWorld == null || MC.thePlayer == null) {
@@ -76,7 +78,7 @@ public final class Minecraft18Observer {
             cachedPad = findActivePadWithoutCenter(world, player);
             cachedPadCenter = null;
             ticksSinceLastPadRefresh = 0;
-        } else if (cachedPadCenter == null || !cachedPadCenter.equals(center) || ticksSinceLastPadRefresh >= 5) {
+        } else if (cachedPadCenter == null || !cachedPadCenter.equals(center) || cachedPad == null || !cachedPadBeaconExists(world, center)) {
             cachedPad = findActivePad(world, player, center);
             cachedPadCenter = center;
             ticksSinceLastPadRefresh = 0;
@@ -106,7 +108,7 @@ public final class Minecraft18Observer {
         }
         int[][] raw = cachedMaze;
         boolean mazeDetected = cachedMazeDetected && center != null;
-        boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw);
+        boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw, pad);
 
         boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
         if (inMonsterMaze && !previouslyInMonsterMaze) {
@@ -195,13 +197,16 @@ public final class Minecraft18Observer {
      * Maze 1, Maze 2 and Maze 3; only the source layout determines which cells
      * are centre-safe-zone cells.
      */
-    private boolean[][] buildPhysicalFloor(World world, BlockPos center, int[][] raw) {
-        boolean[][] floor = new boolean[MAZE_SIZE][MAZE_SIZE];
-        for (int row = 0; row < MAZE_SIZE; row++) {
-            for (int col = 0; col < MAZE_SIZE; col++) {
-                floor[row][col] = raw[row][col] != 0;
+    private boolean[][] buildPhysicalFloor(World world, BlockPos center, int[][] raw, PadObservation activePad) {
+        if (cachedPhysicalFloor == null || center == null || !cachedMazeDetected) {
+            boolean[][] floor = new boolean[MAZE_SIZE][MAZE_SIZE];
+            for (int row = 0; row < MAZE_SIZE; row++) {
+                for (int col = 0; col < MAZE_SIZE; col++) floor[row][col] = raw[row][col] != 0;
             }
+            cachedPhysicalFloor = floor;
+            cachedPhysicalPad = null;
         }
+        boolean[][] floor = cachedPhysicalFloor;
         if (center == null || !cachedMazeDetected) return floor;
 
         int surfaceY = center.getY() - 1;
@@ -220,7 +225,32 @@ public final class Minecraft18Observer {
         // authoritative, but expose the source lifecycle explicitly for the
         // common model so centre path cells can be re-enabled for monsters only
         // after deterioration has completed.
+        if (activePad != null && activePad.row >= 0 && activePad.column >= 0) {
+            int cx = center.getX() - HALF_MAZE + activePad.row;
+            int cz = center.getZ() - HALF_MAZE + activePad.column;
+            if (cachedPhysicalPad == null || cachedPhysicalPad.getX() != cx || cachedPhysicalPad.getZ() != cz) {
+                if (cachedPhysicalPad != null) restoreRawPadArea(raw, center, floor, cachedPhysicalPad);
+                markPhysicalPadArea(center, floor, cx, cz);
+                cachedPhysicalPad = new BlockPos(cx, center.getY(), cz);
+            }
+        }
         return floor;
+    }
+
+    private static void restoreRawPadArea(int[][] raw, BlockPos center, boolean[][] floor, BlockPos pad) {
+        int baseRow = pad.getX() - (center.getX() - HALF_MAZE), baseCol = pad.getZ() - (center.getZ() - HALF_MAZE);
+        for (int dr = -SAFE_PAD_RADIUS; dr <= SAFE_PAD_RADIUS; dr++) for (int dc = -SAFE_PAD_RADIUS; dc <= SAFE_PAD_RADIUS; dc++) {
+            int row = baseRow + dr, col = baseCol + dc;
+            if (row >= 0 && row < MAZE_SIZE && col >= 0 && col < MAZE_SIZE) floor[row][col] = raw[row][col] != 0;
+        }
+    }
+
+    private static void markPhysicalPadArea(BlockPos center, boolean[][] floor, int cx, int cz) {
+        int baseRow = cx - (center.getX() - HALF_MAZE), baseCol = cz - (center.getZ() - HALF_MAZE);
+        for (int dr = -SAFE_PAD_RADIUS; dr <= SAFE_PAD_RADIUS; dr++) for (int dc = -SAFE_PAD_RADIUS; dc <= SAFE_PAD_RADIUS; dc++) {
+            int row = baseRow + dr, col = baseCol + dc;
+            if (row >= 0 && row < MAZE_SIZE && col >= 0 && col < MAZE_SIZE) floor[row][col] = true;
+        }
     }
 
     private void reset() {
@@ -441,11 +471,19 @@ public final class Minecraft18Observer {
         cachedPadCenter = null;
         ticksSinceLastPadRefresh = 0;
         cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+        cachedPhysicalFloor = null;
+        cachedPhysicalPad = null;
         cachedMazeDetected = false;
         cachedMazePattern = -1;
         ticksSinceLastMazeRefresh = 0;
         gameStartWorldTick = -1L;
         previouslyInMonsterMaze = false;
+    }
+
+    private boolean cachedPadBeaconExists(World world, BlockPos center) {
+        if (cachedPad == null || cachedPad.row < 0 || cachedPad.column < 0) return false;
+        int x = center.getX() - HALF_MAZE + cachedPad.row, z = center.getZ() - HALF_MAZE + cachedPad.column;
+        return world.getBlockState(new BlockPos(x, center.getY() - 1, z)).getBlock() == net.minecraft.init.Blocks.beacon;
     }
 
     private PadObservation findActivePad(World world, EntityPlayerSP player, BlockPos center) {

@@ -8,6 +8,7 @@ import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.physics.PhysicsModel;
+import me.monstermazeai.physics.MonsterMazeBumpModel;
 
 public final class Simulator {
     private final PhysicsModel physics;

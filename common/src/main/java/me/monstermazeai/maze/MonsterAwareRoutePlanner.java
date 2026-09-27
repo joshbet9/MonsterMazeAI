@@ -151,23 +151,21 @@ public final class MonsterAwareRoutePlanner {
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
         /*
-         * If no observed monster intersects the 20-block envelope of any
-         * candidate corridor, source-faithful monster simulation cannot change
-         * the route ordering. Select the shortest physical candidate directly.
+         * If no observed monster is inside the player's 20-block interaction
+         * radius, source-faithful monster simulation cannot change the immediate
+         * decision. Select the shortest physical candidate directly.
          *
          * This is a structural fast path, not a reduction in replanning
          * frequency: fresh observations still reach this method immediately,
          * and any route with a relevant future monster takes the full simulator.
          */
         boolean hasRelevantMonster = false;
-        for (PlayerRoute candidate : candidates) {
-            for (var monster : state.monsters) {
-                if (MonsterRelevance.withinRouteEnvelope(monster, candidate)) {
-                    hasRelevantMonster = true;
-                    break;
-                }
+        for (var monster : state.monsters) {
+            if (MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
+                hasRelevantMonster = true;
+                break;
             }
-            if (hasRelevantMonster) break;
         }
         if (!hasRelevantMonster) {
             return candidates.stream()

@@ -129,4 +129,27 @@ class StableLiveMovementControllerTest {
         assertEquals(0.0, action.strafe(), 1.0e-6);
         assertEquals(-12.0F, action.yawDelta(), 1.0e-6F);
     }
+
+    @Test
+    void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
+        GameState s = state(0.5, 0.5, -45.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        Action first = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0,
+                "the first live observation must produce a non-idle bootstrap control action");
+        assertTrue(controller.lastDecisionDetail().contains("BOOTSTRAP_ROUTE"));
+
+        s.tick = 2;
+        controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
+                "the first post-bootstrap observation should complete the source-faithful evaluation");
+
+        s.tick = 3;
+        controller.nextAction(s, new Cell(0, 8), false);
+        assertFalse(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
+                "unchanged local world state must not restart expensive global route simulation");
+    }
+
 }

@@ -22,9 +22,13 @@ class CollisionPipelineDiagnosticTest {
         s.player.x=10.5; s.player.y=0; s.player.z=10.5; s.player.grounded=true;
         new AbilityModel().initialiseForMode(s);
         MonsterState m=new MonsterState(1,10.5,0,10.5); s.monsters.add(m);
+        GameState direct=s.copy();
+        int directHits=me.monstermazeai.physics.MonsterMazeBumpModel.apply(direct);
+        System.out.println("DIAG direct hits="+directHits+" hp="+direct.player.health+" recent="+direct.player.recentMobHitUntilTick);
         Simulator sim=new Simulator(new LegacyMazePhysics(),new MonsterSimulator(s.maze,new Random(7),0.0),new me.monstermazeai.collision.CollisionModel());
         sim.tick(s,Action.IDLE);
         System.out.println("DIAG player="+s.player.x+","+s.player.y+","+s.player.z+" hp="+s.player.health+" monster="+m.x+","+m.y+","+m.z+" removed="+m.removed+" hitUntil="+s.player.recentMobHitUntilTick);
+        assertEquals(1, directHits);
         assertTrue(s.player.health < 20.0);
     }
 }

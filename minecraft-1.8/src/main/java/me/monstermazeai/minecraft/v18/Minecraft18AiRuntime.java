@@ -30,7 +30,9 @@ public final class Minecraft18AiRuntime {
         thread.setDaemon(true);
         return thread;
     });
-    private Future<DecisionResult> pendingDecision;
+    private Future<?> pendingDecision;
+    private LegacyWorldObservation latestObservation;
+    private DecisionResult latestCompletedDecision;
     private long lastSubmittedTick = Long.MIN_VALUE;
     private long lastCompletedTick = Long.MIN_VALUE;
     private boolean lastCompletedWasStaleTurn;
@@ -68,48 +70,80 @@ public final class Minecraft18AiRuntime {
     }
 
 
-    /** Submit one blocking sidecar decision away from the Minecraft client thread. */
+    /**
+     * Publish the newest observation without queueing obsolete world states.
+     * A planner worker consumes the latest snapshot and, when it finishes, keeps
+     * processing any newer snapshot that arrived while it was computing.
+     */
     public synchronized void submit(LegacyWorldObservation observation) {
         if (observation == null || process == null || output == null || input == null) return;
-        if (pendingDecision != null && !pendingDecision.isDone()) return;
-        final LegacyWorldObservation submitted = observation;
-        lastSubmittedTick = submitted.worldTick;
-        pendingDecision = decisionExecutor.submit(() -> new DecisionResult(submitted.worldTick, decide(submitted)));
+        latestObservation = observation;
+        if (pendingDecision == null || pendingDecision.isDone()) {
+            pendingDecision = decisionExecutor.submit(this::processLatestObservations);
+        }
     }
 
-    /** Poll a completed decision without ever blocking the Minecraft client thread. */
+    /**
+     * Poll the newest completed decision without ever blocking the Minecraft
+     * client thread. Obsolete completed decisions are naturally overwritten by
+     * newer planner output.
+     */
     public synchronized LegacyAction pollCompleted(long currentTick) {
-        if (pendingDecision == null || !pendingDecision.isDone()) return null;
-        try {
-            DecisionResult result = pendingDecision.get();
-            pendingDecision = null;
-            if (result.action == null) return null;
-            long age = currentTick - result.tick;
-            lastCompletedWasStaleTurn = false;
-            if (age > MAX_ACTION_AGE_TICKS) {
-                /*
-                 * A delayed per-tick command must never be held as though it were
-                 * fresh. The only stale command we allow through is a pure bounded
-                 * turn: executing one turn tick is safe recovery from an initial
-                 * heading mismatch and does not drive the player toward a stale
-                 * route/monster state. Movement, jump and ability commands remain
-                 * fail-closed until a fresh observation has been planned.
-                 */
-                if (isSafeStaleTurn(result.action)) {
-                    lastCompletedWasStaleTurn = true;
-                    lastCompletedTick = result.tick;
-                    return result.action;
-                }
+        DecisionResult result = latestCompletedDecision;
+        latestCompletedDecision = null;
+        if (result == null || result.action == null) return null;
+
+        long age = currentTick - result.tick;
+        lastCompletedWasStaleTurn = false;
+        if (age > MAX_ACTION_AGE_TICKS) {
+            /*
+             * A delayed per-tick command must never be held as though it were
+             * fresh. The only stale command we allow through is a pure bounded
+             * turn. Movement, jump and ability commands remain fail-closed until
+             * a fresh observation has been planned.
+             */
+            if (isSafeStaleTurn(result.action)) {
+                lastCompletedWasStaleTurn = true;
                 lastCompletedTick = result.tick;
-                return LegacyAction.IDLE;
+                return result.action;
             }
             lastCompletedTick = result.tick;
-            return result.action;
-        } catch (Exception failure) {
-            pendingDecision = null;
-            System.err.println("[MonsterMazeAI/1.8] RUNTIME async decision failed: "
-                    + failure.getClass().getSimpleName() + ": " + failure.getMessage());
-            return null;
+            return LegacyAction.IDLE;
+        }
+        lastCompletedTick = result.tick;
+        return result.action;
+    }
+
+    /** Worker loop that always consumes the newest available observation. */
+    private void processLatestObservations() {
+        while (true) {
+            LegacyWorldObservation submitted;
+            synchronized (this) {
+                submitted = latestObservation;
+                latestObservation = null;
+                if (submitted == null) {
+                    pendingDecision = null;
+                    return;
+                }
+                lastSubmittedTick = submitted.worldTick;
+            }
+
+            LegacyAction action;
+            try {
+                action = decide(submitted);
+            } catch (RuntimeException failure) {
+                System.err.println("[MonsterMazeAI/1.8] RUNTIME async decision failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+                action = LegacyAction.IDLE;
+            }
+
+            synchronized (this) {
+                latestCompletedDecision = new DecisionResult(submitted.worldTick, action);
+                if (latestObservation == null) {
+                    pendingDecision = null;
+                    return;
+                }
+            }
         }
     }
 
@@ -118,7 +152,7 @@ public final class Minecraft18AiRuntime {
     }
 
     public synchronized boolean decisionPending() {
-        return pendingDecision != null && !pendingDecision.isDone();
+        return latestObservation != null || (pendingDecision != null && !pendingDecision.isDone());
     }
 
     public LegacyAction decide(LegacyWorldObservation observation) {
@@ -179,6 +213,8 @@ public final class Minecraft18AiRuntime {
          */
         closeProcess();
         decisionExecutor.shutdownNow();
+        latestObservation = null;
+        latestCompletedDecision = null;
         pendingDecision = null;
         lastSubmittedTick = Long.MIN_VALUE;
         lastCompletedTick = Long.MIN_VALUE;

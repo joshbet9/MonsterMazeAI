@@ -120,6 +120,11 @@ public final class AbilityModel {
         }
     }
 
+    /** Compatibility helper used by collision tests; real contacts call this through bump semantics. */
+    public void consumeBodyRushContact(GameState game) {
+        if (isBodyRushActive(game)) game.ability.activeUntilTick = Math.max(game.tick, game.ability.activeUntilTick - 40L);
+    }
+
     public boolean isBodyRushActive(GameState game) {
         return game.kit == Kit.BODY_BUILDER && qolEnabled(game)
                 && game.ability.activeUntilTick > game.tick;

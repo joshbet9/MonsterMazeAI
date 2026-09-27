@@ -4,13 +4,12 @@ import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.adapter.LiveMovementValidator;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.MovementInputFromOptions;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.client.registry.ClientRegistry;
 import org.lwjgl.input.Keyboard;
 
 @Mod(
@@ -24,8 +23,8 @@ public final class MonsterMaze18Mod {
 
     private Minecraft18Observer observer;
     private Minecraft18ActionExecutor executor;
-    private Minecraft18AiRuntime runtime;
     private LiveMovementValidator movementValidator;
+    private FirstPadSpeedrunController firstPadSpeedrun;
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private boolean aiEnabled;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
@@ -35,11 +34,13 @@ public final class MonsterMaze18Mod {
     public void init(FMLInitializationEvent event) {
         observer = new Minecraft18Observer();
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
-        runtime = new Minecraft18AiRuntime();
         movementValidator = new LiveMovementValidator();
+        firstPadSpeedrun = new FirstPadSpeedrunController();
+
         toggleAi = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
         ClientRegistry.registerKeyBinding(toggleAi);
+
         aiEnabled = false;
         observationLogCount = 0L;
         executor.setAiEnabled(false);
@@ -47,12 +48,8 @@ public final class MonsterMaze18Mod {
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
 
-        if (runtime.configured()) {
-            runtime.startIfConfigured();
-            System.out.println("[MonsterMazeAI/1.8] live AI runtime configured; closed-loop execution enabled (F8 toggles control)");
-        } else {
-            System.out.println("[MonsterMazeAI/1.8] observer-only mode; set MONSTERMAZE_AI_RUNTIME_JAR to enable live AI");
-        }
+        System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN mode ready (F8)");
+        System.out.println("[MonsterMazeAI/1.8] No sidecar/planner is used in this benchmark");
     }
 
     @SubscribeEvent
@@ -66,6 +63,8 @@ public final class MonsterMaze18Mod {
         if (minecraft.theWorld == null || minecraft.thePlayer == null) {
             executor.releaseAll();
             executor.setAiEnabled(false);
+            aiEnabled = false;
+            firstPadSpeedrun.reset();
             observationLogCount = 0L;
             controlledPlayer = null;
             movementValidator.reset();
@@ -80,11 +79,13 @@ public final class MonsterMaze18Mod {
 
             if (!aiEnabled) {
                 executor.releaseAll();
+                firstPadSpeedrun.reset();
                 movementValidator.reset();
-                System.out.println("[MonsterMazeAI/1.8] AI control disabled (F8)");
+                System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN disabled (F8)");
             } else {
-                runtime.startIfConfigured();
-                System.out.println("[MonsterMazeAI/1.8] AI control enabled (F8) runtime=" + runtime.runtimeStatus());
+                firstPadSpeedrun.reset();
+                observationLogCount = 0L;
+                System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN enabled (F8)");
             }
         }
 
@@ -95,34 +96,26 @@ public final class MonsterMaze18Mod {
 
         LegacyWorldObservation state = observer.observe().state;
         observationLogCount++;
+
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
-            System.out.println("[MonsterMazeAI/1.8] OBS SUBMIT#" + observationLogCount
+            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_OBS#" + observationLogCount
                     + " tick=" + state.worldTick
                     + " inMaze=" + state.inMonsterMaze
                     + " detected=" + state.mazeDetected
                     + " center=" + (state.center == null ? "none"
                         : state.center.x + "," + state.center.y + "," + state.center.z)
+                    + " player=" + format(state.player.x) + "," + format(state.player.z)
                     + " pad=" + (state.pad == null ? "none"
-                        : state.pad.row + "," + state.pad.column + " reached=" + state.pad.reached)
-                    + " monsters=" + state.monsters.size());
+                        : state.pad.row + "," + state.pad.column
+                            + " reached=" + state.pad.reached));
         }
 
-        // Never block the Minecraft client tick on the planner/sidecar. Submit
-        // the newest observation and apply only a decision tagged for this exact
-        // client tick. If the planner is late, the executor fails closed rather
-        // than carrying a stale W/jump/sprint/yaw command into a new world state.
-        runtime.submit(state);
-        LegacyAction completed = runtime.pollCompleted(state.worldTick);
-        if (completed != null) {
-            /*
-             * The isolated first-pad branch is deliberately fail-closed:
-             * every completed decision belongs to one client tick only.
-             * Keeping an old W/jump command alive for 20 ticks is unsafe on a
-             * one-block-wide floating maze and was a direct contributor to the
-             * previous walk-off-edge failure.
-             */
-            executor.applyForTicks(completed, state.worldTick, 1L);
-        }
+        // This benchmark is deliberately synchronous. Route calculation and the
+        // movement decision happen on the client thread, then MovementInput
+        // consumes the command later in the same Minecraft tick. There is no IPC,
+        // Future, stale-action window, command queue, or sidecar latency.
+        LegacyAction action = firstPadSpeedrun.next(state);
+        executor.applyForTicks(action, state.worldTick, 1L);
         executor.expireIfNeeded(state.worldTick);
 
         if (state.inMonsterMaze) {
@@ -141,5 +134,9 @@ public final class MonsterMaze18Mod {
             controlledPlayer = minecraft.thePlayer;
             System.out.println("[MonsterMazeAI/1.8] installed authoritative AI MovementInput");
         }
+    }
+
+    private static String format(double value) {
+        return String.format(java.util.Locale.ROOT, "%.2f", value);
     }
 }

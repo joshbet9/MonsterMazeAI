@@ -10,10 +10,10 @@ import me.monstermazeai.physics.MonsterMazeBumpModel;
 /** Compatibility facade; all collision semantics live in MonsterMazeBumpModel. */
 public final class CollisionModel {
     public void tryMonsterHit(GameState state, MonsterState monster) {
-        MonsterMazeBumpModel.apply(state.player, Collections.singletonList(monster), state.tick);
+        MonsterMazeBumpModel.apply(state);
     }
 
     public void tryMonsterHit(GameState state, MonsterState monster, AbilityModel abilities) {
-        MonsterMazeBumpModel.apply(state.player, Collections.singletonList(monster), state.tick);
+        MonsterMazeBumpModel.apply(state);
     }
 }

@@ -248,7 +248,9 @@ public final class FirstPadSpeedrunController {
         centerX = state.center.x;
         centerZ = state.center.z;
         targetReached = false;
-        aligningForStage = true;
+        // Preserve the existing first-stage speedrun. Pre-alignment is for
+        // transitions where the new route is revealed after a safe-pad wait.
+        aligningForStage = state.stage > 1;
         startedAtTick = state.worldTick;
 
         if (lastLoggedStage != state.stage) {

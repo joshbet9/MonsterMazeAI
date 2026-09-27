@@ -163,13 +163,31 @@ public final class FirstPadMovementController {
                 int turnTicks = (int) Math.ceil(
                         Math.abs(turnError) / MAX_YAW_PER_TICK);
 
-                double speed = Math.hypot(state.player.vx, state.player.vz);
+                /*
+                 * Only the velocity component along the incoming route segment
+                 * is useful for predicting where the player will be when the
+                 * yaw pulse finishes. Lateral velocity is deliberately ignored:
+                 * counting it as forward travel makes the controller turn too
+                 * late at real corners.
+                 */
+                double incomingSpeed = projectedIncomingSpeed(
+                        state.player.vx, state.player.vz, dirRow, dirColumn);
                 double turnTravel = 0.0;
-                double retainedSpeed = speed;
+                double retainedSpeed = incomingSpeed;
                 for (int i = 0; i < turnTicks; i++) {
                     turnTravel += retainedSpeed;
                     retainedSpeed *= MAX_HORIZONTAL_DRAG;
                 }
+
+                /*
+                 * A stationary/slow player still needs a small geometric turn
+                 * lead. This is not a substitute for the velocity prediction:
+                 * it only prevents the zero-velocity boundary case from
+                 * waiting until the corner centre before starting a 90-degree
+                 * yaw acquisition.
+                 */
+                double minimumTurnLead = Math.min(0.80, turnTicks * 0.25);
+                turnTravel = Math.max(turnTravel, minimumTurnLead);
 
                 /*
                  * Start the yaw turn while coasting. Forward is then held at
@@ -284,29 +302,19 @@ public final class FirstPadMovementController {
     private void reanchorSegment(GameState state) {
         if (route == null || route.size() <= 1) return;
 
-        int closestIndex = 0;
-        double closestDistance = Double.MAX_VALUE;
-        for (int i = 0; i < route.size(); i++) {
-            Cell cell = route.cells().get(i);
-            double distance = distanceToCellCenter(
-                    state.player.x, state.player.z, cell);
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                closestIndex = i;
-            }
-        }
-
-        int desiredSegment = Math.min(route.size() - 1, Math.max(1, closestIndex));
-
         /*
-         * Never jump all the way back toward the beginning because a corner
-         * caused a transient lateral offset. Progress can advance freely;
-         * backwards re-anchoring is only permitted when the player is actually
-         * closer to an earlier route point than the committed one.
+         * The route is a continuous corridor, but segment progress is still a
+         * committed state machine. Do not select a future segment merely
+         * because its centre is currently the globally nearest route point:
+         * during a high-speed corner the next cell can be closer before the
+         * actual waypoint has been entered. That was the original source of
+         * premature corner cutting.
+         *
+         * "Re-anchor" therefore means retaining the committed segment and
+         * letting advanceSegment() perform the only legal forward transition:
+         * reaching the current waypoint or actually entering the next cell.
          */
-        if (desiredSegment > segmentIndex || closestDistance < 0.45) {
-            segmentIndex = desiredSegment;
-        }
+        segmentIndex = Math.max(1, Math.min(segmentIndex, route.size() - 1));
         advanceSegment(state);
     }
 
@@ -417,6 +425,20 @@ public final class FirstPadMovementController {
 
     private static double distanceToCellCenter(double x, double z, Cell cell) {
         return Math.hypot(x - (cell.row() + 0.5), z - (cell.column() + 0.5));
+    }
+
+    private static double projectedIncomingSpeed(
+            double vx, double vz, int rowDirection, int columnDirection) {
+        double length = Math.hypot(rowDirection, columnDirection);
+        if (length <= 1.0e-9) return 0.0;
+
+        /*
+         * row +1 is Minecraft -X; column +1 is +Z. Project velocity onto the
+         * direction of the current route segment rather than using total speed.
+         */
+        double directionX = rowDirection == 0 ? 0.0 : -rowDirection / length;
+        double directionZ = columnDirection == 0 ? 0.0 : columnDirection / length;
+        return Math.max(0.0, vx * directionX + vz * directionZ);
     }
 
     private static boolean isOnPad(GameState state, Cell pad) {

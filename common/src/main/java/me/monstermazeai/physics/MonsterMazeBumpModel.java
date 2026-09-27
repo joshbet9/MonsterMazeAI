@@ -99,6 +99,7 @@ public final class MonsterMazeBumpModel {
         player.vy = vy;
         player.vz = vz;
         player.pendingAirborne = true;
+        player.grounded = false;
         player.health -= DAMAGE;
         player.damageTaken += DAMAGE;
         player.recentMobHitUntilTick = game.tick + RECHARGE_TICKS;

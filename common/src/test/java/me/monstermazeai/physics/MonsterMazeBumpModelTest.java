@@ -14,6 +14,31 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MonsterMazeBumpModelTest {
     @Test
+    void speedingAirborneContactGetsNoGroundBoost() {
+        PlayerState p = new PlayerState();
+        p.x = 1.49; p.y = 0.4; p.z = 0.5; p.grounded = false;
+        p.health = 20.0;
+        MonsterState m = new MonsterState(1, 0.5, 0.4, 0.5);
+
+        assertEquals(1, MonsterMazeBumpModel.apply(p, List.of(m), 100));
+        assertEquals(1.0, p.vx, 1.0E-9);
+        assertEquals(0.75, p.vy, 1.0E-9,
+                "An airborne/speeding contact must not receive the grounded +0.2 boost.");
+        assertEquals(0.0, p.vz, 1.0E-9);
+    }
+
+    @Test
+    void groundedContactGetsGroundBoost() {
+        PlayerState p = new PlayerState();
+        p.x = 1.49; p.y = 0.0; p.z = 0.5; p.grounded = true;
+        p.health = 20.0;
+        MonsterState m = new MonsterState(1, 0.0, 0.0, 0.5);
+
+        assertEquals(1, MonsterMazeBumpModel.apply(p, List.of(m), 100));
+        assertEquals(0.95, p.vy, 1.0E-9);
+    }
+
+    @Test
     void bumpUsesMonsterToPlayerTrajectoryAndSourceVelocity() {
         PlayerState p = new PlayerState();
         p.x = 1.49; p.y = 0.0; p.z = 0.5; p.grounded = true;

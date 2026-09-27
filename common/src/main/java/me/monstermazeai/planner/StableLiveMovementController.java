@@ -75,6 +75,15 @@ public final class StableLiveMovementController {
     private long lastRouteTick = Long.MIN_VALUE;
     private String lastDecisionDetail = "UNSET";
     private int anchoredSegmentIndex = -1;
+    /** Coarse local threat state used to avoid re-running global route simulation on every tick. */
+    private long lastThreatSignature = Long.MIN_VALUE;
+    /** First route is deliberately bootstrapped from physical topology so movement starts immediately. */
+    private boolean bootstrapRoutePending = true;
+    /** True until the first source-faithful monster-aware route evaluation completes. */
+    private boolean fullRouteEvaluationPending = true;
+    /** Cached tactical action for an unchanged local threat state. */
+    private long lastTacticalSignature = Long.MIN_VALUE;
+    private Action cachedTacticalAction;
     private double laneAnchorX;
     private double laneAnchorZ;
 
@@ -118,15 +127,30 @@ public final class StableLiveMovementController {
         }
 
         if (route == null || shouldReplan(state, startRow, startColumn)) {
+            boolean bootstrap = route == null && bootstrapRoutePending;
             route = regionRadius > 0
-                    ? routePlanner.routeToRegion(state, new Cell(startRow, startColumn), goal, regionRadius)
-                    : routePlanner.route(state, new Cell(startRow, startColumn), goal);
+                    ? (bootstrap
+                        ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
+                        : routePlanner.routeToRegion(state, new Cell(startRow, startColumn), goal, regionRadius))
+                    : (bootstrap
+                        ? routePlanner.routeFast(state, new Cell(startRow, startColumn), goal)
+                        : routePlanner.route(state, new Cell(startRow, startColumn), goal));
             waypointIndex = firstTurnWaypoint(route);
             lastRouteTick = state.tick;
-            lastDecisionDetail = "ROUTE_REPLAN size=" + route.size()
+            lastThreatSignature = threatSignature(state);
+            lastDecisionDetail = (bootstrap ? "BOOTSTRAP_ROUTE" : "ROUTE_REPLAN")
+                    + " size=" + route.size()
                     + " regionRadius=" + regionRadius
                     + " start=" + startRow + "," + startColumn
                     + " goal=" + goal.row() + "," + goal.column();
+            if (bootstrap) {
+                bootstrapRoutePending = false;
+                fullRouteEvaluationPending = true;
+            } else {
+                fullRouteEvaluationPending = false;
+            }
+            lastTacticalSignature = Long.MIN_VALUE;
+            cachedTacticalAction = null;
         }
 
         if (route.size() == 1) {
@@ -154,13 +178,20 @@ public final class StableLiveMovementController {
         // control to the same tactical simulator used during route selection.
         // This is what makes deliberate contact and ability use real live actions,
         // rather than merely simulated route preferences.
+        long currentThreatSignature = threatSignature(state);
         if (routePlanner.shouldUseTacticalAction(state)) {
-            Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            if (tactical != null) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
+            if (currentThreatSignature != lastTacticalSignature || cachedTacticalAction == null) {
+                cachedTacticalAction = routePlanner.tacticalAction(
+                        state, route, goal, regionRadius);
+                lastTacticalSignature = currentThreatSignature;
             }
+            if (cachedTacticalAction != null) {
+                lastDecisionDetail += " TACTICAL=" + cachedTacticalAction;
+                return cachedTacticalAction;
+            }
+        } else {
+            lastTacticalSignature = currentThreatSignature;
+            cachedTacticalAction = null;
         }
 
         double targetX = route.targetX(waypointIndex);
@@ -316,6 +347,11 @@ public final class StableLiveMovementController {
         goalRadius = 0;
         lastRouteTick = Long.MIN_VALUE;
         anchoredSegmentIndex = -1;
+        lastThreatSignature = Long.MIN_VALUE;
+        bootstrapRoutePending = true;
+        fullRouteEvaluationPending = true;
+        lastTacticalSignature = Long.MIN_VALUE;
+        cachedTacticalAction = null;
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
         lastDecisionDetail = "RESET";
@@ -338,15 +374,21 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * Keep route replanning continuous. New observations may change the
-         * physical start cell, corridor safety, or relevant monster situation,
-         * so the planner remains eligible on every fresh observation.
+         * Fresh observations still reach this controller every tick. What we
+         * must not do is throw away a valid committed route and re-run the
+         * source-faithful simulator merely because the player moved 0.05 blocks.
          *
-         * The expensive part is optimized inside MonsterAwareRoutePlanner:
-         * threat-free routes bypass source-faithful monster simulation, while
-         * threatened corridors retain the full evaluation.
+         * The motor layer below continues to consume the newest player pose,
+         * yaw and monster state immediately. Global route simulation is only
+         * repeated when a material local threat change occurs (or the route
+         * itself becomes invalid). This separates high-frequency control from
+         * expensive strategic search without reducing the AI's tactical horizon.
          */
-        return true;
+        long threat = threatSignature(state);
+        if (fullRouteEvaluationPending) {
+            return true;
+        }
+        return threat != lastThreatSignature;
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {
@@ -440,6 +482,34 @@ public final class StableLiveMovementController {
 
     private static String format(double value) {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
+    }
+
+
+    /**
+     * Quantised local threat signature. Sub-block monster motion does not force
+     * a complete route search every client observation; crossing a one-block
+     * spatial bucket, changing launch/freeze state, or entering/leaving the
+     * 20-block interaction sphere does. Immediate tactical control still uses
+     * the current observation when a contact search is required.
+     */
+    private static long threatSignature(GameState state) {
+        long h = 1469598103934665603L;
+        for (me.monstermazeai.monster.MonsterState monster : state.monsters) {
+            if (!me.monstermazeai.monster.MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS)) continue;
+            h = mix(h, monster.id);
+            h = mix(h, (long) Math.floor(monster.x));
+            h = mix(h, (long) Math.floor(monster.y));
+            h = mix(h, (long) Math.floor(monster.z));
+            h = mix(h, monster.launched(state.tick) ? 1L : 0L);
+            h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
+        }
+        return h;
+    }
+
+    private static long mix(long h, long value) {
+        h ^= value;
+        return h * 1099511628211L;
     }
 
     private void clearRoute() {

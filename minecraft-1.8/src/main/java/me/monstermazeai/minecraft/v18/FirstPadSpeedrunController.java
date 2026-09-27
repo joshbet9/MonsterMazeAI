@@ -7,21 +7,17 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 
 /**
- * Deliberately isolated first-pad benchmark.
+ * Isolated first-pad benchmark:
+ * maze + player + active pad -> shortest physical-floor route -> W+sprint+jump.
  *
- * The only job of this controller is:
- *   maze + player + active pad -> shortest physical-floor route -> W+sprint+jump
- *
- * There is no sidecar, no async planner, no monster logic, no abilities,
- * no recovery/replanning, no strafe input, and no route look-ahead.
- *
- * The route is rebuilt only when the round/objective changes. Every client tick
- * then produces the movement command locally on the Minecraft thread.
+ * No sidecar, async planner, monster logic, abilities, recovery, replanning,
+ * or strafe input. The controller runs synchronously on the Minecraft thread.
  */
 public final class FirstPadSpeedrunController {
     private static final int SIZE = 99;
     private static final int PAD_RADIUS = 2;
     private static final float MAX_YAW_STEP = 30.0F;
+    private static final int LOOKAHEAD_CELLS = 3;
 
     private int[] routeRows;
     private int[] routeColumns;
@@ -31,7 +27,6 @@ public final class FirstPadSpeedrunController {
     private int goalColumn = -1;
     private int centerX = Integer.MIN_VALUE;
     private int centerZ = Integer.MIN_VALUE;
-    private long roundTick = Long.MIN_VALUE;
     private long lastLogTick = Long.MIN_VALUE;
     private boolean finished;
     private long startedAtTick = Long.MIN_VALUE;
@@ -63,10 +58,14 @@ public final class FirstPadSpeedrunController {
             if (!buildRoute(state)) {
                 return LegacyAction.IDLE;
             }
-            if (startedAtTick == Long.MIN_VALUE) startedAtTick = state.worldTick;
+            if (startedAtTick == Long.MIN_VALUE) {
+                startedAtTick = state.worldTick;
+            }
         }
 
-        if (finished || routeLength <= 1) return LegacyAction.IDLE;
+        if (finished || routeLength <= 1) {
+            return LegacyAction.IDLE;
+        }
 
         advanceRouteIndex(state);
 
@@ -74,36 +73,42 @@ public final class FirstPadSpeedrunController {
             return LegacyAction.IDLE;
         }
 
-        int targetRow = routeRows[routeIndex];
-        int targetColumn = routeColumns[routeIndex];
-        int previousRow = routeRows[Math.max(0, routeIndex - 1)];
-        int previousColumn = routeColumns[Math.max(0, routeIndex - 1)];
+        /*
+         * Aim at an actual physical point on the route ahead. This is
+         * deliberately route following, not strategic look-ahead.
+         */
+        int targetIndex = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
+        double targetWorldX = worldX(routeRows[targetIndex], state.center.x);
+        double targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
 
-        int dr = Integer.signum(targetRow - previousRow);
-        int dc = Integer.signum(targetColumn - previousColumn);
-        if (Math.abs(dr) + Math.abs(dc) != 1) {
-            reset();
-            return LegacyAction.IDLE;
-        }
+        double dx = targetWorldX - state.player.x;
+        double dz = targetWorldZ - state.player.z;
 
-        float desiredYaw = cardinalYaw(dr, dc);
+        /*
+         * Minecraft yaw:
+         * 0 = +Z, -90 = +X, 180 = -Z, 90 = -X.
+         */
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
-        if (state.worldTick == lastLogTick || state.worldTick % 10L == 0L) {
-            lastLogTick = state.worldTick;
+        // Deliberately jump-spam: one tick pressed, one tick released.
+        boolean jumpPulse = (state.worldTick & 1L) == 0L;
+
+        if (state.worldTick % 10L == 0L) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
                     + " tick=" + state.worldTick
                     + " pos=" + format(state.player.x) + "," + format(state.player.z)
                     + " route=" + routeIndex + "/" + (routeLength - 1)
-                    + " target=" + targetRow + "," + targetColumn
+                    + " aim=" + targetIndex
+                    + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
                     + " yaw=" + format(state.player.yaw)
                     + " desiredYaw=" + format(desiredYaw)
-                    + " yawDelta=" + format(yawDelta));
+                    + " yawDelta=" + format(yawDelta)
+                    + " jump=" + jumpPulse);
         }
 
-        // Intentionally always W + sprint + jump. Steering is yaw only.
-        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
     }
 
     public void reset() {
@@ -115,7 +120,6 @@ public final class FirstPadSpeedrunController {
         goalColumn = -1;
         centerX = Integer.MIN_VALUE;
         centerZ = Integer.MIN_VALUE;
-        roundTick = Long.MIN_VALUE;
         startedAtTick = Long.MIN_VALUE;
         finished = false;
         lastLogTick = Long.MIN_VALUE;
@@ -154,11 +158,10 @@ public final class FirstPadSpeedrunController {
                 break;
             }
 
-            goal = enqueue(r - 1, c, current, state.physicalFloor, parent, queue, goal);
-            goal = enqueue(r + 1, c, current, state.physicalFloor, parent, queue, goal);
-            goal = enqueue(r, c - 1, current, state.physicalFloor, parent, queue, goal);
-            goal = enqueue(r, c + 1, current, state.physicalFloor, parent, queue, goal);
-            if (goal >= 0) break;
+            enqueue(r - 1, c, current, state.physicalFloor, parent, queue);
+            enqueue(r + 1, c, current, state.physicalFloor, parent, queue);
+            enqueue(r, c - 1, current, state.physicalFloor, parent, queue);
+            enqueue(r, c + 1, current, state.physicalFloor, parent, queue);
         }
 
         if (goal < 0) {
@@ -169,7 +172,9 @@ public final class FirstPadSpeedrunController {
         }
 
         int count = 0;
-        for (int p = goal; p >= 0; p = parent[p]) count++;
+        for (int p = goal; p >= 0; p = parent[p]) {
+            count++;
+        }
 
         routeRows = new int[count];
         routeColumns = new int[count];
@@ -186,35 +191,56 @@ public final class FirstPadSpeedrunController {
         goalColumn = targetColumn;
         centerX = state.center.x;
         centerZ = state.center.z;
-        roundTick = state.worldTick;
 
         System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN ROUTE"
                 + " start=" + startRow + "," + startColumn
                 + " pad=" + targetRow + "," + targetColumn
                 + " length=" + routeLength
-                + " mode=W+sprint+jump-spam+yaw-only");
+                + " mode=W+sprint+jump-spam+yaw-route");
 
         return true;
     }
 
-    private static int enqueue(int r, int c, int from, boolean[][] floor,
-                               int[] parent, ArrayDeque<Integer> queue, int goal) {
-        if (goal >= 0 || r < 0 || r >= SIZE || c < 0 || c >= SIZE || !floor[r][c]) return goal;
+    private static void enqueue(int r, int c, int from, boolean[][] floor,
+                                int[] parent, ArrayDeque<Integer> queue) {
+        if (r < 0 || r >= SIZE || c < 0 || c >= SIZE || !floor[r][c]) {
+            return;
+        }
+
         int next = index(r, c);
-        if (parent[next] != -2) return goal;
+        if (parent[next] != -2) {
+            return;
+        }
+
         parent[next] = from;
         queue.addLast(next);
-        return goal;
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {
         int playerRow = row(state.player.x, state.center.x);
         int playerColumn = row(state.player.z, state.center.z);
 
-        while (routeIndex < routeLength
-                && routeRows[routeIndex] == playerRow
-                && routeColumns[routeIndex] == playerColumn) {
-            routeIndex++;
+        /*
+         * Find the closest future route point rather than requiring an exact
+         * one-tick cell match. This lets sprinting cross cell boundaries
+         * without freezing the route cursor at an old direction.
+         */
+        int bestIndex = routeIndex;
+        double bestDistance = Double.MAX_VALUE;
+        int end = Math.min(routeLength - 1, routeIndex + 12);
+
+        for (int i = routeIndex; i <= end; i++) {
+            int dr = routeRows[i] - playerRow;
+            int dc = routeColumns[i] - playerColumn;
+            double distance = dr * dr + dc * dc;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+            }
+        }
+
+        if (bestIndex > routeIndex) {
+            routeIndex = bestIndex;
         }
     }
 
@@ -232,20 +258,20 @@ public final class FirstPadSpeedrunController {
         return (int) Math.floor(world - (center - 49));
     }
 
+    private static double worldX(int routeRow, int centerX) {
+        return (centerX - 49) + routeRow + 0.5D;
+    }
+
+    private static double worldZ(int routeColumn, int centerZ) {
+        return (centerZ - 49) + routeColumn + 0.5D;
+    }
+
     private static int index(int r, int c) {
         return r * SIZE + c;
     }
 
     private static boolean inBounds(int r, int c) {
         return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
-    }
-
-    private static float cardinalYaw(int dr, int dc) {
-        // Minecraft yaw: 0=south (+Z), -90=east (+X), 180/-180=north (-Z), 90=west (-X).
-        if (dr > 0) return -90.0F;
-        if (dr < 0) return 90.0F;
-        if (dc > 0) return 0.0F;
-        return 180.0F;
     }
 
     private static float normalise(float angle) {

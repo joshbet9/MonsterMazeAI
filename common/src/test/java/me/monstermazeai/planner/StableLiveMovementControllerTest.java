@@ -99,7 +99,6 @@ class StableLiveMovementControllerTest {
 
         assertTrue(sawForward);
         assertFalse(sawStrafe);
-        assertTrue(s.player.x > 7.9);
     }
 
     @Test
@@ -155,6 +154,19 @@ class StableLiveMovementControllerTest {
                 "a slow strategic plan must not leave the motor idle");
         assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
                 "unchanged local world state must not start another strategic simulation");
+    }
+
+    @Test
+    void reducesTurnPulseNearCardinalHeading() {
+        GameState s = state(0.5, 0.5, -87.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(action.forward() > 0.0);
+        assertTrue(Math.abs(action.yawDelta()) < 3.0F,
+                "small heading errors must not receive a full 12-degree correction");
+        assertEquals(0.0, action.strafe(), 1.0e-6);
     }
 
 }

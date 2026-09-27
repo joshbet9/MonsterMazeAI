@@ -344,7 +344,8 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < WAYPOINT_BRAKE
                         && closingSpeed(state, dx, dz) > 0.04;
@@ -358,10 +359,10 @@ public final class StableLiveMovementController {
                 double steeringForward;
                 double absError = Math.abs(yawError);
                 if (absError <= 20.0) steeringForward = 1.0;
-                else if (absError <= 35.0) steeringForward = 0.55;
-                else steeringForward = 0.30;
+                else if (absError <= 35.0) steeringForward = 0.80;
+                else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
-                boolean sprint = forward >= 0.95 && absError <= 20.0;
+                boolean sprint = forward >= 0.95 && absError <= 15.0;
                 boolean jump = allowJump
                         && state.player.grounded
                         && forward > 0.0

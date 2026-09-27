@@ -3,20 +3,22 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 
-import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.PriorityQueue;
 
 /**
  * Isolated pad-to-pad speedrun benchmark:
- * maze + player + active pad -> shortest physical-floor route -> W+sprint+jump.
+ * maze + player + active pad + live monsters -> dynamic safe route -> W+sprint+jump.
  *
  * After reaching a pad, the controller deliberately waits in place while the
  * server countdown runs. When the active pad changes at the round transition,
- * it rebuilds the shortest route from the player's current position and runs
- * to the new pad.
+ * it rebuilds the best currently safe route from the player's current position.
  *
- * No sidecar, async planner, monster logic, abilities, recovery, replanning,
- * or strafe input. The controller runs synchronously on the Minecraft thread.
+ * Mobs are hard dynamic obstacles. If a live/predicted mob blocks the selected
+ * route, the complete route is rebuilt. The movement controller never performs
+ * a separate mob dodge or strafe; it only follows the currently selected route.
+ *
+ * The controller runs synchronously on the Minecraft client thread.
  */
 public final class FirstPadSpeedrunController {
     private static final int SIZE = 99;
@@ -24,14 +26,20 @@ public final class FirstPadSpeedrunController {
     private static final float MAX_YAW_STEP = 30.0F;
     private static final float ALIGNMENT_TOLERANCE = 10.0F;
     private static final int LOOKAHEAD_CELLS = 3;
-    // Monster Maze source bumps when player/monster positions overlap within
-    // 1 block in all three dimensions. We use a small horizontal safety margin
-    // because the observer is sampled once per client tick and both entities
-    // can move between observations.
+    /*
+     * Mobs are hard dynamic obstacles. The planner predicts their short-term
+     * position and rejects route cells whose estimated player arrival would
+     * overlap the conservative collision envelope.
+     *
+     * Five client ticks per maze cell is deliberately conservative for the
+     * W+sprint+jump speedrun. The planner is continuously replanned when the
+     * currently selected route becomes unsafe, so this is an arrival estimate,
+     * not a physics claim.
+     */
     private static final double MOB_HAZARD_RADIUS = 1.25D;
-    private static final double MOB_PREDICT_SECONDS = 0.35D;
-    private static final int MOB_DODGE_CELLS = 1;
-    private static final float MOB_DODGE_MAX_YAW = 38.0F;
+    private static final int MOB_PREDICT_TICKS = 30;
+    private static final double ESTIMATED_TICKS_PER_CELL = 5.0D;
+    private static final int MOB_ROUTE_LOOKAHEAD_CELLS = 18;
 
     private int[] routeRows;
     private int[] routeColumns;
@@ -155,28 +163,41 @@ public final class FirstPadSpeedrunController {
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
         /*
-         * Monster logic is deliberately layered on top of the proven route
-         * follower. We do not change the route for every distant mob. Only an
-         * imminent collision gets a local dodge, preserving the shortest-route
-         * speedrun everywhere else.
+         * Mobs are part of route planning, never a movement override.
          *
-         * The source collision/knockback is position based (< 1 block in X/Y/Z)
-         * and has a 1-second player bump cooldown. The observer supplies the
-         * live monster velocity, so we can predict the short-term crossing
-         * instead of reacting only after contact.
+         * If the selected route has become unsafe since it was planned, build
+         * one new complete route from the player's current position. The
+         * resulting route is then handled by the exact same movement controller
+         * as a mob-free route. There is intentionally no strafe/dodge state.
          */
-        MobDodge dodge = findMobDodge(state);
-        if (dodge != null) {
-            yawDelta = dodge.yawDelta;
-            if (state.worldTick % 5L == 0L) {
-                System.out.println("[MonsterMazeAI/1.8] MOB DODGE"
-                        + " tick=" + state.worldTick
-                        + " monster=" + dodge.monsterId
-                        + " type=" + dodge.visualType
-                        + " distance=" + format(dodge.distance)
-                        + " side=" + dodge.side
-                        + " yawDelta=" + format(yawDelta));
+        if (routeNeedsMobReplan(state)) {
+            int oldLength = routeLength;
+            int oldIndex = routeIndex;
+            if (!buildRoute(state)) {
+                if (state.worldTick % 5L == 0L) {
+                    System.out.println("[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
+                            + " tick=" + state.worldTick
+                            + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                            + " action=IDLE_WAIT_FOR_CLEAR_PATH");
+                }
+                return LegacyAction.IDLE;
             }
+            if (state.worldTick % 5L == 0L) {
+                System.out.println("[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
+                        + " tick=" + state.worldTick
+                        + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                        + " newLength=" + routeLength
+                        + " newHeading=" + routeRows[Math.min(1, routeLength - 1)]
+                        + "," + routeColumns[Math.min(1, routeLength - 1)]);
+            }
+
+            targetIndex = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
+            targetWorldX = worldX(routeRows[targetIndex], state.center.x);
+            targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
+            desiredYaw = desiredYawTo(state.player.x, state.player.z,
+                    targetWorldX, targetWorldZ);
+            yawError = normalise(desiredYaw - state.player.yaw);
+            yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         }
 
         // Deliberately jump-spam: one tick pressed, one tick released.
@@ -228,17 +249,9 @@ public final class FirstPadSpeedrunController {
 
         /*
          * At a phase transition the player is still physically standing on
-         * the previous Safe Pad, but ObservationWorldModel's physicalFloor
-         * is rebuilt from the newly active pad/topology. That can legitimately
-         * make the old pad's logical cells false even though the player is
-         * standing on its physical surface.
-         *
-         * Treat the player's current cell as a valid BFS seed only when this
-         * is an actual pad-to-pad transition and the player is still inside
-         * the previous pad. We do NOT make the whole old pad traversable:
-         * BFS may leave this seed only through cells reported as physical
-         * floor. This preserves the physical-floor route model while allowing
-         * the route to start from the player's real post-countdown position.
+         * the previous Safe Pad, while physicalFloor has already been rebuilt
+         * for the new active pad. Allow only the actual player cell as the BFS
+         * seed in that case; all subsequent cells still require physicalFloor.
          */
         boolean standingOnPreviousPad = targetReached
                 && goalRow >= 0
@@ -252,36 +265,62 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
-        int[] parent = new int[SIZE * SIZE];
+        /*
+         * Dynamic A*: each node carries the estimated arrival time for that
+         * cell. A neighbour is rejected when a live monster is predicted to
+         * occupy its collision envelope when the player arrives.
+         *
+         * This is deliberately a hard constraint, not a penalty. The planner
+         * therefore cannot choose a shorter route through a monster simply
+         * because that route has fewer cells.
+         */
+        int total = SIZE * SIZE;
+        double[] bestArrivalTicks = new double[total];
+        Arrays.fill(bestArrivalTicks, Double.POSITIVE_INFINITY);
+        int[] parent = new int[total];
         Arrays.fill(parent, -2);
-        ArrayDeque<Integer> queue = new ArrayDeque<Integer>();
+
+        PriorityQueue<RouteNode> open = new PriorityQueue<RouteNode>(
+                (a, b) -> Double.compare(a.fScore, b.fScore));
 
         int start = index(startRow, startColumn);
+        bestArrivalTicks[start] = 0.0D;
         parent[start] = -1;
-        queue.add(start);
+        open.add(new RouteNode(start, 0.0D,
+                heuristicTicks(startRow, startColumn, targetRow, targetColumn)));
 
         int goal = -1;
-        while (!queue.isEmpty()) {
-            int current = queue.removeFirst();
-            int r = current / SIZE;
-            int c = current % SIZE;
+
+        while (!open.isEmpty()) {
+            RouteNode node = open.poll();
+            if (node.gTicks > bestArrivalTicks[node.index] + 1.0E-6D) {
+                continue;
+            }
+
+            int r = node.index / SIZE;
+            int c = node.index % SIZE;
 
             if (Math.abs(r - targetRow) <= PAD_RADIUS
                     && Math.abs(c - targetColumn) <= PAD_RADIUS) {
-                goal = current;
+                goal = node.index;
                 break;
             }
 
-            enqueue(r - 1, c, current, state.physicalFloor, parent, queue);
-            enqueue(r + 1, c, current, state.physicalFloor, parent, queue);
-            enqueue(r, c - 1, current, state.physicalFloor, parent, queue);
-            enqueue(r, c + 1, current, state.physicalFloor, parent, queue);
+            goal = expandDynamicNeighbour(state, node, r - 1, c, r, c,
+                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r + 1, c, r, c,
+                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r, c - 1, r, c,
+                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r, c + 1, r, c,
+                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
         }
 
         if (goal < 0) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + startRow + "," + startColumn
-                    + " pad=" + targetRow + "," + targetColumn);
+                    + " pad=" + targetRow + "," + targetColumn
+                    + " reason=dynamic-mob-block");
             return false;
         }
 
@@ -290,223 +329,200 @@ public final class FirstPadSpeedrunController {
             count++;
         }
 
-        routeRows = new int[count];
-        routeColumns = new int[count];
+        int[] newRouteRows = new int[count];
+        int[] newRouteColumns = new int[count];
         int p = goal;
         for (int i = count - 1; i >= 0; i--) {
-            routeRows[i] = p / SIZE;
-            routeColumns[i] = p % SIZE;
+            newRouteRows[i] = p / SIZE;
+            newRouteColumns[i] = p % SIZE;
             p = parent[p];
         }
 
-        // Capture this before resetting targetReached. A pad identity change
-        // is the authoritative stage transition; the observer's numeric stage
-        // counter is not sufficient to decide whether this is a pad-to-pad
-        // transition.
         boolean transitioningFromReachedPad = targetReached;
+        boolean mobReplan = routeLength > 0
+                && goalRow == targetRow
+                && goalColumn == targetColumn
+                && !transitioningFromReachedPad;
 
+        routeRows = newRouteRows;
+        routeColumns = newRouteColumns;
         routeLength = count;
-        routeIndex = 1;
+        routeIndex = Math.min(1, Math.max(0, count - 1));
         goalRow = targetRow;
         goalColumn = targetColumn;
         centerX = state.center.x;
         centerZ = state.center.z;
         targetReached = false;
-        // Pre-align whenever a new route is revealed after we were already
-        // safely stopped on the previous pad. Do not key this off state.stage:
-        // the active-pad transition is the authoritative stage boundary and
-        // the observer's stage value may remain unchanged across that update.
-        aligningForStage = transitioningFromReachedPad;
-        startedAtTick = state.worldTick;
 
-        if (lastLoggedStage != state.stage) {
-            System.out.println("[MonsterMazeAI/1.8] PAD STAGE START"
+        /*
+         * Only a genuine pad-to-pad transition gets stationary alignment.
+         * Mob replans start from the player's current heading and therefore
+         * must not introduce a competing alignment state.
+         */
+        aligningForStage = transitioningFromReachedPad;
+
+        if (startedAtTick == Long.MIN_VALUE) {
+            startedAtTick = state.worldTick;
+        }
+
+        if (lastLoggedStage != state.stage || mobReplan) {
+            System.out.println("[MonsterMazeAI/1.8] PAD ROUTE"
                     + " stage=" + state.stage
                     + " tick=" + state.worldTick
                     + " start=" + startRow + "," + startColumn
                     + " pad=" + targetRow + "," + targetColumn
                     + " length=" + routeLength
-                    + " mode=W+sprint+jump-spam+yaw-route");
+                    + " mode=dynamic-mob-safe-A*"
+                    + " mobReplan=" + mobReplan);
             lastLoggedStage = state.stage;
         }
 
         return true;
     }
 
-    private static void enqueue(int r, int c, int from, boolean[][] floor,
-                                int[] parent, ArrayDeque<Integer> queue) {
-        if (r < 0 || r >= SIZE || c < 0 || c >= SIZE || !floor[r][c]) {
-            return;
+    private int expandDynamicNeighbour(LegacyWorldObservation state,
+                                       RouteNode node,
+                                       int r,
+                                       int c,
+                                       int fromRow,
+                                       int fromColumn,
+                                       int targetRow,
+                                       int targetColumn,
+                                       double[] bestArrivalTicks,
+                                       int[] parent,
+                                       PriorityQueue<RouteNode> open,
+                                       int currentGoal) {
+        if (!inBounds(r, c) || !state.physicalFloor[r][c]) {
+            return currentGoal;
         }
 
         int next = index(r, c);
-        if (parent[next] != -2) {
-            return;
+        double arrivalTicks = node.gTicks + ESTIMATED_TICKS_PER_CELL;
+
+        /*
+         * The start cell may be on the previous Safe Pad during a phase
+         * transition, but every newly entered cell must pass both static floor
+         * and dynamic monster safety checks.
+         */
+        if (isMobBlockedAtArrival(state, r, c, arrivalTicks)) {
+            return currentGoal;
         }
 
-        parent[next] = from;
-        queue.addLast(next);
+        if (arrivalTicks + 1.0E-6D >= bestArrivalTicks[next]) {
+            return currentGoal;
+        }
+
+        bestArrivalTicks[next] = arrivalTicks;
+        parent[next] = node.index;
+
+        double heuristic = heuristicTicks(r, c, targetRow, targetColumn);
+        open.add(new RouteNode(next, arrivalTicks, arrivalTicks + heuristic));
+        return currentGoal;
     }
 
-    private MobDodge findMobDodge(LegacyWorldObservation state) {
+    private boolean routeNeedsMobReplan(LegacyWorldObservation state) {
+        if (state.monsters == null || state.monsters.isEmpty()
+                || routeRows == null || routeLength <= 1
+                || routeIndex >= routeLength - 1) {
+            return false;
+        }
+
+        int end = Math.min(routeLength - 1,
+                routeIndex + MOB_ROUTE_LOOKAHEAD_CELLS);
+
+        /*
+         * Only future route cells matter. The current cell may already be
+         * inside a mob's envelope because of the previous tick's movement;
+         * rebuilding from that cell cannot retroactively undo the collision.
+         */
+        for (int i = routeIndex + 1; i <= end; i++) {
+            double arrivalTicks = (i - routeIndex) * ESTIMATED_TICKS_PER_CELL;
+            if (isMobBlockedAtArrival(state,
+                    routeRows[i], routeColumns[i], arrivalTicks)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isMobBlockedAtArrival(LegacyWorldObservation state,
+                                          int routeRow,
+                                          int routeColumn,
+                                          double arrivalTicks) {
         if (state.monsters == null || state.monsters.isEmpty()) {
-            return null;
+            return false;
         }
 
         /*
-         * Only consider monsters that are actually on the player's current
-         * horizontal corridor. A mob several cells away is not a reason to
-         * disturb an optimal route.
+         * We only trust short-horizon velocity prediction. Beyond that horizon
+         * the route is deliberately left open and will be replanned as the
+         * player advances and receives newer monster observations.
          */
-        LegacyWorldObservation.Monster threat = null;
-        double bestTime = Double.POSITIVE_INFINITY;
-        double bestDistance = Double.POSITIVE_INFINITY;
+        double predictionTicks = Math.min(arrivalTicks, MOB_PREDICT_TICKS);
+        double seconds = predictionTicks / 20.0D;
+        double cellX = worldX(routeRow, state.center.x);
+        double cellZ = worldZ(routeColumn, state.center.z);
 
         for (LegacyWorldObservation.Monster monster : state.monsters) {
-            if (monster.removed) continue;
-
-            double rx = monster.x - state.player.x;
-            double rz = monster.z - state.player.z;
-            double horizontalDistance = Math.sqrt(rx * rx + rz * rz);
-            if (horizontalDistance > 5.0D) continue;
-
-            double rvx = monster.vx - state.player.vx;
-            double rvz = monster.vz - state.player.vz;
-            double rvSquared = rvx * rvx + rvz * rvz;
-
-            double t = 0.0D;
-            if (rvSquared > 1.0E-6D) {
-                t = -(rx * rvx + rz * rvz) / rvSquared;
-                t = Math.max(0.0D, Math.min(MOB_PREDICT_SECONDS, t));
-            }
-
-            double closestX = rx + rvx * t;
-            double closestZ = rz + rvz * t;
-            double closestHorizontal = Math.sqrt(closestX * closestX + closestZ * closestZ);
-
-            double verticalAtClosest = (monster.y - state.player.y)
-                    + (monster.vy - state.player.vy) * t;
-
-            // Mirror the source's 3D collision requirement conservatively.
-            if (Math.abs(verticalAtClosest) >= 1.15D
-                    || closestHorizontal >= MOB_HAZARD_RADIUS) {
+            if (monster.removed) {
                 continue;
             }
 
-            if (t < bestTime || (Math.abs(t - bestTime) < 1.0E-4D
-                    && closestHorizontal < bestDistance)) {
-                threat = monster;
-                bestTime = t;
-                bestDistance = closestHorizontal;
-            }
-        }
+            double predictedX = monster.x + monster.vx * predictionTicks;
+            double predictedZ = monster.z + monster.vz * predictionTicks;
 
-        if (threat == null) return null;
+            double dx = predictedX - cellX;
+            double dz = predictedZ - cellZ;
+            double horizontalDistanceSquared = dx * dx + dz * dz;
 
-        /*
-         * Pick a one-cell lateral dodge relative to the current route heading.
-         * We only use cells that are physically traversable. This keeps the
-         * dodge inside the same floor topology and avoids turning toward an
-         * edge simply because a mob is nearby.
-         */
-        int playerRow = row(state.player.x, state.center.x);
-        int playerColumn = row(state.player.z, state.center.z);
-        int headingIndex = Math.min(routeLength - 1, Math.max(routeIndex, routeIndex + 1));
-        int nextRow = routeRows[headingIndex];
-        int nextColumn = routeColumns[headingIndex];
-
-        int dr = Integer.signum(nextRow - playerRow);
-        int dc = Integer.signum(nextColumn - playerColumn);
-
-        // If the route point is currently in the same cell, use the next
-        // distinct route segment to establish the local forward direction.
-        if (dr == 0 && dc == 0) {
-            for (int i = headingIndex + 1; i < routeLength; i++) {
-                dr = Integer.signum(routeRows[i] - playerRow);
-                dc = Integer.signum(routeColumns[i] - playerColumn);
-                if (dr != 0 || dc != 0) break;
-            }
-        }
-
-        if (dr == 0 && dc == 0) return null;
-
-        // Cardinal route direction -> two perpendicular candidate cells.
-        int leftRow = playerRow - dc * MOB_DODGE_CELLS;
-        int leftColumn = playerColumn + dr * MOB_DODGE_CELLS;
-        int rightRow = playerRow + dc * MOB_DODGE_CELLS;
-        int rightColumn = playerColumn - dr * MOB_DODGE_CELLS;
-
-        boolean leftSafe = inBounds(leftRow, leftColumn)
-                && state.physicalFloor[leftRow][leftColumn];
-        boolean rightSafe = inBounds(rightRow, rightColumn)
-                && state.physicalFloor[rightRow][rightColumn];
-
-        if (!leftSafe && !rightSafe) {
             /*
-             * A one-cell corridor leaves no lateral escape. Do not invent a
-             * strafe or intentionally hit the mob here; the source knockback
-             * can slide the player off the maze edge. The normal route action
-             * is retained and the next tick gets another prediction.
+             * The benchmark intentionally treats any plausible contact as
+             * forbidden. We therefore use a conservative horizontal envelope
+             * rather than depending on the player's exact future jump phase.
+             * This prevents the planner from "solving" a mob by jumping into
+             * its hitbox and is safer than reproducing a partial future physics
+             * state in this live client-thread planner.
              */
-            return null;
+            if (horizontalDistanceSquared < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS) {
+                return true;
+            }
+
+            /*
+             * Stationary mobs are hard obstacles even beyond the prediction
+             * horizon: if the monster is currently sitting on the route cell,
+             * waiting for the velocity horizon to expire must not make that
+             * cell appear safe.
+             */
+            if (arrivalTicks > MOB_PREDICT_TICKS) {
+                double currentDx = monster.x - cellX;
+                double currentDz = monster.z - cellZ;
+                if (currentDx * currentDx + currentDz * currentDz
+                        < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS
+                        && Math.abs(monster.vx) + Math.abs(monster.vz) < 0.03D) {
+                    return true;
+                }
+            }
         }
 
-        double leftWorldX = worldX(leftRow, state.center.x);
-        double leftWorldZ = worldZ(leftColumn, state.center.z);
-        double rightWorldX = worldX(rightRow, state.center.x);
-        double rightWorldZ = worldZ(rightColumn, state.center.z);
-
-        double leftMobDistance = distanceSquared(leftWorldX, leftWorldZ, threat.x, threat.z);
-        double rightMobDistance = distanceSquared(rightWorldX, rightWorldZ, threat.x, threat.z);
-
-        int dodgeRow;
-        int dodgeColumn;
-        int side;
-
-        if (leftSafe && (!rightSafe || leftMobDistance >= rightMobDistance)) {
-            dodgeRow = leftRow;
-            dodgeColumn = leftColumn;
-            side = -1;
-        } else {
-            dodgeRow = rightRow;
-            dodgeColumn = rightColumn;
-            side = 1;
-        }
-
-        float dodgeYaw = desiredYawTo(
-                state.player.x, state.player.z,
-                worldX(dodgeRow, state.center.x),
-                worldZ(dodgeColumn, state.center.z));
-        float dodgeError = normalise(dodgeYaw - state.player.yaw);
-
-        return new MobDodge(
-                threat.id,
-                threat.visualType,
-                Math.min(bestDistance, MOB_HAZARD_RADIUS),
-                side,
-                clamp(dodgeError, -MOB_DODGE_MAX_YAW, MOB_DODGE_MAX_YAW));
+        return false;
     }
 
-    private static double distanceSquared(double ax, double az, double bx, double bz) {
-        double dx = ax - bx;
-        double dz = az - bz;
-        return dx * dx + dz * dz;
+    private static double heuristicTicks(int row, int column,
+                                         int targetRow, int targetColumn) {
+        return (Math.abs(row - targetRow) + Math.abs(column - targetColumn))
+                * ESTIMATED_TICKS_PER_CELL;
     }
 
-    private static final class MobDodge {
-        private final int monsterId;
-        private final String visualType;
-        private final double distance;
-        private final int side;
-        private final float yawDelta;
+    private static final class RouteNode {
+        private final int index;
+        private final double gTicks;
+        private final double fScore;
 
-        private MobDodge(int monsterId, String visualType, double distance,
-                         int side, float yawDelta) {
-            this.monsterId = monsterId;
-            this.visualType = visualType;
-            this.distance = distance;
-            this.side = side;
-            this.yawDelta = yawDelta;
+        private RouteNode(int index, double gTicks, double fScore) {
+            this.index = index;
+            this.gTicks = gTicks;
+            this.fScore = fScore;
         }
     }
 

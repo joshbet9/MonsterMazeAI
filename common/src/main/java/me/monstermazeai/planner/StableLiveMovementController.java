@@ -81,9 +81,8 @@ public final class StableLiveMovementController {
     private boolean bootstrapRoutePending = true;
     /** True until the first source-faithful monster-aware route evaluation completes. */
     private boolean fullRouteEvaluationPending = true;
-    /** Cached tactical action for an unchanged local threat state. */
+    /** Local threat state for which the expensive tactical branch was last evaluated. */
     private long lastTacticalSignature = Long.MIN_VALUE;
-    private Action cachedTacticalAction;
     private double laneAnchorX;
     private double laneAnchorZ;
 
@@ -150,7 +149,6 @@ public final class StableLiveMovementController {
                 fullRouteEvaluationPending = false;
             }
             lastTacticalSignature = Long.MIN_VALUE;
-            cachedTacticalAction = null;
         }
 
         if (route.size() == 1) {
@@ -179,19 +177,21 @@ public final class StableLiveMovementController {
         // This is what makes deliberate contact and ability use real live actions,
         // rather than merely simulated route preferences.
         long currentThreatSignature = threatSignature(state);
-        if (routePlanner.shouldUseTacticalAction(state)) {
-            if (currentThreatSignature != lastTacticalSignature || cachedTacticalAction == null) {
-                cachedTacticalAction = routePlanner.tacticalAction(
-                        state, route, goal, regionRadius);
-                lastTacticalSignature = currentThreatSignature;
-            }
-            if (cachedTacticalAction != null) {
-                lastDecisionDetail += " TACTICAL=" + cachedTacticalAction;
-                return cachedTacticalAction;
-            }
-        } else {
+        if (routePlanner.shouldUseTacticalAction(state)
+                && currentThreatSignature != lastTacticalSignature) {
+            /*
+             * Tactical search is a receding-horizon event, not a held command.
+             * Only its first action is returned. The next observation falls back
+             * to the live steering motor unless the local threat state materially
+             * changes, preventing stale yaw/ability pulses from being replayed.
+             */
+            Action tactical = routePlanner.tacticalAction(
+                    state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            cachedTacticalAction = null;
+            if (tactical != null) {
+                lastDecisionDetail += " TACTICAL=" + tactical;
+                return tactical;
+            }
         }
 
         double targetX = route.targetX(waypointIndex);

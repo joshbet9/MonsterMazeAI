@@ -35,8 +35,8 @@ import java.util.regex.Pattern;
 public final class Minecraft18AiRuntime {
     private static final String EMBEDDED_RUNTIME_RESOURCE =
             "/runtime/monster-maze-ai-runtime.jar";
-    /** Movement-only branch: never execute a decision more than two client ticks late. */
-    private static final long MAX_ACTION_AGE_TICKS = 2L;
+    /** Movement-only branch: a decision is valid only for the exact observation tick it was planned from. */
+    private static final long MAX_ACTION_AGE_TICKS = 0L;
 
     private volatile Process process;
     private volatile DataInputStream input;
@@ -168,19 +168,22 @@ public final class Minecraft18AiRuntime {
         lastAppliedDecisionSequence = result.sequence;
 
         long age = currentTick - result.tick;
-        lastCompletedWasStaleTurn = false;
+        if (age < 0L) {
+            /*
+             * A future result is impossible under the normal clock contract,
+             * but fail closed if an adapter/server clock ever moves backwards.
+             */
+            lastCompletedTick = result.tick;
+            return LegacyAction.IDLE;
+        }
+
         if (age > MAX_ACTION_AGE_TICKS) {
             /*
-             * A delayed per-tick command must never be held as though it were
-             * fresh. The only stale command we allow through is a pure bounded
-             * turn. Movement, jump and ability commands remain fail-closed until
-             * a fresh observation has been planned.
+             * There is deliberately no stale-turn exception. A yaw pulse is
+             * part of the movement command for a specific world state; applying
+             * it one tick later can rotate the player after the route/velocity
+             * has already changed. This branch is an exact-tick benchmark.
              */
-            if (isSafeStaleTurn(result.action)) {
-                lastCompletedWasStaleTurn = true;
-                lastCompletedTick = result.tick;
-                return result.action;
-            }
             lastCompletedTick = result.tick;
             return LegacyAction.IDLE;
         }
@@ -188,6 +191,7 @@ public final class Minecraft18AiRuntime {
         lastCompletedTick = result.tick;
         return result.action;
     }
+
 
     /** Worker loop that always consumes the newest available observation. */
     private void processLatestObservations() {
@@ -223,9 +227,6 @@ public final class Minecraft18AiRuntime {
         }
     }
 
-    public synchronized boolean lastCompletedWasStaleTurn() {
-        return lastCompletedWasStaleTurn;
-    }
 
     public synchronized boolean decisionPending() {
         return latestObservation != null || (pendingDecision != null && !pendingDecision.isDone());
@@ -529,14 +530,6 @@ public final class Minecraft18AiRuntime {
         }
     }
 
-    private static boolean isSafeStaleTurn(LegacyAction action) {
-        return action.forward == 0.0
-                && action.strafe == 0.0
-                && !action.jump
-                && !action.sprint
-                && !action.useAbility
-                && Math.abs(action.yawDelta) <= 12.0F;
-    }
 
     private static String describe(LegacyAction action) {
         return "f=" + action.forward + ",s=" + action.strafe

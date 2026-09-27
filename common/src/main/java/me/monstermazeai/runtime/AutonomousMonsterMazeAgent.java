@@ -63,12 +63,13 @@ public final class AutonomousMonsterMazeAgent {
         h = mix(h, state.activePadRow);
         h = mix(h, state.activePadColumn);
         if (state.maze != null) {
-            h = mix(h, MazeModel.SIZE);
-            for (int r = 0; r < MazeModel.SIZE; r++) {
-                for (int c = 0; c < MazeModel.SIZE; c++) {
-                    h = mix(h, state.maze.raw(r, c));
-                }
-            }
+            /*
+             * The raw 99x99 layout is identified by mazePattern. Dynamic
+             * physical-floor/disabled-cell changes are tracked incrementally by
+             * MazeModel, so live replanning does not rescan 9,801 cells on every
+             * observation.
+             */
+            h = mix(h, state.maze.dynamicSignature());
         }
         return h;
     }

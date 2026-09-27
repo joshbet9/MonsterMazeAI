@@ -54,6 +54,8 @@ public final class Minecraft18AiRuntime {
     private DecisionResult latestCompletedDecision;
     private long lastSubmittedTick = Long.MIN_VALUE;
     private long lastCompletedTick = Long.MIN_VALUE;
+    private long completedSequence;
+    private long lastAppliedDecisionSequence;
     private boolean lastCompletedWasStaleTurn;
 
     private String resolvedRuntimeJar;
@@ -161,6 +163,8 @@ public final class Minecraft18AiRuntime {
         DecisionResult result = latestCompletedDecision;
         latestCompletedDecision = null;
         if (result == null || result.action == null) return null;
+        if (result.sequence <= lastAppliedDecisionSequence) return null;
+        lastAppliedDecisionSequence = result.sequence;
 
         long age = currentTick - result.tick;
         lastCompletedWasStaleTurn = false;
@@ -209,7 +213,7 @@ public final class Minecraft18AiRuntime {
             }
 
             synchronized (this) {
-                latestCompletedDecision = new DecisionResult(submitted.worldTick, action);
+                latestCompletedDecision = new DecisionResult(submitted.worldTick, action, ++completedSequence);
                 if (latestObservation == null) {
                     pendingDecision = null;
                     return;
@@ -250,10 +254,13 @@ public final class Minecraft18AiRuntime {
                               + " reached=" + observation.pad.reached));
             }
 
-            LegacyProtocol.writeObservation(output, observation);
+            long wireStart = System.nanoTime();
+            LegacyWorldObservation localObservation = observation.localInteractionView(20.0);
+            LegacyProtocol.writeObservation(output, localObservation);
             output.flush();
 
             LegacyAction action = LegacyProtocol.readAction(input);
+            long wireElapsedMicros = (System.nanoTime() - wireStart) / 1000L;
             lastAction = action == null ? LegacyAction.IDLE : action;
 
             if (decideCount == 1 || decideCount % 20 == 0
@@ -285,6 +292,8 @@ public final class Minecraft18AiRuntime {
         pendingDecision = null;
         lastSubmittedTick = Long.MIN_VALUE;
         lastCompletedTick = Long.MIN_VALUE;
+        completedSequence = 0L;
+        lastAppliedDecisionSequence = 0L;
         lastCompletedWasStaleTurn = false;
     }
 
@@ -511,9 +520,11 @@ public final class Minecraft18AiRuntime {
     private static final class DecisionResult {
         final long tick;
         final LegacyAction action;
-        DecisionResult(long tick, LegacyAction action) {
+        final long sequence;
+        DecisionResult(long tick, LegacyAction action, long sequence) {
             this.tick = tick;
             this.action = action;
+            this.sequence = sequence;
         }
     }
 

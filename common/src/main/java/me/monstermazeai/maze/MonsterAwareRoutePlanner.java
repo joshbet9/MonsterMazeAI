@@ -47,6 +47,33 @@ public final class MonsterAwareRoutePlanner {
     private int cachedRegionRadius = Integer.MIN_VALUE;
     private boolean cachedRegionGoal;
 
+    /**
+     * Low-latency physical bootstrap. It intentionally ignores monster risk for
+     * this first command so the live motor can begin turning/driving while the
+     * next observation performs the full source-faithful evaluation.
+     */
+    public PlayerRoute routeFast(GameState state, Cell start, Cell goal) {
+        validate(state, start, goal);
+        if (start.equals(goal)) return new PlayerRoute(List.of(start));
+        List<PlayerRoute> candidates = cachedCandidatesFor(
+                state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
+        return shortest(candidates);
+    }
+
+    /** Low-latency Safe Pad bootstrap counterpart. */
+    public PlayerRoute routeToRegionFast(GameState state, Cell start, Cell regionCenter, int radius) {
+        validate(state, start, regionCenter);
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+        if (me.monstermazeai.game.PadModel.isOn(state.player,
+                regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
+                regionCenter.column() + 0.5)) {
+            return new PlayerRoute(List.of(start));
+        }
+        List<PlayerRoute> candidates = cachedCandidatesFor(
+                state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
+        return shortest(candidates);
+    }
+
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
 
@@ -168,11 +195,7 @@ public final class MonsterAwareRoutePlanner {
                 break;
             }
         }
-        if (!hasRelevantMonster) {
-            return candidates.stream()
-                    .min(Comparator.comparingInt(PlayerRoute::size))
-                    .orElseThrow(() -> new IllegalArgumentException("No route candidates"));
-        }
+        if (!hasRelevantMonster) return shortest(candidates);
 
         /*
          * Candidate routes are independent simulations. Evaluate them in parallel
@@ -216,6 +239,13 @@ public final class MonsterAwareRoutePlanner {
         }
 
         return candidateRoute.size() < incumbentRoute.size();
+    }
+
+
+    private static PlayerRoute shortest(List<PlayerRoute> candidates) {
+        return candidates.stream()
+                .min(Comparator.comparingInt(PlayerRoute::size))
+                .orElseThrow(() -> new IllegalArgumentException("No route candidates"));
     }
 
     private static void addCandidate(List<PlayerRoute> candidates, Set<String> seen,

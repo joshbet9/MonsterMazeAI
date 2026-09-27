@@ -108,12 +108,15 @@ public final class AiSidecarMain {
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
 
-                    if (observationCount == 1 || observationCount % 20 == 0) {
+                    if (observationCount <= 3 || observationCount % 20 == 0) {
+                        long decisionMicros = (System.nanoTime() - decisionStart) / 1000L;
                         System.err.println("[MonsterMazeAI] DECISION tick=" + observation.worldTick
                                 + " legacyOut=" + describe(result)
                                 + " objectiveReason=" + objective.lastDecisionReason()
                                 + " objectiveDetail=" + objective.lastDecisionDetail()
-                                + " agentDetail=" + agent.lastDecisionDetail());
+                                + " agentDetail=" + agent.lastDecisionDetail()
+                                + " decisionUs=" + decisionMicros
+                                + " localMonsters=" + state.monsters.size());
                     }
                 } else if (agent != null) {
                     agent.reset();

@@ -3,38 +3,53 @@ package me.monstermazeai.maze;
 import java.util.*;
 
 /**
- * Generates deterministic alternatives around a shortest physical route.
+ * Deterministic bounded K-shortest physical-route generator.
  *
- * The first path is the true unweighted shortest path. Each alternative is
- * produced by temporarily forbidding one edge of the baseline/previous path
- * and recomputing the shortest physical path. This is intentionally small:
- * tactical simulation, not an enormous route catalogue, determines which
- * alternative is actually faster in the live monster field.
+ * It uses iterative edge-deviation expansion: every accepted route contributes
+ * each of its edges as a possible temporary exclusion, and BFS then finds the
+ * shortest physical route under that exclusion. This is deliberately bounded
+ * because tactical simulation is the expensive stage.
  */
 public final class AlternativePhysicalRoutes {
     public List<PlayerRoute> generate(MazeModel maze, Cell start, Cell goal, int limit) {
         if (limit < 1) throw new IllegalArgumentException("limit must be positive");
 
         PlayerRoute baseline = PlayerRoute.between(maze, start, goal);
-        List<PlayerRoute> out = new ArrayList<>();
-        out.add(baseline);
-        if (limit == 1 || baseline.size() < 2) return out;
+        List<PlayerRoute> accepted = new ArrayList<>();
+        accepted.add(baseline);
 
         Set<String> seen = new HashSet<>();
         seen.add(key(baseline.cells()));
 
-        for (int i = 0; i < baseline.size() - 1 && out.size() < limit; i++) {
-            Cell a = baseline.cells().get(i);
-            Cell b = baseline.cells().get(i + 1);
+        PriorityQueue<PlayerRoute> queue = new PriorityQueue<>(
+                Comparator.comparingInt(PlayerRoute::size).thenComparing(r -> key(r.cells())));
 
-            List<Cell> candidate = shortestAvoidingEdge(maze, start, goal, a, b);
-            if (candidate.isEmpty()) continue;
-
-            String key = key(candidate);
-            if (seen.add(key)) out.add(new PlayerRoute(candidate));
+        addDeviations(maze, start, goal, baseline, queue, seen);
+        while (accepted.size() < limit && !queue.isEmpty()) {
+            PlayerRoute candidate = queue.poll();
+            if (!contains(accepted, candidate)) {
+                accepted.add(candidate);
+                addDeviations(maze, start, goal, candidate, queue, seen);
+            }
         }
+        return accepted;
+    }
 
-        return out;
+    private void addDeviations(MazeModel maze, Cell start, Cell goal, PlayerRoute route,
+                                PriorityQueue<PlayerRoute> queue, Set<String> seen) {
+        List<Cell> cells = route.cells();
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            List<Cell> path = shortestAvoidingEdge(maze, start, goal, cells.get(i), cells.get(i + 1));
+            if (path.isEmpty()) continue;
+            String k = key(path);
+            if (seen.add(k)) queue.add(new PlayerRoute(path));
+        }
+    }
+
+    private static boolean contains(List<PlayerRoute> routes, PlayerRoute target) {
+        String wanted = key(target.cells());
+        for (PlayerRoute r : routes) if (key(r.cells()).equals(wanted)) return true;
+        return false;
     }
 
     private List<Cell> shortestAvoidingEdge(MazeModel maze, Cell start, Cell goal,
@@ -47,18 +62,14 @@ public final class AlternativePhysicalRoutes {
         while (!queue.isEmpty()) {
             Cell current = queue.removeFirst();
             if (current.equals(goal)) return reconstruct(previous, goal);
-
             for (Cell next : maze.physicalCardinalNeighbours(current)) {
                 if ((current.equals(blockedA) && next.equals(blockedB))
-                        || (current.equals(blockedB) && next.equals(blockedA))) {
-                    continue;
-                }
+                        || (current.equals(blockedB) && next.equals(blockedA))) continue;
                 if (previous.containsKey(next)) continue;
                 previous.put(next, current);
                 queue.addLast(next);
             }
         }
-
         return List.of();
     }
 

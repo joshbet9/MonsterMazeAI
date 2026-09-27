@@ -74,7 +74,7 @@ class SourceMechanicsValidationTest {
 
         // A monster bump gives a separate two-second grace window.
         s.tick = 16;
-        s.player.recentMobHitUntilTick = 16;
+        s.player.mobHitGraceUntilTick = 56;
         assertFalse(abilities.consumeJumperCharge(s));
         s.tick = 55;
         assertFalse(abilities.consumeJumperCharge(s));

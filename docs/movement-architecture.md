@@ -71,3 +71,16 @@ The Mineplex Safe Pad is a 5x5 physical surface. The beacon identifies its ancho
 The baseline route is shortest physical travel to the Safe Pad. Monster proximity is not a global route penalty. Monster interaction cost is evaluated only when a monster is within the local interaction envelope.
 
 A local contact is evaluated using the source-game Monster Maze behaviour: a bump deals 4 damage and applies velocity along the trajectory from monster to player. The decision cost therefore includes expected health loss and pad-arrival travel cost. A contact whose knockback direction is aligned toward the Safe Pad can offset that health cost; a contact that displaces the player away from the objective is treated as a local negative interaction. No generic void/fall penalty is included in this routing cost.
+
+
+## Baseline-to-competitor architecture
+
+The deterministic baseline is intentionally separated into three layers:
+
+1. **World/mechanics model** — authoritative maze geometry, Safe Pad lifecycle, 1.8 movement, monster movement/contact, and kit abilities.
+2. **Capability/strategy model** — chooses the physically valid route and tactical action that maximises the baseline objective: successful pad arrival first, then arrival time, remaining health, damage taken, and physical route length.
+3. **Player profile** — a future policy layer, not part of the baseline physics. It can parameterise measurable tendencies such as movement precision, reaction delay, route preference, risk tolerance, monster-contact preference, ability conservation, jump frequency, and timing variance.
+
+This separation is important for the long-term competitor/NPC goal. A difficulty setting should change capability constraints/tendencies without rewriting Monster Maze mechanics, while a player profile should describe *how* an NPC plays rather than silently changing what the game considers physically possible.
+
+Real-player modelling can later feed the profile layer from telemetry rather than hand-authored guesses. The telemetry should preserve raw observations/actions and derive measurable features such as movement efficiency, reaction latency, route choices, contact outcomes, ability timing, and risk decisions. The baseline therefore remains the reference policy against which lower-capability and player-specific profiles can be evaluated.

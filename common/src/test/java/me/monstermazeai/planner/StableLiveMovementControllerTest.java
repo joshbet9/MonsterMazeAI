@@ -103,20 +103,18 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void neverCombinesForwardDriveWithYawTurn() {
-        GameState s = state(0.5, 0.5, 0.0F);
+    void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
+        GameState s = state(0.5, 0.5, -20.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
-        LegacyMazePhysics physics = new LegacyMazePhysics();
 
-        for (int tick = 1; tick <= 220; tick++) {
-            s.tick = tick;
-            Action action = controller.nextAction(s, new Cell(8, 8), false);
-            assertFalse(action.forward() > 0.0 && Math.abs(action.yawDelta()) > 0.0);
-            physics.tick(s.player, action);
-            if (Math.hypot(s.player.x - 8.5, s.player.z - 8.5) < 0.55) return;
-        }
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
 
-        fail("controller did not reach the diagonal objective");
+        assertTrue(action.forward() > 0.0,
+                "moderate heading error should not force an unnecessary stop");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0,
+                "cursor/yaw steering should be applied in the same tick as forward movement");
+        assertTrue(Math.abs(action.yawDelta()) <= 12.0F);
+        assertFalse(action.strafe() != 0.0);
     }
 
     @Test

@@ -3,7 +3,7 @@ name: Maven CI
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, feature/first-pad-movement ]
   pull_request:
     branches: [ main ]
 

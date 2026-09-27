@@ -9,6 +9,7 @@ public final class MazeModel {
     private final int[][] raw;
     private final boolean[][] disabled;
     private final boolean[][] physicalFloor;
+    private long dynamicSignature;
 
     public MazeModel(int[][] raw) {
         if (raw.length != SIZE) throw new IllegalArgumentException("Maze must be 99x99");
@@ -20,6 +21,8 @@ public final class MazeModel {
             System.arraycopy(raw[r], 0, this.raw[r], 0, SIZE);
             for (int c = 0; c < SIZE; c++) this.physicalFloor[r][c] = raw[r][c] != 0;
         }
+        dynamicSignature = 0x9E3779B97F4A7C15L;
+        }
     }
 
     public int raw(int row, int col) { return raw[row][col]; }
@@ -28,12 +31,37 @@ public final class MazeModel {
         return v == 1 || v == 2 || v == 5 || v == 6;
     }
     public boolean isDisabled(int row, int col) { return disabled[row][col]; }
-    public void setDisabled(int row, int col, boolean value) { disabled[row][col] = value; }
+
+    public void setDisabled(int row, int col, boolean value) {
+        if (disabled[row][col] == value) return;
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+        disabled[row][col] = value;
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+    }
     public boolean isPhysicalFloor(int row, int col) {
         return row >= 0 && row < SIZE && col >= 0 && col < SIZE
                 && (physicalFloor[row][col] || disabled[row][col]);
     }
-    public void setPhysicalFloor(int row, int col, boolean value) { physicalFloor[row][col] = value; }
+    public void setPhysicalFloor(int row, int col, boolean value) {
+        if (physicalFloor[row][col] == value) return;
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+        physicalFloor[row][col] = value;
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+    }
+
+    /** Compact O(1) signature of dynamic floor/waypoint state for live replanning. */
+    public long dynamicSignature() { return dynamicSignature; }
+
+    private static long cellSignature(int row, int col, boolean disabled, boolean floor) {
+        long value = (((long) row) << 32) ^ (col & 0xffffffffL);
+        if (disabled) value ^= 0xC2B2AE3D27D4EB4FL;
+        if (floor) value ^= 0x165667B19E3779F9L;
+        value *= 0x9E3779B97F4A7C15L;
+        value ^= value >>> 29;
+        value *= 0xC2B2AE3D27D4EB4FL;
+        value ^= value >>> 32;
+        return value;
+    }
     public MazeModel copy() {
         MazeModel copy = new MazeModel(raw);
         for (int r = 0; r < SIZE; r++) {
@@ -42,6 +70,7 @@ public final class MazeModel {
                 copy.physicalFloor[r][c] = physicalFloor[r][c];
             }
         }
+        copy.dynamicSignature = dynamicSignature;
         return copy;
     }
 

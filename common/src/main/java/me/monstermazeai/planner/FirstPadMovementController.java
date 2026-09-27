@@ -296,7 +296,7 @@ public final class FirstPadMovementController {
             }
         }
 
-        int desiredSegment = Math.min(route.size() - 1, Math.max(1, closestIndex + 1));
+        int desiredSegment = Math.min(route.size() - 1, Math.max(1, closestIndex));
 
         /*
          * Never jump all the way back toward the beginning because a corner

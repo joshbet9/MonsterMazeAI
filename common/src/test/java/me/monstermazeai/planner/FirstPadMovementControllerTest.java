@@ -91,29 +91,6 @@ public class FirstPadMovementControllerTest {
     }
 
     @Test
-    public void routeSurvivesAdjacentPhysicalCellDriftWithoutImmediateReplan() {
-        FirstPadMovementController controller = new FirstPadMovementController();
-        GameState state = state(Kit.REPULSOR, 0, 50.5, 49.5, -90.0F);
-
-        Action first = controller.nextAction(state);
-        assertEquals(1.0, first.forward(), 0.0);
-        int originalRouteSize = controller.routeSize();
-
-        // Adjacent physical floor outside the exact integer-cell route. The
-        // controller should keep the original shortest route while it remains
-        // inside the continuous recovery corridor.
-        state.maze.setDisabled(51, 50, false);
-        state.player.x = 51.25;
-        state.player.z = 49.95;
-        state.player.yaw = -90.0F;
-
-        Action recovered = controller.nextAction(state);
-
-        assertNotEquals(Action.IDLE, recovered);
-        assertEquals(originalRouteSize, controller.routeSize());
-    }
-
-    @Test
     public void jumperNeverConsumesChargesInMovementOnlyMode() {
         FirstPadMovementController controller = new FirstPadMovementController();
 

@@ -184,8 +184,7 @@ public final class FirstPadSpeedrunController {
     private boolean buildRoute(LegacyWorldObservation state) {
         int startRow = row(state.player.x, state.center.x);
         int startColumn = row(state.player.z, state.center.z);
-        if (!inBounds(startRow, startColumn)
-                || !state.physicalFloor[startRow][startColumn]) {
+        if (!inBounds(startRow, startColumn)) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + startRow + "," + startColumn);
             return false;
@@ -193,6 +192,32 @@ public final class FirstPadSpeedrunController {
 
         int targetRow = state.pad.row;
         int targetColumn = state.pad.column;
+
+        /*
+         * At a phase transition the player is still physically standing on
+         * the previous Safe Pad, but ObservationWorldModel's physicalFloor
+         * is rebuilt from the newly active pad/topology. That can legitimately
+         * make the old pad's logical cells false even though the player is
+         * standing on its physical surface.
+         *
+         * Treat the player's current cell as a valid BFS seed only when this
+         * is an actual pad-to-pad transition and the player is still inside
+         * the previous pad. We do NOT make the whole old pad traversable:
+         * BFS may leave this seed only through cells reported as physical
+         * floor. This preserves the physical-floor route model while allowing
+         * the route to start from the player's real post-countdown position.
+         */
+        boolean standingOnPreviousPad = targetReached
+                && goalRow >= 0
+                && goalColumn >= 0
+                && Math.abs(startRow - goalRow) <= PAD_RADIUS
+                && Math.abs(startColumn - goalColumn) <= PAD_RADIUS;
+
+        if (!state.physicalFloor[startRow][startColumn] && !standingOnPreviousPad) {
+            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+                    + " start=" + startRow + "," + startColumn);
+            return false;
+        }
 
         int[] parent = new int[SIZE * SIZE];
         Arrays.fill(parent, -2);

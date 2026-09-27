@@ -7,6 +7,7 @@ import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.physics.LegacyMovementModel;
 import me.monstermazeai.physics.MonsterMazeBumpModel;
+import me.monstermazeai.physics.SpeedContactModel;
 import me.monstermazeai.player.Action;
 
 import java.util.ArrayList;

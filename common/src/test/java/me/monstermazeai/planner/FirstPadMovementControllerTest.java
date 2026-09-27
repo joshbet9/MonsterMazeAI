@@ -53,11 +53,14 @@ public class FirstPadMovementControllerTest {
     }
 
     @Test
-    public void jumperOnlyUsesRealJumpInputWhileChargesRemain() {
+    public void jumperNeverConsumesChargesInMovementOnlyMode() {
         FirstPadMovementController controller = new FirstPadMovementController();
 
         Action charged = controller.nextAction(state(Kit.JUMPER, 1, 50.5, 49.5, -90.0F));
-        assertTrue(charged.jump());
+        assertFalse(charged.jump());
+        assertEquals(1.0, charged.forward(), 0.0);
+        assertTrue(charged.sprint());
+        assertEquals(0.0, charged.strafe(), 0.0);
 
         controller.reset();
         Action empty = controller.nextAction(state(Kit.JUMPER, 0, 50.5, 49.5, -90.0F));

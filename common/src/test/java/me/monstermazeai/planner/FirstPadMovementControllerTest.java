@@ -78,6 +78,21 @@ public class FirstPadMovementControllerTest {
     }
 
     @Test
+    public void enteringCurrentRouteCellDoesNotSkipAheadToFutureCorner() {
+        FirstPadMovementController controller = new FirstPadMovementController();
+
+        // We are inside route cell (59,49), approaching (60,49). The next
+        // segment is the +column turn at (60,49), but that corner has not been
+        // entered yet.
+        Action action = controller.nextAction(state(Kit.REPULSOR, 0, 59.2, 49.5, -90.0F));
+
+        assertEquals(10, controller.segmentIndex());
+        assertEquals(1.0, action.forward(), 0.0);
+        assertTrue(action.sprint());
+        assertEquals(0.0F, action.yawDelta(), 0.0F);
+    }
+
+    @Test
     public void cornerTurnUsesAggressiveYawAndReducesForwardTravel() {
         FirstPadMovementController controller = new FirstPadMovementController();
 

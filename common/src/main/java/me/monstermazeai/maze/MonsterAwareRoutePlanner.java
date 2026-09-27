@@ -36,7 +36,7 @@ public final class MonsterAwareRoutePlanner {
      * physical start cell, objective region and the maze's compact dynamic
      * signature, then re-evaluate the cached corridors against every fresh
      * monster observation. This preserves continuous replanning without paying
-     * for repeated A*/BFS route generation when only monsters moved.
+     * for repeated A-star/BFS route generation when only monsters moved.
      */
     private List<PlayerRoute> cachedCandidates = List.of();
     private long cachedTopologySignature = Long.MIN_VALUE;

@@ -9,6 +9,7 @@ import me.monstermazeai.physics.LegacyMovementModel;
 import me.monstermazeai.physics.MonsterMazeBumpModel;
 import me.monstermazeai.physics.SpeedContactModel;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.PlayerState;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -91,7 +92,7 @@ public final class TacticalRouteSimulator {
     private void step(GameState state, Action action, MonsterSimulator monsters) {
         if (action.useAbility()) abilities.activate(state);
 
-        GameState beforeContact = state.copy();
+        PlayerState beforeContact = state.player.copy();
         boolean wasGrounded = state.player.grounded;
         physics.tick(state.player, action, state.maze);
 
@@ -114,7 +115,7 @@ public final class TacticalRouteSimulator {
 
         // MonsterManager/UtilAction remains authoritative for the bump itself.
         SpeedContactModel.applyConservativeSlideOutcome(
-                beforeContact, state, action, state.player.health < healthBeforeBump);
+                beforeContact, state, state.maze, action, state.player.health < healthBeforeBump);
 
         if (isOnActivePad(state)) {
             abilities.onReachedPad(state, true);
@@ -178,7 +179,7 @@ public final class TacticalRouteSimulator {
         GameState state = source.copy();
         double radiusSq = TACTICAL_RELEVANCE_RADIUS * TACTICAL_RELEVANCE_RADIUS;
         state.monsters.removeIf(m -> {
-            if (m.removed || m.launched(source.tick) || m.frozen(source.tick)) return true;
+            if (m.removed) return true;
             double dx = source.player.x - m.x;
             double dy = source.player.y - m.y;
             double dz = source.player.z - m.z;

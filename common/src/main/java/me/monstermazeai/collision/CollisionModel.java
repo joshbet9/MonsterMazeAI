@@ -9,11 +9,12 @@ import me.monstermazeai.physics.MonsterMazeBumpModel;
 /** Compatibility facade; all collision semantics live in MonsterMazeBumpModel. */
 public final class CollisionModel {
     public void tryMonsterHit(GameState state, MonsterState monster) {
-        state.monsters.add(monster);
+        boolean alreadyPresent = state.monsters.contains(monster);
+        if (!alreadyPresent) state.monsters.add(monster);
         try {
             MonsterMazeBumpModel.apply(state);
         } finally {
-            state.monsters.remove(monster);
+            if (!alreadyPresent) state.monsters.remove(monster);
         }
     }
 

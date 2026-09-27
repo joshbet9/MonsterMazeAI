@@ -33,6 +33,7 @@ public final class Minecraft18AiRuntime {
     private Future<DecisionResult> pendingDecision;
     private long lastSubmittedTick = Long.MIN_VALUE;
     private long lastCompletedTick = Long.MIN_VALUE;
+    private boolean lastCompletedWasStaleTurn;
     private static final long MAX_ACTION_AGE_TICKS = 40L;
 
     public boolean configured() { return runtimeJar() != null; }
@@ -83,7 +84,22 @@ public final class Minecraft18AiRuntime {
             DecisionResult result = pendingDecision.get();
             pendingDecision = null;
             if (result.action == null) return null;
-            if (currentTick - result.tick > MAX_ACTION_AGE_TICKS) {
+            long age = currentTick - result.tick;
+            lastCompletedWasStaleTurn = false;
+            if (age > MAX_ACTION_AGE_TICKS) {
+                /*
+                 * A delayed per-tick command must never be held as though it were
+                 * fresh. The only stale command we allow through is a pure bounded
+                 * turn: executing one turn tick is safe recovery from an initial
+                 * heading mismatch and does not drive the player toward a stale
+                 * route/monster state. Movement, jump and ability commands remain
+                 * fail-closed until a fresh observation has been planned.
+                 */
+                if (isSafeStaleTurn(result.action)) {
+                    lastCompletedWasStaleTurn = true;
+                    lastCompletedTick = result.tick;
+                    return result.action;
+                }
                 lastCompletedTick = result.tick;
                 return LegacyAction.IDLE;
             }
@@ -95,6 +111,10 @@ public final class Minecraft18AiRuntime {
                     + failure.getClass().getSimpleName() + ": " + failure.getMessage());
             return null;
         }
+    }
+
+    public synchronized boolean lastCompletedWasStaleTurn() {
+        return lastCompletedWasStaleTurn;
     }
 
     public synchronized boolean decisionPending() {
@@ -162,6 +182,7 @@ public final class Minecraft18AiRuntime {
         pendingDecision = null;
         lastSubmittedTick = Long.MIN_VALUE;
         lastCompletedTick = Long.MIN_VALUE;
+        lastCompletedWasStaleTurn = false;
     }
     public synchronized LegacyAction lastAction() { return lastAction; }
 
@@ -206,6 +227,15 @@ public final class Minecraft18AiRuntime {
         final long tick;
         final LegacyAction action;
         DecisionResult(long tick, LegacyAction action) { this.tick = tick; this.action = action; }
+    }
+
+    private static boolean isSafeStaleTurn(LegacyAction action) {
+        return action.forward == 0.0
+                && action.strafe == 0.0
+                && !action.jump
+                && !action.sprint
+                && !action.useAbility
+                && Math.abs(action.yawDelta) <= 12.0F;
     }
 
     private static String describe(LegacyAction action) {

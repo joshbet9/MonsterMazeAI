@@ -35,7 +35,13 @@ public final class StableLiveMovementController {
     private static final double ROUTE_DEVIATION = 0.55;
     /** Re-evaluate the complete tactical world often enough to account for monster motion.
      * This is a cadence, not a monster-distance cutoff. */
-    private static final int MIN_REPLAN_INTERVAL = 10;
+    private static final int MIN_REPLAN_INTERVAL = 100;
+    /**
+     * Route topology is deliberately held longer than the tactical control loop.
+     * Tactical actions are still reconsidered on every live decision, so monsters
+     * and abilities remain reactive without forcing an expensive full route search
+     * on every delayed sidecar request.
+     */
 
     /** Minecraft 1.8 yaw is allowed to turn at most 12 degrees per tick. */
     private static final float MAX_TURN_PER_TICK = 12.0F;

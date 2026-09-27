@@ -1,6 +1,7 @@
 package me.monstermazeai.planner;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.PadModel;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.maze.PlayerRoute;
@@ -88,9 +89,10 @@ public final class StableLiveMovementController {
         // Entering any physical cell of the Safe Pad completes the movement
         // objective. Do not continue toward the beacon centre or re-route back
         // out of the pad after a monster-risk update.
-        if (regionRadius > 0 && insideRegion(startRow, startColumn, goal, regionRadius)) {
+        if (regionRadius > 0 && PadModel.isOn(state.player, goal.row() + 0.5,
+                GameState.PAD_SURFACE_Y, goal.column() + 0.5)) {
             clearRoute();
-            lastDecisionDetail = "REACHED_SAFE_PAD cell=" + startRow + "," + startColumn;
+            lastDecisionDetail = "REACHED_SAFE_PAD exact_source_geometry";
             return Action.IDLE;
         }
 

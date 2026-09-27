@@ -2,6 +2,7 @@ package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.planner.TacticalRouteSimulator;
+import me.monstermazeai.player.Action;
 
 import java.util.*;
 
@@ -89,6 +90,14 @@ public final class MonsterAwareRoutePlanner {
         }
 
         return choose(state, candidates, regionCenter, true, radius);
+    }
+
+    public Action tacticalAction(GameState state, PlayerRoute route, Cell goal, int regionRadius) {
+        return simulator.nextAction(state, route, goal, regionRadius > 0, regionRadius);
+    }
+
+    public boolean shouldUseTacticalAction(GameState state) {
+        return simulator.shouldUseTacticalAction(state);
     }
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,

@@ -21,9 +21,10 @@ import java.util.Random;
  * Closed-loop source-world simulator.
  *
  * Performance optimisations are deliberately outside authoritative mechanics:
- * only monsters inside the local interaction envelope of the current/future
- * player route enter expensive simulation. The live observation remains full,
- * while source-faithful monster physics/contact semantics remain unchanged.
+ * only monsters inside the player's current local interaction radius enter
+ * expensive simulation. The live observation remains full, and fresh
+ * observations re-evaluate the radius continuously. Source-faithful monster
+ * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
     private static final int TACTICAL_HORIZON = 6;

@@ -39,8 +39,15 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
         if (action == null) action = LegacyAction.IDLE;
 
         if (minecraft.thePlayer != null) {
-            if (action.yawDelta != 0.0f) {
-                minecraft.thePlayer.rotationYaw += action.yawDelta;
+            /*
+             * yawDelta is a per-command cursor step, not a held input. Consume
+             * it once while forward/strafe/jump remain continuously authoritative.
+             * This permits true simultaneous steering + forward movement without
+             * repeatedly applying the same 12-degree correction every tick.
+             */
+            float yawDelta = executor.consumeYawPulse();
+            if (yawDelta != 0.0f) {
+                minecraft.thePlayer.rotationYaw += yawDelta;
                 while (minecraft.thePlayer.rotationYaw >= 180.0F) {
                     minecraft.thePlayer.rotationYaw -= 360.0F;
                 }

@@ -59,7 +59,7 @@ public final class MonsterMaze18Mod {
     public void clientTick(TickEvent.ClientTickEvent event) {
         Minecraft minecraft = Minecraft.getMinecraft();
 
-        if (event.phase != TickEvent.Phase.END || observer == null) {
+        if (event.phase != TickEvent.Phase.START || observer == null) {
             return;
         }
 
@@ -114,11 +114,16 @@ public final class MonsterMaze18Mod {
         runtime.submit(state);
         LegacyAction completed = runtime.pollCompleted(state.worldTick);
         if (completed != null) {
+            /*
+             * The isolated first-pad branch is deliberately fail-closed:
+             * every completed decision belongs to one client tick only.
+             * Keeping an old W/jump command alive for 20 ticks is unsafe on a
+             * one-block-wide floating maze and was a direct contributor to the
+             * previous walk-off-edge failure.
+             */
+            executor.applyForTicks(completed, state.worldTick, 1L);
             if (runtime.lastCompletedWasStaleTurn()) {
-                executor.applyForTicks(completed, state.worldTick, 1L);
                 System.err.println("[MonsterMazeAI/1.8] RUNTIME accepted one-tick stale turn recovery");
-            } else {
-                executor.apply(completed, state.worldTick);
             }
         }
         executor.expireIfNeeded(state.worldTick);

@@ -163,6 +163,8 @@ public final class Minecraft18AiRuntime {
         DecisionResult result = latestCompletedDecision;
         latestCompletedDecision = null;
         if (result == null || result.action == null) return null;
+        if (result.sequence <= lastAppliedDecisionSequence) return null;
+        lastAppliedDecisionSequence = result.sequence;
 
         long age = currentTick - result.tick;
         lastCompletedWasStaleTurn = false;
@@ -182,8 +184,6 @@ public final class Minecraft18AiRuntime {
             return LegacyAction.IDLE;
         }
 
-        if (result.sequence <= lastAppliedDecisionSequence) return null;
-        lastAppliedDecisionSequence = result.sequence;
         lastCompletedTick = result.tick;
         return result.action;
     }

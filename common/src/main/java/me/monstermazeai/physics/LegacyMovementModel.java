@@ -61,17 +61,24 @@ public final class LegacyMovementModel implements PhysicsModel {
         if (!groundedAtStart || p.pendingAirborne || !p.grounded) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
-            if (p.y <= 0.0 && p.vy <= 0.0) {
+            if (p.y <= 0.0 && p.vy <= 0.0 && hasPhysicalFloor(maze, p.x, p.z)) {
                 p.y = 0.0;
                 p.vy = 0.0;
                 p.grounded = true;
             } else {
                 p.grounded = false;
             }
-        } else {
+        } else if (hasPhysicalFloor(maze, p.x, p.z)) {
             p.y = 0.0;
             p.vy = 0.0;
             p.grounded = true;
+        } else {
+            // The player walked/slid off the physical maze while still at
+            // floor height. Let gravity take over instead of inventing a
+            // floor underneath the void.
+            p.grounded = false;
+            p.vy -= GRAVITY;
+            p.vy *= AIR_DRAG;
         }
 
         p.pendingAirborne = false;
@@ -81,6 +88,22 @@ public final class LegacyMovementModel implements PhysicsModel {
         if (Math.abs(p.vx) < 0.005) p.vx = 0;
         if (Math.abs(p.vy) < 0.005) p.vy = 0;
         if (Math.abs(p.vz) < 0.005) p.vz = 0;
+    }
+
+    private static boolean hasPhysicalFloor(me.monstermazeai.maze.MazeModel maze, double x, double z) {
+        if (maze == null) return true;
+
+        // Minecraft's player has width, so keep support while any of the
+        // central hitbox samples still overlap a physical floor cell.
+        final double halfWidth = 0.30;
+        double[] xs = {x - halfWidth, x + halfWidth};
+        double[] zs = {z - halfWidth, z + halfWidth};
+        for (double sampleX : xs) {
+            for (double sampleZ : zs) {
+                if (maze.isPhysicalFloor((int)Math.floor(sampleX), (int)Math.floor(sampleZ))) return true;
+            }
+        }
+        return false;
     }
 
     private static void moveFlying(PlayerState p, double strafe, double forward, float factor) {

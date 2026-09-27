@@ -32,7 +32,7 @@ class MonsterTrajectoryPredictorTest {
         state.player.x = 10.5;
         state.player.z = 10.5;
         state.player.grounded = true;
-        state.monsters.add(new MonsterState(1, 11.0, 0.0, 10.5));
+        state.monsters.add(new MonsterState(1, 10.5, 0.0, 10.5));
 
         Simulator simulator = new Simulator(
                 new LegacyMazePhysics(),

@@ -8,6 +8,9 @@ import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Stable, corridor-safe closed-loop movement controller for the flat Monster
@@ -65,6 +68,19 @@ public final class StableLiveMovementController {
     private static final double MAX_INITIAL_LANE_OFFSET = 0.65;
 
     private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
+    /*
+     * Strategic route simulation is deliberately isolated from the live motor.
+     * The motor must never wait for source-faithful multi-candidate simulation:
+     * a stale movement command can carry the player off a one-block platform.
+     */
+    private final MonsterAwareRoutePlanner backgroundRoutePlanner = new MonsterAwareRoutePlanner();
+    private final ExecutorService routePlanningExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MonsterMaze-strategic-planner");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private Future<?> pendingRoutePlan;
+    private volatile PlannedRoute completedRoutePlan;
 
     private PlayerRoute route;
     /** Index of the next turn/goal cell, not merely the next adjacent cell. */
@@ -126,31 +142,63 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        if (route == null || shouldReplan(state, startRow, startColumn)) {
-            boolean bootstrap = route == null && bootstrapRoutePending;
+        applyCompletedRoutePlan(state, startRow, startColumn, goal, regionRadius);
+
+        if (route == null) {
+            /*
+             * The first physical route must be available synchronously, but it
+             * is intentionally only a shortest-topology path. The expensive
+             * source-faithful evaluation is submitted after this action is
+             * constructed, never placed on the live-control critical path.
+             */
             route = regionRadius > 0
-                    ? (bootstrap
-                        ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
-                        : routePlanner.routeToRegion(state, new Cell(startRow, startColumn), goal, regionRadius))
-                    : (bootstrap
-                        ? routePlanner.routeFast(state, new Cell(startRow, startColumn), goal)
-                        : routePlanner.route(state, new Cell(startRow, startColumn), goal));
+                    ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
+                    : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
             waypointIndex = firstTurnWaypoint(route);
             lastRouteTick = state.tick;
             routePlanCount++;
             lastThreatSignature = threatSignature(state);
-            lastDecisionDetail = (bootstrap ? "BOOTSTRAP_ROUTE" : "ROUTE_REPLAN")
+            lastDecisionDetail = "BOOTSTRAP_ROUTE"
                     + " size=" + route.size()
                     + " regionRadius=" + regionRadius
                     + " start=" + startRow + "," + startColumn
                     + " goal=" + goal.row() + "," + goal.column();
-            if (bootstrap) {
-                bootstrapRoutePending = false;
-                fullRouteEvaluationPending = true;
-            } else {
-                fullRouteEvaluationPending = false;
-            }
+            bootstrapRoutePending = false;
+            fullRouteEvaluationPending = true;
             lastTacticalSignature = Long.MIN_VALUE;
+            scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+        } else {
+            long threat = threatSignature(state);
+            boolean routeInvalid = !route.cells().contains(new Cell(startRow, startColumn))
+                    || distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION;
+
+            if (routeInvalid) {
+                /*
+                 * Recover immediately with a cheap physical route, then let the
+                 * background planner decide whether a different risk-aware route
+                 * is preferable. Never block the motor waiting for that result.
+                 */
+                route = regionRadius > 0
+                        ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
+                        : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
+                waypointIndex = firstTurnWaypoint(route);
+                anchoredSegmentIndex = -1;
+                lastRouteTick = state.tick;
+                routePlanCount++;
+                lastDecisionDetail = "FAST_RECOVERY_ROUTE"
+                        + " size=" + route.size()
+                        + " regionRadius=" + regionRadius
+                        + " start=" + startRow + "," + startColumn
+                        + " goal=" + goal.row() + "," + goal.column();
+                fullRouteEvaluationPending = true;
+                lastTacticalSignature = Long.MIN_VALUE;
+                lastThreatSignature = threat;
+                scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+            } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
+                lastThreatSignature = threat;
+                fullRouteEvaluationPending = false;
+                scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+            }
         }
 
         if (route.size() == 1) {
@@ -373,41 +421,83 @@ public final class StableLiveMovementController {
         lastTacticalSignature = Long.MIN_VALUE;
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
+        Future<?> pending = pendingRoutePlan;
+        if (pending != null) pending.cancel(false);
+        pendingRoutePlan = null;
+        completedRoutePlan = null;
         lastDecisionDetail = "RESET";
     }
 
-    private boolean shouldReplan(GameState state, int startRow, int startColumn) {
-        if (route == null) return true;
+    private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
+        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
 
-        Cell current = new Cell(startRow, startColumn);
-        if (!route.cells().contains(current)) return true;
+        GameState snapshot = liveState.copyForSimulation();
+        long requestedTick = liveState.tick;
+        long topology = snapshot.maze.dynamicSignature();
+        pendingRoutePlan = routePlanningExecutor.submit(() -> {
+            try {
+                PlayerRoute planned = regionRadius > 0
+                        ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
+                        : backgroundRoutePlanner.route(snapshot, start, goal);
+                completedRoutePlan = new PlannedRoute(
+                        planned, goal.row(), goal.column(), regionRadius,
+                        requestedTick, topology);
+            } catch (RuntimeException failure) {
+                System.err.println("[MonsterMazeAI] background strategic route failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            } finally {
+                pendingRoutePlan = null;
+            }
+        });
+    }
 
-        /*
-         * A route is committed in the graph, but a continuous player can drift
-         * outside its one-cell corridor without changing containingCell yet.
-         * Treat that as a genuine deviation rather than continuing to drive
-         * toward a stale corner.
-         */
-        if (distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION) {
-            return true;
+    private void applyCompletedRoutePlan(GameState state, int startRow, int startColumn,
+                                         Cell goal, int regionRadius) {
+        PlannedRoute planned = completedRoutePlan;
+        if (planned == null) return;
+
+        completedRoutePlan = null;
+        if (planned.goalRow != goal.row()
+                || planned.goalColumn != goal.column()
+                || planned.regionRadius != regionRadius
+                || !planned.route.cells().contains(new Cell(startRow, startColumn))
+                || planned.route.cells().isEmpty()
+                || state.maze.dynamicSignature() != planned.topologySignature) {
+            return;
         }
 
-        /*
-         * Fresh observations still reach this controller every tick. What we
-         * must not do is throw away a valid committed route and re-run the
-         * source-faithful simulator merely because the player moved 0.05 blocks.
-         *
-         * The motor layer below continues to consume the newest player pose,
-         * yaw and monster state immediately. Global route simulation is only
-         * repeated when a material local threat change occurs (or the route
-         * itself becomes invalid). This separates high-frequency control from
-         * expensive strategic search without reducing the AI's tactical horizon.
-         */
-        long threat = threatSignature(state);
-        if (fullRouteEvaluationPending) {
-            return true;
+        route = planned.route;
+        waypointIndex = firstTurnWaypoint(route);
+        anchoredSegmentIndex = -1;
+        lastRouteTick = planned.requestedTick;
+        routePlanCount++;
+        lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
+                + " size=" + route.size()
+                + " regionRadius=" + regionRadius
+                + " start=" + startRow + "," + startColumn
+                + " goal=" + goal.row() + "," + goal.column()
+                + " plannedTick=" + planned.requestedTick;
+        fullRouteEvaluationPending = false;
+        lastTacticalSignature = Long.MIN_VALUE;
+    }
+
+    private static final class PlannedRoute {
+        final PlayerRoute route;
+        final int goalRow;
+        final int goalColumn;
+        final int regionRadius;
+        final long requestedTick;
+        final long topologySignature;
+
+        PlannedRoute(PlayerRoute route, int goalRow, int goalColumn, int regionRadius,
+                     long requestedTick, long topologySignature) {
+            this.route = route;
+            this.goalRow = goalRow;
+            this.goalColumn = goalColumn;
+            this.regionRadius = regionRadius;
+            this.requestedTick = requestedTick;
+            this.topologySignature = topologySignature;
         }
-        return threat != lastThreatSignature;
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

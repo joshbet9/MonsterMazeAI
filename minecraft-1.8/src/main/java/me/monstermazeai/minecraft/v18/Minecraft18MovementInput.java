@@ -66,7 +66,13 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
                     && minecraft.theWorld != null) {
                 net.minecraft.item.ItemStack stack = minecraft.thePlayer.getCurrentEquippedItem();
                 if (stack != null) {
-                    minecraft.playerController.sendUseItem(minecraft.thePlayer, minecraft.theWorld, stack);
+                    // Source kits use different input events: Repulsor and Body
+                    // Rush are right-click abilities; Cryo Blitz is Q-drop.
+                    if (stack.getItem() == net.minecraft.init.Items.snowball) {
+                        minecraft.thePlayer.dropOneItem(false);
+                    } else {
+                        minecraft.playerController.sendUseItem(minecraft.thePlayer, minecraft.theWorld, stack);
+                    }
                 }
             }
         }

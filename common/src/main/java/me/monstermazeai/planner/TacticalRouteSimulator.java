@@ -83,7 +83,16 @@ public final class TacticalRouteSimulator {
         if (action.useAbility()) abilities.activate(state);
 
         boolean wasGrounded = state.player.grounded;
-        physics.tick(state.player, action);
+        physics.tick(state.player, action, state.maze);
+
+        // If a knockback/speeding trajectory carries the player over the
+        // physical maze edge, keep simulating it so the controller can steer
+        // back onto the maze. It becomes a failed branch only after the player
+        // has actually fallen far enough to be unrecoverable.
+        if (state.player.y < -3.0) {
+            state.alive = false;
+            return;
+        }
 
         // Source jumpEvent runs once per server tick. It consumes a Jumper
         // charge only after the player is airborne above the maze floor and
@@ -182,8 +191,6 @@ public final class TacticalRouteSimulator {
     }
 
     private List<Action> tacticalActions(GameState state) {
-        boolean jump = state.kit == me.monstermazeai.kit.Kit.JUMPER
-                && state.player.grounded && state.player.jumpCharges > 0;
         List<Action> out = new ArrayList<>();
         double[] turns = {-30, 0, 30};
         double[] inputs = {-1, 0, 1};
@@ -191,7 +198,18 @@ public final class TacticalRouteSimulator {
             for (double strafe : inputs) {
                 for (double turn : turns) {
                     if (forward == 0 && strafe == 0 && turn != 0) continue;
-                    out.add(new Action(forward, strafe, jump && forward >= 0, forward != 0, (float)turn, false));
+
+                    // Normal control candidate.
+                    out.add(new Action(forward, strafe, false, forward != 0, (float)turn, false));
+
+                    // "Speeding" candidate: hold jump while sprinting. Vanilla
+                    // only converts this into an actual jump when grounded;
+                    // while airborne it is still the real held-jump state.
+                    // That distinction is critical for mob contact because the
+                    // source bump gets +0.2 vertical boost only while grounded.
+                    if (forward > 0) {
+                        out.add(new Action(forward, strafe, true, true, (float)turn, false));
+                    }
                 }
             }
         }

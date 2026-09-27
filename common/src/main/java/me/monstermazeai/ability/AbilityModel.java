@@ -41,8 +41,7 @@ public final class AbilityModel {
     public boolean canConsumeJumperCharge(GameState game) {
         if (game.kit != Kit.JUMPER || game.ability.charges <= 0) return false;
         if (game.tick < game.player.nextJumpChargeTick) return false;
-        if (game.player.recentMobHitUntilTick > 0
-                && game.tick < game.player.recentMobHitUntilTick + JUMPER_POST_HIT_GRACE_TICKS) return false;
+        if (game.tick < game.player.mobHitGraceUntilTick) return false;
         return !qolEnabled(game) || !isOnAnyPad(game);
     }
 
@@ -133,6 +132,6 @@ public final class AbilityModel {
         boolean preview = game.previewPadRow >= 0 && game.previewPadColumn >= 0
                 && PadModel.isOn(game.player, game.previewPadRow + 0.5, GameState.PAD_SURFACE_Y,
                 game.previewPadColumn + 0.5);
-        return active || preview;
+        return active || preview || game.oldPadContains(game.player);
     }
 }

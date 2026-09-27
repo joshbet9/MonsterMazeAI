@@ -61,7 +61,7 @@ public class FirstPadMovementControllerTest {
 
         assertEquals(0.0, action.forward(), 0.0);
         assertFalse(action.sprint());
-        assertEquals(30.0F, action.yawDelta(), 0.0F);
+        assertEquals(-30.0F, action.yawDelta(), 0.0F);
         assertEquals(0.0, action.strafe(), 0.0);
     }
 

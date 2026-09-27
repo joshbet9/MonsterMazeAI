@@ -48,7 +48,9 @@ public final class MonsterAwareRoutePlanner {
         validate(state, start, regionCenter);
         if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
 
-        if (insideRegion(start, regionCenter, radius)) {
+        if (me.monstermazeai.game.PadModel.isOn(state.player,
+                regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
+                regionCenter.column() + 0.5)) {
             return new PlayerRoute(List.of(start));
         }
 

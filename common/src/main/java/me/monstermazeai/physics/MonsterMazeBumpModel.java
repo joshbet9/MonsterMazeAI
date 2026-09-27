@@ -77,14 +77,14 @@ public final class MonsterMazeBumpModel {
         double vy = 0.0;
         double vz = horizontal > 1.0E-12 ? dz / horizontal : 0.0;
 
-        if (game.kit == Kit.MAVERICK && game.mode != me.monstermazeai.game.Mode.ORIGINAL
-                && game.activePadRow >= 0 && game.activePadColumn >= 0) {
-            // QOL Maverick redirects the knockback trajectory toward the active
-            // Safe Pad instead of using monster -> player geometry.
-            double tx = game.activePadRow + 0.5 - player.x;
-            double tz = game.activePadColumn + 0.5 - player.z;
+        if (game.kit == Kit.MAVERICK && game.mode != me.monstermazeai.game.Mode.ORIGINAL) {
+            // Source getMobKnockTarget(): active SafePad, else preview SafePad.
+            int row = game.activePadRow >= 0 ? game.activePadRow : game.previewPadRow;
+            int col = game.activePadColumn >= 0 ? game.activePadColumn : game.previewPadColumn;
+            double tx = row + 0.5 - player.x;
+            double tz = col + 0.5 - player.z;
             double len = Math.hypot(tx, tz);
-            if (len > 1.0E-9) {
+            if (row >= 0 && col >= 0 && len > 1.0E-9) {
                 vx = tx / len;
                 vz = tz / len;
                 vy = 0.0;

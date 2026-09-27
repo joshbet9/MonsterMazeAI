@@ -118,30 +118,15 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void usesCardinalTurnPointsInsteadOfCuttingAcrossOpenDiagonal() {
+    void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
-        LegacyMazePhysics physics = new LegacyMazePhysics();
 
-        boolean reachedCornerArea = false;
-        boolean sawTurnInPlace = false;
-        for (int tick = 1; tick <= 240; tick++) {
-            s.tick = tick;
-            Action action = controller.nextAction(s, new Cell(4, 4), false);
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
 
-            if (Math.max(s.player.x, s.player.z) > 3.1 && Math.abs(action.forward()) < 0.001) {
-                sawTurnInPlace = true;
-            }
-            physics.tick(s.player, action);
-
-            if (s.player.z > 3.7 && s.player.x > 3.0) {
-                reachedCornerArea = true;
-                break;
-            }
-        }
-
-        assertTrue(reachedCornerArea);
-        assertTrue(sawTurnInPlace,
-                "controller should brake/turn in place at a committed route turn rather than arc through it");
+        assertEquals(0.0, action.forward(), 1.0e-6,
+                "a 90-degree corner acquisition must not cut across the corridor");
+        assertEquals(0.0, action.strafe(), 1.0e-6);
+        assertEquals(-12.0F, action.yawDelta(), 1.0e-6F);
     }
 }

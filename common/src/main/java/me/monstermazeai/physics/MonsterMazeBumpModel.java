@@ -31,30 +31,40 @@ public final class MonsterMazeBumpModel {
 
     /** Full game-aware bump including Body Builder and Maverick QOL behaviour. */
     public static int apply(GameState game) {
-        PlayerState player = game.player;
-        boolean bodyRush = game.kit == Kit.BODY_BUILDER && game.mode != me.monstermazeai.game.Mode.ORIGINAL
-                && game.ability.activeUntilTick > game.tick;
-        if ((!bodyRush && player.recentMobHitUntilTick > game.tick) || player.health <= 0.0) return 0;
-        if (isOnAnyPad(game)) return 0;
-
         for (MonsterState monster : game.monsters) {
-            if (monster.removed || monster.launched(game.tick)) continue;
-            if (!contact(player, monster)) continue;
-
-            if (game.kit == Kit.BODY_BUILDER && game.mode != me.monstermazeai.game.Mode.ORIGINAL
-                    && game.ability.activeUntilTick > game.tick) {
-                // Source Body Rush: player is immune to monster damage/knockback;
-                // the monster is launched and the active duration loses 2 seconds.
-                launchMonsterAwayFromPlayer(monster, player, game.tick);
-                game.ability.activeUntilTick = Math.max(game.tick, game.ability.activeUntilTick - 40L);
-                player.mobHitGraceUntilTick = game.tick + 40L;
-                return 1;
-            }
-
-            applyNormalBump(game, monster);
-            return 1;
+            if (apply(game, monster) == 1) return 1;
         }
         return 0;
+    }
+
+    /**
+     * Apply source bump semantics to one authoritative monster.
+     *
+     * This overload is used by the compatibility facade and avoids mutating
+     * the state's monster collection just to test a supplied collision target.
+     */
+    public static int apply(GameState game, MonsterState monster) {
+        PlayerState player = game.player;
+        boolean bodyRush = game.kit == Kit.BODY_BUILDER
+                && game.mode != me.monstermazeai.game.Mode.ORIGINAL
+                && game.ability.activeUntilTick > game.tick;
+
+        if ((!bodyRush && player.recentMobHitUntilTick > game.tick) || player.health <= 0.0) return 0;
+        if (isOnAnyPad(game)) return 0;
+        if (monster == null || monster.removed || monster.launched(game.tick)) return 0;
+        if (!contact(player, monster)) return 0;
+
+        if (bodyRush) {
+            // Source Body Rush: player is immune to monster damage/knockback;
+            // the monster is launched and the active duration loses 2 seconds.
+            launchMonsterAwayFromPlayer(monster, player, game.tick);
+            game.ability.activeUntilTick = Math.max(game.tick, game.ability.activeUntilTick - 40L);
+            player.mobHitGraceUntilTick = game.tick + 40L;
+            return 1;
+        }
+
+        applyNormalBump(game, monster);
+        return 1;
     }
 
     private static void applyNormalBump(GameState game, MonsterState monster) {

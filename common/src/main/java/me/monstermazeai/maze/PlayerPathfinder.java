@@ -38,6 +38,62 @@ public final class PlayerPathfinder {
         return List.of();
     }
 
+
+    /**
+     * Shortest physical route to any cell in an axis-aligned goal region.
+     *
+     * This is a single BFS, not one BFS per goal cell. It is the correct
+     * bootstrap primitive for Safe Pads because every cell in the 5x5 surface
+     * is a terminal success state for the player.
+     */
+    public List<Cell> shortestPathToRegion(MazeModel maze, Cell start, Cell center, int radius) {
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+        if (!isPhysicalFloor(maze, start)) return List.of();
+
+        ArrayDeque<Cell> queue = new ArrayDeque<>();
+        Map<Cell, Cell> previous = new HashMap<>();
+        Map<Cell, Integer> distance = new HashMap<>();
+        queue.add(start);
+        previous.put(start, null);
+        distance.put(start, 0);
+
+        int bestDistance = Integer.MAX_VALUE;
+        Cell bestGoal = null;
+        while (!queue.isEmpty()) {
+            Cell current = queue.removeFirst();
+            int currentDistance = distance.get(current);
+            if (currentDistance > bestDistance) break;
+
+            if (insideRegion(current, center, radius)) {
+                if (bestGoal == null || compareRegionGoal(current, bestGoal, center) < 0) {
+                    bestGoal = current;
+                    bestDistance = currentDistance;
+                }
+                continue;
+            }
+
+            int r = current.row(), c = current.column();
+            add(maze, current, new Cell(r - 1, c), queue, previous, distance, currentDistance + 1);
+            add(maze, current, new Cell(r + 1, c), queue, previous, distance, currentDistance + 1);
+            add(maze, current, new Cell(r, c - 1), queue, previous, distance, currentDistance + 1);
+            add(maze, current, new Cell(r, c + 1), queue, previous, distance, currentDistance + 1);
+        }
+        return bestGoal == null ? List.of() : reconstruct(previous, bestGoal);
+    }
+
+    private static int compareRegionGoal(Cell a, Cell b, Cell center) {
+        int da = Math.abs(a.row() - center.row()) + Math.abs(a.column() - center.column());
+        int db = Math.abs(b.row() - center.row()) + Math.abs(b.column() - center.column());
+        if (da != db) return Integer.compare(da, db);
+        if (a.row() != b.row()) return Integer.compare(a.row(), b.row());
+        return Integer.compare(a.column(), b.column());
+    }
+
+    private static boolean insideRegion(Cell cell, Cell center, int radius) {
+        return Math.abs(cell.row() - center.row()) <= radius
+                && Math.abs(cell.column() - center.column()) <= radius;
+    }
+
     private boolean isPhysicalFloor(MazeModel maze, Cell cell) {
         return maze.isPhysicalFloor(cell.row(), cell.column());
     }
@@ -46,6 +102,14 @@ public final class PlayerPathfinder {
                      Map<Cell, Cell> previous) {
         if (!isPhysicalFloor(maze, next) || previous.containsKey(next)) return;
         previous.put(next, current);
+        queue.addLast(next);
+    }
+
+    private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
+                     Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
+        if (!isPhysicalFloor(maze, next) || previous.containsKey(next)) return;
+        previous.put(next, current);
+        distance.put(next, nextDistance);
         queue.addLast(next);
     }
 

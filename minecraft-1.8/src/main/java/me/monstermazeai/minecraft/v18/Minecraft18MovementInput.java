@@ -47,6 +47,7 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
              */
             float yawDelta = executor.consumeYawPulse();
             if (yawDelta != 0.0f) {
+                float yawBefore = minecraft.thePlayer.rotationYaw;
                 minecraft.thePlayer.rotationYaw += yawDelta;
                 while (minecraft.thePlayer.rotationYaw >= 180.0F) {
                     minecraft.thePlayer.rotationYaw -= 360.0F;
@@ -54,6 +55,8 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
                 while (minecraft.thePlayer.rotationYaw < -180.0F) {
                     minecraft.thePlayer.rotationYaw += 360.0F;
                 }
+                System.out.println("[MonsterMazeAI/1.8] EXEC yawPulse=" + yawDelta
+                        + " yawBefore=" + yawBefore + " yawAfter=" + minecraft.thePlayer.rotationYaw);
             }
 
             moveForward = (float) action.forward;

@@ -75,19 +75,9 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        PlayerRoute shortest = null;
-        for (int r = regionCenter.row() - radius; r <= regionCenter.row() + radius; r++) {
-            for (int col = regionCenter.column() - radius; col <= regionCenter.column() + radius; col++) {
-                if (r < 0 || r >= MazeModel.SIZE || col < 0 || col >= MazeModel.SIZE
-                        || !state.maze.isPhysicalFloor(r, col)) continue;
-                List<Cell> path = pathfinder.shortestPath(state.maze, start, new Cell(r, col));
-                if (!path.isEmpty() && (shortest == null || path.size() < shortest.size())) {
-                    shortest = new PlayerRoute(path);
-                }
-            }
-        }
-        if (shortest == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
-        return shortest;
+        List<Cell> path = pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius);
+        if (path.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
+        return new PlayerRoute(path);
     }
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {

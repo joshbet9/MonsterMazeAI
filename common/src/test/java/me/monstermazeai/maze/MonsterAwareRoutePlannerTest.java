@@ -36,7 +36,8 @@ class MonsterAwareRoutePlannerTest {
         raw[0][1] = 1;
 
         MazeModel maze = new MazeModel(raw);
-        maze.setDisabled(0, 2, true); // Active Safe Pad surface: monster-disabled, player-walkable.
+        maze.setDisabled(0, 2, true); // Monster-disabled alone is not physical floor.
+        maze.setPhysicalFloor(0, 2, true); // Active Safe Pad surface is physically present.
 
         GameState state = new GameState();
         state.maze = maze;
@@ -62,6 +63,31 @@ class MonsterAwareRoutePlannerTest {
                 "Route must terminate inside the physical 5x5 Safe Pad region.");
         assertTrue(route.size() <= 4,
                 "Route should stop at the first reachable pad-region cell rather than its beacon centre.");
+    }
+
+    @Test
+    void fastSafePadBootstrapUsesOneShortestPhysicalPathToTheRegion() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        PlayerRoute route = new MonsterAwareRoutePlanner().routeToRegionFast(
+                state, new Cell(0, 0), new Cell(4, 4), 2);
+
+        assertEquals(5, route.size(), "nearest 5x5 pad cell is four cardinal steps away");
+        Cell end = route.cells().get(route.size() - 1);
+        assertTrue(Math.abs(end.row() - 4) <= 2 && Math.abs(end.column() - 4) <= 2);
+    }
+
+    @Test
+    void disabledMonsterWaypointDoesNotCreatePhysicalFloor() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+        maze.setDisabled(0, 1, true);
+
+        assertFalse(maze.isPhysicalFloor(0, 1),
+                "monster waypoint disabling must not turn an air cell into a player floor cell");
+        assertFalse(new PlayerPathfinder().shortestPath(maze, new Cell(0, 0), new Cell(0, 1)).size() > 0);
     }
 
     @Test

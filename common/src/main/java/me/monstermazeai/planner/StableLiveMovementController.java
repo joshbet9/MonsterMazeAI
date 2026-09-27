@@ -441,8 +441,8 @@ public final class StableLiveMovementController {
                         ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
                         : backgroundRoutePlanner.route(snapshot, start, goal);
                 completedRoutePlan = new PlannedRoute(
-                        planned, goal.row(), goal.column(), regionRadius,
-                        requestedTick, topology);
+                        planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
+                        requestedTick, topology, threatSignature(snapshot));
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] background strategic route failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
@@ -456,12 +456,17 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        if (planned.goalRow != goal.row()
+        long currentThreat = threatSignature(state);
+        if (planned.startRow != startRow
+                || planned.startColumn != startColumn
+                || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
-                || !planned.route.cells().contains(new Cell(startRow, startColumn))
                 || planned.route.cells().isEmpty()
-                || state.maze.dynamicSignature() != planned.topologySignature) {
+                || state.maze.dynamicSignature() != planned.topologySignature
+                || currentThreat != planned.threatSignature
+                || state.tick - planned.requestedTick > 10L) {
+            fullRouteEvaluationPending = true;
             return;
         }
 
@@ -482,20 +487,27 @@ public final class StableLiveMovementController {
 
     private static final class PlannedRoute {
         final PlayerRoute route;
+        final int startRow;
+        final int startColumn;
         final int goalRow;
         final int goalColumn;
         final int regionRadius;
         final long requestedTick;
         final long topologySignature;
+        final long threatSignature;
 
-        PlannedRoute(PlayerRoute route, int goalRow, int goalColumn, int regionRadius,
-                     long requestedTick, long topologySignature) {
+        PlannedRoute(PlayerRoute route, int startRow, int startColumn,
+                     int goalRow, int goalColumn, int regionRadius,
+                     long requestedTick, long topologySignature, long threatSignature) {
             this.route = route;
+            this.startRow = startRow;
+            this.startColumn = startColumn;
             this.goalRow = goalRow;
             this.goalColumn = goalColumn;
             this.regionRadius = regionRadius;
             this.requestedTick = requestedTick;
             this.topologySignature = topologySignature;
+            this.threatSignature = threatSignature;
         }
     }
 

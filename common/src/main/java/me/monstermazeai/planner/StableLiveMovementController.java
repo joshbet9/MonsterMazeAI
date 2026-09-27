@@ -83,6 +83,7 @@ public final class StableLiveMovementController {
     private boolean fullRouteEvaluationPending = true;
     /** Local threat state for which the expensive tactical branch was last evaluated. */
     private long lastTacticalSignature = Long.MIN_VALUE;
+    private long routePlanCount;
     private double laneAnchorX;
     private double laneAnchorZ;
 
@@ -136,6 +137,7 @@ public final class StableLiveMovementController {
                         : routePlanner.route(state, new Cell(startRow, startColumn), goal));
             waypointIndex = firstTurnWaypoint(route);
             lastRouteTick = state.tick;
+            routePlanCount++;
             lastThreatSignature = threatSignature(state);
             lastDecisionDetail = (bootstrap ? "BOOTSTRAP_ROUTE" : "ROUTE_REPLAN")
                     + " size=" + route.size()
@@ -298,12 +300,26 @@ public final class StableLiveMovementController {
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < WAYPOINT_BRAKE
                         && closingSpeed(state, dx, dz) > 0.04;
-                double forward = brake ? 0.0 : 1.0;
+                /*
+                 * Keep forward input concurrent with cursor movement, but do not
+                 * carry full sprint acceleration through a sharp heading change.
+                 * The player is on a floating one-cell corridor: preserving the
+                 * route centreline is more important than squeezing maximum
+                 * horizontal speed out of the first few steering ticks.
+                 */
+                double steeringForward;
+                double absError = Math.abs(yawError);
+                if (absError <= 20.0) steeringForward = 1.0;
+                else if (absError <= 35.0) steeringForward = 0.55;
+                else steeringForward = 0.30;
+                double forward = brake ? 0.0 : steeringForward;
+                boolean sprint = forward >= 0.95 && absError <= 20.0;
                 boolean jump = allowJump
                         && state.player.grounded
                         && forward > 0.0
-                        && distance > WAYPOINT_ARRIVAL;
-                action = new Action(forward, 0.0, jump, forward > 0.0, turn, false);
+                        && distance > WAYPOINT_ARRIVAL
+                        && absError <= 20.0;
+                action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
             } else {
                 action = new Action(
@@ -335,6 +351,10 @@ public final class StableLiveMovementController {
                 + ",yawDelta=" + action.yawDelta();
         return action;
     }
+
+    public long routePlanCount() { return routePlanCount; }
+
+    public long lastRouteTick() { return lastRouteTick; }
 
     public String lastDecisionDetail() {
         return lastDecisionDetail;

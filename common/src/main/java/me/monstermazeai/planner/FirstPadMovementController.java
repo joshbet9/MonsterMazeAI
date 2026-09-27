@@ -447,7 +447,8 @@ public final class FirstPadMovementController {
     private static double distanceToCellCenter(double x, double z, Cell cell) {
         return Math.hypot(x - (cell.row() + 0.5), z - (cell.column() + 0.5));
     }
-\n    private static double distanceToCellEntryBoundary(
+
+    private static double distanceToCellEntryBoundary(
             double x, double z, Cell target, int incomingRowDirection, int incomingColumnDirection) {
         double boundaryX = target.row() + 0.5;
         double boundaryZ = target.column() + 0.5;

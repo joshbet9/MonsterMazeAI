@@ -21,6 +21,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Java-8 Minecraft-side process bridge.
@@ -466,8 +468,8 @@ public final class Minecraft18AiRuntime {
                 return false;
             }
             String output = new String(readAll(probe.getInputStream()), "UTF-8");
-            java.util.regex.Matcher matcher =
-                    java.util.regex.Pattern.compile("(?:version|openjdk)\\s+\\\"?(\\d+)")
+            Matcher matcher =
+                    Pattern.compile("(?:version|openjdk)\\s+\\\"?(\\d+)")
                             .matcher(output);
             return matcher.find() && Integer.parseInt(matcher.group(1)) >= 17;
         } catch (Exception ignored) {

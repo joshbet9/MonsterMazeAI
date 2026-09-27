@@ -303,18 +303,27 @@ public final class FirstPadMovementController {
         if (route == null || route.size() <= 1) return;
 
         /*
-         * The route is a continuous corridor, but segment progress is still a
-         * committed state machine. Do not select a future segment merely
-         * because its centre is currently the globally nearest route point:
-         * during a high-speed corner the next cell can be closer before the
-         * actual waypoint has been entered. That was the original source of
-         * premature corner cutting.
+         * Segment progress may advance when the player has actually entered a
+         * route cell. That is a real waypoint transition. What we must not do
+         * is use Euclidean proximity to a future cell centre as proof that the
+         * waypoint was reached; at a high-speed corner the future centre can
+         * become closer before the player enters that cell.
          *
-         * "Re-anchor" therefore means retaining the committed segment and
-         * letting advanceSegment() perform the only legal forward transition:
-         * reaching the current waypoint or actually entering the next cell.
+         * If the current containing cell is on the committed route, advance to
+         * the segment leaving that cell. If the player is temporarily between
+         * cells / off-route but still inside the continuous corridor, retain the
+         * committed segment and let the continuous controller handle recovery.
          */
         segmentIndex = Math.max(1, Math.min(segmentIndex, route.size() - 1));
+
+        Cell currentCell = containingCell(state.player.x, state.player.z);
+        for (int i = 0; i < route.size() - 1; i++) {
+            if (route.cells().get(i).equals(currentCell)) {
+                segmentIndex = Math.max(segmentIndex, i + 1);
+                break;
+            }
+        }
+
         advanceSegment(state);
     }
 

@@ -3,7 +3,7 @@ name: Minecraft 1.8.9 Adapter CI
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, feature/first-pad-movement ]
   pull_request:
     branches: [ main ]
 

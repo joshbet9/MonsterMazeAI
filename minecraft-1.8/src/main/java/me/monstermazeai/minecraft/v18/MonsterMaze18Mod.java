@@ -29,6 +29,7 @@ public final class MonsterMaze18Mod {
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private boolean aiEnabled;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
+    private long observationLogCount;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -40,6 +41,7 @@ public final class MonsterMaze18Mod {
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
         ClientRegistry.registerKeyBinding(toggleAi);
         aiEnabled = false;
+        observationLogCount = 0L;
         executor.setAiEnabled(false);
 
         MinecraftForge.EVENT_BUS.register(observer);
@@ -64,6 +66,7 @@ public final class MonsterMaze18Mod {
         if (minecraft.theWorld == null || minecraft.thePlayer == null) {
             executor.releaseAll();
             executor.setAiEnabled(false);
+            observationLogCount = 0L;
             controlledPlayer = null;
             movementValidator.reset();
             return;
@@ -81,7 +84,7 @@ public final class MonsterMaze18Mod {
                 System.out.println("[MonsterMazeAI/1.8] AI control disabled (F8)");
             } else {
                 runtime.startIfConfigured();
-                System.out.println("[MonsterMazeAI/1.8] AI control enabled (F8)");
+                System.out.println("[MonsterMazeAI/1.8] AI control enabled (F8) runtime=" + runtime.runtimeStatus());
             }
         }
 
@@ -91,6 +94,18 @@ public final class MonsterMaze18Mod {
         }
 
         LegacyWorldObservation state = observer.observe().state;
+        observationLogCount++;
+        if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
+            System.out.println("[MonsterMazeAI/1.8] OBS SUBMIT#" + observationLogCount
+                    + " tick=" + state.worldTick
+                    + " inMaze=" + state.inMonsterMaze
+                    + " detected=" + state.mazeDetected
+                    + " center=" + (state.center == null ? "none"
+                        : state.center.x + "," + state.center.y + "," + state.center.z)
+                    + " pad=" + (state.pad == null ? "none"
+                        : state.pad.row + "," + state.pad.column + " reached=" + state.pad.reached)
+                    + " monsters=" + state.monsters.size());
+        }
 
         // Never block the Minecraft client tick on the planner/sidecar. Submit
         // the newest observation when the previous decision has completed, then

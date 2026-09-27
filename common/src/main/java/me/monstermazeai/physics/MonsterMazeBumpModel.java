@@ -72,9 +72,6 @@ public final class MonsterMazeBumpModel {
         double dx = player.x - monster.x;
         double dy = player.y - monster.y;
         double dz = player.z - monster.z;
-        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance <= 1.0E-12) return;
-
         // MonsterManager.bump() snaps a player just above the floor before
         // applying the velocity when the contact occurs near floor level.
         boolean groundedForBoost = player.grounded;
@@ -83,9 +80,19 @@ public final class MonsterMazeBumpModel {
         }
 
         double horizontal = Math.hypot(dx, dz);
-        double vx = horizontal > 1.0E-12 ? dx / horizontal : 1.0;
+        double vx;
+        double vz;
+        if (horizontal > 1.0E-12) {
+            vx = dx / horizontal;
+            vz = dz / horizontal;
+        } else {
+            // Source fallback: when the horizontal trajectory is zero, use
+            // the opposite of the player's facing direction.
+            double yaw = Math.toRadians(player.yaw);
+            vx = Math.sin(yaw);
+            vz = -Math.cos(yaw);
+        }
         double vy = 0.0;
-        double vz = horizontal > 1.0E-12 ? dz / horizontal : 0.0;
 
         if (game.kit == Kit.MAVERICK && game.mode != me.monstermazeai.game.Mode.ORIGINAL) {
             // Source getMobKnockTarget(): active SafePad, else preview SafePad.
@@ -120,13 +127,18 @@ public final class MonsterMazeBumpModel {
         double dx = player.x - monster.x;
         double dy = player.y - monster.y;
         double dz = player.z - monster.z;
-        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance <= 1.0E-12) return;
-
         double horizontal = Math.hypot(dx, dz);
-        double vx = horizontal > 1.0E-12 ? dx / horizontal : 1.0;
+        double vx;
+        double vz;
+        if (horizontal > 1.0E-12) {
+            vx = dx / horizontal;
+            vz = dz / horizontal;
+        } else {
+            double yaw = Math.toRadians(player.yaw);
+            vx = Math.sin(yaw);
+            vz = -Math.cos(yaw);
+        }
         double vy = 0.0;
-        double vz = horizontal > 1.0E-12 ? dz / horizontal : 0.0;
         vy += 0.75;
         if (vy > 1.2) vy = 1.2;
         if (player.grounded) vy += 0.2;

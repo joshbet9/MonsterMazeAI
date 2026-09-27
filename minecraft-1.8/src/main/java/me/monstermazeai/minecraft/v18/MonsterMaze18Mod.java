@@ -103,7 +103,7 @@ public final class MonsterMaze18Mod {
         }
 
         if (state.inMonsterMaze) {
-            movementValidator.observe(state, action);
+            movementValidator.observe(state, executor.currentAction());
         } else {
             movementValidator.reset();
         }

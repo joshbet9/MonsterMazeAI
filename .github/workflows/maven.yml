@@ -29,3 +29,6 @@ jobs:
       - name: Build and test common
         run: mvn -B -ntp verify
 
+      - name: First-pad deterministic physics simulation
+        run: mvn -B -ntp -pl common -Dtest=FirstPadMovementControllerTest,FirstPadMovementPhysicsSimulationTest test
+

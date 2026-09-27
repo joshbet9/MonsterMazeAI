@@ -20,6 +20,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private volatile boolean aiEnabled;
     private long applyCount;
     private boolean abilityPulsePending;
+    private boolean yawPulsePending;
     private long actionExpiryTick = Long.MIN_VALUE;
     private static final long MAX_COMMAND_HOLD_TICKS = 20L;
 
@@ -48,6 +49,15 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         LegacyAction next = action == null ? LegacyAction.IDLE : action;
         if (next.useAbility && !currentAction.useAbility) abilityPulsePending = true;
         currentAction = next;
+
+        /*
+         * forward/strafe/jump/sprint are held inputs, but yawDelta is a
+         * per-command cursor step. The command itself may remain active for
+         * several ticks; applying the same yawDelta on every tick would turn
+         * 12 degrees into 240 degrees over a 20-tick hold.
+         */
+        yawPulsePending = next.yawDelta != 0.0f;
+
         actionExpiryTick = currentTick == Long.MAX_VALUE
                 ? Long.MAX_VALUE
                 : currentTick + holdTicks;
@@ -66,11 +76,19 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         return currentAction;
     }
 
+    /** Consume the cursor step once; movement fields remain held until expiry. */
+    public synchronized float consumeYawPulse() {
+        if (!yawPulsePending) return 0.0f;
+        yawPulsePending = false;
+        return currentAction.yawDelta;
+    }
+
     /** Called from the END phase; the command was therefore available for the tick just completed. */
     public synchronized void expireIfNeeded(long currentTick) {
         if (actionExpiryTick != Long.MAX_VALUE && currentTick >= actionExpiryTick) {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;
+            yawPulsePending = false;
             actionExpiryTick = Long.MIN_VALUE;
         }
     }
@@ -88,13 +106,19 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     public void setAiEnabled(boolean enabled) {
         aiEnabled = enabled;
-        if (!enabled) { currentAction = LegacyAction.IDLE; abilityPulsePending = false; actionExpiryTick = Long.MIN_VALUE; }
+        if (!enabled) {
+            currentAction = LegacyAction.IDLE;
+            abilityPulsePending = false;
+            yawPulsePending = false;
+            actionExpiryTick = Long.MIN_VALUE;
+        }
     }
 
     @Override
     public synchronized void releaseAll() {
         currentAction = LegacyAction.IDLE;
         abilityPulsePending = false;
+        yawPulsePending = false;
         actionExpiryTick = Long.MIN_VALUE;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }

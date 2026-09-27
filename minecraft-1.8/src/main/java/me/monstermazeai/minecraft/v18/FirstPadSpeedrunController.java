@@ -7,8 +7,13 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 
 /**
- * Isolated first-pad benchmark:
+ * Isolated pad-to-pad speedrun benchmark:
  * maze + player + active pad -> shortest physical-floor route -> W+sprint+jump.
+ *
+ * After reaching a pad, the controller deliberately waits in place while the
+ * server countdown runs. When the active pad changes at the round transition,
+ * it rebuilds the shortest route from the player's current position and runs
+ * to the new pad.
  *
  * No sidecar, async planner, monster logic, abilities, recovery, replanning,
  * or strafe input. The controller runs synchronously on the Minecraft thread.
@@ -28,7 +33,8 @@ public final class FirstPadSpeedrunController {
     private int centerX = Integer.MIN_VALUE;
     private int centerZ = Integer.MIN_VALUE;
     private long lastLogTick = Long.MIN_VALUE;
-    private boolean finished;
+    private boolean targetReached;
+    private int lastLoggedStage = -1;
     private long startedAtTick = Long.MIN_VALUE;
 
     public LegacyAction next(LegacyWorldObservation state) {
@@ -39,12 +45,20 @@ public final class FirstPadSpeedrunController {
             return LegacyAction.IDLE;
         }
 
-        if (state.pad.reached || isInsidePad(state)) {
-            if (!finished) {
-                finished = true;
+        boolean atTarget = state.pad.reached || isInsidePad(state);
+
+        /*
+         * Once the current pad is reached, stop all movement and wait. The
+         * observer intentionally keeps reporting the current active beacon
+         * until the server's phase transition promotes the preview pad.
+         */
+        if (atTarget) {
+            if (!targetReached) {
+                targetReached = true;
                 long elapsed = startedAtTick == Long.MIN_VALUE
                         ? 0L : state.worldTick - startedAtTick;
-                System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN REACHED"
+                System.out.println("[MonsterMazeAI/1.8] PAD REACHED"
+                        + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " elapsedTicks=" + elapsed
                         + " routeLength=" + routeLength);
@@ -52,6 +66,11 @@ public final class FirstPadSpeedrunController {
             return LegacyAction.IDLE;
         }
 
+        /*
+         * A new stage is identified by a changed active pad. This is the
+         * authoritative transition signal; the preview beacon is deliberately
+         * ignored by Minecraft18Observer until it becomes the active pad.
+         */
         if (centerX != state.center.x || centerZ != state.center.z
                 || goalRow != state.pad.row || goalColumn != state.pad.column
                 || routeLength == 0) {
@@ -63,7 +82,7 @@ public final class FirstPadSpeedrunController {
             }
         }
 
-        if (finished || routeLength <= 1) {
+        if (targetReached || routeLength <= 1) {
             return LegacyAction.IDLE;
         }
 
@@ -121,7 +140,8 @@ public final class FirstPadSpeedrunController {
         centerX = Integer.MIN_VALUE;
         centerZ = Integer.MIN_VALUE;
         startedAtTick = Long.MIN_VALUE;
-        finished = false;
+        targetReached = false;
+        lastLoggedStage = -1;
         lastLogTick = Long.MIN_VALUE;
     }
 
@@ -191,12 +211,19 @@ public final class FirstPadSpeedrunController {
         goalColumn = targetColumn;
         centerX = state.center.x;
         centerZ = state.center.z;
+        targetReached = false;
+        startedAtTick = state.worldTick;
 
-        System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN ROUTE"
-                + " start=" + startRow + "," + startColumn
-                + " pad=" + targetRow + "," + targetColumn
-                + " length=" + routeLength
-                + " mode=W+sprint+jump-spam+yaw-route");
+        if (lastLoggedStage != state.stage) {
+            System.out.println("[MonsterMazeAI/1.8] PAD STAGE START"
+                    + " stage=" + state.stage
+                    + " tick=" + state.worldTick
+                    + " start=" + startRow + "," + startColumn
+                    + " pad=" + targetRow + "," + targetColumn
+                    + " length=" + routeLength
+                    + " mode=W+sprint+jump-spam+yaw-route");
+            lastLoggedStage = state.stage;
+        }
 
         return true;
     }

@@ -20,6 +20,8 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private volatile boolean aiEnabled;
     private long applyCount;
     private boolean abilityPulsePending;
+    private long actionExpiryTick = Long.MIN_VALUE;
+    private static final long MAX_COMMAND_HOLD_TICKS = 20L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -28,9 +30,27 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     @Override
     public synchronized void apply(LegacyAction action) {
+        apply(action, Long.MAX_VALUE, MAX_COMMAND_HOLD_TICKS);
+    }
+
+    /** Apply a normal planner result. It is bounded so a stalled planner cannot hold movement forever. */
+    public synchronized void apply(LegacyAction action, long currentTick) {
+        apply(action, currentTick, MAX_COMMAND_HOLD_TICKS);
+    }
+
+    /** Apply a deliberately short-lived result, used only for safe stale-turn recovery. */
+    public synchronized void applyForTicks(LegacyAction action, long currentTick, long holdTicks) {
+        if (holdTicks < 1L) throw new IllegalArgumentException("holdTicks");
+        apply(action, currentTick, holdTicks);
+    }
+
+    private synchronized void apply(LegacyAction action, long currentTick, long holdTicks) {
         LegacyAction next = action == null ? LegacyAction.IDLE : action;
         if (next.useAbility && !currentAction.useAbility) abilityPulsePending = true;
         currentAction = next;
+        actionExpiryTick = currentTick == Long.MAX_VALUE
+                ? Long.MAX_VALUE
+                : currentTick + holdTicks;
         applyCount++;
 
         if (applyCount == 1 || applyCount % 20 == 0
@@ -42,8 +62,17 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         }
     }
 
-    public LegacyAction currentAction() {
+    public synchronized LegacyAction currentAction() {
         return currentAction;
+    }
+
+    /** Called from the END phase; the command was therefore available for the tick just completed. */
+    public synchronized void expireIfNeeded(long currentTick) {
+        if (actionExpiryTick != Long.MAX_VALUE && currentTick >= actionExpiryTick) {
+            currentAction = LegacyAction.IDLE;
+            abilityPulsePending = false;
+            actionExpiryTick = Long.MIN_VALUE;
+        }
     }
 
     /** Called on the Minecraft client thread to consume one right-click pulse. */
@@ -59,13 +88,14 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     public void setAiEnabled(boolean enabled) {
         aiEnabled = enabled;
-        if (!enabled) { currentAction = LegacyAction.IDLE; abilityPulsePending = false; }
+        if (!enabled) { currentAction = LegacyAction.IDLE; abilityPulsePending = false; actionExpiryTick = Long.MIN_VALUE; }
     }
 
     @Override
     public synchronized void releaseAll() {
         currentAction = LegacyAction.IDLE;
         abilityPulsePending = false;
+        actionExpiryTick = Long.MIN_VALUE;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }
 

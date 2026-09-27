@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Java-8 Minecraft-side process bridge.
@@ -408,10 +411,79 @@ public final class Minecraft18AiRuntime {
     }
 
     private String javaExecutable() {
-        return resolveJavaExecutable(
+        String explicit = resolveJavaExecutable(
                 System.getProperty("monstermazeai.java17"),
                 System.getenv("MONSTERMAZE_AI_JAVA"),
                 System.getenv("JAVA_HOME_17_X64"));
+        if (!"java".equals(explicit)) return explicit;
+
+        Path discovered = discoverJava17();
+        return discovered == null ? explicit : discovered.toAbsolutePath().toString();
+    }
+
+    private Path discoverJava17() {
+        String home = System.getProperty("user.home");
+        String[] roots = new String[] {
+                System.getenv("JAVA_HOME"),
+                "C:\\Program Files\\Eclipse Adoptium",
+                "C:\\Program Files\\Java",
+                home == null ? null : home + "\\AppData\\Local\\Programs\\Eclipse Adoptium"
+        };
+
+        for (String rootValue : roots) {
+            if (rootValue == null || rootValue.trim().isEmpty()) continue;
+            Path root = Paths.get(rootValue);
+            Path direct = root.resolve("bin\\java.exe");
+            if (Files.isRegularFile(direct) && isJava17OrNewer(direct)) return direct;
+            if (!Files.isDirectory(root)) continue;
+            try {
+                java.util.List<Path> matches = new ArrayList<Path>();
+                java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(root);
+                try {
+                    for (Path child : stream) {
+                        Path java = child.resolve("bin\\java.exe");
+                        if (Files.isRegularFile(java)) matches.add(java);
+                    }
+                } finally {
+                    stream.close();
+                }
+                for (Path java : matches) {
+                    if (isJava17OrNewer(java)) return java;
+                }
+            } catch (IOException ignored) {
+                // Try the next conventional installation root.
+            }
+        }
+        return null;
+    }
+
+    private boolean isJava17OrNewer(Path java) {
+        Process probe = null;
+        try {
+            probe = new ProcessBuilder(java.toString(), "-version")
+                    .redirectErrorStream(true)
+                    .start();
+            if (!probe.waitFor(2, TimeUnit.SECONDS)) {
+                probe.destroy();
+                return false;
+            }
+            String output = new String(readAll(probe.getInputStream()), "UTF-8");
+            Matcher matcher =
+                    Pattern.compile("(?:version|openjdk)\\s+\\\"?(\\d+)")
+                            .matcher(output);
+            return matcher.find() && Integer.parseInt(matcher.group(1)) >= 17;
+        } catch (Exception ignored) {
+            if (probe != null) probe.destroy();
+            return false;
+        }
+    }
+
+    private static byte[] readAll(InputStream stream) throws IOException {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[512];
+        int count;
+        while ((count = stream.read(buffer)) >= 0) bytes.write(buffer, 0, count);
+        return bytes.toByteArray();
     }
 
     private void closeProcess() {

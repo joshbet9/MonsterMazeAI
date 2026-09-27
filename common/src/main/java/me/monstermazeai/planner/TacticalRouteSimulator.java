@@ -5,6 +5,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterSimulator;
+import me.monstermazeai.monster.MonsterRelevance;
 import me.monstermazeai.physics.LegacyMovementModel;
 import me.monstermazeai.physics.MonsterMazeBumpModel;
 import me.monstermazeai.physics.SpeedContactModel;
@@ -20,8 +21,9 @@ import java.util.Random;
  * Closed-loop source-world simulator.
  *
  * Performance optimisations are deliberately outside authoritative mechanics:
- * irrelevant tactical branches are pruned before expensive physics while the
- * route simulator retains the complete observed monster population.
+ * only monsters inside the local interaction envelope of the current/future
+ * player route enter expensive simulation. The live observation remains full,
+ * while source-faithful monster physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
     private static final int TACTICAL_HORIZON = 6;
@@ -29,7 +31,7 @@ public final class TacticalRouteSimulator {
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;
-    private static final double TACTICAL_RELEVANCE_RADIUS = 16.0;
+    private static final double TACTICAL_RELEVANCE_RADIUS = MonsterRelevance.INTERACTION_RADIUS;
     private static final double WAYPOINT_TOLERANCE = 0.30;
 
     private final LegacyMovementModel physics = new LegacyMovementModel();
@@ -47,7 +49,7 @@ public final class TacticalRouteSimulator {
 
     public Result simulate(GameState source, PlayerRoute route, Cell goal,
                            boolean regionGoal, int regionRadius) {
-        GameState state = source.copyForSimulation();
+        GameState state = MonsterRelevance.copyForRoute(source, route);
         initialiseMissingAbilityState(state);
         int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, WAYPOINT_TOLERANCE);
         MonsterSimulator monsters = monsterSimulator(state, source.tick);
@@ -141,12 +143,10 @@ public final class TacticalRouteSimulator {
 
     private Action chooseTacticalAction(GameState source, PlayerRoute route, int waypoint,
                                         Cell goal, boolean regionGoal, int regionRadius) {
-        /*
-         * A six-tick branch cannot be affected by a monster outside this
-         * conservative envelope. This trims only the branch copy; route
-         * simulation and live observations retain the full monster population.
-         */
-        GameState tacticalSource = tacticalState(source);
+        // The tactical branch uses the same local interaction envelope as the
+        // full route simulation. Filtering is planner-only; the live observer
+        // and source-faithful mechanics retain the complete world snapshot.
+        GameState tacticalSource = MonsterRelevance.copyForRoute(source, route);
         List<Node> beam = new ArrayList<>();
         beam.add(new Node(tacticalSource, waypoint, List.of()));
 
@@ -175,19 +175,6 @@ public final class TacticalRouteSimulator {
                 : beam.get(0).actions.get(0);
     }
 
-    private GameState tacticalState(GameState source) {
-        GameState state = source.copyForSimulation();
-        double radiusSq = TACTICAL_RELEVANCE_RADIUS * TACTICAL_RELEVANCE_RADIUS;
-        state.monsters.removeIf(m -> {
-            if (m.removed) return true;
-            double dx = source.player.x - m.x;
-            double dy = source.player.y - m.y;
-            double dz = source.player.z - m.z;
-            return dx * dx + dy * dy + dz * dz > radiusSq;
-        });
-        return state;
-    }
-
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
@@ -202,7 +189,8 @@ public final class TacticalRouteSimulator {
         double contactReach = MonsterMazeBumpModel.CONTACT_DISTANCE + playerReach;
 
         for (var m : state.monsters) {
-            if (m.removed || m.launched(state.tick) || m.frozen(state.tick)) continue;
+            if (m.removed || m.launched(state.tick) || m.frozen(state.tick)
+                    || !MonsterRelevance.withinPlayerRadius(m, state.player, TACTICAL_RELEVANCE_RADIUS)) continue;
             double separationSq = sq(state.player.x - m.x)
                     + sq(state.player.y - m.y)
                     + sq(state.player.z - m.z);
@@ -211,15 +199,9 @@ public final class TacticalRouteSimulator {
             if (separationSq <= threshold * threshold) return true;
         }
 
-        // Source ability range is six blocks. Preserve the opportunity to use
-        // an ability without making every distant monster a tactical trigger.
-        if (state.kit != me.monstermazeai.kit.Kit.JUMPER) {
-            for (var m : state.monsters) {
-                if (m.removed || m.launched(state.tick) || m.frozen(state.tick)) continue;
-                if (sq(state.player.x - m.x) + sq(state.player.y - m.y)
-                        + sq(state.player.z - m.z) <= 36.0) return true;
-            }
-        }
+        // Source ability range is six blocks and is therefore already contained
+        // by the local interaction envelope. No distant monster can wake the
+        // expensive tactical branch merely because it exists in the world.
         return false;
     }
 

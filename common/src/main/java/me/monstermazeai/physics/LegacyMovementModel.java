@@ -17,6 +17,15 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     @Override
     public void tick(PlayerState p, Action action) {
+        tick(p, action, null);
+    }
+
+    /**
+     * Same 1.8 movement model with optional physical-floor support.
+     * A maze-aware tick lets knockback carry an airborne player over an edge
+     * while still allowing recovery before the player actually falls.
+     */
+    public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze) {
         p.yaw += action.yawDelta();
         while (p.yaw >= 180.0F) p.yaw -= 360.0F;
         while (p.yaw < -180.0F) p.yaw += 360.0F;

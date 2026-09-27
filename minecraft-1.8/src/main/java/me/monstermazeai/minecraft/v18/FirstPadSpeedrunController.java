@@ -59,8 +59,7 @@ public final class FirstPadSpeedrunController {
 
         if (centerX != state.center.x || centerZ != state.center.z
                 || goalRow != state.pad.row || goalColumn != state.pad.column
-                || routeLength == 0 || roundTick != state.worldTick
-                        && startedAtTick == Long.MIN_VALUE) {
+                || routeLength == 0) {
             if (!buildRoute(state)) {
                 return LegacyAction.IDLE;
             }
@@ -222,10 +221,11 @@ public final class FirstPadSpeedrunController {
     private boolean isInsidePad(LegacyWorldObservation state) {
         double x = state.player.x - (state.center.x - 49);
         double z = state.player.z - (state.center.z - 49);
+        double baseY = state.center.y - 1.0D;
         return Math.abs(x - state.pad.row) < 2.5D
                 && Math.abs(z - state.pad.column) < 2.5D
-                && state.player.y > 0.0D
-                && state.player.y < 5.0D;
+                && state.player.y > baseY
+                && state.player.y < baseY + 5.0D;
     }
 
     private static int row(double world, int center) {

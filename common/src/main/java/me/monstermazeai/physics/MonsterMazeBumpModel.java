@@ -65,6 +65,13 @@ public final class MonsterMazeBumpModel {
         double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (distance <= 1.0E-12) return;
 
+        // MonsterManager.bump() snaps a player just above the floor before
+        // applying the velocity when the contact occurs near floor level.
+        boolean groundedForBoost = player.grounded;
+        if (player.y >= GameState.PATH_Y && player.y < GameState.PATH_Y + 0.9) {
+            player.y = GameState.PATH_Y + 0.7;
+        }
+
         double vx = dx / distance;
         double vy = dy / distance;
         double vz = dz / distance;
@@ -85,7 +92,7 @@ public final class MonsterMazeBumpModel {
 
         vy += 0.75;
         if (vy > 1.2) vy = 1.2;
-        if (player.grounded) vy += 0.2;
+        if (groundedForBoost) vy += 0.2;
 
         player.vx = vx;
         player.vy = vy;

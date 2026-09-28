@@ -78,6 +78,17 @@ public final class FirstPadSpeedrunController {
     private int previousPadSeedColumn = -1;
     private int previousPadCenterRow = -1;
     private int previousPadCenterColumn = -1;
+    /*
+     * Recovery state is deliberately separate from normal route following.
+     * A fast player can cross a logical-cell boundary before routeIndex is
+     * advanced, so a safety hold must never become a permanent deadlock.
+     * Recovery first returns the player to a known supported cell centre,
+     * then rebuilds A* from the player's actual position.
+     */
+    private boolean recovering;
+    private int recoveryRow = -1;
+    private int recoveryColumn = -1;
+    private long lastRecoveryLogTick = Long.MIN_VALUE;
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -168,6 +179,34 @@ public final class FirstPadSpeedrunController {
 
         advanceRouteIndex(state);
 
+        /*
+         * Route state is allowed to lag behind continuous player motion by a
+         * fraction of a cell, but never far enough that the player is no
+         * longer supported by the current route envelope. If that happens,
+         * explicitly re-anchor instead of repeatedly returning IDLE from a
+         * predicted-floor safety failure.
+         */
+        if (!recovering && routePositionNeedsRecovery(state)) {
+            if (beginRecovery(state)) {
+                return recoveryAction(state);
+            }
+        }
+
+        if (recovering) {
+            if (isRecoveryComplete(state)) {
+                recovering = false;
+                recoveryRow = -1;
+                recoveryColumn = -1;
+                if (buildRoute(state)) {
+                    System.out.println("[MonsterMazeAI/1.8] RECOVERY REANCHORED"
+                            + " tick=" + state.worldTick
+                            + " start=" + routeRows[0] + "," + routeColumns[0]
+                            + " target=" + goalRow + "," + goalColumn);
+                }
+            }
+            if (recovering) return recoveryAction(state);
+        }
+
         if (routeIndex >= routeLength - 1) {
             return LegacyAction.IDLE;
         }
@@ -214,19 +253,35 @@ public final class FirstPadSpeedrunController {
                     || state.worldTick - lastFailedMobReplanTick >= MOB_REPLAN_RETRY_TICKS;
             if (!retryAllowed) return LegacyAction.IDLE;
             if (!buildRoute(state)) {
+                /*
+                 * Never treat a failed replan as a terminal movement state.
+                 * Re-anchor to the nearest known supported cell and try again;
+                 * this is especially important after a fast boundary crossing
+                 * or mob knockback has made the previous route stale.
+                 */
+                if (beginRecovery(state)) {
+                    if (state.worldTick % 5L == 0L) {
+                        System.out.println("[MonsterMazeAI/1.8] ROUTE REPLAN FAILED"
+                                + " tick=" + state.worldTick
+                                + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                + " reason=" + (mobBlocked ? "dynamic-mob-block" : "physical-route")
+                                + " action=RECOVER_TO_SAFE_CELL");
+                    }
+                    return recoveryAction(state);
+                }
                 if (mobBlocked) {
                     lastFailedMobReplanTick = state.worldTick;
                     if (state.worldTick % 5L == 0L) {
                         System.out.println("[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
                                 + " tick=" + state.worldTick
                                 + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                                + " action=IDLE_WAIT_FOR_CLEAR_PATH");
+                                + " action=RETRY_FROM_CURRENT_POSITION");
                     }
                 } else if (state.worldTick % 5L == 0L) {
                     System.out.println("[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
                             + " tick=" + state.worldTick
                             + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                            + " action=KEEP_EXISTING_ROUTE");
+                            + " action=RETRY_FROM_CURRENT_POSITION");
                 }
                 return LegacyAction.IDLE;
             }
@@ -318,6 +373,10 @@ public final class FirstPadSpeedrunController {
         lastLogTick = Long.MIN_VALUE;
         headingStableTicks = 0;
         lastFailedMobReplanTick = Long.MIN_VALUE;
+        recovering = false;
+        recoveryRow = -1;
+        recoveryColumn = -1;
+        lastRecoveryLogTick = Long.MIN_VALUE;
         routeStartsOnPreviousPad = false;
         previousPadSeedRow = -1;
         previousPadSeedColumn = -1;
@@ -703,8 +762,9 @@ public final class FirstPadSpeedrunController {
 
         int bestRow = -1, bestColumn = -1;
         double bestDistance = Double.POSITIVE_INFINITY;
-        for (int r = nominalRow - 1; r <= nominalRow + 1; r++) {
-            for (int c = nominalColumn - 1; c <= nominalColumn + 1; c++) {
+        final int searchRadius = 3;
+        for (int r = nominalRow - searchRadius; r <= nominalRow + searchRadius; r++) {
+            for (int c = nominalColumn - searchRadius; c <= nominalColumn + searchRadius; c++) {
                 if (!inBounds(r, c) || !state.physicalFloor[r][c]) continue;
                 double dx = state.player.x - worldX(r, state.center.x);
                 double dz = state.player.z - worldZ(c, state.center.z);
@@ -714,7 +774,116 @@ public final class FirstPadSpeedrunController {
                 }
             }
         }
-        return bestRow < 0 || bestDistance > 1.0D ? null : new int[] {bestRow, bestColumn};
+        return bestRow < 0 || bestDistance > 9.0D ? null : new int[] {bestRow, bestColumn};
+    }
+
+    /*
+     * Detect a stale route using the player's continuous footprint rather
+     * than the discrete routeIndex. This catches the exact case where the
+     * player has crossed beyond the current waypoint before the index update.
+     */
+    private boolean routePositionNeedsRecovery(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) {
+            return false;
+        }
+
+        if (routeSupportsFootprint(state, state.player.x, state.player.z,
+                Math.min(routeIndex + 1, routeLength - 1))) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean beginRecovery(LegacyWorldObservation state) {
+        int[] candidate = findRecoveryCell(state);
+        if (candidate == null) {
+            return false;
+        }
+        recoveryRow = candidate[0];
+        recoveryColumn = candidate[1];
+        recovering = true;
+        if (state.worldTick - lastRecoveryLogTick >= 5L) {
+            System.out.println("[MonsterMazeAI/1.8] RECOVERY START"
+                    + " tick=" + state.worldTick
+                    + " player=" + format(state.player.x) + "," + format(state.player.z)
+                    + " cell=" + recoveryRow + "," + recoveryColumn
+                    + " reason=route-position-stale");
+            lastRecoveryLogTick = state.worldTick;
+        }
+        return true;
+    }
+
+    private int[] findRecoveryCell(LegacyWorldObservation state) {
+        int nominalRow = row(state.player.x, state.center.x);
+        int nominalColumn = row(state.player.z, state.center.z);
+        int bestRow = -1;
+        int bestColumn = -1;
+        double bestScore = Double.POSITIVE_INFINITY;
+
+        /* Prefer cells already belonging to the selected route, especially
+           the cell behind the player that lets recovery move back to safety. */
+        for (int i = routeIndex; i < Math.min(routeLength, routeIndex + 4); i++) {
+            int r = routeRows[i], c = routeColumns[i];
+            if (!routeCellSupported(state, i)) continue;
+            double d = Math.hypot(state.player.x - worldX(r, state.center.x),
+                    state.player.z - worldZ(c, state.center.z));
+            if (d < bestScore) {
+                bestScore = d;
+                bestRow = r;
+                bestColumn = c;
+            }
+        }
+
+        if (bestRow >= 0) return new int[] {bestRow, bestColumn};
+
+        /* If the route itself has disappeared, use the nearest currently
+           observed physical-floor cell. A recovery cell is deliberately
+           allowed to be several cells away; this is a recovery operation, not
+           the speedrun planner. */
+        final int radius = 4;
+        for (int r = nominalRow - radius; r <= nominalRow + radius; r++) {
+            for (int c = nominalColumn - radius; c <= nominalColumn + radius; c++) {
+                if (!inBounds(r, c) || !state.physicalFloor[r][c]) continue;
+                double d = Math.hypot(state.player.x - worldX(r, state.center.x),
+                        state.player.z - worldZ(c, state.center.z));
+                if (d < bestScore) {
+                    bestScore = d;
+                    bestRow = r;
+                    bestColumn = c;
+                }
+            }
+        }
+        return bestRow < 0 ? null : new int[] {bestRow, bestColumn};
+    }
+
+    private boolean isRecoveryComplete(LegacyWorldObservation state) {
+        if (recoveryRow < 0 || recoveryColumn < 0) return true;
+        double distance = Math.hypot(state.player.x - worldX(recoveryRow, state.center.x),
+                state.player.z - worldZ(recoveryColumn, state.center.z));
+        return distance <= 0.30D && physicalFloorCell(state, recoveryRow, recoveryColumn);
+    }
+
+    private LegacyAction recoveryAction(LegacyWorldObservation state) {
+        if (recoveryRow < 0 || recoveryColumn < 0) return LegacyAction.IDLE;
+        float desiredYaw = desiredYawForEdge(
+                row(state.player.x, state.center.x),
+                row(state.player.z, state.center.z),
+                recoveryRow, recoveryColumn);
+        double dx = worldX(recoveryRow, state.center.x) - state.player.x;
+        double dz = worldZ(recoveryColumn, state.center.z) - state.player.z;
+        if (Math.hypot(dx, dz) <= 0.30D) {
+            return LegacyAction.IDLE;
+        }
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+        if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+            return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
+        }
+
+        /* Recovery deliberately does not sprint or jump. It is a controlled
+           return to a known floor centre before the speedrun resumes. */
+        return new LegacyAction(1.0f, 0.0f, false, false, yawDelta, false);
     }
 
     private boolean physicalFloorCell(LegacyWorldObservation state, int r, int c) {
@@ -887,10 +1056,27 @@ public final class FirstPadSpeedrunController {
 
     private int findBestRouteIndexForCurrentPosition(LegacyWorldObservation state,
                                                        int[] rows, int[] columns, int length) {
-        return 0;
+        if (rows == null || columns == null || length <= 0) return 0;
+        int best = 0;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < length; i++) {
+            double d = Math.hypot(state.player.x - worldX(rows[i], state.center.x),
+                    state.player.z - worldZ(columns[i], state.center.z));
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = i;
+            }
+        }
+        return best;
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {
+        /* If the player is already materially closer to a later route waypoint,
+           re-anchor the index before applying the normal edge-progress rule. */
+        int nearest = findBestRouteIndexForCurrentPosition(state, routeRows, routeColumns, routeLength);
+        if (nearest > routeIndex + 1) {
+            routeIndex = nearest;
+        }
         while (routeIndex < routeLength - 1) {
             double ax = worldX(routeRows[routeIndex], state.center.x);
             double az = worldZ(routeColumns[routeIndex], state.center.z);

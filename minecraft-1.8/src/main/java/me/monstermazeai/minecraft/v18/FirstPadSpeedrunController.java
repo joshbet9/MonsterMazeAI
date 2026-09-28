@@ -36,6 +36,14 @@ public final class FirstPadSpeedrunController {
     private static final double ROUTE_ADVANCE_PROGRESS = 0.80D;
     private static final double ROUTE_WAYPOINT_CAPTURE_RADIUS = 0.65D;
     private static final int MOB_REPLAN_RETRY_TICKS = 10;
+    /*
+     * Successful mob replans are deliberately rate-limited. Replanning on
+     * every observation lets a moving monster alternately make two otherwise
+     * valid routes look best, which can make the player turn back and forth
+     * instead of committing to a clear route. A genuinely blocked immediate
+     * edge still bypasses this cooldown.
+     */
+    private static final int MOB_REPLAN_MIN_INTERVAL_TICKS = 8;
     private static final int LOOKAHEAD_CELLS = 3;
     /*
      * Forward alignment is a route-direction safety check, not a logical-cell
@@ -73,6 +81,16 @@ public final class FirstPadSpeedrunController {
     private long startedAtTick = Long.MIN_VALUE;
     private int headingStableTicks;
     private long lastFailedMobReplanTick = Long.MIN_VALUE;
+    private long lastSuccessfulMobReplanTick = Long.MIN_VALUE;
+
+    /*
+     * Active-pad transitions are tracked explicitly. targetReached is a
+     * completion state for the current pad and is cleared as soon as the
+     * active pad changes; therefore it cannot also be the transition signal.
+     */
+    private int lastActivePadRow = -1;
+    private int lastActivePadColumn = -1;
+    private boolean activePadTransitionPending;
     private boolean routeStartsOnPreviousPad;
     private int previousPadSeedRow = -1;
     private int previousPadSeedColumn = -1;
@@ -151,6 +169,34 @@ public final class FirstPadSpeedrunController {
         boolean suddenHorizontalImpulse = detectSuddenHorizontalImpulse(state);
 
         /*
+         * Active-pad identity is the authoritative phase-transition signal.
+         * Capture the pad that was active on the previous observation before
+         * changing targetReached or rebuilding the route. This preserves the
+         * physical SafePad as a legitimate route seed during the transition.
+         */
+        boolean activePadChanged = lastActivePadRow >= 0
+                && (state.pad.row != lastActivePadRow
+                || state.pad.column != lastActivePadColumn);
+        if (activePadChanged) {
+            previousPadCenterRow = lastActivePadRow;
+            previousPadCenterColumn = lastActivePadColumn;
+            routeStartsOnPreviousPad = true;
+            activePadTransitionPending = true;
+            targetReached = false;
+            routeLength = 0;
+            routeIndex = 0;
+            aligningForStage = false;
+            log(state.worldTick, "[MonsterMazeAI/1.8] PAD TRANSITION"
+                    + " tick=" + state.worldTick
+                    + " old=" + lastActivePadRow + "," + lastActivePadColumn
+                    + " new=" + state.pad.row + "," + state.pad.column
+                    + " player=" + format(state.player.x) + "," + format(state.player.z)
+                    + " previousPadSeed=true");
+        }
+        lastActivePadRow = state.pad.row;
+        lastActivePadColumn = state.pad.column;
+
+        /*
          * A mob can knock the player off an otherwise valid SafePad while the
          * server is still in the same phase. targetReached is not permission
          * to remain idle forever: if the player leaves the pad, the controller
@@ -158,7 +204,7 @@ public final class FirstPadSpeedrunController {
          * important when the pad subsequently deteriorates and its physical
          * 5x5 surface is restored to the underlying maze.
          */
-        if (targetReached && !atTarget) {
+        if (targetReached && !atTarget && !activePadChanged) {
             targetReached = false;
             routeLength = 0;
             routeIndex = 0;
@@ -195,6 +241,16 @@ public final class FirstPadSpeedrunController {
                 || routeLength == 0) {
             if (!buildRoute(state)) {
                 return LegacyAction.IDLE;
+            }
+            if (activePadTransitionPending) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] PAD TRANSITION ROUTE"
+                        + " tick=" + state.worldTick
+                        + " start=" + routeRows[0] + "," + routeColumns[0]
+                        + " target=" + goalRow + "," + goalColumn
+                        + " length=" + routeLength
+                        + " firstEdge=" + (routeLength > 1
+                        ? routeRows[1] + "," + routeColumns[1] : "none"));
+                activePadTransitionPending = false;
             }
             if (startedAtTick == Long.MIN_VALUE) {
                 startedAtTick = state.worldTick;
@@ -396,6 +452,31 @@ public final class FirstPadSpeedrunController {
         if (physicalRouteInvalid || mobBlocked) {
             int oldLength = routeLength;
             int oldIndex = routeIndex;
+
+            /*
+             * Do not let a moving mob cause route oscillation every tick.
+             * If the immediate edge itself is currently blocked, replan now;
+             * otherwise wait for the short cooldown so the existing route can
+             * actually make progress before another future-hazard prediction
+             * changes the route.
+             */
+            boolean immediateMobBlocked = mobBlocked
+                    && routeIndex < routeLength - 1
+                    && isMobBlockedAlongEdge(
+                    state,
+                    routeRows[routeIndex],
+                    routeColumns[routeIndex],
+                    routeRows[routeIndex + 1],
+                    routeColumns[routeIndex + 1],
+                    0.0D);
+            boolean mobCooldown = mobBlocked
+                    && !immediateMobBlocked
+                    && lastSuccessfulMobReplanTick != Long.MIN_VALUE
+                    && state.worldTick - lastSuccessfulMobReplanTick < MOB_REPLAN_MIN_INTERVAL_TICKS;
+            if (mobCooldown) {
+                mobBlocked = false;
+            }
+
             boolean retryAllowed = !mobBlocked
                     || lastFailedMobReplanTick == Long.MIN_VALUE
                     || state.worldTick - lastFailedMobReplanTick >= MOB_REPLAN_RETRY_TICKS;
@@ -434,6 +515,9 @@ public final class FirstPadSpeedrunController {
                 return LegacyAction.IDLE;
             }
             lastFailedMobReplanTick = Long.MIN_VALUE;
+            if (mobBlocked) {
+                lastSuccessfulMobReplanTick = state.worldTick;
+            }
             if (state.worldTick % 5L == 0L) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
                         + " tick=" + state.worldTick
@@ -556,6 +640,10 @@ public final class FirstPadSpeedrunController {
         lastLogTick = Long.MIN_VALUE;
         headingStableTicks = 0;
         lastFailedMobReplanTick = Long.MIN_VALUE;
+        lastSuccessfulMobReplanTick = Long.MIN_VALUE;
+        lastActivePadRow = -1;
+        lastActivePadColumn = -1;
+        activePadTransitionPending = false;
         recovering = false;
         recoveryRow = -1;
         recoveryColumn = -1;
@@ -1532,6 +1620,14 @@ public final class FirstPadSpeedrunController {
             if ((progress >= ROUTE_ADVANCE_PROGRESS || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
                     && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
                 routeIndex++;
+                if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                    /*
+                     * The player has now captured the first normal route
+                     * waypoint. The previous SafePad is no longer needed as a
+                     * synthetic support cell for the active route.
+                     */
+                    routeStartsOnPreviousPad = false;
+                }
             } else {
                 break;
             }

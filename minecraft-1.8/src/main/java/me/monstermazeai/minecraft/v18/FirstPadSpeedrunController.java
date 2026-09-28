@@ -660,18 +660,16 @@ public final class FirstPadSpeedrunController {
                         + " reason=" + safetyReason);
             }
             /*
-             * A hard floor/physics failure still stops forward input. A large
-             * turn remains stationary only when the commanded heading itself
-             * cannot be made safe in the same tick.
+             * Never classify a heading error itself as a movement failure.
+             * movementSafetyFailureReason() has already evaluated the actual
+             * post-turn heading. If that commanded heading is safe, the caller
+             * below is allowed to turn and move in the same tick. If a genuine
+             * floor/vertical/vector constraint failed, rotate in place rather
+             * than advancing into the unsafe direction.
              */
-            if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+            if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
-            log(state.worldTick, "[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
-                    + " tick=" + state.worldTick
-                    + " routeIndex=" + routeIndex
-                    + " reason=" + safetyReason
-                    + " action=IDLE");
             return LegacyAction.IDLE;
         }
 
@@ -1588,6 +1586,30 @@ public final class FirstPadSpeedrunController {
 
         double progress = currentEdgeProgress(state);
         double distanceToTakeoff = 0.50D - progress;
+
+        /*
+         * A route replan can discover a gap while the player is already close
+         * to, or physically over, its source/missing cell. In that case the
+         * old controller could re-enter normal movement with the gap state
+         * clear and either walk into the void or issue an ineffective late
+         * jump. Once progress has entered the committed gap envelope, take
+         * ownership immediately and keep the jump held until landing is
+         * confirmed.
+         */
+        if (progress >= 0.15D && progress <= 1.65D) {
+            gapExecutionActive = true;
+            gapTakeoffStarted = progress >= 0.35D;
+            gapExecutionRouteIndex = routeIndex;
+            gapLandingConfirmTicks = 0;
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP RECOVER COMMIT"
+                    + " tick=" + state.worldTick
+                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
+                    + " progress=" + format(progress)
+                    + " takeoff=" + gapTakeoffStarted);
+            return executeCommittedGap(state);
+        }
+
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
             return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
         }
@@ -1648,6 +1670,11 @@ public final class FirstPadSpeedrunController {
             gapLandingConfirmTicks = 0;
         }
 
+        /*
+         * While committed to a gap, never fall back to ordinary route safety.
+         * The action remains W+sprint+jump until the landing predicate above
+         * succeeds or the edge is irrecoverably missed.
+         */
         if (progress > 1.65D) {
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn

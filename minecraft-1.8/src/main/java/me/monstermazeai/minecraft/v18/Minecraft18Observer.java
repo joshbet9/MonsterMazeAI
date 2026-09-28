@@ -108,7 +108,7 @@ public final class Minecraft18Observer {
         boolean mazeDetected = cachedMazeDetected && center != null;
         boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw, pad);
 
-        boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
+        boolean inMonsterMaze = !player.isSpectator() && (mazeScoreboard || mazeDetected || pad != null);
         if (inMonsterMaze && !previouslyInMonsterMaze) {
             gameStartWorldTick = world.getTotalWorldTime();
         } else if (!inMonsterMaze) {
@@ -125,8 +125,8 @@ public final class Minecraft18Observer {
         int liveSeconds = gameStartWorldTick < 0
                 ? 0
                 : (int) Math.max(0, (worldTick - gameStartWorldTick) / 20L);
-        boolean alive = player.getHealth() > 0.0F;
-        boolean completed = scoreboard.completed;
+        boolean alive = player.getHealth() > 0.0F && !player.isSpectator();
+        boolean completed = scoreboard.completed || player.isSpectator();
         boolean matchedMaze = inMonsterMaze && !completed;
 
         List<String> displayNames = new ArrayList<String>();

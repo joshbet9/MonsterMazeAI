@@ -133,10 +133,17 @@ public final class FirstPadSpeedrunController {
      * so the generic every-other-tick jump spam cannot replace the edge-timed
      * takeoff with an arbitrary jump phase.
      */
-    private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.60D;
-    private static final double GAP_JUMP_LATE_TOLERANCE = 0.20D;
-    private static final double GAP_LANDING_PROGRESS = 1.55D;
+    private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.35D;
+    private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
+    private static final double GAP_LANDING_PROGRESS = 1.20D;
+    private static final float GAP_HEADING_TOLERANCE = 5.0F;
+    private static final double GAP_LATERAL_SPEED_LIMIT = 0.12D;
+    private static final int GAP_LANDING_CONFIRM_TICKS = 2;
     private int gapJumpTriggeredRouteIndex = -1;
+    private boolean gapExecutionActive;
+    private boolean gapTakeoffStarted;
+    private int gapExecutionRouteIndex = -1;
+    private int gapLandingConfirmTicks;
 
     public void setTelemetry(GameRunSummaryRecorder telemetry) {
         this.telemetry = telemetry;
@@ -350,7 +357,7 @@ public final class FirstPadSpeedrunController {
          * explicitly re-anchor instead of repeatedly returning IDLE from a
          * predicted-floor safety failure.
          */
-        if (!recovering && routePositionNeedsRecovery(state)) {
+        if (!gapExecutionActive && !recovering && routePositionNeedsRecovery(state)) {
             if (beginRecovery(state)) {
                 return recoveryAction(state);
             }
@@ -438,6 +445,11 @@ public final class FirstPadSpeedrunController {
                 routeRows[nextIndex], routeColumns[nextIndex]);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+
+        if (gapExecutionActive) {
+            LegacyAction gapAction = executeCommittedGap(state);
+            if (gapAction != null) return gapAction;
+        }
 
         /*
          * Mobs are part of route planning, never a movement override.
@@ -602,10 +614,12 @@ public final class FirstPadSpeedrunController {
          * of depending on whether the global jump-spam phase happens to line
          * up with the takeoff boundary.
          */
-        boolean gapJumpPulse = shouldTriggerGapJump(state);
-        boolean gapEdge = isCurrentEdgeGap(state);
-        boolean jumpPulse = gapJumpPulse
-                || (!gapEdge && (state.worldTick & 1L) == 0L);
+        if (isCurrentEdgeGap(state)) {
+            LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
+            if (gapAction != null) return gapAction;
+        }
+
+        boolean jumpPulse = (state.worldTick & 1L) == 0L;
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
@@ -653,6 +667,10 @@ public final class FirstPadSpeedrunController {
         knockbackRecoveryPending = false;
         lastKnockbackRecoveryTick = Long.MIN_VALUE;
         gapJumpTriggeredRouteIndex = -1;
+        gapExecutionActive = false;
+        gapTakeoffStarted = false;
+        gapExecutionRouteIndex = -1;
+        gapLandingConfirmTicks = 0;
         routeStartsOnPreviousPad = false;
         previousPadSeedRow = -1;
         previousPadSeedColumn = -1;
@@ -813,6 +831,10 @@ public final class FirstPadSpeedrunController {
             initialStartPadCenterColumn = startColumn;
         }
         gapJumpTriggeredRouteIndex = -1;
+        gapExecutionActive = false;
+        gapTakeoffStarted = false;
+        gapExecutionRouteIndex = -1;
+        gapLandingConfirmTicks = 0;
         goalRow = targetRow;
         goalColumn = targetColumn;
         centerX = state.center.x;
@@ -1330,32 +1352,124 @@ public final class FirstPadSpeedrunController {
         return !state.player.grounded || progress < GAP_LANDING_PROGRESS;
     }
 
-    private boolean shouldTriggerGapJump(LegacyWorldObservation state) {
-        if (!isCurrentEdgeGap(state)
-                || gapJumpTriggeredRouteIndex == routeIndex
-                || !state.player.grounded) {
-            return false;
+    private boolean isCurrentEdgeGap(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) return false;
+        return isGapRouteEdge(routeRows[routeIndex], routeColumns[routeIndex],
+                routeRows[routeIndex + 1], routeColumns[routeIndex + 1], state);
+    }
+
+    private boolean isGapRouteEdge(int fromRow, int fromColumn,
+                                   int toRow, int toColumn,
+                                   LegacyWorldObservation state) {
+        int dr = toRow - fromRow, dc = toColumn - fromColumn;
+        if (!((Math.abs(dr) == 2 && dc == 0) || (Math.abs(dc) == 2 && dr == 0))) return false;
+        int middleRow = fromRow + Integer.signum(dr);
+        int middleColumn = fromColumn + Integer.signum(dc);
+        return physicalFloorCell(state, fromRow, fromColumn)
+                && !physicalFloorCell(state, middleRow, middleColumn)
+                && physicalFloorCell(state, toRow, toColumn);
+    }
+
+    private LegacyAction prepareOrStartGap(LegacyWorldObservation state,
+                                            float desiredYaw, float yawError) {
+        if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) return executeCommittedGap(state);
+        if (!state.player.grounded) return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
+
+        if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
+            float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+            if (state.worldTick % 2L == 0L) log(state.worldTick, "[MonsterMazeAI/1.8] GAP ALIGN"
+                    + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
+                    + " yawError=" + format(yawError));
+            return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
+        }
+
+        double rad = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
+        double lateralVelocity = Math.abs(state.player.vx * forwardZ - state.player.vz * forwardX);
+        if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
+            return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
 
         double progress = currentEdgeProgress(state);
         double distanceToTakeoff = 0.50D - progress;
-
-        if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE
-                || distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
-            return false;
+        if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
+            return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+        }
+        if (distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MISSED"
+                    + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
+                    + " progress=" + format(progress));
+            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+            routeLength = 0; routeIndex = 0;
+            return null;
         }
 
-        gapJumpTriggeredRouteIndex = routeIndex;
-
-        log(state.worldTick, "[MonsterMazeAI/1.8] GAP JUMP"
-                + " tick=" + state.worldTick
-                + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+        gapExecutionActive = true;
+        gapTakeoffStarted = false;
+        gapExecutionRouteIndex = routeIndex;
+        gapLandingConfirmTicks = 0;
+        log(state.worldTick, "[MonsterMazeAI/1.8] GAP COMMIT"
+                + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
                 + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                + " progress=" + format(progress)
-                + " distanceToTakeoff=" + format(distanceToTakeoff)
-                + " timing=edge");
+                + " progress=" + format(progress) + " headingAligned=true lateralSpeed=" + format(lateralVelocity));
+        return executeCommittedGap(state);
+    }
 
-        return true;
+    private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
+        if (!gapExecutionActive || gapExecutionRouteIndex != routeIndex || routeIndex >= routeLength - 1) {
+            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+            return null;
+        }
+        int fromRow = routeRows[routeIndex], fromColumn = routeColumns[routeIndex];
+        int toRow = routeRows[routeIndex + 1], toColumn = routeColumns[routeIndex + 1];
+        if (!isGapRouteEdge(fromRow, fromColumn, toRow, toColumn, state)) {
+            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+            return null;
+        }
+
+        double progress = currentEdgeProgress(state);
+        if (!gapTakeoffStarted && progress >= 0.50D) {
+            gapTakeoffStarted = true;
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
+                    + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                    + " progress=" + format(progress));
+        }
+
+        if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
+                && playerFootprintOverlapsCell(state, toRow, toColumn, 0.05D)) {
+            gapLandingConfirmTicks++;
+            if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
+                        + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                        + " progress=" + format(progress));
+                gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+                routeIndex++;
+                if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+            }
+        } else {
+            gapLandingConfirmTicks = 0;
+        }
+
+        if (progress > 1.65D) {
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
+                    + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                    + " progress=" + format(progress) + " grounded=" + state.player.grounded);
+            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+            routeLength = 0; routeIndex = 0;
+            return null;
+        }
+
+        if (state.worldTick % 5L == 0L) log(state.worldTick, "[MonsterMazeAI/1.8] GAP EXECUTE"
+                + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                + " progress=" + format(progress) + " grounded=" + state.player.grounded + " jumpSpam=true");
+        return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+    }
+
+    private boolean shouldTriggerGapJump(LegacyWorldObservation state) {
+        return gapExecutionActive && gapExecutionRouteIndex == routeIndex && gapTakeoffStarted;
     }
 
     private String movementSafetyFailureReason(LegacyWorldObservation state,

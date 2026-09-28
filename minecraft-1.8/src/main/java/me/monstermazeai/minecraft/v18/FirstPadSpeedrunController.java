@@ -1632,11 +1632,7 @@ public final class FirstPadSpeedrunController {
         double edgeX = edgeRow, edgeZ = edgeColumn;
         double edgeLength = Math.sqrt(edgeX * edgeX + edgeZ * edgeZ);
         edgeX /= edgeLength; edgeZ /= edgeLength;
-        /*
-         * Evaluate the sweep against the yaw that will be in effect after this
-         * tick's turn command, rather than the stale pre-turn yaw.
-         */
-        double rad = Math.toRadians(commandedYaw);
+        double rad = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
         if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
 
@@ -2010,3 +2006,40 @@ public final class FirstPadSpeedrunController {
                                              int toRow, int toColumn) {
         double dx = toRow - fromRow;
         double dz = toColumn - fromColumn;
+        return (float) Math.toDegrees(Math.atan2(-dx, dz));
+    }
+
+    private static int row(double world, int center) {
+        return (int) Math.floor(world - (center - 49));
+    }
+
+    private static double worldX(int routeRow, int centerX) {
+        return (centerX - 49) + routeRow + 0.5D;
+    }
+
+    private static double worldZ(int routeColumn, int centerZ) {
+        return (centerZ - 49) + routeColumn + 0.5D;
+    }
+
+    private static int index(int r, int c) {
+        return r * SIZE + c;
+    }
+
+    private static boolean inBounds(int r, int c) {
+        return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
+    }
+
+    private static float normalise(float angle) {
+        while (angle > 180.0F) angle -= 360.0F;
+        while (angle < -180.0F) angle += 360.0F;
+        return angle;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static String format(double value) {
+        return String.format(java.util.Locale.ROOT, "%.2f", value);
+    }
+}

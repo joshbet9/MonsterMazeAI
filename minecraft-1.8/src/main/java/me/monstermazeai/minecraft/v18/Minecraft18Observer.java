@@ -341,8 +341,23 @@ public final class Minecraft18Observer {
              * Y remains a useful sanity check because a teleport/death to a
              * different vertical layer is a genuine round boundary signal.
              */
+            /*
+             * Do not discard the round coordinate frame for ordinary jump or
+             * mob-knockback height changes. The server's centre is fixed for
+             * the live round, and centre deterioration changes its blocks after
+             * ~20s. A previous 3-block threshold caused a player briefly at
+             * Y=69 to invalidate the cache; rediscovery then failed because
+             * the centre-safe-zone had already deteriorated.
+             *
+             * Only a very large vertical displacement is treated as evidence
+             * that the player has actually left this arena. The normal fall
+             * / elimination path is handled by the server and by the live
+             * player state; keeping the coordinate frame here lets the AI
+             * recover from temporary vertical knockback without re-matching
+             * destroyed centre geometry.
+             */
             int playerY = player.getPosition().getY();
-            if (Math.abs(playerY - cachedCenter.getY()) <= 3) {
+            if (Math.abs(playerY - cachedCenter.getY()) <= 20) {
                 return cachedCenter;
             }
             System.out.println("[MonsterMazeAI/1.8] CENTER CACHE INVALID old="

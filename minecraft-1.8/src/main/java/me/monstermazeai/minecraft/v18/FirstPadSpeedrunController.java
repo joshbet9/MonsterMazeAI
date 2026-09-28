@@ -117,7 +117,15 @@ public final class FirstPadSpeedrunController {
             return LegacyAction.IDLE;
         }
 
-        boolean atTarget = state.pad.reached || isInsidePad(state);
+        /*
+         * Completion must be decided from the same geometric predicate as the
+         * authoritative MonsterMaze SafePad.isOn(Entity) implementation.
+         * state.pad.reached is an observer convenience signal (distance to the
+         * beacon) and must never be allowed to declare success by itself:
+         * a stale/misaligned beacon observation can otherwise leave the AI idle
+         * while the server still considers the player off the SafePad.
+         */
+        boolean atTarget = isInsidePad(state);
         boolean suddenHorizontalImpulse = detectSuddenHorizontalImpulse(state);
 
         /*
@@ -149,7 +157,8 @@ public final class FirstPadSpeedrunController {
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " elapsedTicks=" + elapsed
-                        + " routeLength=" + routeLength);
+                        + " routeLength=" + routeLength
+                        + " geometry=authoritative-SafePad.isOn");
             }
             return LegacyAction.IDLE;
         }
@@ -413,7 +422,33 @@ public final class FirstPadSpeedrunController {
             }
 
             if (routeIndex >= routeLength - 1) {
-                return LegacyAction.IDLE;
+                /*
+                 * A dynamic replan can legitimately produce a one-cell route
+                 * whose goal is inside the SafePad. Do not convert that into
+                 * IDLE: the player may still be outside the actual 5x5 pad.
+                 * Let the exact same final-pad approach used by the normal
+                 * route-end path close the remaining distance.
+                 */
+                double padCenterX = (state.center.x - 49) + state.pad.row + 0.5D;
+                double padCenterZ = (state.center.z - 49) + state.pad.column + 0.5D;
+                double padDistance = Math.hypot(
+                        state.player.x - padCenterX,
+                        state.player.z - padCenterZ);
+                if (padDistance <= 3.50D
+                        && physicalFloorSupportsFootprint(
+                        state, state.player.x, state.player.z)) {
+                    return finalPadApproachAction(
+                            state, padCenterX, padCenterZ, padDistance);
+                }
+                routeLength = 0;
+                routeIndex = 0;
+                if (!buildRoute(state)) {
+                    return LegacyAction.IDLE;
+                }
+                if (routeIndex >= routeLength - 1) {
+                    return finalPadApproachAction(
+                            state, padCenterX, padCenterZ, padDistance);
+                }
             }
             nextIndex = routeIndex + 1;
             targetIndex = safeLookaheadIndex();

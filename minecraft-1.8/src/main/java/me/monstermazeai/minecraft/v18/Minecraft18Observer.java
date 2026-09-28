@@ -285,8 +285,13 @@ public final class Minecraft18Observer {
 
         // Exact SafePad.isOn() semantics from the source plugin:
         // dx > -2.5, dx < 2.5, dz > -2.5, dz < 2.5, y > padY, y < padY+5.
-        double dx = player.posX - (baseX + 0.0D);
-        double dz = player.posZ - (baseZ + 0.0D);
+        // SafePad is constructed from MazeGenerator's path location,
+        // which is the centre of the block: world block coordinate + 0.5.
+        // Using the integer block corner here makes the reported 5x5 pad
+        // one half-block too far toward negative X/Z and can falsely report
+        // a player as reached while they are visibly just outside the pad.
+        double dx = player.posX - (baseX + 0.5D);
+        double dz = player.posZ - (baseZ + 0.5D);
         return dx > -2.5D && dx < 2.5D
                 && player.posY > baseY
                 && player.posY < baseY + 5.0D

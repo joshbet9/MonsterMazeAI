@@ -76,6 +76,8 @@ public final class FirstPadSpeedrunController {
     private boolean routeStartsOnPreviousPad;
     private int previousPadSeedRow = -1;
     private int previousPadSeedColumn = -1;
+    private int previousPadCenterRow = -1;
+    private int previousPadCenterColumn = -1;
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -319,6 +321,8 @@ public final class FirstPadSpeedrunController {
         routeStartsOnPreviousPad = false;
         previousPadSeedRow = -1;
         previousPadSeedColumn = -1;
+        previousPadCenterRow = -1;
+        previousPadCenterColumn = -1;
     }
 
     private boolean buildRoute(LegacyWorldObservation state) {
@@ -335,11 +339,9 @@ public final class FirstPadSpeedrunController {
          * pad as a legal route seed instead of forcing the player's centre
          * back into the old pad's vanished logical-floor representation.
          */
-        boolean standingOnPreviousPad = targetReached
-                && goalRow >= 0
-                && goalColumn >= 0
-                && Math.abs(nominalStartRow - goalRow) <= PAD_RADIUS
-                && Math.abs(nominalStartColumn - goalColumn) <= PAD_RADIUS;
+        boolean standingOnPreviousPad = isPreviousPadSeedAvailable()
+                && Math.abs(nominalStartRow - previousPadCenterRow) <= PAD_RADIUS
+                && Math.abs(nominalStartColumn - previousPadCenterColumn) <= PAD_RADIUS;
 
         int[] physicalStart = findNearestPhysicalStartCell(
                 state, nominalStartRow, nominalStartColumn, standingOnPreviousPad);
@@ -431,15 +433,20 @@ public final class FirstPadSpeedrunController {
             p = parent[p];
         }
 
-        boolean transitioningFromReachedPad = targetReached;
+        boolean transitioningFromReachedPad = targetReached
+                && !routeStartsOnPreviousPad;
         boolean mobReplan = routeLength > 0
                 && goalRow == targetRow
                 && goalColumn == targetColumn
                 && !transitioningFromReachedPad;
 
-        routeStartsOnPreviousPad = standingOnPreviousPad;
-        previousPadSeedRow = standingOnPreviousPad ? startRow : -1;
-        previousPadSeedColumn = standingOnPreviousPad ? startColumn : -1;
+        if (transitioningFromReachedPad) {
+            previousPadCenterRow = goalRow;
+            previousPadCenterColumn = goalColumn;
+        }
+        routeStartsOnPreviousPad = standingOnPreviousPad || transitioningFromReachedPad;
+        previousPadSeedRow = routeStartsOnPreviousPad ? startRow : -1;
+        previousPadSeedColumn = routeStartsOnPreviousPad ? startColumn : -1;
 
         routeRows = newRouteRows;
         routeColumns = newRouteColumns;
@@ -723,13 +730,13 @@ public final class FirstPadSpeedrunController {
         if (Math.abs(state.player.y - state.center.y) > 1.50D) return "vertical";
 
         int nextRow = routeRows[routeIndex + 1], nextColumn = routeColumns[routeIndex + 1];
-        if (!physicalFloorCell(state, nextRow, nextColumn)) return "next-floor";
+        if (!routeCellSupported(state, nextIndex)) return "next-floor";
         if (Math.abs(nextRow - routeRows[routeIndex]) + Math.abs(nextColumn - routeColumns[routeIndex]) != 1)
             return "route-disconnected";
 
         for (int i = routeIndex; i < targetIndex; i++) {
             int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
-            if (!physicalFloorCell(state, r1, c1) || !physicalFloorCell(state, r2, c2)) return "lookahead-floor";
+            if (!routeCellSupported(state, i) || !routeCellSupported(state, i + 1)) return "lookahead-floor";
             if (Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) return "lookahead-disconnected";
         }
 
@@ -823,8 +830,16 @@ public final class FirstPadSpeedrunController {
         if (physicalFloorCell(state, routeRows[index], routeColumns[index])) return true;
         return index == 0
                 && routeStartsOnPreviousPad
-                && routeRows[index] == previousPadSeedRow
-                && routeColumns[index] == previousPadSeedColumn;
+                && previousPadCenterRow >= 0
+                && previousPadCenterColumn >= 0
+                && Math.abs(routeRows[index] - previousPadCenterRow) <= PAD_RADIUS
+                && Math.abs(routeColumns[index] - previousPadCenterColumn) <= PAD_RADIUS;
+    }
+
+    private boolean isPreviousPadSeedAvailable() {
+        return routeStartsOnPreviousPad
+                && previousPadCenterRow >= 0
+                && previousPadCenterColumn >= 0;
     }
 
     private boolean physicalFloorSupportsFootprint(LegacyWorldObservation state,

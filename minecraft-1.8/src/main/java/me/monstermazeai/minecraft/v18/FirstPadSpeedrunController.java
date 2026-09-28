@@ -25,9 +25,15 @@ public final class FirstPadSpeedrunController {
     private static final int PAD_RADIUS = 2;
     private static final float MAX_YAW_STEP = 30.0F;
     private static final float ALIGNMENT_TOLERANCE = 10.0F;
-    private static final float MAX_MOVING_YAW_ERROR = 22.0F;
+    /* Testing-only safety mode: turn in place before forward input. Keep this
+       isolated so the long-term moving controller can remove it cleanly. */
+    private static final boolean TEST_STATIONARY_TURNING = true;
+    private static final float MOVING_YAW_TOLERANCE = 12.0F;
+    private static final int HEADING_STABLE_TICKS = 2;
     private static final int LOOKAHEAD_CELLS = 3;
     private static final double EDGE_GUARD_MARGIN = 0.18D;
+    private static final double EDGE_FORWARD_DOT_MIN = 0.85D;
+    private static final double BOUNDARY_FORWARD_DOT_MIN = 0.95D;
     /*
      * Mobs are hard dynamic obstacles. The planner predicts their short-term
      * position and rejects route cells whose estimated player arrival would
@@ -56,6 +62,7 @@ public final class FirstPadSpeedrunController {
     private boolean aligningForStage;
     private int lastLoggedStage = -1;
     private long startedAtTick = Long.MIN_VALUE;
+    private int headingStableTicks;
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -147,20 +154,24 @@ public final class FirstPadSpeedrunController {
 
         advanceRouteIndex(state);
 
-        if (routeIndex >= routeLength) {
+        if (routeIndex >= routeLength - 1) {
             return LegacyAction.IDLE;
         }
 
         /*
-         * Aim at an actual physical point on the route ahead. This is
-         * deliberately route following, not strategic look-ahead.
+         * The movement controller is edge-driven. The immediate next route
+         * cell is authoritative for the direction we must travel; lookahead
+         * is only used on a straight run after that edge is established.
          */
+        int nextIndex = routeIndex + 1;
         int targetIndex = safeLookaheadIndex();
         double targetWorldX = worldX(routeRows[targetIndex], state.center.x);
         double targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
+        double nextWorldX = worldX(routeRows[nextIndex], state.center.x);
+        double nextWorldZ = worldZ(routeColumns[nextIndex], state.center.z);
 
         float desiredYaw = desiredYawTo(state.player.x, state.player.z,
-                targetWorldX, targetWorldZ);
+                nextWorldX, nextWorldZ);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
@@ -193,25 +204,48 @@ public final class FirstPadSpeedrunController {
                         + "," + routeColumns[Math.min(1, routeLength - 1)]);
             }
 
+            if (routeIndex >= routeLength - 1) {
+                return LegacyAction.IDLE;
+            }
+            nextIndex = routeIndex + 1;
             targetIndex = safeLookaheadIndex();
             targetWorldX = worldX(routeRows[targetIndex], state.center.x);
             targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
+            nextWorldX = worldX(routeRows[nextIndex], state.center.x);
+            nextWorldZ = worldZ(routeColumns[nextIndex], state.center.z);
             desiredYaw = desiredYawTo(state.player.x, state.player.z,
-                    targetWorldX, targetWorldZ);
+                    nextWorldX, nextWorldZ);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         }
 
-        /* Hard movement safety invariant: never sprint while badly misaligned or off-floor. */
-        if (!movementSafetyAllowsForward(state, targetIndex, desiredYaw, yawError)) {
+        /*
+         * Hard movement safety invariant. During testing, large heading errors
+         * are resolved with stationary yaw only. Forward input is permitted
+         * only when the player is aligned with the immediate route edge and
+         * the forward vector agrees with that edge.
+         */
+        boolean safetyOk = movementSafetyAllowsForward(state, targetIndex, desiredYaw, yawError);
+        if (!safetyOk || Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+            headingStableTicks = 0;
             if (state.worldTick % 5L == 0L) {
                 System.out.println("[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
                         + " tick=" + state.worldTick
                         + " routeIndex=" + routeIndex
+                        + " next=" + routeRows[nextIndex] + "," + routeColumns[nextIndex]
                         + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
-                        + " yawError=" + format(yawError));
+                        + " yawError=" + format(yawError)
+                        + " reason=" + (!safetyOk ? "edge-safety" : "heading"));
             }
-            return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
+            if (TEST_STATIONARY_TURNING && Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+                return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
+            }
+            return LegacyAction.IDLE;
+        }
+
+        if (headingStableTicks < HEADING_STABLE_TICKS) {
+            headingStableTicks++;
+            return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
 
         // Deliberately jump-spam: one tick pressed, one tick released.
@@ -223,6 +257,7 @@ public final class FirstPadSpeedrunController {
                     + " pos=" + format(state.player.x) + "," + format(state.player.z)
                     + " route=" + routeIndex + "/" + (routeLength - 1)
                     + " aim=" + targetIndex
+                    + " next=" + routeRows[nextIndex] + "," + routeColumns[nextIndex]
                     + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
                     + " yaw=" + format(state.player.yaw)
                     + " desiredYaw=" + format(desiredYaw)
@@ -247,6 +282,7 @@ public final class FirstPadSpeedrunController {
         aligningForStage = false;
         lastLoggedStage = -1;
         lastLogTick = Long.MIN_VALUE;
+        headingStableTicks = 0;
     }
 
     private boolean buildRoute(LegacyWorldObservation state) {
@@ -597,44 +633,66 @@ public final class FirstPadSpeedrunController {
         if (!inBounds(currentRow, currentColumn) || !state.physicalFloor[currentRow][currentColumn]) {
             return false;
         }
-        // The maze surface is at center.y in the player coordinate system. A
-        // large vertical deviation means the player is falling or has already
-        // left the playable surface; never add horizontal input in that state.
+
+        // center.y is the player's normal feet Y in this adapter. Allow the
+        // normal jump arc, but reject a genuine vertical departure/fall.
         if (Math.abs(state.player.y - state.center.y) > 1.50D) {
             return false;
         }
-        if (Math.abs(yawError) > MAX_MOVING_YAW_ERROR) return false;
+        if (routeIndex >= routeLength - 1 || Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+            return false;
+        }
 
-        int nextIndex = Math.min(routeLength - 1, routeIndex + 1);
-        if (nextIndex <= routeIndex) return true;
-        int nextRow = routeRows[nextIndex], nextColumn = routeColumns[nextIndex];
-        if (!inBounds(nextRow, nextColumn) || !state.physicalFloor[nextRow][nextColumn]) return false;
+        int nextRow = routeRows[routeIndex + 1];
+        int nextColumn = routeColumns[routeIndex + 1];
+        if (!inBounds(nextRow, nextColumn) || !state.physicalFloor[nextRow][nextColumn]) {
+            return false;
+        }
+        if (Math.abs(nextRow - routeRows[routeIndex])
+                + Math.abs(nextColumn - routeColumns[routeIndex]) != 1) {
+            return false;
+        }
 
+        // Every cell between the current route cursor and the lookahead point
+        // must still be physically traversable and contiguous.
         for (int i = routeIndex; i < targetIndex; i++) {
             int r1 = routeRows[i], c1 = routeColumns[i];
             int r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
             if (!inBounds(r1, c1) || !inBounds(r2, c2)
                     || !state.physicalFloor[r1][c1] || !state.physicalFloor[r2][c2]
-                    || Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) return false;
+                    || Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) {
+                return false;
+            }
         }
 
-        double cx = worldX(currentRow, state.center.x);
-        double cz = worldZ(currentColumn, state.center.z);
-        double ox = state.player.x - cx, oz = state.player.z - cz;
-        double tx = worldX(nextRow, state.center.x) - state.player.x;
-        double tz = worldZ(nextColumn, state.center.z) - state.player.z;
-        double len = Math.sqrt(tx * tx + tz * tz);
-        if (len < 1.0E-6D) return false;
-        tx /= len; tz /= len;
+        // Use the discrete route edge, not a point several cells ahead. This
+        // prevents a future corner from pulling the player sideways before the
+        // current edge has actually been traversed.
+        int edgeRow = nextRow - routeRows[routeIndex];
+        int edgeColumn = nextColumn - routeColumns[routeIndex];
+        double edgeX = edgeRow;
+        double edgeZ = edgeColumn;
+        double edgeLength = Math.sqrt(edgeX * edgeX + edgeZ * edgeZ);
+        edgeX /= edgeLength;
+        edgeZ /= edgeLength;
 
-        double boundaryX = 0.5D - Math.abs(ox);
-        double boundaryZ = 0.5D - Math.abs(oz);
+        double rad = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(rad);
+        double forwardZ = Math.cos(rad);
+        double forwardDot = forwardX * edgeX + forwardZ * edgeZ;
+
+        double centerWorldX = worldX(currentRow, state.center.x);
+        double centerWorldZ = worldZ(currentColumn, state.center.z);
+        double offsetX = state.player.x - centerWorldX;
+        double offsetZ = state.player.z - centerWorldZ;
+        double boundaryX = 0.5D - Math.abs(offsetX);
+        double boundaryZ = 0.5D - Math.abs(offsetZ);
+
+        double requiredDot = EDGE_FORWARD_DOT_MIN;
         if (boundaryX < EDGE_GUARD_MARGIN || boundaryZ < EDGE_GUARD_MARGIN) {
-            double rad = Math.toRadians(desiredYaw);
-            double fx = -Math.sin(rad), fz = Math.cos(rad);
-            if (fx * tx + fz * tz < 0.55D) return false;
+            requiredDot = BOUNDARY_FORWARD_DOT_MIN;
         }
-        return true;
+        return forwardDot >= requiredDot;
     }
 
     private int findBestRouteIndexForCurrentPosition(LegacyWorldObservation state,

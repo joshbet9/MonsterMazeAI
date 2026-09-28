@@ -1277,27 +1277,6 @@ public final class FirstPadSpeedrunController {
                 || (dr == 0 && dc == 2);
     }
 
-    private boolean isCurrentEdgeGap(LegacyWorldObservation state) {
-        if (routeRows == null || routeColumns == null
-                || routeIndex < 0 || routeIndex >= routeLength - 1) {
-            return false;
-        }
-
-        int fromRow = routeRows[routeIndex];
-        int fromColumn = routeColumns[routeIndex];
-        int toRow = routeRows[routeIndex + 1];
-        int toColumn = routeColumns[routeIndex + 1];
-
-        int dr = Math.abs(toRow - fromRow);
-        int dc = Math.abs(toColumn - fromColumn);
-        if (!((dr == 2 && dc == 0) || (dr == 0 && dc == 2))) {
-            return false;
-        }
-
-        // Reconfirm the route edge still represents an actual one-block gap.
-        return canTraverseEdge(state, fromRow, fromColumn, toRow, toColumn);
-    }
-
     /**
      * Signed progress along the current route edge, measured in block lengths
      * from the source cell centre. For a two-cell gap, the takeoff boundary is
@@ -1324,32 +1303,23 @@ public final class FirstPadSpeedrunController {
     }
 
     private boolean isGapJumpWindow(LegacyWorldObservation state) {
-        if (!isCurrentEdgeGap(state)) {
-            return false;
-        }
-
+        if (!isCurrentEdgeGap(state)) return false;
         double progress = currentEdgeProgress(state);
         double distanceToTakeoff = 0.50D - progress;
-
-        return gapJumpTriggeredRouteIndex == routeIndex
-                || (distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
-                    && distanceToTakeoff >= -GAP_JUMP_LATE_TOLERANCE);
+        // Allow the controller to approach the missing cell without the normal
+        // floor sweep rejecting the intentionally unsupported middle block.
+        return gapExecutionActive && gapExecutionRouteIndex == routeIndex
+                || (state.player.grounded
+                && distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
+                && distanceToTakeoff >= -GAP_JUMP_LATE_TOLERANCE);
     }
 
     private boolean isGapTraversalActive(LegacyWorldObservation state) {
-        if (!isCurrentEdgeGap(state)
-                || gapJumpTriggeredRouteIndex != routeIndex) {
+        if (!isCurrentEdgeGap(state) || !gapExecutionActive || gapExecutionRouteIndex != routeIndex) {
             return false;
         }
-
         double progress = currentEdgeProgress(state);
-
-        /*
-         * Keep the gap edge active from takeoff until the player has crossed
-         * the missing cell and reached the landing side. Once grounded beyond
-         * the landing threshold, normal route support/recovery checks resume.
-         */
-        return !state.player.grounded || progress < GAP_LANDING_PROGRESS;
+        return gapTakeoffStarted && (!state.player.grounded || progress < GAP_LANDING_PROGRESS);
     }
 
     private boolean isCurrentEdgeGap(LegacyWorldObservation state) {
@@ -1464,8 +1434,11 @@ public final class FirstPadSpeedrunController {
 
         if (state.worldTick % 5L == 0L) log(state.worldTick, "[MonsterMazeAI/1.8] GAP EXECUTE"
                 + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                + " progress=" + format(progress) + " grounded=" + state.player.grounded + " jumpSpam=true");
-        return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                + " progress=" + format(progress) + " grounded=" + state.player.grounded
+                + " jumpSpam=" + gapTakeoffStarted);
+        // Before takeoff: W+sprint only, preserving a straight grounded approach.
+        // From the takeoff boundary onward: W+sprint+jump every tick.
+        return new LegacyAction(1.0f, 0.0f, gapTakeoffStarted, true, 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

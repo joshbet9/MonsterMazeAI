@@ -517,6 +517,7 @@ public final class FirstPadSpeedrunController {
                         log(state.worldTick, "[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
                                 + " tick=" + state.worldTick
                                 + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                + " buildFailure=" + lastRouteBuildFailureReason
                                 + " action=RETRY_FROM_CURRENT_POSITION");
                     }
                 } else if (state.worldTick % 5L == 0L) {

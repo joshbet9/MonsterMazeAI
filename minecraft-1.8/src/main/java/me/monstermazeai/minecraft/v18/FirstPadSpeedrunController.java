@@ -602,9 +602,11 @@ public final class FirstPadSpeedrunController {
          * only when the player is aligned with the immediate route edge and
          * the forward vector agrees with that edge.
          */
-        String safetyReason = movementSafetyFailureReason(state, targetIndex, desiredYaw, yawError);
+        float commandedYaw = normalise(state.player.yaw + yawDelta);
+        String safetyReason = movementSafetyFailureReason(
+                state, targetIndex, desiredYaw, yawError, commandedYaw);
         boolean safetyOk = safetyReason == null;
-        if (!safetyOk || Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+        if (!safetyOk) {
             headingStableTicks = 0;
             if (state.worldTick % 5L == 0L) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
@@ -614,9 +616,15 @@ public final class FirstPadSpeedrunController {
                         + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
                         + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " yawError=" + format(yawError)
-                        + " reason=" + (!safetyOk ? safetyReason : "heading"));
+                        + " commandedYaw=" + format(commandedYaw)
+                        + " reason=" + safetyReason);
             }
-            if (TEST_STATIONARY_TURNING && Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+            /*
+             * A hard floor/physics failure still stops forward input. A large
+             * turn remains stationary only when the commanded heading itself
+             * cannot be made safe in the same tick.
+             */
+            if (Math.abs(yawError) > MOVING_YAW_TOLERANCE && TEST_STATIONARY_TURNING) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
             return LegacyAction.IDLE;
@@ -1624,7 +1632,11 @@ public final class FirstPadSpeedrunController {
         double edgeX = edgeRow, edgeZ = edgeColumn;
         double edgeLength = Math.sqrt(edgeX * edgeX + edgeZ * edgeZ);
         edgeX /= edgeLength; edgeZ /= edgeLength;
-        double rad = Math.toRadians(state.player.yaw);
+        /*
+         * Evaluate the sweep against the yaw that will be in effect after this
+         * tick's turn command, rather than the stale pre-turn yaw.
+         */
+        double rad = Math.toRadians(commandedYaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
         if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
 
@@ -1998,12 +2010,3 @@ public final class FirstPadSpeedrunController {
                                              int toRow, int toColumn) {
         double dx = toRow - fromRow;
         double dz = toColumn - fromColumn;
-        return (float) Math.toDegrees(Math.atan2(-dx, dz));
-    }
-
-    private static int row(double world, int center) {
-        return (int) Math.floor(world - (center - 49));
-    }
-
-    private static double worldX(int routeRow, int centerX) {
-        return (centerX - 49) + routeRow + 0.5D;

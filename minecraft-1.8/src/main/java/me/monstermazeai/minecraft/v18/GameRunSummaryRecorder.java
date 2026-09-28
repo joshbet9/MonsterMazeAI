@@ -183,6 +183,20 @@ public final class GameRunSummaryRecorder {
         return report;
     }
 
+    public void controllerEvent(long tick, String event) {
+        if (!active || event == null || event.length() == 0) return;
+        String clean = event.replace("\n", " ").replace("\r", " ");
+        /*
+         * Controller events are the causal layer: they explain what the
+         * movement policy decided, not merely what the Minecraft world looked
+         * like. Strip the common console prefix to keep the GPT report compact.
+         */
+        if (clean.startsWith("[MonsterMazeAI/1.8] ")) {
+            clean = clean.substring("[MonsterMazeAI/1.8] ".length());
+        }
+        addEvent(tick, "CTRL " + clean);
+    }
+
     public boolean isActive() {
         return active;
     }

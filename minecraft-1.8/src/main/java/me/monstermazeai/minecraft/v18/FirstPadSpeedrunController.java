@@ -520,9 +520,11 @@ public final class FirstPadSpeedrunController {
          * rebuilding from that cell cannot retroactively undo the collision.
          */
         for (int i = routeIndex + 1; i <= end; i++) {
-            double arrivalTicks = (i - routeIndex) * ESTIMATED_TICKS_PER_CELL;
-            if (isMobBlockedAtArrival(state,
-                    routeRows[i], routeColumns[i], arrivalTicks)) {
+            double startTicks = (i - routeIndex - 1) * ESTIMATED_TICKS_PER_CELL;
+            if (isMobBlockedAlongEdge(state,
+                    routeRows[i - 1], routeColumns[i - 1],
+                    routeRows[i], routeColumns[i],
+                    startTicks)) {
                 return true;
             }
         }

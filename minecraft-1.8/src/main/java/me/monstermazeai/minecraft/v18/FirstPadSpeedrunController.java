@@ -597,6 +597,12 @@ public final class FirstPadSpeedrunController {
         if (!inBounds(currentRow, currentColumn) || !state.physicalFloor[currentRow][currentColumn]) {
             return false;
         }
+        // The maze surface is at center.y in the player coordinate system. A
+        // large vertical deviation means the player is falling or has already
+        // left the playable surface; never add horizontal input in that state.
+        if (Math.abs(state.player.y - state.center.y) > 1.50D) {
+            return false;
+        }
         if (Math.abs(yawError) > MAX_MOVING_YAW_ERROR) return false;
 
         int nextIndex = Math.min(routeLength - 1, routeIndex + 1);

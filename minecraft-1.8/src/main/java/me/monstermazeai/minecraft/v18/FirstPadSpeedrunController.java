@@ -285,7 +285,47 @@ public final class FirstPadSpeedrunController {
         }
 
         if (routeIndex >= routeLength - 1) {
-            return LegacyAction.IDLE;
+            /*
+             * Reaching the last route cell is NOT pad completion. The only
+             * success condition was established at the top of next(): the
+             * observed SafePad geometry must actually contain the player.
+             *
+             * If the route has legitimately brought us to the target cell,
+             * perform a short final approach toward the real pad centre rather
+             * than silently returning IDLE. If we are not close enough for a
+             * final approach, discard the stale route and replan from the
+             * player's actual position.
+             */
+            double padCenterX = (state.center.x - 49) + state.pad.row + 0.5D;
+            double padCenterZ = (state.center.z - 49) + state.pad.column + 0.5D;
+            double padDistance = Math.hypot(
+                    state.player.x - padCenterX,
+                    state.player.z - padCenterZ);
+
+            if (padDistance <= 3.50D && physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z)) {
+                return finalPadApproachAction(state, padCenterX, padCenterZ, padDistance);
+            }
+
+            log(state.worldTick, "[MonsterMazeAI/1.8] ROUTE END WITHOUT PAD"
+                    + " tick=" + state.worldTick
+                    + " routeIndex=" + routeIndex + "/" + (routeLength - 1)
+                    + " player=" + format(state.player.x) + "," + format(state.player.z)
+                    + " pad=" + state.pad.row + "," + state.pad.column
+                    + " padDistance=" + format(padDistance)
+                    + " action=REPLAN");
+            routeLength = 0;
+            routeIndex = 0;
+            aligningForStage = false;
+            if (!buildRoute(state)) {
+                if (beginRecovery(state)) {
+                    return recoveryAction(state);
+                }
+                return LegacyAction.IDLE;
+            }
+            if (routeLength <= 1) {
+                return finalPadApproachAction(state, padCenterX, padCenterZ, padDistance);
+            }
         }
 
         /*
@@ -1164,12 +1204,13 @@ public final class FirstPadSpeedrunController {
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {
-        /* If the player is already materially closer to a later route waypoint,
-           re-anchor the index before applying the normal edge-progress rule. */
-        int nearest = findBestRouteIndexForCurrentPosition(state, routeRows, routeColumns, routeLength);
-        if (nearest > routeIndex + 1) {
-            routeIndex = nearest;
-        }
+        /*
+         * Route progress must be based on the player's actual position on the
+         * current edge. Never jump to the globally nearest later waypoint:
+         * during a fast run that can select the final pad cell while the player
+         * is still one or more blocks short, causing a false route completion
+         * and an IDLE command even though the SafePad was never reached.
+         */
         while (routeIndex < routeLength - 1) {
             double ax = worldX(routeRows[routeIndex], state.center.x);
             double az = worldZ(routeColumns[routeIndex], state.center.z);
@@ -1177,11 +1218,15 @@ public final class FirstPadSpeedrunController {
             double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
             double ex = bx - ax, ez = bz - az;
             double lengthSquared = ex * ex + ez * ez;
-            if (lengthSquared <= 1.0E-9D) { routeIndex++; continue; }
+            if (lengthSquared <= 1.0E-9D) {
+                routeIndex++;
+                continue;
+            }
 
             double px = state.player.x - ax, pz = state.player.z - az;
             double progress = (px * ex + pz * ez) / lengthSquared;
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
+
             if ((progress >= ROUTE_ADVANCE_PROGRESS || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
                     && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
                 routeIndex++;
@@ -1199,11 +1244,92 @@ public final class FirstPadSpeedrunController {
         double dx = state.player.x - x;
         double dz = state.player.z - z;
 
+        /*
+         * This predicate answers "has the PLAYER captured the next waypoint?",
+         * not "does the waypoint itself have physical floor?". The old fallback
+         * checked physicalFloorSupportsFootprint() at the waypoint coordinates,
+         * which is true for every valid route cell regardless of where the
+         * player actually is. That allowed routeIndex to advance while the
+         * player was still a block short of the pad.
+         */
         if (dx * dx + dz * dz <= ROUTE_WAYPOINT_CAPTURE_RADIUS * ROUTE_WAYPOINT_CAPTURE_RADIUS) {
             return true;
         }
 
-        return physicalFloorSupportsFootprint(state, x, z);
+        return playerFootprintOverlapsCell(
+                state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
+    }
+
+    private boolean playerFootprintOverlapsCell(LegacyWorldObservation state,
+                                                 int targetRow, int targetColumn,
+                                                 double minimumArea) {
+        double minX = state.player.x - PLAYER_HALF_WIDTH;
+        double maxX = state.player.x + PLAYER_HALF_WIDTH;
+        double minZ = state.player.z - PLAYER_HALF_WIDTH;
+        double maxZ = state.player.z + PLAYER_HALF_WIDTH;
+
+        double cellMinX = (state.center.x - 49) + targetRow;
+        double cellMaxX = cellMinX + 1.0D;
+        double cellMinZ = (state.center.z - 49) + targetColumn;
+        double cellMaxZ = cellMinZ + 1.0D;
+
+        double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
+        double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
+        return overlapX > 0.0D && overlapZ > 0.0D
+                && overlapX * overlapZ >= minimumArea;
+    }
+
+    private LegacyAction finalPadApproachAction(LegacyWorldObservation state,
+                                                   double padCenterX,
+                                                   double padCenterZ,
+                                                   double padDistance) {
+        if (state.pad.reached || isInsidePad(state)) {
+            return LegacyAction.IDLE;
+        }
+
+        if (padDistance > 3.50D) {
+            return LegacyAction.IDLE;
+        }
+
+        double dx = padCenterX - state.player.x;
+        double dz = padCenterZ - state.player.z;
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float yawError = normalise(desiredYaw - state.player.yaw);
+
+        if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
+            float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+            if (state.worldTick % 5L == 0L) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] PAD FINAL ALIGN"
+                        + " tick=" + state.worldTick
+                        + " pad=" + state.pad.row + "," + state.pad.column
+                        + " distance=" + format(padDistance)
+                        + " yawError=" + format(yawError));
+            }
+            return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
+        }
+
+        double rad = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(rad);
+        double forwardZ = Math.cos(rad);
+        if (!physicalFloorSupportsFootprint(
+                state,
+                state.player.x + forwardX * SAFETY_PROBE_DISTANCE,
+                state.player.z + forwardZ * SAFETY_PROBE_DISTANCE)) {
+            if (beginRecovery(state)) {
+                return recoveryAction(state);
+            }
+            return LegacyAction.IDLE;
+        }
+
+        boolean jumpPulse = (state.worldTick & 1L) == 0L;
+        if (state.worldTick % 5L == 0L) {
+            log(state.worldTick, "[MonsterMazeAI/1.8] PAD FINAL APPROACH"
+                    + " tick=" + state.worldTick
+                    + " pad=" + state.pad.row + "," + state.pad.column
+                    + " distance=" + format(padDistance)
+                    + " yaw=" + format(state.player.yaw));
+        }
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, 0.0f, false);
     }
 
     private boolean isInsidePad(LegacyWorldObservation state) {

@@ -248,6 +248,23 @@ public final class FirstPadSpeedrunController {
                 || goalRow != state.pad.row || goalColumn != state.pad.column
                 || routeLength == 0) {
             if (!buildRoute(state)) {
+                /*
+                 * An active-pad transition is a mandatory route-build event.
+                 * Do not consume the transition by clearing its pending flag,
+                 * and do not silently convert a failed build into a permanent
+                 * IDLE state. buildRoute() records the exact dynamic/static
+                 * failure reason; leave routeLength at zero so the next tick
+                 * retries from the still-valid previous SafePad seed.
+                 */
+                if (activePadTransitionPending && state.worldTick % 5L == 0L) {
+                    log(state.worldTick, "[MonsterMazeAI/1.8] PAD TRANSITION ROUTE FAILED"
+                            + " tick=" + state.worldTick
+                            + " old=" + previousPadCenterRow + "," + previousPadCenterColumn
+                            + " new=" + state.pad.row + "," + state.pad.column
+                            + " player=" + format(state.player.x) + "," + format(state.player.z)
+                            + " buildFailure=" + lastRouteBuildFailureReason
+                            + " action=RETRY_NEXT_TICK");
+                }
                 return LegacyAction.IDLE;
             }
             if (activePadTransitionPending) {
@@ -1342,8 +1359,27 @@ public final class FirstPadSpeedrunController {
                                     int fromRow, int fromColumn,
                                     int toRow, int toColumn) {
         if (!inBounds(fromRow, fromColumn) || !inBounds(toRow, toColumn)
-                || !state.physicalFloor[fromRow][fromColumn]
                 || !state.physicalFloor[toRow][toColumn]) {
+            return false;
+        }
+
+        /*
+         * At an active-pad transition the player is still physically standing
+         * on the previous SafePad, but ObservationWorldModel intentionally
+         * represents the NEW active pad as physicalFloor and may already have
+         * restored the old pad's 5x5 area to the underlying maze. The previous
+         * pad is nevertheless a real physical launch surface for this route.
+         *
+         * Allow exactly that synthetic route seed as the source of the first
+         * edge. Do not generalise this to arbitrary non-floor cells: every
+         * subsequent route node must be ordinary physical floor (or a genuine
+         * gap endpoint).
+         */
+        boolean previousPadSource = routeStartsOnPreviousPad
+                && fromRow == previousPadCenterRow
+                && fromColumn == previousPadCenterColumn;
+
+        if (!state.physicalFloor[fromRow][fromColumn] && !previousPadSource) {
             return false;
         }
 

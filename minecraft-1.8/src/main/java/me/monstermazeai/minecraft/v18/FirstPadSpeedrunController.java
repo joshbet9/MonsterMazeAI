@@ -30,7 +30,8 @@ public final class FirstPadSpeedrunController {
     private static final boolean TEST_STATIONARY_TURNING = true;
     private static final float MOVING_YAW_TOLERANCE = 12.0F;
     private static final int HEADING_STABLE_TICKS = 0;
-    private static final double SAFETY_PROBE_DISTANCE = 0.34D;
+    private static final double SAFETY_PROBE_DISTANCE = 0.48D;
+    private static final double SAFETY_SWEEP_STEP = 0.10D;
     private static final double PLAYER_HALF_WIDTH = 0.30D;
     private static final double ROUTE_ADVANCE_PROGRESS = 0.80D;
     private static final double ROUTE_WAYPOINT_CAPTURE_RADIUS = 0.65D;
@@ -72,6 +73,9 @@ public final class FirstPadSpeedrunController {
     private long startedAtTick = Long.MIN_VALUE;
     private int headingStableTicks;
     private long lastFailedMobReplanTick = Long.MIN_VALUE;
+    private boolean routeStartsOnPreviousPad;
+    private int previousPadSeedRow = -1;
+    private int previousPadSeedColumn = -1;
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -247,8 +251,7 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
-         * Hard movement safety invariant. During testing, large heading errors
-         * are resolved with stationary yaw only. Forward input is permitted
+         * Hard movement safety invariant. During testing, large heading errors         * are resolved with stationary yaw only. Forward input is permitted
          * only when the player is aligned with the immediate route edge and
          * the forward vector agrees with that edge.
          */
@@ -313,6 +316,9 @@ public final class FirstPadSpeedrunController {
         lastLogTick = Long.MIN_VALUE;
         headingStableTicks = 0;
         lastFailedMobReplanTick = Long.MIN_VALUE;
+        routeStartsOnPreviousPad = false;
+        previousPadSeedRow = -1;
+        previousPadSeedColumn = -1;
     }
 
     private boolean buildRoute(LegacyWorldObservation state) {
@@ -431,6 +437,10 @@ public final class FirstPadSpeedrunController {
                 && goalColumn == targetColumn
                 && !transitioningFromReachedPad;
 
+        routeStartsOnPreviousPad = standingOnPreviousPad;
+        previousPadSeedRow = standingOnPreviousPad ? startRow : -1;
+        previousPadSeedColumn = standingOnPreviousPad ? startColumn : -1;
+
         routeRows = newRouteRows;
         routeColumns = newRouteColumns;
         routeLength = count;
@@ -497,8 +507,7 @@ public final class FirstPadSpeedrunController {
         }
 
         if (arrivalTicks + 1.0E-6D >= bestArrivalTicks[next]) {
-            return currentGoal;
-        }
+            return currentGoal;        }
 
         bestArrivalTicks[next] = arrivalTicks;
         parent[next] = node.index;
@@ -665,10 +674,11 @@ public final class FirstPadSpeedrunController {
     private boolean routeNeedsPhysicalReplan(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) return false;
         int next = routeIndex + 1;
-        if (!physicalFloorCell(state, routeRows[next], routeColumns[next])) return true;
+        if (!routeCellSupported(state, routeIndex)) return true;
+        if (!routeCellSupported(state, next)) return true;
         int end = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
         for (int i = routeIndex; i <= end; i++) {
-            if (!physicalFloorCell(state, routeRows[i], routeColumns[i])) return true;
+            if (!routeCellSupported(state, i)) return true;
             if (i > routeIndex && Math.abs(routeRows[i] - routeRows[i - 1])
                     + Math.abs(routeColumns[i] - routeColumns[i - 1]) != 1) return true;
         }
@@ -743,9 +753,22 @@ public final class FirstPadSpeedrunController {
          * Safe Pad, where the current cell may still be the previous pad but
          * the next cell is the first normal maze cell.
          */
-        double probeX = state.player.x + forwardX * SAFETY_PROBE_DISTANCE;
-        double probeZ = state.player.z + forwardZ * SAFETY_PROBE_DISTANCE;
-        if (!physicalFloorSupportsFootprint(state, probeX, probeZ)) return "predicted-floor";
+        /*
+         * Sweep the continuous player footprint through the short movement
+         * envelope. This permits legitimate logical-cell boundary crossing
+         * while preventing an endpoint-only check from skipping an unsupported
+         * section of floor.
+         */
+        int lastSupportedRouteIndex = Math.min(targetIndex, routeLength - 1);
+        for (double distance = SAFETY_SWEEP_STEP;
+             distance <= SAFETY_PROBE_DISTANCE + 1.0E-9D;
+             distance += SAFETY_SWEEP_STEP) {
+            double probeX = state.player.x + forwardX * distance;
+            double probeZ = state.player.z + forwardZ * distance;
+            if (!routeSupportsFootprint(state, probeX, probeZ, lastSupportedRouteIndex)) {
+                return "predicted-floor";
+            }
+        }
         return null;
     }
 
@@ -761,6 +784,49 @@ public final class FirstPadSpeedrunController {
      * every-corner checks reject legitimate boundary traversal and were the
      * source of the old "must be in the middle of the block" deadlock.
      */
+    private boolean routeSupportsFootprint(LegacyWorldObservation state,
+                                            double x, double z,
+                                            int maxRouteIndex) {
+        double minX = x - PLAYER_HALF_WIDTH;
+        double maxX = x + PLAYER_HALF_WIDTH;
+        double minZ = z - PLAYER_HALF_WIDTH;
+        double maxZ = z + PLAYER_HALF_WIDTH;
+
+        int minRow = row(minX, state.center.x);
+        int maxRow = row(maxX - 1.0E-9D, state.center.x);
+        int minColumn = row(minZ, state.center.z);
+        int maxColumn = row(maxZ - 1.0E-9D, state.center.z);
+
+        int end = Math.min(maxRouteIndex, routeLength - 1);
+        for (int i = routeIndex; i <= end; i++) {
+            if (!routeCellSupported(state, i)) continue;
+
+            int r = routeRows[i];
+            int c = routeColumns[i];
+            double cellMinX = (state.center.x - 49) + r;
+            double cellMaxX = cellMinX + 1.0D;
+            double cellMinZ = (state.center.z - 49) + c;
+            double cellMaxZ = cellMinZ + 1.0D;
+
+            double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
+            double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
+            if (overlapX > 0.0D && overlapZ > 0.0D
+                    && overlapX * overlapZ >= 0.05D) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean routeCellSupported(LegacyWorldObservation state, int index) {
+        if (index < 0 || index >= routeLength) return false;
+        if (physicalFloorCell(state, routeRows[index], routeColumns[index])) return true;
+        return index == 0
+                && routeStartsOnPreviousPad
+                && routeRows[index] == previousPadSeedRow
+                && routeColumns[index] == previousPadSeedColumn;
+    }
+
     private boolean physicalFloorSupportsFootprint(LegacyWorldObservation state,
                                                     double x, double z) {
         double minX = x - PLAYER_HALF_WIDTH;
@@ -821,12 +887,28 @@ public final class FirstPadSpeedrunController {
             double px = state.player.x - ax, pz = state.player.z - az;
             double progress = (px * ex + pz * ez) / lengthSquared;
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
-            if (progress >= ROUTE_ADVANCE_PROGRESS || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS) {
+            if ((progress >= ROUTE_ADVANCE_PROGRESS || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
+                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
                 routeIndex++;
             } else {
                 break;
             }
         }
+    }
+
+    private boolean routeEdgeHasPhysicalCapture(LegacyWorldObservation state, int nextIndex) {
+        if (nextIndex < 0 || nextIndex >= routeLength) return false;
+
+        double x = worldX(routeRows[nextIndex], state.center.x);
+        double z = worldZ(routeColumns[nextIndex], state.center.z);
+        double dx = state.player.x - x;
+        double dz = state.player.z - z;
+
+        if (dx * dx + dz * dz <= ROUTE_WAYPOINT_CAPTURE_RADIUS * ROUTE_WAYPOINT_CAPTURE_RADIUS) {
+            return true;
+        }
+
+        return physicalFloorSupportsFootprint(state, x, z);
     }
 
     private boolean isInsidePad(LegacyWorldObservation state) {

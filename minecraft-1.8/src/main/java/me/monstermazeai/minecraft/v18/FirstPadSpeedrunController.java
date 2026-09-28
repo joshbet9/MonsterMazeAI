@@ -185,38 +185,64 @@ public final class FirstPadSpeedrunController {
         boolean activePadChanged = lastActivePadRow >= 0
                 && (state.pad.row != lastActivePadRow
                 || state.pad.column != lastActivePadColumn);
-        if (activePadChanged) {
-            previousPadCenterRow = lastActivePadRow;
-            previousPadCenterColumn = lastActivePadColumn;
-            routeStartsOnPreviousPad = true;
+
+        /*
+         * The controller must treat the observed active-pad identity as the
+         * source of truth even if the previous observation was lost/reset.
+         * goalRow/goalColumn is therefore a second transition detector: if the
+         * server has already advanced the active pad but lastActivePad* was
+         * unavailable, we still must not leave targetReached latched.
+         */
+        boolean targetIdentityChanged = goalRow >= 0
+                && (state.pad.row != goalRow || state.pad.column != goalColumn);
+
+        if (activePadChanged || targetIdentityChanged) {
+            int oldRow = activePadChanged
+                    ? lastActivePadRow : goalRow;
+            int oldColumn = activePadChanged
+                    ? lastActivePadColumn : goalColumn;
+
+            /*
+             * Only a real previous active pad is a valid synthetic route seed.
+             * If the controller lost its observation history, do not invent
+             * one; buildRoute() will start from the player's actual position.
+             */
+            if (oldRow >= 0 && oldColumn >= 0
+                    && (oldRow != state.pad.row || oldColumn != state.pad.column)) {
+                previousPadCenterRow = oldRow;
+                previousPadCenterColumn = oldColumn;
+                routeStartsOnPreviousPad = true;
+            }
+
             activePadTransitionPending = true;
             targetReached = false;
             routeLength = 0;
             routeIndex = 0;
             aligningForStage = false;
+
             log(state.worldTick, "[MonsterMazeAI/1.8] PAD TRANSITION"
                     + " tick=" + state.worldTick
-                    + " old=" + lastActivePadRow + "," + lastActivePadColumn
+                    + " old=" + oldRow + "," + oldColumn
                     + " new=" + state.pad.row + "," + state.pad.column
                     + " player=" + format(state.player.x) + "," + format(state.player.z)
-                    + " previousPadSeed=true");
+                    + " previousPadSeed=" + routeStartsOnPreviousPad);
         }
         lastActivePadRow = state.pad.row;
         lastActivePadColumn = state.pad.column;
 
         /*
-         * A mob can knock the player off an otherwise valid SafePad while the
-         * server is still in the same phase. targetReached is not permission
-         * to remain idle forever: if the player leaves the pad, the controller
-         * must resume from the player's actual position. This is especially
-         * important when the pad subsequently deteriorates and its physical
-         * 5x5 surface is restored to the underlying maze.
+         * Being previously on a SafePad is never a permission to remain idle
+         * after the player is no longer on it. This recovery is deliberately
+         * unconditional with respect to activePadChanged: it makes targetReached
+         * a self-healing state rather than a latch.
          */
-        if (targetReached && !atTarget && !activePadChanged) {
+        if (targetReached && !atTarget) {
             targetReached = false;
             routeLength = 0;
             routeIndex = 0;
             aligningForStage = false;
+            activePadTransitionPending = activePadTransitionPending
+                    || (goalRow >= 0 && (state.pad.row != goalRow || state.pad.column != goalColumn));
             log(state.worldTick, "[MonsterMazeAI/1.8] PAD EXIT RECOVERY"
                     + " tick=" + state.worldTick
                     + " player=" + format(state.player.x) + "," + format(state.player.z)

@@ -1497,11 +1497,7 @@ public final class FirstPadSpeedrunController {
             return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
-        /*
-         * Evaluate the sweep against the yaw that will be in effect after this
-         * tick's turn command, rather than the stale pre-turn yaw.
-         */
-        double rad = Math.toRadians(commandedYaw);
+        double rad = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
         double lateralVelocity = Math.abs(state.player.vx * forwardZ - state.player.vz * forwardX);
         if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
@@ -1632,7 +1628,13 @@ public final class FirstPadSpeedrunController {
         double edgeX = edgeRow, edgeZ = edgeColumn;
         double edgeLength = Math.sqrt(edgeX * edgeX + edgeZ * edgeZ);
         edgeX /= edgeLength; edgeZ /= edgeLength;
-        double rad = Math.toRadians(state.player.yaw);
+        /*
+         * Evaluate the forward-vector guard against the yaw that will be in
+         * effect after this tick's turn command. A moving turn is therefore
+         * safe when the post-turn direction is safe, without requiring a
+         * full stop merely to rotate.
+         */
+        double rad = Math.toRadians(commandedYaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
         if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
 
@@ -1813,7 +1815,10 @@ public final class FirstPadSpeedrunController {
                                                   int targetIndex,
                                                   float desiredYaw,
                                                   float yawError) {
-        return movementSafetyFailureReason(state, targetIndex, desiredYaw, yawError) == null;
+        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw), -MAX_YAW_STEP, MAX_YAW_STEP);
+        float commandedYaw = normalise(state.player.yaw + yawDelta);
+        return movementSafetyFailureReason(
+                state, targetIndex, desiredYaw, yawError, commandedYaw) == null;
     }
 
     private int findBestRouteIndexForCurrentPosition(LegacyWorldObservation state,

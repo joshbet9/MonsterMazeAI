@@ -31,9 +31,12 @@ public final class FirstPadSpeedrunController {
     private static final float MOVING_YAW_TOLERANCE = 12.0F;
     private static final int HEADING_STABLE_TICKS = 2;
     private static final int LOOKAHEAD_CELLS = 3;
-    private static final double EDGE_GUARD_MARGIN = 0.18D;
+    /*
+     * Forward alignment is a route-direction safety check, not a logical-cell
+     * boundary check. A player can legitimately be near any 1x1 cell boundary
+     * while still standing on safe physical floor (especially on a 5x5 pad).
+     */
     private static final double EDGE_FORWARD_DOT_MIN = 0.85D;
-    private static final double BOUNDARY_FORWARD_DOT_MIN = 0.95D;
     /*
      * Mobs are hard dynamic obstacles. The planner predicts their short-term
      * position and rejects route cells whose estimated player arrival would
@@ -681,18 +684,17 @@ public final class FirstPadSpeedrunController {
         double forwardZ = Math.cos(rad);
         double forwardDot = forwardX * edgeX + forwardZ * edgeZ;
 
-        double centerWorldX = worldX(currentRow, state.center.x);
-        double centerWorldZ = worldZ(currentColumn, state.center.z);
-        double offsetX = state.player.x - centerWorldX;
-        double offsetZ = state.player.z - centerWorldZ;
-        double boundaryX = 0.5D - Math.abs(offsetX);
-        double boundaryZ = 0.5D - Math.abs(offsetZ);
-
-        double requiredDot = EDGE_FORWARD_DOT_MIN;
-        if (boundaryX < EDGE_GUARD_MARGIN || boundaryZ < EDGE_GUARD_MARGIN) {
-            requiredDot = BOUNDARY_FORWARD_DOT_MIN;
-        }
-        return forwardDot >= requiredDot;
+        /*
+         * Do not use distance from the centre of the current logical cell as
+         * an edge-safety signal. Logical cell boundaries are not maze edges:
+         * the player naturally crosses them while traversing valid floor, and
+         * the 5x5 Safe Pad contains several such boundaries.
+         *
+         * Physical-floor checks above are the authoritative topology guard;
+         * this dot product only ensures that forward input agrees with the
+         * immediate route edge.
+         */
+        return forwardDot >= EDGE_FORWARD_DOT_MIN;
     }
 
     private int findBestRouteIndexForCurrentPosition(LegacyWorldObservation state,

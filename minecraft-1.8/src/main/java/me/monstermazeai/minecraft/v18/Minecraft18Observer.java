@@ -108,7 +108,7 @@ public final class Minecraft18Observer {
         boolean mazeDetected = cachedMazeDetected && center != null;
         boolean[][] physicalFloor = buildPhysicalFloor(world, center, raw, pad);
 
-        boolean inMonsterMaze = mazeScoreboard || mazeDetected || pad != null;
+        boolean inMonsterMaze = !player.isSpectator() && (mazeScoreboard || mazeDetected || pad != null);
         if (inMonsterMaze && !previouslyInMonsterMaze) {
             gameStartWorldTick = world.getTotalWorldTime();
         } else if (!inMonsterMaze) {
@@ -125,8 +125,8 @@ public final class Minecraft18Observer {
         int liveSeconds = gameStartWorldTick < 0
                 ? 0
                 : (int) Math.max(0, (worldTick - gameStartWorldTick) / 20L);
-        boolean alive = player.getHealth() > 0.0F;
-        boolean completed = scoreboard.completed;
+        boolean alive = player.getHealth() > 0.0F && !player.isSpectator();
+        boolean completed = scoreboard.completed || player.isSpectator();
         boolean matchedMaze = inMonsterMaze && !completed;
 
         List<String> displayNames = new ArrayList<String>();
@@ -285,8 +285,13 @@ public final class Minecraft18Observer {
 
         // Exact SafePad.isOn() semantics from the source plugin:
         // dx > -2.5, dx < 2.5, dz > -2.5, dz < 2.5, y > padY, y < padY+5.
-        double dx = player.posX - (baseX + 0.0D);
-        double dz = player.posZ - (baseZ + 0.0D);
+        // SafePad is constructed from MazeGenerator's path location,
+        // which is the centre of the block: world block coordinate + 0.5.
+        // Using the integer block corner here makes the reported 5x5 pad
+        // one half-block too far toward negative X/Z and can falsely report
+        // a player as reached while they are visibly just outside the pad.
+        double dx = player.posX - (baseX + 0.5D);
+        double dz = player.posZ - (baseZ + 0.5D);
         return dx > -2.5D && dx < 2.5D
                 && player.posY > baseY
                 && player.posY < baseY + 5.0D
@@ -324,14 +329,41 @@ public final class Minecraft18Observer {
 
     private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
         if (cachedCenter != null && cachedMazeDetected) {
+            /*
+             * Once a complete authoritative maze layout has been identified,
+             * the centre is stable for the entire round. Do not revalidate the
+             * centre marker every tick: Monster Maze deliberately mutates the
+             * centre safe zone during deterioration, so the marker can cease
+             * matching even though the player is still inside the same 99x99
+             * arena. Losing the centre here destroys the world-to-maze
+             * coordinate frame and can stop an otherwise valid run.
+             *
+             * Y remains a useful sanity check because a teleport/death to a
+             * different vertical layer is a genuine round boundary signal.
+             */
+            /*
+             * Do not discard the round coordinate frame for ordinary jump or
+             * mob-knockback height changes. The server's centre is fixed for
+             * the live round, and centre deterioration changes its blocks after
+             * ~20s. A previous 3-block threshold caused a player briefly at
+             * Y=69 to invalidate the cache; rediscovery then failed because
+             * the centre-safe-zone had already deteriorated.
+             *
+             * Only a very large vertical displacement is treated as evidence
+             * that the player has actually left this arena. The normal fall
+             * / elimination path is handled by the server and by the live
+             * player state; keeping the coordinate frame here lets the AI
+             * recover from temporary vertical knockback without re-matching
+             * destroyed centre geometry.
+             */
             int playerY = player.getPosition().getY();
-            if (Math.abs(playerY - cachedCenter.getY()) <= 3
-                    && matchesCenterAnchor(world, cachedCenter)) {
+            if (Math.abs(playerY - cachedCenter.getY()) <= 20) {
                 return cachedCenter;
             }
             System.out.println("[MonsterMazeAI/1.8] CENTER CACHE INVALID old="
                     + cachedCenter.getX() + "," + cachedCenter.getY() + "," + cachedCenter.getZ()
-                    + " player=" + player.posX + "," + player.posY + "," + player.posZ);
+                    + " player=" + player.posX + "," + player.posY + "," + player.posZ
+                    + " reason=vertical-mismatch");
             cachedCenter = null;
             cachedMazeDetected = false;
             cachedMazePattern = -1;

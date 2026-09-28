@@ -21,8 +21,10 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private long applyCount;
     private boolean abilityPulsePending;
     private boolean yawPulsePending;
+    private float pendingYawDelta;
     private long actionExpiryTick = Long.MIN_VALUE;
-    private static final long MAX_COMMAND_HOLD_TICKS = 20L;
+    /** First-pad branch commands are one client tick intents; never hold stale movement. */
+    private static final long MAX_COMMAND_HOLD_TICKS = 1L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -51,11 +53,12 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         currentAction = next;
 
         /*
-         * forward/strafe/jump/sprint are held inputs, but yawDelta is a
-         * per-command cursor step. The command itself may remain active for
-         * several ticks; applying the same yawDelta on every tick would turn
-         * 12 degrees into 240 degrees over a 20-tick hold.
+         * forward/strafe/jump/sprint are held inputs for this client tick,
+         * while yawDelta is a per-command cursor step. Binding the yaw value
+         * to the command snapshot prevents a later command from replacing the
+         * pulse before MovementInput consumes it.
          */
+        pendingYawDelta = next.yawDelta;
         yawPulsePending = next.yawDelta != 0.0f;
 
         actionExpiryTick = currentTick == Long.MAX_VALUE
@@ -80,15 +83,16 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     public synchronized float consumeYawPulse() {
         if (!yawPulsePending) return 0.0f;
         yawPulsePending = false;
-        return currentAction.yawDelta;
+        return pendingYawDelta;
     }
 
-    /** Called from the END phase; the command was therefore available for the tick just completed. */
+    /** Expire a one-tick command after the client tick that consumed it. */
     public synchronized void expireIfNeeded(long currentTick) {
         if (actionExpiryTick != Long.MAX_VALUE && currentTick >= actionExpiryTick) {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;
             yawPulsePending = false;
+            pendingYawDelta = 0.0f;
             actionExpiryTick = Long.MIN_VALUE;
         }
     }
@@ -110,6 +114,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;
             yawPulsePending = false;
+            pendingYawDelta = 0.0f;
             actionExpiryTick = Long.MIN_VALUE;
         }
     }
@@ -119,6 +124,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         currentAction = LegacyAction.IDLE;
         abilityPulsePending = false;
         yawPulsePending = false;
+        pendingYawDelta = 0.0f;
         actionExpiryTick = Long.MIN_VALUE;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }

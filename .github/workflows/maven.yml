@@ -3,7 +3,7 @@ name: Maven CI
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, feature/first-pad-movement, feature/first-pad-movement-v2 ]
   pull_request:
     branches: [ main ]
 
@@ -28,4 +28,7 @@ jobs:
 
       - name: Build and test common
         run: mvn -B -ntp verify
+
+      - name: First-pad deterministic physics simulation
+        run: mvn -B -ntp -pl common -am -Dtest=FirstPadMovementControllerTest,FirstPadMovementPhysicsSimulationTest -Dsurefire.failIfNoSpecifiedTests=false test
 

@@ -31,6 +31,7 @@ public final class FirstPadSpeedrunController {
     private static final float MOVING_YAW_TOLERANCE = 12.0F;
     private static final int HEADING_STABLE_TICKS = 0;
     private static final double SAFETY_PROBE_DISTANCE = 0.34D;
+    private static final double PLAYER_HALF_WIDTH = 0.30D;
     private static final double ROUTE_ADVANCE_PROGRESS = 0.80D;
     private static final double ROUTE_WAYPOINT_CAPTURE_RADIUS = 0.65D;
     private static final int MOB_REPLAN_RETRY_TICKS = 10;
@@ -317,7 +318,25 @@ public final class FirstPadSpeedrunController {
     private boolean buildRoute(LegacyWorldObservation state) {
         int nominalStartRow = row(state.player.x, state.center.x);
         int nominalStartColumn = row(state.player.z, state.center.z);
-        int[] physicalStart = findNearestPhysicalStartCell(state, nominalStartRow, nominalStartColumn);
+
+        int targetRow = state.pad.row;
+        int targetColumn = state.pad.column;
+
+        /*
+         * At a phase transition the player is still physically standing on
+         * the previous Safe Pad, while ObservationWorldModel has already
+         * rebuilt physicalFloor around the NEW active pad. Preserve the old
+         * pad as a legal route seed instead of forcing the player's centre
+         * back into the old pad's vanished logical-floor representation.
+         */
+        boolean standingOnPreviousPad = targetReached
+                && goalRow >= 0
+                && goalColumn >= 0
+                && Math.abs(nominalStartRow - goalRow) <= PAD_RADIUS
+                && Math.abs(nominalStartColumn - goalColumn) <= PAD_RADIUS;
+
+        int[] physicalStart = findNearestPhysicalStartCell(
+                state, nominalStartRow, nominalStartColumn, standingOnPreviousPad);
         if (physicalStart == null) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + nominalStartRow + "," + nominalStartColumn
@@ -326,21 +345,6 @@ public final class FirstPadSpeedrunController {
         }
         int startRow = physicalStart[0];
         int startColumn = physicalStart[1];
-
-        int targetRow = state.pad.row;
-        int targetColumn = state.pad.column;
-
-        /*
-         * At a phase transition the player is still physically standing on
-         * the previous Safe Pad, while physicalFloor has already been rebuilt
-         * for the new active pad. Allow only the actual player cell as the BFS
-         * seed in that case; all subsequent cells still require physicalFloor.
-         */
-        boolean standingOnPreviousPad = targetReached
-                && goalRow >= 0
-                && goalColumn >= 0
-                && Math.abs(startRow - goalRow) <= PAD_RADIUS
-                && Math.abs(startColumn - goalColumn) <= PAD_RADIUS;
 
         if (!state.physicalFloor[startRow][startColumn] && !standingOnPreviousPad) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
@@ -671,9 +675,15 @@ public final class FirstPadSpeedrunController {
         return false;
     }
 
-    private int[] findNearestPhysicalStartCell(LegacyWorldObservation state, int nominalRow, int nominalColumn) {
-        if (inBounds(nominalRow, nominalColumn) && state.physicalFloor[nominalRow][nominalColumn])
+    private int[] findNearestPhysicalStartCell(LegacyWorldObservation state,
+                                                    int nominalRow,
+                                                    int nominalColumn,
+                                                    boolean allowPreviousPadSeed) {
+        if (inBounds(nominalRow, nominalColumn)
+                && (state.physicalFloor[nominalRow][nominalColumn] || allowPreviousPadSeed)) {
             return new int[] { nominalRow, nominalColumn };
+        }
+
         int bestRow = -1, bestColumn = -1;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (int r = nominalRow - 1; r <= nominalRow + 1; r++) {
@@ -735,10 +745,55 @@ public final class FirstPadSpeedrunController {
          */
         double probeX = state.player.x + forwardX * SAFETY_PROBE_DISTANCE;
         double probeZ = state.player.z + forwardZ * SAFETY_PROBE_DISTANCE;
-        int probeRow = row(probeX, state.center.x);
-        int probeColumn = row(probeZ, state.center.z);
-        if (!physicalFloorCell(state, probeRow, probeColumn)) return "predicted-floor";
+        if (!physicalFloorSupportsFootprint(state, probeX, probeZ)) return "predicted-floor";
         return null;
+    }
+
+    /*
+     * A Minecraft player is a continuous 0.6 x 0.6 body, not a point locked
+     * to one logical maze cell. At a cell boundary the centre can already be
+     * in the neighbouring logical cell while the collision box still overlaps
+     * the safe block it is leaving.
+     *
+     * Treat a position as supported when a non-trivial area of the player's
+     * horizontal footprint overlaps at least one physical-floor cell. This is
+     * deliberately different from requiring every corner to be on floor:
+     * every-corner checks reject legitimate boundary traversal and were the
+     * source of the old "must be in the middle of the block" deadlock.
+     */
+    private boolean physicalFloorSupportsFootprint(LegacyWorldObservation state,
+                                                    double x, double z) {
+        double minX = x - PLAYER_HALF_WIDTH;
+        double maxX = x + PLAYER_HALF_WIDTH;
+        double minZ = z - PLAYER_HALF_WIDTH;
+        double maxZ = z + PLAYER_HALF_WIDTH;
+
+        int minRow = row(minX, state.center.x);
+        int maxRow = row(maxX - 1.0E-9D, state.center.x);
+        int minColumn = row(minZ, state.center.z);
+        int maxColumn = row(maxZ - 1.0E-9D, state.center.z);
+
+        final double minimumSupportArea = 0.05D;
+
+        for (int r = minRow; r <= maxRow; r++) {
+            for (int c = minColumn; c <= maxColumn; c++) {
+                if (!physicalFloorCell(state, r, c)) continue;
+
+                double cellMinX = (state.center.x - 49) + r;
+                double cellMaxX = cellMinX + 1.0D;
+                double cellMinZ = (state.center.z - 49) + c;
+                double cellMaxZ = cellMinZ + 1.0D;
+
+                double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
+                double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
+                if (overlapX > 0.0D && overlapZ > 0.0D
+                        && overlapX * overlapZ >= minimumSupportArea) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private boolean movementSafetyAllowsForward(LegacyWorldObservation state,

@@ -82,6 +82,7 @@ public final class FirstPadSpeedrunController {
     private int headingStableTicks;
     private long lastFailedMobReplanTick = Long.MIN_VALUE;
     private long lastSuccessfulMobReplanTick = Long.MIN_VALUE;
+    private String lastRouteBuildFailureReason = "unknown";
 
     /*
      * Active-pad transitions are tracked explicitly. targetReached is a
@@ -505,7 +506,7 @@ public final class FirstPadSpeedrunController {
                         log(state.worldTick, "[MonsterMazeAI/1.8] ROUTE REPLAN FAILED"
                                 + " tick=" + state.worldTick
                                 + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                                + " reason=" + (mobBlocked ? "dynamic-mob-block" : "physical-route")
+                                + " reason=" + lastRouteBuildFailureReason
                                 + " action=RECOVER_TO_SAFE_CELL");
                     }
                     return recoveryAction(state);
@@ -655,6 +656,7 @@ public final class FirstPadSpeedrunController {
         headingStableTicks = 0;
         lastFailedMobReplanTick = Long.MIN_VALUE;
         lastSuccessfulMobReplanTick = Long.MIN_VALUE;
+        lastRouteBuildFailureReason = "unknown";
         lastActivePadRow = -1;
         lastActivePadColumn = -1;
         activePadTransitionPending = false;
@@ -682,6 +684,7 @@ public final class FirstPadSpeedrunController {
     }
 
     private boolean buildRoute(LegacyWorldObservation state) {
+        lastRouteBuildFailureReason = "unknown";
         boolean firstRoute = startedAtTick == Long.MIN_VALUE;
         int nominalStartRow = row(state.player.x, state.center.x);
         int nominalStartColumn = row(state.player.z, state.center.z);
@@ -703,17 +706,20 @@ public final class FirstPadSpeedrunController {
         int[] physicalStart = findNearestPhysicalStartCell(
                 state, nominalStartRow, nominalStartColumn, standingOnPreviousPad);
         if (physicalStart == null) {
+            lastRouteBuildFailureReason = "no-physical-support-cell";
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + nominalStartRow + "," + nominalStartColumn
-                    + " reason=no-physical-support-cell");
+                    + " reason=" + lastRouteBuildFailureReason);
             return false;
         }
         int startRow = physicalStart[0];
         int startColumn = physicalStart[1];
 
         if (!state.physicalFloor[startRow][startColumn] && !standingOnPreviousPad) {
+            lastRouteBuildFailureReason = "start-not-physical-floor";
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
-                    + " start=" + startRow + "," + startColumn);
+                    + " start=" + startRow + "," + startColumn
+                    + " reason=" + lastRouteBuildFailureReason);
             return false;
         }
 
@@ -787,6 +793,7 @@ public final class FirstPadSpeedrunController {
              * the live movement controller will re-evaluate the committed edge
              * against fresh mob observations before advancing.
              */
+            lastRouteBuildFailureReason = "dynamic-mob-block";
             log(state.worldTick, "[MonsterMazeAI/1.8] DYNAMIC ROUTE EXHAUSTED"
                     + " tick=" + state.worldTick
                     + " start=" + startRow + "," + startColumn
@@ -841,12 +848,20 @@ public final class FirstPadSpeedrunController {
             }
 
             if (goal < 0) {
-                log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+                lastRouteBuildFailureReason = "static-floor-disconnected";
+                log(state.worldTick, "[MonsterMazeAI/1.8] STATIC FALLBACK FAILED"
+                        + " tick=" + state.worldTick
                         + " start=" + startRow + "," + startColumn
                         + " pad=" + targetRow + "," + targetColumn
-                        + " reason=static-floor-disconnected");
+                        + " reason=" + lastRouteBuildFailureReason);
                 return false;
             }
+            lastRouteBuildFailureReason = "static-fallback";
+            log(state.worldTick, "[MonsterMazeAI/1.8] STATIC FALLBACK SUCCESS"
+                    + " tick=" + state.worldTick
+                    + " start=" + startRow + "," + startColumn
+                    + " pad=" + targetRow + "," + targetColumn
+                    + " goal=" + (goal / SIZE) + "," + (goal % SIZE));
         }
 
         int count = 0;

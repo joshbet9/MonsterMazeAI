@@ -1114,11 +1114,16 @@ public final class FirstPadSpeedrunController {
     }
 
     private boolean isInsidePad(LegacyWorldObservation state) {
-        double x = state.player.x - (state.center.x - 49);
-        double z = state.player.z - (state.center.z - 49);
+        // MazeGenerator constructs SafePad from the centre of the target
+        // cell (block coordinate + 0.5). Mirror SafePad.isOn() exactly; using
+        // the integer block corner creates a half-block X/Z reachability error.
+        double padCenterX = (state.center.x - 49) + state.pad.row + 0.5D;
+        double padCenterZ = (state.center.z - 49) + state.pad.column + 0.5D;
+        double dx = state.player.x - padCenterX;
+        double dz = state.player.z - padCenterZ;
         double baseY = state.center.y - 1.0D;
-        return Math.abs(x - state.pad.row) < 2.5D
-                && Math.abs(z - state.pad.column) < 2.5D
+        return dx > -2.5D && dx < 2.5D
+                && dz > -2.5D && dz < 2.5D
                 && state.player.y > baseY
                 && state.player.y < baseY + 5.0D;
     }

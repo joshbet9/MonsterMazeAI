@@ -79,6 +79,16 @@ public final class FirstPadSpeedrunController {
     private int previousPadCenterRow = -1;
     private int previousPadCenterColumn = -1;
     /*
+     * The round starts on a physical 5x5 SafePad centered on the start cell.
+     * That pad is not the same object as state.pad: state.pad is the current
+     * active destination pad. Keep the initial pad geometry separately so a
+     * player spawned on its boundary can leave it without a one-cell
+     * logical-floor probe falsely declaring the movement unsafe.
+     */
+    private boolean initialStartPadAvailable;
+    private int initialStartPadCenterRow = -1;
+    private int initialStartPadCenterColumn = -1;
+    /*
      * Recovery state is deliberately separate from normal route following.
      * A fast player can cross a logical-cell boundary before routeIndex is
      * advanced, so a safety hold must never become a permanent deadlock.
@@ -560,9 +570,13 @@ public final class FirstPadSpeedrunController {
         previousPadSeedColumn = -1;
         previousPadCenterRow = -1;
         previousPadCenterColumn = -1;
+        initialStartPadAvailable = false;
+        initialStartPadCenterRow = -1;
+        initialStartPadCenterColumn = -1;
     }
 
     private boolean buildRoute(LegacyWorldObservation state) {
+        boolean firstRoute = startedAtTick == Long.MIN_VALUE;
         int nominalStartRow = row(state.player.x, state.center.x);
         int nominalStartColumn = row(state.player.z, state.center.z);
 
@@ -698,6 +712,18 @@ public final class FirstPadSpeedrunController {
         routeColumns = newRouteColumns;
         routeLength = count;
         routeIndex = 0;
+
+        /*
+         * The initial spawn pad is a real 5x5 SafePad around the start cell.
+         * Record its centre once, before any mob replan can change routeRows[0].
+         * This is deliberately geometry-only support: it does not make the pad
+         * the route target and does not bypass route-edge validation.
+         */
+        if (firstRoute) {
+            initialStartPadAvailable = true;
+            initialStartPadCenterRow = startRow;
+            initialStartPadCenterColumn = startColumn;
+        }
         gapJumpTriggeredRouteIndex = -1;
         goalRow = targetRow;
         goalColumn = targetColumn;
@@ -1326,20 +1352,46 @@ public final class FirstPadSpeedrunController {
      * every-corner checks reject legitimate boundary traversal and were the
      * source of the old "must be in the middle of the block" deadlock.
      */
-    /* SafePad is real physical support. A player can start at its boundary
+    /*
+     * SafePad is real physical support. A player can start at its boundary
      * rather than at the centre of the logical start cell; predictive probes
      * must not freeze the controller merely because the next probe has not yet
-     * overlapped that one route cell. Geometry matches SafePad.isOn: +/-2.5. */
-    private boolean activeSafePadSupportsFootprint(LegacyWorldObservation state,
-                                                    double x, double z) {
-        if (state.pad == null || state.pad.row < 0 || state.pad.column < 0) return false;
-        double padCenterX = (state.center.x - 49) + state.pad.row + 0.5D;
-        double padCenterZ = (state.center.z - 49) + state.pad.column + 0.5D;
+     * overlapped that one route cell. Geometry matches SafePad.isOn: +/-2.5.
+     *
+     * state.pad is the ACTIVE DESTINATION pad, not the spawn pad. The initial
+     * spawn pad therefore needs its own recorded centre. Without that
+     * distinction, a spawn at (1.00,1.00) with a diagonal first edge can probe
+     * into z<1.00, miss the logical 50,50 cell, and be incorrectly held by
+     * "predicted-floor" even though the real 5x5 spawn pad supports it.
+     */
+    private boolean safePadSupportsFootprint(int padRow, int padColumn,
+                                              LegacyWorldObservation state,
+                                              double x, double z) {
+        if (padRow < 0 || padColumn < 0) return false;
+
+        double padCenterX = (state.center.x - 49) + padRow + 0.5D;
+        double padCenterZ = (state.center.z - 49) + padColumn + 0.5D;
         double minX = x - PLAYER_HALF_WIDTH, maxX = x + PLAYER_HALF_WIDTH;
         double minZ = z - PLAYER_HALF_WIDTH, maxZ = z + PLAYER_HALF_WIDTH;
         double overlapX = Math.min(maxX, padCenterX + 2.5D) - Math.max(minX, padCenterX - 2.5D);
         double overlapZ = Math.min(maxZ, padCenterZ + 2.5D) - Math.max(minZ, padCenterZ - 2.5D);
         return overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D;
+    }
+
+    private boolean activeSafePadSupportsFootprint(LegacyWorldObservation state,
+                                                    double x, double z) {
+        if (state.pad != null && state.pad.row >= 0 && state.pad.column >= 0
+                && safePadSupportsFootprint(state.pad.row, state.pad.column, state, x, z)) {
+            return true;
+        }
+
+        if (initialStartPadAvailable
+                && safePadSupportsFootprint(
+                initialStartPadCenterRow, initialStartPadCenterColumn, state, x, z)) {
+            return true;
+        }
+
+        return false;
     }
 
     private boolean routeSupportsFootprint(LegacyWorldObservation state,

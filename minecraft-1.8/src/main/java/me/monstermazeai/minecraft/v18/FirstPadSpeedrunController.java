@@ -25,9 +25,6 @@ public final class FirstPadSpeedrunController {
     private static final int PAD_RADIUS = 2;
     private static final float MAX_YAW_STEP = 30.0F;
     private static final float ALIGNMENT_TOLERANCE = 10.0F;
-    /* Testing-only safety mode: turn in place before forward input. Keep this
-       isolated so the long-term moving controller can remove it cleanly. */
-    private static final boolean TEST_STATIONARY_TURNING = true;
     private static final float MOVING_YAW_TOLERANCE = 12.0F;
     private static final int HEADING_STABLE_TICKS = 0;
     private static final double SAFETY_PROBE_DISTANCE = 0.48D;
@@ -120,12 +117,17 @@ public final class FirstPadSpeedrunController {
     private long lastRecoveryLogTick = Long.MIN_VALUE;
     private double previousPlayerX = Double.NaN;
     private double previousPlayerZ = Double.NaN;
+    private double previousPlayerVx = Double.NaN;
+    private double previousPlayerVz = Double.NaN;
     private boolean knockbackRecoveryPending;
     private long lastKnockbackRecoveryTick = Long.MIN_VALUE;
     private GameRunSummaryRecorder telemetry;
-    private static final double KNOCKBACK_HORIZONTAL_SPEED = 0.35D;
-    private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.45D;
+    private static final double KNOCKBACK_HORIZONTAL_SPEED = 0.55D;
+    private static final double KNOCKBACK_ACCELERATION = 0.22D;
+    private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.75D;
     private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
+    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 0.85D;
+    private static final double DIAGONAL_SUPPORT_MIN_AREA = 0.01D;
     /*
      * A two-cell route edge is a deliberate one-block jump, not a walk across
      * an unsupported cell. The jump must be initiated at the takeoff boundary
@@ -145,6 +147,12 @@ public final class FirstPadSpeedrunController {
     private boolean gapTakeoffStarted;
     private int gapExecutionRouteIndex = -1;
     private int gapLandingConfirmTicks;
+
+    private enum EdgeType {
+        ORTHOGONAL,
+        DIAGONAL,
+        ONE_BLOCK_GAP
+    }
 
     public void setTelemetry(GameRunSummaryRecorder telemetry) {
         this.telemetry = telemetry;
@@ -359,7 +367,8 @@ public final class FirstPadSpeedrunController {
          * then re-anchor and rebuild from the observed position.
          */
         if (suddenHorizontalImpulse && !recovering
-                && state.worldTick - lastKnockbackRecoveryTick >= KNOCKBACK_RECOVERY_COOLDOWN_TICKS) {
+                && (lastKnockbackRecoveryTick == Long.MIN_VALUE
+                || state.worldTick - lastKnockbackRecoveryTick >= KNOCKBACK_RECOVERY_COOLDOWN_TICKS)) {
             knockbackRecoveryPending = true;
             lastKnockbackRecoveryTick = state.worldTick;
             log(state.worldTick, "[MonsterMazeAI/1.8] KNOCKBACK DETECTED"
@@ -369,7 +378,12 @@ public final class FirstPadSpeedrunController {
         }
 
         if (knockbackRecoveryPending) {
-            if (!state.player.grounded || Math.abs(state.player.y - state.center.y) > 1.50D) {
+            if (!state.player.grounded) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] KNOCKBACK WAIT"
+                        + " tick=" + state.worldTick
+                        + " pos=" + format(state.player.x) + "," + format(state.player.z)
+                        + " y=" + format(state.player.y)
+                        + " vy=" + format(state.player.vy));
                 return LegacyAction.IDLE;
             }
             knockbackRecoveryPending = false;
@@ -650,9 +664,14 @@ public final class FirstPadSpeedrunController {
              * turn remains stationary only when the commanded heading itself
              * cannot be made safe in the same tick.
              */
-            if (Math.abs(yawError) > MOVING_YAW_TOLERANCE && TEST_STATIONARY_TURNING) {
+            if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
+            log(state.worldTick, "[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
+                    + " tick=" + state.worldTick
+                    + " routeIndex=" + routeIndex
+                    + " reason=" + safetyReason
+                    + " action=IDLE");
             return LegacyAction.IDLE;
         }
 
@@ -683,6 +702,7 @@ public final class FirstPadSpeedrunController {
                     + " aim=" + targetIndex
                     + " next=" + routeRows[nextIndex] + "," + routeColumns[nextIndex]
                     + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
+                    + " edge=" + edgeType(routeIndex)
                     + " yaw=" + format(state.player.yaw)
                     + " desiredYaw=" + format(desiredYaw)
                     + " yawDelta=" + format(yawDelta)
@@ -719,6 +739,8 @@ public final class FirstPadSpeedrunController {
         lastRecoveryLogTick = Long.MIN_VALUE;
         previousPlayerX = Double.NaN;
         previousPlayerZ = Double.NaN;
+        previousPlayerVx = Double.NaN;
+        previousPlayerVz = Double.NaN;
         knockbackRecoveryPending = false;
         lastKnockbackRecoveryTick = Long.MIN_VALUE;
         gapJumpTriggeredRouteIndex = -1;
@@ -1263,13 +1285,38 @@ public final class FirstPadSpeedrunController {
     private boolean detectSuddenHorizontalImpulse(LegacyWorldObservation state) {
         double dx = Double.isNaN(previousPlayerX) ? 0.0D : state.player.x - previousPlayerX;
         double dz = Double.isNaN(previousPlayerZ) ? 0.0D : state.player.z - previousPlayerZ;
+        double previousVx = previousPlayerVx;
+        double previousVz = previousPlayerVz;
+
         previousPlayerX = state.player.x;
         previousPlayerZ = state.player.z;
+        previousPlayerVx = state.player.vx;
+        previousPlayerVz = state.player.vz;
 
         double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
         double tickDisplacement = Math.hypot(dx, dz);
+        if (Double.isNaN(previousVx) || Double.isNaN(previousVz)) return false;
+
+        double acceleration = Math.hypot(
+                state.player.vx - previousVx,
+                state.player.vz - previousVz);
+        double previousSpeed = Math.hypot(previousVx, previousVz);
+        double directionDot = previousSpeed > 0.05D && horizontalSpeed > 0.05D
+                ? (previousVx * state.player.vx + previousVz * state.player.vz)
+                / (previousSpeed * horizontalSpeed)
+                : 1.0D;
+
+        /*
+         * Ordinary speed-boost movement can legitimately displace ~0.55
+         * blocks/tick. Knockback therefore requires an actual velocity
+         * discontinuity, a substantially larger speed, or a large one-tick
+         * displacement that is beyond the normal speedrun envelope.
+         */
         return horizontalSpeed >= KNOCKBACK_HORIZONTAL_SPEED
-                || tickDisplacement >= KNOCKBACK_TICK_DISPLACEMENT;
+                || (acceleration >= KNOCKBACK_ACCELERATION && horizontalSpeed >= 0.40D)
+                || (tickDisplacement >= KNOCKBACK_TICK_DISPLACEMENT
+                    && horizontalSpeed >= 0.40D)
+                || (directionDot < -0.35D && acceleration >= 0.18D);
     }
 
     private boolean routePositionNeedsRecovery(LegacyWorldObservation state) {
@@ -1287,7 +1334,16 @@ public final class FirstPadSpeedrunController {
         }
 
         if (routeSupportsFootprint(state, state.player.x, state.player.z,
-                Math.min(routeIndex + 1, routeLength - 1))) {
+                Math.min(routeIndex + 2, routeLength - 1))) {
+            return false;
+        }
+
+        /*
+         * The player may be physically ahead of routeIndex after a fast
+         * diagonal/orthogonal crossing. Keep executing the committed route
+         * while the current position is still close to one of its next edges.
+         */
+        if (routePositionOnCommittedEnvelope(state)) {
             return false;
         }
 
@@ -1625,7 +1681,13 @@ public final class FirstPadSpeedrunController {
          * can rotate and move in the same tick. The hard safety checks below
          * evaluate the direction that will actually be commanded.
          */
-        if (Math.abs(state.player.y - state.center.y) > 1.50D) return "vertical";
+        if (Math.abs(state.player.y - state.center.y) > 3.50D) return "vertical";
+        if (!state.player.grounded
+                && state.player.y < state.center.y - 0.25D
+                && !isGapTraversalActive(state)
+                && !routePositionOnCommittedEnvelope(state)) {
+            return "vertical";
+        }
 
         int nextIndex = routeIndex + 1;
         int nextRow = routeRows[nextIndex], nextColumn = routeColumns[nextIndex];
@@ -1777,8 +1839,10 @@ public final class FirstPadSpeedrunController {
 
             double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
             double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
+            double minimumArea = edgeType(routeIndex) == EdgeType.DIAGONAL
+                    ? DIAGONAL_SUPPORT_MIN_AREA : 0.05D;
             if (overlapX > 0.0D && overlapZ > 0.0D
-                    && overlapX * overlapZ >= 0.05D) {
+                    && overlapX * overlapZ >= minimumArea) {
                 return true;
             }
         }
@@ -1865,11 +1929,18 @@ public final class FirstPadSpeedrunController {
 
     private void advanceRouteIndex(LegacyWorldObservation state) {
         /*
-         * Route progress must be based on the player's actual position on the
-         * current edge. Never jump to the globally nearest later waypoint:
-         * during a fast run that can select the final pad cell while the player
-         * is still one or more blocks short, causing a false route completion
-         * and an IDLE command even though the SafePad was never reached.
+         * The speedrun can move roughly half a block per client tick. A
+         * one-cell waypoint can therefore be crossed between observations.
+         * Route progress is edge-based: once the player has clearly passed a
+         * waypoint along the committed edge, do not force the controller to
+         * "recover" back to that waypoint.
+         *
+         * A normal capture uses the existing centre/footprint test. An
+         * overshoot capture additionally accepts a small positive footprint
+         * overlap when the player is beyond the waypoint along the same edge.
+         * This is particularly important for diagonal corner-to-corner
+         * traversal, where the overlap with the destination block can be
+         * intentionally tiny.
          */
         while (routeIndex < routeLength - 1) {
             double ax = worldX(routeRows[routeIndex], state.center.x);
@@ -1885,17 +1956,33 @@ public final class FirstPadSpeedrunController {
 
             double px = state.player.x - ax, pz = state.player.z - az;
             double progress = (px * ex + pz * ez) / lengthSquared;
+            double lateralX = px - ex * progress;
+            double lateralZ = pz - ez * progress;
+            double lateralDistance = Math.hypot(lateralX, lateralZ);
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
 
-            if ((progress >= ROUTE_ADVANCE_PROGRESS || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
-                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
+            boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
+                    || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
+                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
+
+            boolean overshootCapture = progress >= 1.0D
+                    && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
+                    && (playerFootprintOverlapsCell(
+                    state, routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                    edgeType(routeIndex) == EdgeType.DIAGONAL
+                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D)
+                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z));
+
+            if (normalCapture || overshootCapture) {
                 routeIndex++;
+                if (overshootCapture && !normalCapture) {
+                    log(state.worldTick, "[MonsterMazeAI/1.8] EDGE OVERSHOOT CAPTURE"
+                            + " tick=" + state.worldTick
+                            + " edge=" + edgeType(routeIndex - 1)
+                            + " routeIndex=" + routeIndex
+                            + " player=" + format(state.player.x) + "," + format(state.player.z));
+                }
                 if (routeIndex > 0 && routeStartsOnPreviousPad) {
-                    /*
-                     * The player has now captured the first normal route
-                     * waypoint. The previous SafePad is no longer needed as a
-                     * synthetic support cell for the active route.
-                     */
                     routeStartsOnPreviousPad = false;
                 }
             } else {
@@ -1926,6 +2013,46 @@ public final class FirstPadSpeedrunController {
 
         return playerFootprintOverlapsCell(
                 state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
+    }
+
+    private EdgeType edgeType(int index) {
+        if (index < 0 || index >= routeLength - 1) return EdgeType.ORTHOGONAL;
+        int dr = Math.abs(routeRows[index + 1] - routeRows[index]);
+        int dc = Math.abs(routeColumns[index + 1] - routeColumns[index]);
+        if (dr == 2 || dc == 2) return EdgeType.ONE_BLOCK_GAP;
+        if (dr == 1 && dc == 1) return EdgeType.DIAGONAL;
+        return EdgeType.ORTHOGONAL;
+    }
+
+    private boolean routePositionOnCommittedEnvelope(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1) return false;
+        int last = Math.min(routeLength - 2, routeIndex + 2);
+        for (int i = routeIndex; i <= last; i++) {
+            double ax = worldX(routeRows[i], state.center.x);
+            double az = worldZ(routeColumns[i], state.center.z);
+            double bx = worldX(routeRows[i + 1], state.center.x);
+            double bz = worldZ(routeColumns[i + 1], state.center.z);
+            double ex = bx - ax, ez = bz - az;
+            double lengthSquared = ex * ex + ez * ez;
+            if (lengthSquared <= 1.0E-9D) continue;
+            double px = state.player.x - ax, pz = state.player.z - az;
+            double progress = (px * ex + pz * ez) / lengthSquared;
+            if (progress < -0.20D || progress > 1.35D) continue;
+            double lateralX = px - ex * progress;
+            double lateralZ = pz - ez * progress;
+            if (Math.hypot(lateralX, lateralZ) > ROUTE_EDGE_LATERAL_TOLERANCE) continue;
+
+            double minimumArea = edgeType(i) == EdgeType.DIAGONAL
+                    ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D;
+            if (playerFootprintOverlapsCell(
+                    state, routeRows[i], routeColumns[i], minimumArea)
+                    || playerFootprintOverlapsCell(
+                    state, routeRows[i + 1], routeColumns[i + 1], minimumArea)
+                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean playerFootprintOverlapsCell(LegacyWorldObservation state,

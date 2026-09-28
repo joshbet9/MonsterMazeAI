@@ -29,7 +29,12 @@ public final class FirstPadSpeedrunController {
        isolated so the long-term moving controller can remove it cleanly. */
     private static final boolean TEST_STATIONARY_TURNING = true;
     private static final float MOVING_YAW_TOLERANCE = 12.0F;
-    private static final int HEADING_STABLE_TICKS = 2;
+    private static final int HEADING_STABLE_TICKS = 0;
+    private static final double PLAYER_HALF_WIDTH = 0.30D;
+    private static final double SAFETY_PROBE_DISTANCE = 0.34D;
+    private static final double ROUTE_ADVANCE_PROGRESS = 0.80D;
+    private static final double ROUTE_WAYPOINT_CAPTURE_RADIUS = 0.65D;
+    private static final int MOB_REPLAN_RETRY_TICKS = 10;
     private static final int LOOKAHEAD_CELLS = 3;
     /*
      * Forward alignment is a route-direction safety check, not a logical-cell
@@ -66,6 +71,7 @@ public final class FirstPadSpeedrunController {
     private int lastLoggedStage = -1;
     private long startedAtTick = Long.MIN_VALUE;
     private int headingStableTicks;
+    private long lastFailedMobReplanTick = Long.MIN_VALUE;
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -192,18 +198,33 @@ public final class FirstPadSpeedrunController {
          * resulting route is then handled by the exact same movement controller
          * as a mob-free route. There is intentionally no strafe/dodge state.
          */
-        if (routeNeedsMobReplan(state)) {
+        boolean physicalRouteInvalid = routeNeedsPhysicalReplan(state);
+        boolean mobBlocked = routeNeedsMobReplan(state);
+        if (physicalRouteInvalid || mobBlocked) {
             int oldLength = routeLength;
             int oldIndex = routeIndex;
+            boolean retryAllowed = !mobBlocked
+                    || lastFailedMobReplanTick == Long.MIN_VALUE
+                    || state.worldTick - lastFailedMobReplanTick >= MOB_REPLAN_RETRY_TICKS;
+            if (!retryAllowed) return LegacyAction.IDLE;
             if (!buildRoute(state)) {
-                if (state.worldTick % 5L == 0L) {
-                    System.out.println("[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
+                if (mobBlocked) {
+                    lastFailedMobReplanTick = state.worldTick;
+                    if (state.worldTick % 5L == 0L) {
+                        System.out.println("[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
+                                + " tick=" + state.worldTick
+                                + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                + " action=IDLE_WAIT_FOR_CLEAR_PATH");
+                    }
+                } else if (state.worldTick % 5L == 0L) {
+                    System.out.println("[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
                             + " tick=" + state.worldTick
                             + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                            + " action=IDLE_WAIT_FOR_CLEAR_PATH");
+                            + " action=KEEP_EXISTING_ROUTE");
                 }
                 return LegacyAction.IDLE;
             }
+            lastFailedMobReplanTick = Long.MIN_VALUE;
             if (state.worldTick % 5L == 0L) {
                 System.out.println("[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
                         + " tick=" + state.worldTick
@@ -231,7 +252,8 @@ public final class FirstPadSpeedrunController {
          * only when the player is aligned with the immediate route edge and
          * the forward vector agrees with that edge.
          */
-        boolean safetyOk = movementSafetyAllowsForward(state, targetIndex, desiredYaw, yawError);
+        String safetyReason = movementSafetyFailureReason(state, targetIndex, desiredYaw, yawError);
+        boolean safetyOk = safetyReason == null;
         if (!safetyOk || Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
             headingStableTicks = 0;
             if (state.worldTick % 5L == 0L) {
@@ -240,8 +262,9 @@ public final class FirstPadSpeedrunController {
                         + " routeIndex=" + routeIndex
                         + " next=" + routeRows[nextIndex] + "," + routeColumns[nextIndex]
                         + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
+                        + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " yawError=" + format(yawError)
-                        + " reason=" + (!safetyOk ? "edge-safety" : "heading"));
+                        + " reason=" + (!safetyOk ? safetyReason : "heading"));
             }
             if (TEST_STATIONARY_TURNING && Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
@@ -289,16 +312,21 @@ public final class FirstPadSpeedrunController {
         lastLoggedStage = -1;
         lastLogTick = Long.MIN_VALUE;
         headingStableTicks = 0;
+        lastFailedMobReplanTick = Long.MIN_VALUE;
     }
 
     private boolean buildRoute(LegacyWorldObservation state) {
-        int startRow = row(state.player.x, state.center.x);
-        int startColumn = row(state.player.z, state.center.z);
-        if (!inBounds(startRow, startColumn)) {
+        int nominalStartRow = row(state.player.x, state.center.x);
+        int nominalStartColumn = row(state.player.z, state.center.z);
+        int[] physicalStart = findNearestPhysicalStartCell(state, nominalStartRow, nominalStartColumn);
+        if (physicalStart == null) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
-                    + " start=" + startRow + "," + startColumn);
+                    + " start=" + nominalStartRow + "," + nominalStartColumn
+                    + " reason=no-physical-support-cell");
             return false;
         }
+        int startRow = physicalStart[0];
+        int startColumn = physicalStart[1];
 
         int targetRow = state.pad.row;
         int targetColumn = state.pad.column;
@@ -403,12 +431,13 @@ public final class FirstPadSpeedrunController {
         routeRows = newRouteRows;
         routeColumns = newRouteColumns;
         routeLength = count;
-        routeIndex = findBestRouteIndexForCurrentPosition(state, newRouteRows, newRouteColumns, count);
+        routeIndex = 0;
         goalRow = targetRow;
         goalColumn = targetColumn;
         centerX = state.center.x;
         centerZ = state.center.z;
         targetReached = false;
+        lastFailedMobReplanTick = Long.MIN_VALUE;
 
         /*
          * Only a genuine pad-to-pad transition gets stationary alignment.
@@ -630,119 +659,114 @@ public final class FirstPadSpeedrunController {
         return target;
     }
 
+    private boolean routeNeedsPhysicalReplan(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) return false;
+        int next = routeIndex + 1;
+        if (!physicalFloorCell(state, routeRows[next], routeColumns[next])) return true;
+        int end = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
+        for (int i = routeIndex; i <= end; i++) {
+            if (!physicalFloorCell(state, routeRows[i], routeColumns[i])) return true;
+            if (i > routeIndex && Math.abs(routeRows[i] - routeRows[i - 1])
+                    + Math.abs(routeColumns[i] - routeColumns[i - 1]) != 1) return true;
+        }
+        return false;
+    }
+
+    private int[] findNearestPhysicalStartCell(LegacyWorldObservation state, int nominalRow, int nominalColumn) {
+        if (inBounds(nominalRow, nominalColumn) && state.physicalFloor[nominalRow][nominalColumn])
+            return new int[] { nominalRow, nominalColumn };
+        int bestRow = -1, bestColumn = -1;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int r = nominalRow - 1; r <= nominalRow + 1; r++) {
+            for (int c = nominalColumn - 1; c <= nominalColumn + 1; c++) {
+                if (!inBounds(r, c) || !state.physicalFloor[r][c]) continue;
+                double dx = state.player.x - worldX(r, state.center.x);
+                double dz = state.player.z - worldZ(c, state.center.z);
+                double distance = dx * dx + dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance; bestRow = r; bestColumn = c;
+                }
+            }
+        }
+        return bestRow < 0 || bestDistance > 1.0D ? null : new int[] {bestRow, bestColumn};
+    }
+
+    private boolean physicalFloorCell(LegacyWorldObservation state, int r, int c) {
+        return inBounds(r, c) && state.physicalFloor[r][c];
+    }
+
+    private boolean physicalFloorSupportsFootprint(LegacyWorldObservation state, double x, double z) {
+        double[] offsets = new double[] {-PLAYER_HALF_WIDTH, PLAYER_HALF_WIDTH};
+        for (double ox : offsets) for (double oz : offsets) {
+            if (!physicalFloorCell(state, row(x + ox, state.center.x), row(z + oz, state.center.z))) return false;
+        }
+        return true;
+    }
+
+    private String movementSafetyFailureReason(LegacyWorldObservation state,
+                                                int targetIndex,
+                                                float desiredYaw,
+                                                float yawError) {
+        if (routeIndex >= routeLength - 1) return "route-end";
+        if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) return "heading";
+        if (Math.abs(state.player.y - state.center.y) > 1.50D) return "vertical";
+        if (!physicalFloorSupportsFootprint(state, state.player.x, state.player.z)) return "player-footprint";
+
+        int nextRow = routeRows[routeIndex + 1], nextColumn = routeColumns[routeIndex + 1];
+        if (!physicalFloorCell(state, nextRow, nextColumn)) return "next-floor";
+        if (Math.abs(nextRow - routeRows[routeIndex]) + Math.abs(nextColumn - routeColumns[routeIndex]) != 1)
+            return "route-disconnected";
+
+        for (int i = routeIndex; i < targetIndex; i++) {
+            int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
+            if (!physicalFloorCell(state, r1, c1) || !physicalFloorCell(state, r2, c2)) return "lookahead-floor";
+            if (Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) return "lookahead-disconnected";
+        }
+
+        int edgeRow = nextRow - routeRows[routeIndex], edgeColumn = nextColumn - routeColumns[routeIndex];
+        double edgeX = edgeRow, edgeZ = edgeColumn;
+        double edgeLength = Math.sqrt(edgeX * edgeX + edgeZ * edgeZ);
+        edgeX /= edgeLength; edgeZ /= edgeLength;
+        double rad = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
+        if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
+
+        double probeX = state.player.x + forwardX * SAFETY_PROBE_DISTANCE;
+        double probeZ = state.player.z + forwardZ * SAFETY_PROBE_DISTANCE;
+        if (!physicalFloorSupportsFootprint(state, probeX, probeZ)) return "predicted-footprint";
+        return null;
+    }
+
     private boolean movementSafetyAllowsForward(LegacyWorldObservation state,
                                                   int targetIndex,
                                                   float desiredYaw,
                                                   float yawError) {
-        int currentRow = row(state.player.x, state.center.x);
-        int currentColumn = row(state.player.z, state.center.z);
-        if (!inBounds(currentRow, currentColumn) || !state.physicalFloor[currentRow][currentColumn]) {
-            return false;
-        }
-
-        // center.y is the player's normal feet Y in this adapter. Allow the
-        // normal jump arc, but reject a genuine vertical departure/fall.
-        if (Math.abs(state.player.y - state.center.y) > 1.50D) {
-            return false;
-        }
-        if (routeIndex >= routeLength - 1 || Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
-            return false;
-        }
-
-        int nextRow = routeRows[routeIndex + 1];
-        int nextColumn = routeColumns[routeIndex + 1];
-        if (!inBounds(nextRow, nextColumn) || !state.physicalFloor[nextRow][nextColumn]) {
-            return false;
-        }
-        if (Math.abs(nextRow - routeRows[routeIndex])
-                + Math.abs(nextColumn - routeColumns[routeIndex]) != 1) {
-            return false;
-        }
-
-        // Every cell between the current route cursor and the lookahead point
-        // must still be physically traversable and contiguous.
-        for (int i = routeIndex; i < targetIndex; i++) {
-            int r1 = routeRows[i], c1 = routeColumns[i];
-            int r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
-            if (!inBounds(r1, c1) || !inBounds(r2, c2)
-                    || !state.physicalFloor[r1][c1] || !state.physicalFloor[r2][c2]
-                    || Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) {
-                return false;
-            }
-        }
-
-        // Use the discrete route edge, not a point several cells ahead. This
-        // prevents a future corner from pulling the player sideways before the
-        // current edge has actually been traversed.
-        int edgeRow = nextRow - routeRows[routeIndex];
-        int edgeColumn = nextColumn - routeColumns[routeIndex];
-        double edgeX = edgeRow;
-        double edgeZ = edgeColumn;
-        double edgeLength = Math.sqrt(edgeX * edgeX + edgeZ * edgeZ);
-        edgeX /= edgeLength;
-        edgeZ /= edgeLength;
-
-        double rad = Math.toRadians(state.player.yaw);
-        double forwardX = -Math.sin(rad);
-        double forwardZ = Math.cos(rad);
-        double forwardDot = forwardX * edgeX + forwardZ * edgeZ;
-
-        /*
-         * Do not use distance from the centre of the current logical cell as
-         * an edge-safety signal. Logical cell boundaries are not maze edges:
-         * the player naturally crosses them while traversing valid floor, and
-         * the 5x5 Safe Pad contains several such boundaries.
-         *
-         * Physical-floor checks above are the authoritative topology guard;
-         * this dot product only ensures that forward input agrees with the
-         * immediate route edge.
-         */
-        return forwardDot >= EDGE_FORWARD_DOT_MIN;
+        return movementSafetyFailureReason(state, targetIndex, desiredYaw, yawError) == null;
     }
 
     private int findBestRouteIndexForCurrentPosition(LegacyWorldObservation state,
                                                        int[] rows, int[] columns, int length) {
-        int playerRow = row(state.player.x, state.center.x);
-        int playerColumn = row(state.player.z, state.center.z);
-        int best = 0;
-        double bestDistance = Double.MAX_VALUE;
-        int max = Math.min(length - 1, 12);
-        for (int i = 0; i <= max; i++) {
-            int dr = rows[i] - playerRow, dc = columns[i] - playerColumn;
-            double distance = dr * dr + dc * dc;
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-        return best;
+        return 0;
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {
-        int playerRow = row(state.player.x, state.center.x);
-        int playerColumn = row(state.player.z, state.center.z);
+        while (routeIndex < routeLength - 1) {
+            double ax = worldX(routeRows[routeIndex], state.center.x);
+            double az = worldZ(routeColumns[routeIndex], state.center.z);
+            double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+            double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+            double ex = bx - ax, ez = bz - az;
+            double lengthSquared = ex * ex + ez * ez;
+            if (lengthSquared <= 1.0E-9D) { routeIndex++; continue; }
 
-        /*
-         * Find the closest future route point rather than requiring an exact
-         * one-tick cell match. This lets sprinting cross cell boundaries
-         * without freezing the route cursor at an old direction.
-         */
-        int bestIndex = routeIndex;
-        double bestDistance = Double.MAX_VALUE;
-        int end = Math.min(routeLength - 1, routeIndex + 12);
-
-        for (int i = routeIndex; i <= end; i++) {
-            int dr = routeRows[i] - playerRow;
-            int dc = routeColumns[i] - playerColumn;
-            double distance = dr * dr + dc * dc;
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestIndex = i;
+            double px = state.player.x - ax, pz = state.player.z - az;
+            double progress = (px * ex + pz * ez) / lengthSquared;
+            double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
+            if (progress >= ROUTE_ADVANCE_PROGRESS || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS) {
+                routeIndex++;
+            } else {
+                break;
             }
-        }
-
-        if (bestIndex > routeIndex) {
-            routeIndex = bestIndex;
         }
     }
 

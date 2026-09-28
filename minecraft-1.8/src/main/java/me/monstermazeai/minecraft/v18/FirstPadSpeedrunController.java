@@ -1489,7 +1489,11 @@ public final class FirstPadSpeedrunController {
             return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
-        double rad = Math.toRadians(state.player.yaw);
+        /*
+         * Evaluate the sweep against the yaw that will be in effect after this
+         * tick's turn command, rather than the stale pre-turn yaw.
+         */
+        double rad = Math.toRadians(commandedYaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
         double lateralVelocity = Math.abs(state.player.vx * forwardZ - state.player.vz * forwardX);
         if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
@@ -1583,9 +1587,14 @@ public final class FirstPadSpeedrunController {
     private String movementSafetyFailureReason(LegacyWorldObservation state,
                                                 int targetIndex,
                                                 float desiredYaw,
-                                                float yawError) {
+                                                float yawError,
+                                                float commandedYaw) {
         if (routeIndex >= routeLength - 1) return "route-end";
-        if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) return "heading";
+        /*
+         * Heading error is not itself a safety failure. The movement command
+         * can rotate and move in the same tick. The hard safety checks below
+         * evaluate the direction that will actually be commanded.
+         */
         if (Math.abs(state.player.y - state.center.y) > 1.50D) return "vertical";
 
         int nextIndex = routeIndex + 1;
@@ -1998,31 +2007,3 @@ public final class FirstPadSpeedrunController {
 
     private static double worldX(int routeRow, int centerX) {
         return (centerX - 49) + routeRow + 0.5D;
-    }
-
-    private static double worldZ(int routeColumn, int centerZ) {
-        return (centerZ - 49) + routeColumn + 0.5D;
-    }
-
-    private static int index(int r, int c) {
-        return r * SIZE + c;
-    }
-
-    private static boolean inBounds(int r, int c) {
-        return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
-    }
-
-    private static float normalise(float angle) {
-        while (angle > 180.0F) angle -= 360.0F;
-        while (angle < -180.0F) angle += 360.0F;
-        return angle;
-    }
-
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private static String format(double value) {
-        return String.format(java.util.Locale.ROOT, "%.2f", value);
-    }
-}

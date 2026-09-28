@@ -778,11 +778,75 @@ public final class FirstPadSpeedrunController {
         }
 
         if (goal < 0) {
-            log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+            /*
+             * A dynamic-mob-safe route is preferred, but it must never turn
+             * into a permanent "do nothing" state. Monster predictions are
+             * deliberately conservative and can temporarily close every
+             * predicted route even though the static floor graph is still
+             * traversable. Fall back to the shortest static physical route;
+             * the live movement controller will re-evaluate the committed edge
+             * against fresh mob observations before advancing.
+             */
+            log(state.worldTick, "[MonsterMazeAI/1.8] DYNAMIC ROUTE EXHAUSTED"
+                    + " tick=" + state.worldTick
                     + " start=" + startRow + "," + startColumn
                     + " pad=" + targetRow + "," + targetColumn
-                    + " reason=dynamic-mob-block");
-            return false;
+                    + " action=STATIC_FALLBACK");
+
+            Arrays.fill(bestArrivalTicks, Double.POSITIVE_INFINITY);
+            Arrays.fill(parent, -2);
+            open.clear();
+            bestArrivalTicks[start] = 0.0D;
+            parent[start] = -1;
+            open.add(new RouteNode(start, 0.0D,
+                    heuristicTicks(startRow, startColumn, targetRow, targetColumn)));
+
+            goal = -1;
+            while (!open.isEmpty()) {
+                RouteNode node = open.poll();
+                if (node.gTicks > bestArrivalTicks[node.index] + 1.0E-6D) continue;
+
+                int r = node.index / SIZE;
+                int c = node.index % SIZE;
+                if (Math.abs(r - targetRow) <= PAD_RADIUS
+                        && Math.abs(c - targetColumn) <= PAD_RADIUS) {
+                    goal = node.index;
+                    break;
+                }
+
+                goal = expandStaticNeighbour(state, node, r - 1, c, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r + 1, c, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r, c - 1, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r, c + 1, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r - 1, c - 1, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r - 1, c + 1, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r + 1, c - 1, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r + 1, c + 1, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r - 2, c, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r + 2, c, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r, c - 2, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+                goal = expandStaticNeighbour(state, node, r, c + 2, r, c, targetRow, targetColumn,
+                        bestArrivalTicks, parent, open, goal);
+            }
+
+            if (goal < 0) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+                        + " start=" + startRow + "," + startColumn
+                        + " pad=" + targetRow + "," + targetColumn
+                        + " reason=static-floor-disconnected");
+                return false;
+            }
         }
 
         int count = 0;
@@ -866,6 +930,24 @@ public final class FirstPadSpeedrunController {
         }
 
         return true;
+    }
+
+    private int expandStaticNeighbour(LegacyWorldObservation state,
+                                       RouteNode node, int r, int c,
+                                       int fromRow, int fromColumn,
+                                       int targetRow, int targetColumn,
+                                       double[] bestArrivalTicks, int[] parent,
+                                       PriorityQueue<RouteNode> open, int currentGoal) {
+        if (!canTraverseEdge(state, fromRow, fromColumn, r, c)) return currentGoal;
+        int next = index(r, c);
+        double edgeDistance = Math.hypot(r - fromRow, c - fromColumn);
+        double arrivalTicks = node.gTicks + edgeDistance * ESTIMATED_TICKS_PER_CELL;
+        if (arrivalTicks + 1.0E-6D >= bestArrivalTicks[next]) return currentGoal;
+        bestArrivalTicks[next] = arrivalTicks;
+        parent[next] = node.index;
+        open.add(new RouteNode(next, arrivalTicks,
+                arrivalTicks + heuristicTicks(r, c, targetRow, targetColumn)));
+        return currentGoal;
     }
 
     private int expandDynamicNeighbour(LegacyWorldObservation state,

@@ -616,14 +616,23 @@ public final class FirstPadSpeedrunController {
                 break;
             }
 
-            goal = expandDynamicNeighbour(state, node, r - 1, c, r, c,
-                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r + 1, c, r, c,
-                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r, c - 1, r, c,
-                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r, c + 1, r, c,
-                    targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r - 1, c, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r + 1, c, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+
+            // Permit diagonal traversal where two floor cells touch at a corner.
+            goal = expandDynamicNeighbour(state, node, r - 1, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r - 1, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r + 1, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r + 1, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+
+            // Permit a two-cell orthogonal edge only when exactly one missing
+            // floor cell lies between the two supported endpoint cells.
+            goal = expandDynamicNeighbour(state, node, r - 2, c, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r + 2, c, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r, c - 2, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
+            goal = expandDynamicNeighbour(state, node, r, c + 2, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
         }
 
         if (goal < 0) {
@@ -712,12 +721,13 @@ public final class FirstPadSpeedrunController {
                                        int[] parent,
                                        PriorityQueue<RouteNode> open,
                                        int currentGoal) {
-        if (!inBounds(r, c) || !state.physicalFloor[r][c]) {
+        if (!canTraverseEdge(state, fromRow, fromColumn, r, c)) {
             return currentGoal;
         }
 
         int next = index(r, c);
-        double arrivalTicks = node.gTicks + ESTIMATED_TICKS_PER_CELL;
+        double edgeDistance = Math.hypot(r - fromRow, c - fromColumn);
+        double arrivalTicks = node.gTicks + edgeDistance * ESTIMATED_TICKS_PER_CELL;
 
         /*
          * The start cell may be on the previous Safe Pad during a phase
@@ -756,8 +766,10 @@ public final class FirstPadSpeedrunController {
         double toX = worldX(toRow, state.center.x);
         double toZ = worldZ(toColumn, state.center.z);
 
-        for (int tick = 1; tick <= (int) Math.ceil(ESTIMATED_TICKS_PER_CELL); tick++) {
-            double fraction = tick / ESTIMATED_TICKS_PER_CELL;
+        double edgeDistance = Math.hypot(toRow - fromRow, toColumn - fromColumn);
+        int edgeTicks = Math.max(1, (int) Math.ceil(edgeDistance * ESTIMATED_TICKS_PER_CELL));
+        for (int tick = 1; tick <= edgeTicks; tick++) {
+            double fraction = tick / (edgeDistance * ESTIMATED_TICKS_PER_CELL);
             if (fraction > 1.0D) {
                 fraction = 1.0D;
             }
@@ -862,7 +874,7 @@ public final class FirstPadSpeedrunController {
 
     private static double heuristicTicks(int row, int column,
                                          int targetRow, int targetColumn) {
-        return (Math.abs(row - targetRow) + Math.abs(column - targetColumn))
+        return Math.hypot(row - targetRow, column - targetColumn)
                 * ESTIMATED_TICKS_PER_CELL;
     }
 
@@ -901,8 +913,9 @@ public final class FirstPadSpeedrunController {
         int end = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
         for (int i = routeIndex; i <= end; i++) {
             if (!routeCellSupported(state, i)) return true;
-            if (i > routeIndex && Math.abs(routeRows[i] - routeRows[i - 1])
-                    + Math.abs(routeColumns[i] - routeColumns[i - 1]) != 1) return true;
+            if (i > routeIndex && !isRouteEdgeTraversable(
+                    routeRows[i - 1], routeColumns[i - 1],
+                    routeRows[i], routeColumns[i])) return true;
         }
         return false;
     }
@@ -1058,6 +1071,44 @@ public final class FirstPadSpeedrunController {
         return inBounds(r, c) && state.physicalFloor[r][c];
     }
 
+    private boolean canTraverseEdge(LegacyWorldObservation state,
+                                    int fromRow, int fromColumn,
+                                    int toRow, int toColumn) {
+        if (!inBounds(fromRow, fromColumn) || !inBounds(toRow, toColumn)
+                || !state.physicalFloor[fromRow][fromColumn]
+                || !state.physicalFloor[toRow][toColumn]) {
+            return false;
+        }
+
+        int dr = toRow - fromRow;
+        int dc = toColumn - fromColumn;
+        int adr = Math.abs(dr);
+        int adc = Math.abs(dc);
+
+        // Orthogonal and diagonal one-cell movement.
+        if (adr <= 1 && adc <= 1 && adr + adc > 0) {
+            return true;
+        }
+
+        // One-block gap: supported endpoint, unsupported middle cell.
+        if ((adr == 2 && dc == 0) || (adc == 2 && dr == 0)) {
+            int middleRow = fromRow + Integer.signum(dr);
+            int middleColumn = fromColumn + Integer.signum(dc);
+            return !state.physicalFloor[middleRow][middleColumn];
+        }
+
+        return false;
+    }
+
+    private boolean isRouteEdgeTraversable(int fromRow, int fromColumn,
+                                           int toRow, int toColumn) {
+        int dr = Math.abs(toRow - fromRow);
+        int dc = Math.abs(toColumn - fromColumn);
+        return (dr <= 1 && dc <= 1 && dr + dc > 0)
+                || (dr == 2 && dc == 0)
+                || (dr == 0 && dc == 2);
+    }
+
     private String movementSafetyFailureReason(LegacyWorldObservation state,
                                                 int targetIndex,
                                                 float desiredYaw,
@@ -1069,13 +1120,14 @@ public final class FirstPadSpeedrunController {
         int nextIndex = routeIndex + 1;
         int nextRow = routeRows[nextIndex], nextColumn = routeColumns[nextIndex];
         if (!routeCellSupported(state, nextIndex)) return "next-floor";
-        if (Math.abs(nextRow - routeRows[routeIndex]) + Math.abs(nextColumn - routeColumns[routeIndex]) != 1)
-            return "route-disconnected";
+        if (!isRouteEdgeTraversable(
+                routeRows[routeIndex], routeColumns[routeIndex],
+                nextRow, nextColumn)) return "route-disconnected";
 
         for (int i = routeIndex; i < targetIndex; i++) {
             int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
             if (!routeCellSupported(state, i) || !routeCellSupported(state, i + 1)) return "lookahead-floor";
-            if (Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) return "lookahead-disconnected";
+            if (!isRouteEdgeTraversable(r1, c1, r2, c2)) return "lookahead-disconnected";
         }
 
         int edgeRow = nextRow - routeRows[routeIndex], edgeColumn = nextColumn - routeColumns[routeIndex];

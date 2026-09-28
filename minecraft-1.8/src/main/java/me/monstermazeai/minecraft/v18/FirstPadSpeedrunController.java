@@ -1326,6 +1326,22 @@ public final class FirstPadSpeedrunController {
      * every-corner checks reject legitimate boundary traversal and were the
      * source of the old "must be in the middle of the block" deadlock.
      */
+    /* SafePad is real physical support. A player can start at its boundary
+     * rather than at the centre of the logical start cell; predictive probes
+     * must not freeze the controller merely because the next probe has not yet
+     * overlapped that one route cell. Geometry matches SafePad.isOn: +/-2.5. */
+    private boolean activeSafePadSupportsFootprint(LegacyWorldObservation state,
+                                                    double x, double z) {
+        if (state.pad == null || state.pad.row < 0 || state.pad.column < 0) return false;
+        double padCenterX = (state.center.x - 49) + state.pad.row + 0.5D;
+        double padCenterZ = (state.center.z - 49) + state.pad.column + 0.5D;
+        double minX = x - PLAYER_HALF_WIDTH, maxX = x + PLAYER_HALF_WIDTH;
+        double minZ = z - PLAYER_HALF_WIDTH, maxZ = z + PLAYER_HALF_WIDTH;
+        double overlapX = Math.min(maxX, padCenterX + 2.5D) - Math.max(minX, padCenterX - 2.5D);
+        double overlapZ = Math.min(maxZ, padCenterZ + 2.5D) - Math.max(minZ, padCenterZ - 2.5D);
+        return overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D;
+    }
+
     private boolean routeSupportsFootprint(LegacyWorldObservation state,
                                             double x, double z,
                                             int maxRouteIndex) {
@@ -1333,6 +1349,8 @@ public final class FirstPadSpeedrunController {
         double maxX = x + PLAYER_HALF_WIDTH;
         double minZ = z - PLAYER_HALF_WIDTH;
         double maxZ = z + PLAYER_HALF_WIDTH;
+
+        if (activeSafePadSupportsFootprint(state, x, z)) return true;
 
         int minRow = row(minX, state.center.x);
         int maxRow = row(maxX - 1.0E-9D, state.center.x);

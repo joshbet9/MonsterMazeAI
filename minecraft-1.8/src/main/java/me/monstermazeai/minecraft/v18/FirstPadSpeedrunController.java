@@ -103,7 +103,7 @@ public final class FirstPadSpeedrunController {
     }
 
     private void log(long tick, String message) {
-        log(message);
+        System.out.println(message);
         if (telemetry != null) {
             telemetry.controllerEvent(tick, message);
         }

@@ -49,7 +49,10 @@ public final class GameRunSummaryRecorder {
     private int lastPadColumn = Integer.MIN_VALUE;
     private boolean lastPadReached;
     private String lastAction = "IDLE";
+    private static final int MAX_CRITICAL_EVENTS = 200;
+
     private final List<String> events = new ArrayList<String>();
+    private final List<String> criticalEvents = new ArrayList<String>();
     private final List<String> samples = new ArrayList<String>();
 
     public void reset() {
@@ -81,6 +84,7 @@ public final class GameRunSummaryRecorder {
         lastPadReached = false;
         lastAction = "IDLE";
         events.clear();
+        criticalEvents.clear();
         samples.clear();
     }
 
@@ -228,6 +232,11 @@ public final class GameRunSummaryRecorder {
                 .append(" maxAbsYawDelta=").append(format(maxAbsYawDelta))
                 .append(" maxAbsVerticalOffset=").append(format(maxAbsVerticalOffset)).append("\n");
 
+        out.append("CRITICAL_TIMELINE:\n");
+        for (String event : criticalEvents) {
+            out.append("  ").append(event).append("\n");
+        }
+
         out.append("EVENT_TIMELINE:\n");
         for (String event : events) {
             out.append("  ").append(event).append("\n");
@@ -243,13 +252,47 @@ public final class GameRunSummaryRecorder {
     }
 
     private void addEvent(long tick, String event) {
+        String line = "tick=" + tick + " " + event;
+
+        /*
+         * The high-frequency event stream is intentionally bounded, but
+         * route/phase failures must never disappear just because the movement
+         * controller produced many ACTION/IMPULSE lines first. Keep a second
+         * small stream for causal events that are required to diagnose a run.
+         */
+        if (isCriticalEvent(event) && criticalEvents.size() < MAX_CRITICAL_EVENTS) {
+            criticalEvents.add(line);
+        }
+
         if (events.size() >= MAX_EVENTS) {
             if (events.size() == MAX_EVENTS) {
-                events.add("... event limit reached; periodic samples retained");
+                events.add("... event limit reached; critical timeline retained separately");
             }
             return;
         }
-        events.add("tick=" + tick + " " + event);
+        events.add(line);
+    }
+
+    private static boolean isCriticalEvent(String event) {
+        return event.contains("PAD TRANSITION")
+                || event.contains("PAD REACHED")
+                || event.contains("PAD EXIT RECOVERY")
+                || event.contains("PAD ROUTE")
+                || event.contains("DYNAMIC ROUTE EXHAUSTED")
+                || event.contains("STATIC FALLBACK")
+                || event.contains("ROUTE REPLAN")
+                || event.contains("MOB ROUTE")
+                || event.contains("PHYSICAL ROUTE")
+                || event.contains("RECOVERY")
+                || event.contains("KNOCKBACK")
+                || event.contains("GAP COMMIT")
+                || event.contains("GAP TAKEOFF")
+                || event.contains("GAP EXECUTE")
+                || event.contains("GAP LANDING")
+                || event.contains("GAP MISSED")
+                || event.contains("NO_ROUTE")
+                || event.contains("ROUTE END WITHOUT PAD")
+                || event.contains("PAD TRANSITION ROUTE FAILED");
     }
 
     private void addSample(LegacyWorldObservation state, LegacyAction action,

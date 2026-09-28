@@ -97,6 +97,18 @@ public final class FirstPadSpeedrunController {
     private static final double KNOCKBACK_HORIZONTAL_SPEED = 0.35D;
     private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.45D;
     private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
+    /*
+     * A two-cell route edge is a deliberate one-block jump, not a walk across
+     * an unsupported cell. The jump must be initiated at the takeoff boundary
+     * of the source block so the normal sprint speed carries the player over
+     * the missing block. We remember the route edge that received the pulse
+     * so the generic every-other-tick jump spam cannot replace the edge-timed
+     * takeoff with an arbitrary jump phase.
+     */
+    private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.60D;
+    private static final double GAP_JUMP_LATE_TOLERANCE = 0.20D;
+    private static final double GAP_LANDING_PROGRESS = 1.55D;
+    private int gapJumpTriggeredRouteIndex = -1;
 
     public void setTelemetry(GameRunSummaryRecorder telemetry) {
         this.telemetry = telemetry;
@@ -489,8 +501,17 @@ public final class FirstPadSpeedrunController {
             return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
 
-        // Deliberately jump-spam: one tick pressed, one tick released.
-        boolean jumpPulse = (state.worldTick & 1L) == 0L;
+        /*
+         * Normal speedrun movement uses jump spam. A one-block gap gets a
+         * special edge-timed pulse: press jump while grounded just before the
+         * source block's far edge. This makes the jump deterministic instead
+         * of depending on whether the global jump-spam phase happens to line
+         * up with the takeoff boundary.
+         */
+        boolean gapJumpPulse = shouldTriggerGapJump(state);
+        boolean gapEdge = isCurrentEdgeGap(state);
+        boolean jumpPulse = gapJumpPulse
+                || (!gapEdge && (state.worldTick & 1L) == 0L);
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
@@ -533,6 +554,7 @@ public final class FirstPadSpeedrunController {
         previousPlayerZ = Double.NaN;
         knockbackRecoveryPending = false;
         lastKnockbackRecoveryTick = Long.MIN_VALUE;
+        gapJumpTriggeredRouteIndex = -1;
         routeStartsOnPreviousPad = false;
         previousPadSeedRow = -1;
         previousPadSeedColumn = -1;
@@ -676,6 +698,7 @@ public final class FirstPadSpeedrunController {
         routeColumns = newRouteColumns;
         routeLength = count;
         routeIndex = 0;
+        gapJumpTriggeredRouteIndex = -1;
         goalRow = targetRow;
         goalColumn = targetColumn;
         centerX = state.center.x;
@@ -968,6 +991,15 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
+        /*
+         * While executing an intentional one-block jump, the player's
+         * horizontal footprint is expected to be unsupported over the missing
+         * middle cell. Do not mistake that airborne span for a recovery event.
+         */
+        if (isGapTraversalActive(state)) {
+            return false;
+        }
+
         if (routeSupportsFootprint(state, state.player.x, state.player.z,
                 Math.min(routeIndex + 1, routeLength - 1))) {
             return false;
@@ -1109,6 +1141,109 @@ public final class FirstPadSpeedrunController {
                 || (dr == 0 && dc == 2);
     }
 
+    private boolean isCurrentEdgeGap(LegacyWorldObservation state) {
+        if (routeRows == null || routeColumns == null
+                || routeIndex < 0 || routeIndex >= routeLength - 1) {
+            return false;
+        }
+
+        int fromRow = routeRows[routeIndex];
+        int fromColumn = routeColumns[routeIndex];
+        int toRow = routeRows[routeIndex + 1];
+        int toColumn = routeColumns[routeIndex + 1];
+
+        int dr = Math.abs(toRow - fromRow);
+        int dc = Math.abs(toColumn - fromColumn);
+        if (!((dr == 2 && dc == 0) || (dr == 0 && dc == 2))) {
+            return false;
+        }
+
+        // Reconfirm the route edge still represents an actual one-block gap.
+        return canTraverseEdge(state, fromRow, fromColumn, toRow, toColumn);
+    }
+
+    /**
+     * Signed progress along the current route edge, measured in block lengths
+     * from the source cell centre. For a two-cell gap, the takeoff boundary is
+     * exactly +0.5 block from the source centre.
+     */
+    private double currentEdgeProgress(LegacyWorldObservation state) {
+        int fromRow = routeRows[routeIndex];
+        int fromColumn = routeColumns[routeIndex];
+        int toRow = routeRows[routeIndex + 1];
+        int toColumn = routeColumns[routeIndex + 1];
+
+        double fromX = worldX(fromRow, state.center.x);
+        double fromZ = worldZ(fromColumn, state.center.z);
+        double edgeX = toRow - fromRow;
+        double edgeZ = toColumn - fromColumn;
+        double length = Math.hypot(edgeX, edgeZ);
+        if (length <= 1.0E-9D) return 0.0D;
+
+        edgeX /= length;
+        edgeZ /= length;
+
+        return (state.player.x - fromX) * edgeX
+                + (state.player.z - fromZ) * edgeZ;
+    }
+
+    private boolean isGapJumpWindow(LegacyWorldObservation state) {
+        if (!isCurrentEdgeGap(state)) {
+            return false;
+        }
+
+        double progress = currentEdgeProgress(state);
+        double distanceToTakeoff = 0.50D - progress;
+
+        return gapJumpTriggeredRouteIndex == routeIndex
+                || (distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
+                    && distanceToTakeoff >= -GAP_JUMP_LATE_TOLERANCE);
+    }
+
+    private boolean isGapTraversalActive(LegacyWorldObservation state) {
+        if (!isCurrentEdgeGap(state)
+                || gapJumpTriggeredRouteIndex != routeIndex) {
+            return false;
+        }
+
+        double progress = currentEdgeProgress(state);
+
+        /*
+         * Keep the gap edge active from takeoff until the player has crossed
+         * the missing cell and reached the landing side. Once grounded beyond
+         * the landing threshold, normal route support/recovery checks resume.
+         */
+        return !state.player.grounded || progress < GAP_LANDING_PROGRESS;
+    }
+
+    private boolean shouldTriggerGapJump(LegacyWorldObservation state) {
+        if (!isCurrentEdgeGap(state)
+                || gapJumpTriggeredRouteIndex == routeIndex
+                || !state.player.grounded) {
+            return false;
+        }
+
+        double progress = currentEdgeProgress(state);
+        double distanceToTakeoff = 0.50D - progress;
+
+        if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE
+                || distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
+            return false;
+        }
+
+        gapJumpTriggeredRouteIndex = routeIndex;
+
+        log(state.worldTick, "[MonsterMazeAI/1.8] GAP JUMP"
+                + " tick=" + state.worldTick
+                + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+                + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
+                + " progress=" + format(progress)
+                + " distanceToTakeoff=" + format(distanceToTakeoff)
+                + " timing=edge");
+
+        return true;
+    }
+
     private String movementSafetyFailureReason(LegacyWorldObservation state,
                                                 int targetIndex,
                                                 float desiredYaw,
@@ -1128,6 +1263,16 @@ public final class FirstPadSpeedrunController {
             int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
             if (!routeCellSupported(state, i) || !routeCellSupported(state, i + 1)) return "lookahead-floor";
             if (!isRouteEdgeTraversable(r1, c1, r2, c2)) return "lookahead-disconnected";
+        }
+
+        /*
+         * A one-block gap is the one deliberate exception to the normal
+         * short forward-floor probe. The middle cell is expected to be empty;
+         * once the edge-timed jump is armed/triggered, the player is allowed to
+         * cross that unsupported horizontal span until the landing endpoint.
+         */
+        if (isGapJumpWindow(state)) {
+            return null;
         }
 
         int edgeRow = nextRow - routeRows[routeIndex], edgeColumn = nextColumn - routeColumns[routeIndex];

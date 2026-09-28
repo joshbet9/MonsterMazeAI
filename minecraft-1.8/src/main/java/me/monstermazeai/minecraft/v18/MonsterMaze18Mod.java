@@ -5,6 +5,7 @@ import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.adapter.LiveMovementValidator;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -27,6 +28,7 @@ public final class MonsterMaze18Mod {
     private FirstPadSpeedrunController firstPadSpeedrun;
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private boolean aiEnabled;
+    private boolean runEndedLatch;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
     private long observationLogCount;
 
@@ -42,6 +44,7 @@ public final class MonsterMaze18Mod {
         ClientRegistry.registerKeyBinding(toggleAi);
 
         aiEnabled = false;
+        runEndedLatch = false;
         observationLogCount = 0L;
         executor.setAiEnabled(false);
 
@@ -84,12 +87,14 @@ public final class MonsterMaze18Mod {
                 System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN disabled (F8)");
             } else {
                 firstPadSpeedrun.reset();
+                runEndedLatch = false;
                 observationLogCount = 0L;
                 System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN enabled (F8)");
             }
         }
 
-        if (!aiEnabled) {
+        if (!aiEnabled || runEndedLatch) {
+            executor.releaseAll();
             movementValidator.reset();
             return;
         }
@@ -122,6 +127,24 @@ public final class MonsterMaze18Mod {
             movementValidator.observe(state, executor.currentAction());
         } else {
             movementValidator.reset();
+        }
+    }
+
+    @SubscribeEvent
+    public void onClientChat(ClientChatReceivedEvent event) {
+        if (!aiEnabled || event == null || event.message == null) return;
+        String text = event.message.getUnformattedText();
+        if (text == null) return;
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("fell off the maze") || lower.contains("solo run over")
+                || lower.contains("you weren't on the safe pad")) {
+            runEndedLatch = true;
+            aiEnabled = false;
+            executor.setAiEnabled(false);
+            executor.releaseAll();
+            firstPadSpeedrun.reset();
+            movementValidator.reset();
+            System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat=\"" + text + "\"");
         }
     }
 

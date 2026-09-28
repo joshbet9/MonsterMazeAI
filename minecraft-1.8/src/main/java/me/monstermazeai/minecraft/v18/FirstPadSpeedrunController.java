@@ -121,11 +121,10 @@ public final class FirstPadSpeedrunController {
          */
         if (aligningForStage) {
             int headingIndex = firstRouteHeadingIndex();
-            double headingWorldX = worldX(routeRows[headingIndex], state.center.x);
-            double headingWorldZ = worldZ(routeColumns[headingIndex], state.center.z);
-
-            float desiredYaw = desiredYawTo(state.player.x, state.player.z,
-                    headingWorldX, headingWorldZ);
+            int fromIndex = Math.max(0, headingIndex - 1);
+            float desiredYaw = desiredYawForEdge(
+                    routeRows[fromIndex], routeColumns[fromIndex],
+                    routeRows[headingIndex], routeColumns[headingIndex]);
             float yawError = normalise(desiredYaw - state.player.yaw);
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 

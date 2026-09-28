@@ -168,13 +168,20 @@ public final class FirstPadSpeedrunController {
          */
         int nextIndex = routeIndex + 1;
         int targetIndex = safeLookaheadIndex();
-        double targetWorldX = worldX(routeRows[targetIndex], state.center.x);
-        double targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
-        double nextWorldX = worldX(routeRows[nextIndex], state.center.x);
-        double nextWorldZ = worldZ(routeColumns[nextIndex], state.center.z);
 
-        float desiredYaw = desiredYawTo(state.player.x, state.player.z,
-                nextWorldX, nextWorldZ);
+        /*
+         * Heading is defined by the discrete route edge, not by the vector
+         * from the player's current position to the next cell centre.
+         *
+         * The latter is subtly wrong when the player is near a logical cell
+         * boundary: e.g. standing at x=1.0 while traversing 50,50 -> 49,50
+         * points diagonally toward the next centre. That can disagree with
+         * movementSafetyAllowsForward(), which correctly evaluates the actual
+         * route edge, and can therefore create a permanent safety hold.
+         */
+        float desiredYaw = desiredYawForEdge(
+                routeRows[routeIndex], routeColumns[routeIndex],
+                routeRows[nextIndex], routeColumns[nextIndex]);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
@@ -212,12 +219,9 @@ public final class FirstPadSpeedrunController {
             }
             nextIndex = routeIndex + 1;
             targetIndex = safeLookaheadIndex();
-            targetWorldX = worldX(routeRows[targetIndex], state.center.x);
-            targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
-            nextWorldX = worldX(routeRows[nextIndex], state.center.x);
-            nextWorldZ = worldZ(routeColumns[nextIndex], state.center.z);
-            desiredYaw = desiredYawTo(state.player.x, state.player.z,
-                    nextWorldX, nextWorldZ);
+            desiredYaw = desiredYawForEdge(
+                    routeRows[routeIndex], routeColumns[routeIndex],
+                    routeRows[nextIndex], routeColumns[nextIndex]);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         }
@@ -771,10 +775,10 @@ public final class FirstPadSpeedrunController {
         return Math.min(1, routeLength - 1);
     }
 
-    private static float desiredYawTo(double fromX, double fromZ,
-                                      double targetX, double targetZ) {
-        double dx = targetX - fromX;
-        double dz = targetZ - fromZ;
+    private static float desiredYawForEdge(int fromRow, int fromColumn,
+                                             int toRow, int toColumn) {
+        double dx = toRow - fromRow;
+        double dz = toColumn - fromColumn;
         return (float) Math.toDegrees(Math.atan2(-dx, dz));
     }
 

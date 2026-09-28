@@ -43,7 +43,6 @@ public final class MonsterMaze18Mod {
 
         toggleAi = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
-
         ClientRegistry.registerKeyBinding(toggleAi);
 
         aiEnabled = false;
@@ -116,15 +115,6 @@ public final class MonsterMaze18Mod {
         LegacyWorldObservation state = observer.observe().state;
         observationLogCount++;
 
-        /*
-         * A game summary starts from the first authoritative in-maze
-         * observation, rather than from F8/lobby time. This keeps duration and
-         * event chronology tied to the actual Monster Maze run.
-         */
-        if (state.inMonsterMaze) {
-            gameSummary.observe(state, null);
-        }
-
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_OBS#" + observationLogCount
                     + " tick=" + state.worldTick
@@ -148,6 +138,11 @@ public final class MonsterMaze18Mod {
 
         if (state.inMonsterMaze) {
             movementValidator.observe(state, executor.currentAction());
+            /*
+             * Record exactly the action that was actually handed to the
+             * authoritative executor for this tick. This avoids double-counting
+             * observations and makes the summary reflect executed control.
+             */
             gameSummary.observe(state, executor.currentAction());
         } else {
             movementValidator.reset();
@@ -177,7 +172,7 @@ public final class MonsterMaze18Mod {
             executor.releaseAll();
             firstPadSpeedrun.reset();
             movementValidator.reset();
-            System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat="" + text + """);
+            System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat=\"" + text + "\"");
         }
     }
 

@@ -40,6 +40,7 @@ public final class MonsterMaze18Mod {
         movementValidator = new LiveMovementValidator();
         firstPadSpeedrun = new FirstPadSpeedrunController();
         gameSummary = new GameRunSummaryRecorder();
+        firstPadSpeedrun.setTelemetry(gameSummary);
 
         toggleAi = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
@@ -132,17 +133,16 @@ public final class MonsterMaze18Mod {
         // movement decision happen on the client thread, then MovementInput
         // consumes the command later in the same Minecraft tick. There is no IPC,
         // Future, stale-action window, command queue, or sidecar latency.
+        if (state.inMonsterMaze && !gameSummary.isActive()) {
+            gameSummary.begin(state.worldTick);
+        }
+
         LegacyAction action = firstPadSpeedrun.next(state);
         executor.applyForTicks(action, state.worldTick, 1L);
         executor.expireIfNeeded(state.worldTick);
 
         if (state.inMonsterMaze) {
             movementValidator.observe(state, executor.currentAction());
-            /*
-             * Record exactly the action that was actually handed to the
-             * authoritative executor for this tick. This avoids double-counting
-             * observations and makes the summary reflect executed control.
-             */
             gameSummary.observe(state, executor.currentAction());
         } else {
             movementValidator.reset();

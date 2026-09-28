@@ -25,7 +25,9 @@ public final class FirstPadSpeedrunController {
     private static final int PAD_RADIUS = 2;
     private static final float MAX_YAW_STEP = 30.0F;
     private static final float ALIGNMENT_TOLERANCE = 10.0F;
+    private static final float MAX_MOVING_YAW_ERROR = 22.0F;
     private static final int LOOKAHEAD_CELLS = 3;
+    private static final double EDGE_GUARD_MARGIN = 0.18D;
     /*
      * Mobs are hard dynamic obstacles. The planner predicts their short-term
      * position and rejects route cells whose estimated player arrival would
@@ -153,7 +155,7 @@ public final class FirstPadSpeedrunController {
          * Aim at an actual physical point on the route ahead. This is
          * deliberately route following, not strategic look-ahead.
          */
-        int targetIndex = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
+        int targetIndex = safeLookaheadIndex();
         double targetWorldX = worldX(routeRows[targetIndex], state.center.x);
         double targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
 
@@ -191,13 +193,25 @@ public final class FirstPadSpeedrunController {
                         + "," + routeColumns[Math.min(1, routeLength - 1)]);
             }
 
-            targetIndex = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
+            targetIndex = safeLookaheadIndex();
             targetWorldX = worldX(routeRows[targetIndex], state.center.x);
             targetWorldZ = worldZ(routeColumns[targetIndex], state.center.z);
             desiredYaw = desiredYawTo(state.player.x, state.player.z,
                     targetWorldX, targetWorldZ);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+        }
+
+        /* Hard movement safety invariant: never sprint while badly misaligned or off-floor. */
+        if (!movementSafetyAllowsForward(state, targetIndex, desiredYaw, yawError)) {
+            if (state.worldTick % 5L == 0L) {
+                System.out.println("[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
+                        + " tick=" + state.worldTick
+                        + " routeIndex=" + routeIndex
+                        + " target=" + routeRows[targetIndex] + "," + routeColumns[targetIndex]
+                        + " yawError=" + format(yawError));
+            }
+            return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
         // Deliberately jump-spam: one tick pressed, one tick released.
@@ -347,7 +361,7 @@ public final class FirstPadSpeedrunController {
         routeRows = newRouteRows;
         routeColumns = newRouteColumns;
         routeLength = count;
-        routeIndex = Math.min(1, Math.max(0, count - 1));
+        routeIndex = findBestRouteIndexForCurrentPosition(state, newRouteRows, newRouteColumns, count);
         goalRow = targetRow;
         goalColumn = targetColumn;
         centerX = state.center.x;
@@ -557,6 +571,82 @@ public final class FirstPadSpeedrunController {
             this.gTicks = gTicks;
             this.fScore = fScore;
         }
+    }
+
+    private int safeLookaheadIndex() {
+        int target = routeIndex;
+        int end = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
+        if (routeIndex >= routeLength - 1) return routeIndex;
+        int dr0 = routeRows[routeIndex + 1] - routeRows[routeIndex];
+        int dc0 = routeColumns[routeIndex + 1] - routeColumns[routeIndex];
+        for (int i = routeIndex + 1; i <= end; i++) {
+            int dr = routeRows[i] - routeRows[i - 1];
+            int dc = routeColumns[i] - routeColumns[i - 1];
+            if (dr != dr0 || dc != dc0) break;
+            target = i;
+        }
+        return target;
+    }
+
+    private boolean movementSafetyAllowsForward(LegacyWorldObservation state,
+                                                  int targetIndex,
+                                                  float desiredYaw,
+                                                  float yawError) {
+        int currentRow = row(state.player.x, state.center.x);
+        int currentColumn = row(state.player.z, state.center.z);
+        if (!inBounds(currentRow, currentColumn) || !state.physicalFloor[currentRow][currentColumn]) {
+            return false;
+        }
+        if (Math.abs(yawError) > MAX_MOVING_YAW_ERROR) return false;
+
+        int nextIndex = Math.min(routeLength - 1, routeIndex + 1);
+        if (nextIndex <= routeIndex) return true;
+        int nextRow = routeRows[nextIndex], nextColumn = routeColumns[nextIndex];
+        if (!inBounds(nextRow, nextColumn) || !state.physicalFloor[nextRow][nextColumn]) return false;
+
+        for (int i = routeIndex; i < targetIndex; i++) {
+            int r1 = routeRows[i], c1 = routeColumns[i];
+            int r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
+            if (!inBounds(r1, c1) || !inBounds(r2, c2)
+                    || !state.physicalFloor[r1][c1] || !state.physicalFloor[r2][c2]
+                    || Math.abs(r2 - r1) + Math.abs(c2 - c1) != 1) return false;
+        }
+
+        double cx = worldX(currentRow, state.center.x);
+        double cz = worldZ(currentColumn, state.center.z);
+        double ox = state.player.x - cx, oz = state.player.z - cz;
+        double tx = worldX(nextRow, state.center.x) - state.player.x;
+        double tz = worldZ(nextColumn, state.center.z) - state.player.z;
+        double len = Math.sqrt(tx * tx + tz * tz);
+        if (len < 1.0E-6D) return false;
+        tx /= len; tz /= len;
+
+        double boundaryX = 0.5D - Math.abs(ox);
+        double boundaryZ = 0.5D - Math.abs(oz);
+        if (boundaryX < EDGE_GUARD_MARGIN || boundaryZ < EDGE_GUARD_MARGIN) {
+            double rad = Math.toRadians(desiredYaw);
+            double fx = -Math.sin(rad), fz = Math.cos(rad);
+            if (fx * tx + fz * tz < 0.55D) return false;
+        }
+        return true;
+    }
+
+    private int findBestRouteIndexForCurrentPosition(LegacyWorldObservation state,
+                                                       int[] rows, int[] columns, int length) {
+        int playerRow = row(state.player.x, state.center.x);
+        int playerColumn = row(state.player.z, state.center.z);
+        int best = 0;
+        double bestDistance = Double.MAX_VALUE;
+        int max = Math.min(length - 1, 12);
+        for (int i = 0; i <= max; i++) {
+            int dr = rows[i] - playerRow, dc = columns[i] - playerColumn;
+            double distance = dr * dr + dc * dc;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = i;
+            }
+        }
+        return best;
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {

@@ -93,9 +93,21 @@ public final class FirstPadSpeedrunController {
     private double previousPlayerZ = Double.NaN;
     private boolean knockbackRecoveryPending;
     private long lastKnockbackRecoveryTick = Long.MIN_VALUE;
+    private GameRunSummaryRecorder telemetry;
     private static final double KNOCKBACK_HORIZONTAL_SPEED = 0.35D;
     private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.45D;
     private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
+
+    public void setTelemetry(GameRunSummaryRecorder telemetry) {
+        this.telemetry = telemetry;
+    }
+
+    private void log(long tick, String message) {
+        log(message);
+        if (telemetry != null) {
+            telemetry.controllerEvent(tick, message);
+        }
+    }
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -121,7 +133,7 @@ public final class FirstPadSpeedrunController {
             routeLength = 0;
             routeIndex = 0;
             aligningForStage = false;
-            System.out.println("[MonsterMazeAI/1.8] PAD EXIT RECOVERY"
+            log("[MonsterMazeAI/1.8] PAD EXIT RECOVERY"
                     + " tick=" + state.worldTick
                     + " player=" + format(state.player.x) + "," + format(state.player.z)
                     + " pad=" + state.pad.row + "," + state.pad.column
@@ -133,7 +145,7 @@ public final class FirstPadSpeedrunController {
                 targetReached = true;
                 long elapsed = startedAtTick == Long.MIN_VALUE
                         ? 0L : state.worldTick - startedAtTick;
-                System.out.println("[MonsterMazeAI/1.8] PAD REACHED"
+                log("[MonsterMazeAI/1.8] PAD REACHED"
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " elapsedTicks=" + elapsed
@@ -176,7 +188,7 @@ public final class FirstPadSpeedrunController {
 
             if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE) {
                 aligningForStage = false;
-                System.out.println("[MonsterMazeAI/1.8] PAD ALIGNED"
+                log("[MonsterMazeAI/1.8] PAD ALIGNED"
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
@@ -184,7 +196,7 @@ public final class FirstPadSpeedrunController {
                         + " desiredYaw=" + format(desiredYaw));
             } else {
                 if (state.worldTick % 2L == 0L) {
-                    System.out.println("[MonsterMazeAI/1.8] PAD ALIGN"
+                    log("[MonsterMazeAI/1.8] PAD ALIGN"
                             + " stage=" + state.stage
                             + " tick=" + state.worldTick
                             + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
@@ -212,7 +224,7 @@ public final class FirstPadSpeedrunController {
                 && state.worldTick - lastKnockbackRecoveryTick >= KNOCKBACK_RECOVERY_COOLDOWN_TICKS) {
             knockbackRecoveryPending = true;
             lastKnockbackRecoveryTick = state.worldTick;
-            System.out.println("[MonsterMazeAI/1.8] KNOCKBACK DETECTED"
+            log("[MonsterMazeAI/1.8] KNOCKBACK DETECTED"
                     + " tick=" + state.worldTick
                     + " pos=" + format(state.player.x) + "," + format(state.player.z)
                     + " motion=" + format(state.player.vx) + "," + format(state.player.vz));
@@ -227,13 +239,13 @@ public final class FirstPadSpeedrunController {
             routeIndex = 0;
             aligningForStage = false;
             if (beginRecovery(state)) {
-                System.out.println("[MonsterMazeAI/1.8] KNOCKBACK REANCHOR"
+                log("[MonsterMazeAI/1.8] KNOCKBACK REANCHOR"
                         + " tick=" + state.worldTick
                         + " player=" + format(state.player.x) + "," + format(state.player.z));
                 return recoveryAction(state);
             }
             if (buildRoute(state)) {
-                System.out.println("[MonsterMazeAI/1.8] KNOCKBACK REPLAN"
+                log("[MonsterMazeAI/1.8] KNOCKBACK REPLAN"
                         + " tick=" + state.worldTick
                         + " start=" + routeRows[0] + "," + routeColumns[0]
                         + " target=" + goalRow + "," + goalColumn);
@@ -263,7 +275,7 @@ public final class FirstPadSpeedrunController {
                 recoveryRow = -1;
                 recoveryColumn = -1;
                 if (buildRoute(state)) {
-                    System.out.println("[MonsterMazeAI/1.8] RECOVERY REANCHORED"
+                    log("[MonsterMazeAI/1.8] RECOVERY REANCHORED"
                             + " tick=" + state.worldTick
                             + " start=" + routeRows[0] + "," + routeColumns[0]
                             + " target=" + goalRow + "," + goalColumn);
@@ -326,7 +338,7 @@ public final class FirstPadSpeedrunController {
                  */
                 if (beginRecovery(state)) {
                     if (state.worldTick % 5L == 0L) {
-                        System.out.println("[MonsterMazeAI/1.8] ROUTE REPLAN FAILED"
+                        log("[MonsterMazeAI/1.8] ROUTE REPLAN FAILED"
                                 + " tick=" + state.worldTick
                                 + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
                                 + " reason=" + (mobBlocked ? "dynamic-mob-block" : "physical-route")
@@ -337,13 +349,13 @@ public final class FirstPadSpeedrunController {
                 if (mobBlocked) {
                     lastFailedMobReplanTick = state.worldTick;
                     if (state.worldTick % 5L == 0L) {
-                        System.out.println("[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
+                        log("[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
                                 + " tick=" + state.worldTick
                                 + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
                                 + " action=RETRY_FROM_CURRENT_POSITION");
                     }
                 } else if (state.worldTick % 5L == 0L) {
-                    System.out.println("[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
+                    log("[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
                             + " tick=" + state.worldTick
                             + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
                             + " action=RETRY_FROM_CURRENT_POSITION");
@@ -352,7 +364,7 @@ public final class FirstPadSpeedrunController {
             }
             lastFailedMobReplanTick = Long.MIN_VALUE;
             if (state.worldTick % 5L == 0L) {
-                System.out.println("[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
+                log("[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
                         + " tick=" + state.worldTick
                         + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
                         + " newLength=" + routeLength
@@ -382,7 +394,7 @@ public final class FirstPadSpeedrunController {
         if (!safetyOk || Math.abs(yawError) > MOVING_YAW_TOLERANCE) {
             headingStableTicks = 0;
             if (state.worldTick % 5L == 0L) {
-                System.out.println("[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
+                log("[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"
                         + " tick=" + state.worldTick
                         + " routeIndex=" + routeIndex
                         + " next=" + routeRows[nextIndex] + "," + routeColumns[nextIndex]
@@ -406,7 +418,7 @@ public final class FirstPadSpeedrunController {
         boolean jumpPulse = (state.worldTick & 1L) == 0L;
 
         if (state.worldTick % 10L == 0L) {
-            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
+            log("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
                     + " tick=" + state.worldTick
                     + " pos=" + format(state.player.x) + "," + format(state.player.z)
                     + " route=" + routeIndex + "/" + (routeLength - 1)
@@ -474,7 +486,7 @@ public final class FirstPadSpeedrunController {
         int[] physicalStart = findNearestPhysicalStartCell(
                 state, nominalStartRow, nominalStartColumn, standingOnPreviousPad);
         if (physicalStart == null) {
-            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+            log("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + nominalStartRow + "," + nominalStartColumn
                     + " reason=no-physical-support-cell");
             return false;
@@ -483,7 +495,7 @@ public final class FirstPadSpeedrunController {
         int startColumn = physicalStart[1];
 
         if (!state.physicalFloor[startRow][startColumn] && !standingOnPreviousPad) {
-            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+            log("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + startRow + "," + startColumn);
             return false;
         }
@@ -540,7 +552,7 @@ public final class FirstPadSpeedrunController {
         }
 
         if (goal < 0) {
-            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
+            log("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
                     + " start=" + startRow + "," + startColumn
                     + " pad=" + targetRow + "," + targetColumn
                     + " reason=dynamic-mob-block");
@@ -599,7 +611,7 @@ public final class FirstPadSpeedrunController {
         }
 
         if (lastLoggedStage != state.stage || mobReplan) {
-            System.out.println("[MonsterMazeAI/1.8] PAD ROUTE"
+            log("[MonsterMazeAI/1.8] PAD ROUTE"
                     + " stage=" + state.stage
                     + " tick=" + state.worldTick
                     + " start=" + startRow + "," + startColumn
@@ -885,7 +897,7 @@ public final class FirstPadSpeedrunController {
         recoveryColumn = candidate[1];
         recovering = true;
         if (state.worldTick - lastRecoveryLogTick >= 5L) {
-            System.out.println("[MonsterMazeAI/1.8] RECOVERY START"
+            log("[MonsterMazeAI/1.8] RECOVERY START"
                     + " tick=" + state.worldTick
                     + " player=" + format(state.player.x) + "," + format(state.player.z)
                     + " cell=" + recoveryRow + "," + recoveryColumn

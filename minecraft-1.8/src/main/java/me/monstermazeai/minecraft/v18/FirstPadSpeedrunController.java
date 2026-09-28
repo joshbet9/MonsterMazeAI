@@ -729,7 +729,8 @@ public final class FirstPadSpeedrunController {
         if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) return "heading";
         if (Math.abs(state.player.y - state.center.y) > 1.50D) return "vertical";
 
-        int nextRow = routeRows[routeIndex + 1], nextColumn = routeColumns[routeIndex + 1];
+        int nextIndex = routeIndex + 1;
+        int nextRow = routeRows[nextIndex], nextColumn = routeColumns[nextIndex];
         if (!routeCellSupported(state, nextIndex)) return "next-floor";
         if (Math.abs(nextRow - routeRows[routeIndex]) + Math.abs(nextColumn - routeColumns[routeIndex]) != 1)
             return "route-disconnected";

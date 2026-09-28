@@ -30,7 +30,6 @@ public final class FirstPadSpeedrunController {
     private static final boolean TEST_STATIONARY_TURNING = true;
     private static final float MOVING_YAW_TOLERANCE = 12.0F;
     private static final int HEADING_STABLE_TICKS = 0;
-    private static final double PLAYER_HALF_WIDTH = 0.30D;
     private static final double SAFETY_PROBE_DISTANCE = 0.34D;
     private static final double ROUTE_ADVANCE_PROGRESS = 0.80D;
     private static final double ROUTE_WAYPOINT_CAPTURE_RADIUS = 0.65D;
@@ -695,14 +694,6 @@ public final class FirstPadSpeedrunController {
         return inBounds(r, c) && state.physicalFloor[r][c];
     }
 
-    private boolean physicalFloorSupportsFootprint(LegacyWorldObservation state, double x, double z) {
-        double[] offsets = new double[] {-PLAYER_HALF_WIDTH, PLAYER_HALF_WIDTH};
-        for (double ox : offsets) for (double oz : offsets) {
-            if (!physicalFloorCell(state, row(x + ox, state.center.x), row(z + oz, state.center.z))) return false;
-        }
-        return true;
-    }
-
     private String movementSafetyFailureReason(LegacyWorldObservation state,
                                                 int targetIndex,
                                                 float desiredYaw,
@@ -710,7 +701,6 @@ public final class FirstPadSpeedrunController {
         if (routeIndex >= routeLength - 1) return "route-end";
         if (Math.abs(yawError) > MOVING_YAW_TOLERANCE) return "heading";
         if (Math.abs(state.player.y - state.center.y) > 1.50D) return "vertical";
-        if (!physicalFloorSupportsFootprint(state, state.player.x, state.player.z)) return "player-footprint";
 
         int nextRow = routeRows[routeIndex + 1], nextColumn = routeColumns[routeIndex + 1];
         if (!physicalFloorCell(state, nextRow, nextColumn)) return "next-floor";
@@ -731,9 +721,23 @@ public final class FirstPadSpeedrunController {
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
         if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
 
+        /*
+         * Safety is evaluated against the route surface, not against an
+         * artificial four-corner player footprint. Minecraft's 1.8.9 player
+         * collision box is continuous and may legitimately straddle logical
+         * cell boundaries while the player remains on safe physical floor.
+         *
+         * The forward probe asks the useful question: if the player advances
+         * a small distance in the commanded direction, does the destination
+         * cell still contain physical floor? This also works while leaving a
+         * Safe Pad, where the current cell may still be the previous pad but
+         * the next cell is the first normal maze cell.
+         */
         double probeX = state.player.x + forwardX * SAFETY_PROBE_DISTANCE;
         double probeZ = state.player.z + forwardZ * SAFETY_PROBE_DISTANCE;
-        if (!physicalFloorSupportsFootprint(state, probeX, probeZ)) return "predicted-footprint";
+        int probeRow = row(probeX, state.center.x);
+        int probeColumn = row(probeZ, state.center.z);
+        if (!physicalFloorCell(state, probeRow, probeColumn)) return "predicted-floor";
         return null;
     }
 

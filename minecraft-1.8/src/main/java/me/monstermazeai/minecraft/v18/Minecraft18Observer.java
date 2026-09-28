@@ -324,14 +324,26 @@ public final class Minecraft18Observer {
 
     private BlockPos findMazeCenter(World world, EntityPlayerSP player, boolean scoreboardDetected) {
         if (cachedCenter != null && cachedMazeDetected) {
+            /*
+             * Once a complete authoritative maze layout has been identified,
+             * the centre is stable for the entire round. Do not revalidate the
+             * centre marker every tick: Monster Maze deliberately mutates the
+             * centre safe zone during deterioration, so the marker can cease
+             * matching even though the player is still inside the same 99x99
+             * arena. Losing the centre here destroys the world-to-maze
+             * coordinate frame and can stop an otherwise valid run.
+             *
+             * Y remains a useful sanity check because a teleport/death to a
+             * different vertical layer is a genuine round boundary signal.
+             */
             int playerY = player.getPosition().getY();
-            if (Math.abs(playerY - cachedCenter.getY()) <= 3
-                    && matchesCenterAnchor(world, cachedCenter)) {
+            if (Math.abs(playerY - cachedCenter.getY()) <= 3) {
                 return cachedCenter;
             }
             System.out.println("[MonsterMazeAI/1.8] CENTER CACHE INVALID old="
                     + cachedCenter.getX() + "," + cachedCenter.getY() + "," + cachedCenter.getZ()
-                    + " player=" + player.posX + "," + player.posY + "," + player.posZ);
+                    + " player=" + player.posX + "," + player.posY + "," + player.posZ
+                    + " reason=vertical-mismatch");
             cachedCenter = null;
             cachedMazeDetected = false;
             cachedMazePattern = -1;

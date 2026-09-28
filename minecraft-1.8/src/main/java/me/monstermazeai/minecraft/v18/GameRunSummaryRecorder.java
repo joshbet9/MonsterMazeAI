@@ -18,7 +18,7 @@ import java.util.Map;
  * while retaining the important causal timeline.
  */
 public final class GameRunSummaryRecorder {
-    private static final int MAX_EVENTS = 120;
+    private static final int MAX_EVENTS = 400;
     private static final int MAX_SAMPLES = 80;
 
     private long gameNumber;

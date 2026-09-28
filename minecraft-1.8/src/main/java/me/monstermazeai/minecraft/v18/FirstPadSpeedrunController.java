@@ -89,6 +89,13 @@ public final class FirstPadSpeedrunController {
     private int recoveryRow = -1;
     private int recoveryColumn = -1;
     private long lastRecoveryLogTick = Long.MIN_VALUE;
+    private double previousPlayerX = Double.NaN;
+    private double previousPlayerZ = Double.NaN;
+    private boolean knockbackRecoveryPending;
+    private long lastKnockbackRecoveryTick = Long.MIN_VALUE;
+    private static final double KNOCKBACK_HORIZONTAL_SPEED = 0.35D;
+    private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.45D;
+    private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
 
     public LegacyAction next(LegacyWorldObservation state) {
         if (state == null || !state.inMonsterMaze || !state.mazeDetected
@@ -99,12 +106,28 @@ public final class FirstPadSpeedrunController {
         }
 
         boolean atTarget = state.pad.reached || isInsidePad(state);
+        boolean suddenHorizontalImpulse = detectSuddenHorizontalImpulse(state);
 
         /*
-         * Once the current pad is reached, stop all movement and wait. The
-         * observer intentionally keeps reporting the current active beacon
-         * until the server's phase transition promotes the preview pad.
+         * A mob can knock the player off an otherwise valid SafePad while the
+         * server is still in the same phase. targetReached is not permission
+         * to remain idle forever: if the player leaves the pad, the controller
+         * must resume from the player's actual position. This is especially
+         * important when the pad subsequently deteriorates and its physical
+         * 5x5 surface is restored to the underlying maze.
          */
+        if (targetReached && !atTarget) {
+            targetReached = false;
+            routeLength = 0;
+            routeIndex = 0;
+            aligningForStage = false;
+            System.out.println("[MonsterMazeAI/1.8] PAD EXIT RECOVERY"
+                    + " tick=" + state.worldTick
+                    + " player=" + format(state.player.x) + "," + format(state.player.z)
+                    + " pad=" + state.pad.row + "," + state.pad.column
+                    + " reason=left-active-pad");
+        }
+
         if (atTarget) {
             if (!targetReached) {
                 targetReached = true;
@@ -175,6 +198,48 @@ public final class FirstPadSpeedrunController {
 
         if (targetReached || routeLength <= 1) {
             return LegacyAction.IDLE;
+        }
+
+        /*
+         * Treat a sudden horizontal impulse as a movement-model invalidation.
+         * Normal sprint/jump motion stays below these thresholds; mob bumps
+         * can inject a substantially larger horizontal velocity or one-tick
+         * displacement. Do not attempt to continue the old route through a
+         * knockback event. Wait for the player to settle back onto the maze,
+         * then re-anchor and rebuild from the observed position.
+         */
+        if (suddenHorizontalImpulse && !recovering
+                && state.worldTick - lastKnockbackRecoveryTick >= KNOCKBACK_RECOVERY_COOLDOWN_TICKS) {
+            knockbackRecoveryPending = true;
+            lastKnockbackRecoveryTick = state.worldTick;
+            System.out.println("[MonsterMazeAI/1.8] KNOCKBACK DETECTED"
+                    + " tick=" + state.worldTick
+                    + " pos=" + format(state.player.x) + "," + format(state.player.z)
+                    + " motion=" + format(state.player.vx) + "," + format(state.player.vz));
+        }
+
+        if (knockbackRecoveryPending) {
+            if (!state.player.grounded || Math.abs(state.player.y - state.center.y) > 1.50D) {
+                return LegacyAction.IDLE;
+            }
+            knockbackRecoveryPending = false;
+            routeLength = 0;
+            routeIndex = 0;
+            aligningForStage = false;
+            if (beginRecovery(state)) {
+                System.out.println("[MonsterMazeAI/1.8] KNOCKBACK REANCHOR"
+                        + " tick=" + state.worldTick
+                        + " player=" + format(state.player.x) + "," + format(state.player.z));
+                return recoveryAction(state);
+            }
+            if (buildRoute(state)) {
+                System.out.println("[MonsterMazeAI/1.8] KNOCKBACK REPLAN"
+                        + " tick=" + state.worldTick
+                        + " start=" + routeRows[0] + "," + routeColumns[0]
+                        + " target=" + goalRow + "," + goalColumn);
+            } else {
+                return LegacyAction.IDLE;
+            }
         }
 
         advanceRouteIndex(state);
@@ -377,6 +442,10 @@ public final class FirstPadSpeedrunController {
         recoveryRow = -1;
         recoveryColumn = -1;
         lastRecoveryLogTick = Long.MIN_VALUE;
+        previousPlayerX = Double.NaN;
+        previousPlayerZ = Double.NaN;
+        knockbackRecoveryPending = false;
+        lastKnockbackRecoveryTick = Long.MIN_VALUE;
         routeStartsOnPreviousPad = false;
         previousPadSeedRow = -1;
         previousPadSeedColumn = -1;
@@ -782,6 +851,18 @@ public final class FirstPadSpeedrunController {
      * than the discrete routeIndex. This catches the exact case where the
      * player has crossed beyond the current waypoint before the index update.
      */
+    private boolean detectSuddenHorizontalImpulse(LegacyWorldObservation state) {
+        double dx = Double.isNaN(previousPlayerX) ? 0.0D : state.player.x - previousPlayerX;
+        double dz = Double.isNaN(previousPlayerZ) ? 0.0D : state.player.z - previousPlayerZ;
+        previousPlayerX = state.player.x;
+        previousPlayerZ = state.player.z;
+
+        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double tickDisplacement = Math.hypot(dx, dz);
+        return horizontalSpeed >= KNOCKBACK_HORIZONTAL_SPEED
+                || tickDisplacement >= KNOCKBACK_TICK_DISPLACEMENT;
+    }
+
     private boolean routePositionNeedsRecovery(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) {
             return false;

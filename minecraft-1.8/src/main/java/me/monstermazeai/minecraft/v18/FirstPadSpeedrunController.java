@@ -463,40 +463,49 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
-        double predictionTicks = Math.min(arrivalTicks, MOB_PREDICT_TICKS);
-
         for (LegacyWorldObservation.Monster monster : state.monsters) {
             if (monster.removed) {
                 continue;
             }
 
-            double predictedX = monster.x + monster.vx * predictionTicks;
-            double predictedZ = monster.z + monster.vz * predictionTicks;
-
-            double dx = predictedX - playerX;
-            double dz = predictedZ - playerZ;
-            double horizontalDistanceSquared = dx * dx + dz * dz;
-
             /*
-             * Contact is a hard failure for this benchmark. We intentionally
-             * do not rely on future jump height to declare a mob safe.
+             * Only make a moving monster a hard prediction within the horizon
+             * we can actually trust. Do not clamp a long route's arrival time
+             * to t=30 and then treat that frozen position as the monster's
+             * future position indefinitely.
              */
-            if (horizontalDistanceSquared < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS) {
-                return true;
-            }
+            if (arrivalTicks <= MOB_PREDICT_TICKS) {
+                double predictedX = monster.x + monster.vx * arrivalTicks;
+                double predictedZ = monster.z + monster.vz * arrivalTicks;
 
-            /*
-             * Beyond the velocity-prediction horizon, a stationary monster is
-             * still a permanent obstacle. Moving monsters will be reconsidered
-             * from fresh observations as the player advances.
-             */
-            if (arrivalTicks > MOB_PREDICT_TICKS) {
-                double currentDx = monster.x - playerX;
-                double currentDz = monster.z - playerZ;
-                if (currentDx * currentDx + currentDz * currentDz
-                        < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS
-                        && Math.abs(monster.vx) + Math.abs(monster.vz) < 0.03D) {
+                double dx = predictedX - playerX;
+                double dz = predictedZ - playerZ;
+                double horizontalDistanceSquared = dx * dx + dz * dz;
+
+                /*
+                 * Contact is a hard failure for this benchmark. We intentionally
+                 * do not rely on future jump height to declare a mob safe.
+                 */
+                if (horizontalDistanceSquared < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS) {
                     return true;
+                }
+            } else {
+                /*
+                 * Beyond the trusted prediction horizon:
+                 * - stationary mobs remain hard obstacles;
+                 * - moving mobs are not projected indefinitely.
+                 *
+                 * Fresh observations will cause routeNeedsMobReplan() to
+                 * reconsider the route as the player advances.
+                 */
+                double speed = Math.abs(monster.vx) + Math.abs(monster.vz);
+                if (speed < 0.03D) {
+                    double currentDx = monster.x - playerX;
+                    double currentDz = monster.z - playerZ;
+                    if (currentDx * currentDx + currentDz * currentDz
+                            < MOB_HAZARD_RADIUS * MOB_HAZARD_RADIUS) {
+                        return true;
+                    }
                 }
             }
         }

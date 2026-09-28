@@ -26,6 +26,7 @@ public final class MonsterMaze18Mod {
     private Minecraft18ActionExecutor executor;
     private LiveMovementValidator movementValidator;
     private FirstPadSpeedrunController firstPadSpeedrun;
+    private GameRunSummaryRecorder gameSummary;
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private boolean aiEnabled;
     private boolean runEndedLatch;
@@ -38,9 +39,11 @@ public final class MonsterMaze18Mod {
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
         movementValidator = new LiveMovementValidator();
         firstPadSpeedrun = new FirstPadSpeedrunController();
+        gameSummary = new GameRunSummaryRecorder();
 
         toggleAi = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
+
         ClientRegistry.registerKeyBinding(toggleAi);
 
         aiEnabled = false;
@@ -53,6 +56,7 @@ public final class MonsterMaze18Mod {
 
         System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN mode ready (F8)");
         System.out.println("[MonsterMazeAI/1.8] No sidecar/planner is used in this benchmark");
+        System.out.println("[MonsterMazeAI/1.8] Per-game GPT summary telemetry enabled");
     }
 
     @SubscribeEvent
@@ -64,6 +68,11 @@ public final class MonsterMaze18Mod {
         }
 
         if (minecraft.theWorld == null || minecraft.thePlayer == null) {
+            if (gameSummary != null && gameSummary.isActive()) {
+                printGameSummary(gameSummary.finish(
+                        minecraft.theWorld == null ? 0L : minecraft.theWorld.getTotalWorldTime(),
+                        "WORLD_LEFT"));
+            }
             executor.releaseAll();
             executor.setAiEnabled(false);
             aiEnabled = false;
@@ -81,6 +90,10 @@ public final class MonsterMaze18Mod {
             executor.setAiEnabled(aiEnabled);
 
             if (!aiEnabled) {
+                if (gameSummary != null && gameSummary.isActive()) {
+                    printGameSummary(gameSummary.finish(
+                            minecraft.theWorld.getTotalWorldTime(), "AI_DISABLED"));
+                }
                 executor.releaseAll();
                 firstPadSpeedrun.reset();
                 movementValidator.reset();
@@ -89,6 +102,7 @@ public final class MonsterMaze18Mod {
                 firstPadSpeedrun.reset();
                 runEndedLatch = false;
                 observationLogCount = 0L;
+                gameSummary.reset();
                 System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN enabled (F8)");
             }
         }
@@ -101,6 +115,15 @@ public final class MonsterMaze18Mod {
 
         LegacyWorldObservation state = observer.observe().state;
         observationLogCount++;
+
+        /*
+         * A game summary starts from the first authoritative in-maze
+         * observation, rather than from F8/lobby time. This keeps duration and
+         * event chronology tied to the actual Monster Maze run.
+         */
+        if (state.inMonsterMaze) {
+            gameSummary.observe(state, null);
+        }
 
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
             System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_OBS#" + observationLogCount
@@ -125,6 +148,7 @@ public final class MonsterMaze18Mod {
 
         if (state.inMonsterMaze) {
             movementValidator.observe(state, executor.currentAction());
+            gameSummary.observe(state, executor.currentAction());
         } else {
             movementValidator.reset();
         }
@@ -139,13 +163,27 @@ public final class MonsterMaze18Mod {
         if (lower.contains("fell off the maze") || lower.contains("solo run over")
                 || lower.contains("you weren't on the safe pad")) {
             runEndedLatch = true;
+
+            if (gameSummary != null && gameSummary.isActive()) {
+                printGameSummary(gameSummary.finish(
+                        Minecraft.getMinecraft().theWorld == null
+                                ? 0L
+                                : Minecraft.getMinecraft().theWorld.getTotalWorldTime(),
+                        "CHAT: " + text));
+            }
+
             aiEnabled = false;
             executor.setAiEnabled(false);
             executor.releaseAll();
             firstPadSpeedrun.reset();
             movementValidator.reset();
-            System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat=\"" + text + "\"");
+            System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat="" + text + """);
         }
+    }
+
+    private void printGameSummary(String summary) {
+        if (summary == null) return;
+        System.out.println(summary);
     }
 
     private void ensureMovementInput(Minecraft minecraft) {

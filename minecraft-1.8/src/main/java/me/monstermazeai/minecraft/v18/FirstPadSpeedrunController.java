@@ -523,6 +523,7 @@ public final class FirstPadSpeedrunController {
                     log(state.worldTick, "[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
                             + " tick=" + state.worldTick
                             + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                            + " buildFailure=" + lastRouteBuildFailureReason
                             + " action=RETRY_FROM_CURRENT_POSITION");
                 }
                 return LegacyAction.IDLE;

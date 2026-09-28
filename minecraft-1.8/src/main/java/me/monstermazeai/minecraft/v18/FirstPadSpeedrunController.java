@@ -520,6 +520,15 @@ public final class FirstPadSpeedrunController {
         boolean physicalRouteInvalid = routeNeedsPhysicalReplan(state);
         boolean mobBlocked = routeNeedsMobReplan(state);
         if (physicalRouteInvalid || mobBlocked) {
+            /*
+             * A committed gap is a physics-critical transaction. Dynamic mob
+             * replanning is suspended until the landing is confirmed; changing
+             * route arrays during the jump would invalidate the committed edge.
+             */
+            if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) {
+                return executeCommittedGap(state);
+            }
+
             int oldLength = routeLength;
             int oldIndex = routeIndex;
 
@@ -1955,6 +1964,17 @@ public final class FirstPadSpeedrunController {
     }
 
     private void advanceRouteIndex(LegacyWorldObservation state) {
+        /*
+         * A committed one-block gap owns the route edge until its landing is
+         * confirmed. The generic waypoint capture logic must not advance the
+         * route index across the missing cell: doing so invalidates
+         * gapExecutionRouteIndex on the following tick and lets normal
+         * replanning take over while the player is airborne.
+         */
+        if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) {
+            return;
+        }
+
         /*
          * The speedrun can move roughly half a block per client tick. A
          * one-cell waypoint can therefore be crossed between observations.

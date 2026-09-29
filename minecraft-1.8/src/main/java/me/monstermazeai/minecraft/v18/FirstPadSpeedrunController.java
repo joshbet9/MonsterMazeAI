@@ -885,7 +885,7 @@ public final class FirstPadSpeedrunController {
                     + " jump=" + jumpPulse);
         }
 
-        return new LegacyAction(1.0f, 0.0f, jumpPulse, isCurrentEdgeGap(state), yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
     }
 
     public void reset() {

@@ -828,8 +828,21 @@ public final class FirstPadSpeedrunController {
                 && Math.abs(nominalStartRow - previousPadCenterRow) <= PAD_RADIUS
                 && Math.abs(nominalStartColumn - previousPadCenterColumn) <= PAD_RADIUS;
 
-        int[] physicalStart = findNearestPhysicalStartCell(
-                state, nominalStartRow, nominalStartColumn, standingOnPreviousPad);
+        /*
+         * During a pad transition the player's continuous position can already
+         * be several tenths of a block inside a neighbouring logical cell,
+         * while the old SafePad is still the actual launch surface. The route
+         * graph represents that launch surface by the previous pad centre.
+         * Starting A* from the player's nominal cell here can therefore create
+         * an invalid synthetic start: canTraverseEdge() only permits the
+         * previous-pad exception when the source node is the previous pad
+         * centre itself. Force the graph start back to that authoritative
+         * previous-pad seed whenever the player is still inside it.
+         */
+        int[] physicalStart = standingOnPreviousPad
+                ? new int[] {previousPadCenterRow, previousPadCenterColumn}
+                : findNearestPhysicalStartCell(
+                        state, nominalStartRow, nominalStartColumn, false);
         if (physicalStart == null) {
             lastRouteBuildFailureReason = "no-physical-support-cell";
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"

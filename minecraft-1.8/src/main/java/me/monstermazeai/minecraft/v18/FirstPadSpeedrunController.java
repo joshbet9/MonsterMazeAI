@@ -156,7 +156,7 @@ public final class FirstPadSpeedrunController {
      * back toward an already-passed corner.
      */
     private static final double ROUTE_NEAREST_CAPTURE_RADIUS = 1.85D;
-    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 8;
+    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 3;
     private static final double DIAGONAL_SUPPORT_MIN_AREA = 0.01D;
     /*
      * A two-cell route edge is a deliberate one-block jump, not a walk across
@@ -885,7 +885,7 @@ public final class FirstPadSpeedrunController {
                     + " jump=" + jumpPulse);
         }
 
-        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, isCurrentEdgeGap(state), yawDelta, false);
     }
 
     public void reset() {
@@ -2627,7 +2627,9 @@ public final class FirstPadSpeedrunController {
 
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
-                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
+                    && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
+                    || physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z));
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
@@ -2710,8 +2712,7 @@ public final class FirstPadSpeedrunController {
              * capture of the selected candidate itself.
              */
             if (bestIndex > routeIndex
-                    && bestDistance + 0.05D < currentDistance
-                    && routeEdgeHasPhysicalCapture(state, bestIndex)) {
+                    && bestDistance + 0.05D < currentDistance) {
                 int oldIndex = routeIndex;
                 routeIndex = bestIndex;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;

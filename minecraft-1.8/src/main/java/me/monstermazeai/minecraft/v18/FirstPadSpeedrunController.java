@@ -2902,7 +2902,8 @@ public final class FirstPadSpeedrunController {
         if (routeIndex + 2 < routeLength
                 && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
                 && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
-                && distanceToWaypoint < 1.75D) {
+                && distanceToWaypoint < 1.75D
+                && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE) {
             int nextDr = routeRows[routeIndex + 2] - routeRows[routeIndex + 1];
             int nextDc = routeColumns[routeIndex + 2] - routeColumns[routeIndex + 1];
             if (nextDr == 0 && nextDc == 0) {

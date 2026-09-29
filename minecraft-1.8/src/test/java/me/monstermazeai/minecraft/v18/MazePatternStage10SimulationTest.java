@@ -89,7 +89,7 @@ public final class MazePatternStage10SimulationTest {
                     .append(" maxStage=").append(maxStage)
                     .append('\n');
 
-            System.out.println("\\n--- Maze " + (pattern + 1) + " diagnostics ---\\n" + report);
+            System.err.println("\\n--- Maze " + (pattern + 1) + " diagnostics ---\\n" + report);
 
             assertTrue("Maze " + (pattern + 1) + " did not pass every simulation.\\n" + report,
                     passed == SEEDS_PER_PATTERN);

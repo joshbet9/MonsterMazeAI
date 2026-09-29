@@ -51,7 +51,8 @@ public final class MazePatternStage10SimulationTest {
     private static final double JUMP_VELOCITY = 0.42D;
     private static final double GRAVITY = 0.08D;
     private static final double VERTICAL_DRAG = 0.98D;
-    private static final double SPRINT_JUMP_BOOST = 0.20D;\n    private static final double MAX_SIM_HORIZONTAL_SPEED = 0.28D;
+    private static final double SPRINT_JUMP_BOOST = 0.20D;
+    private static final double MAX_SIM_HORIZONTAL_SPEED = 0.28D;
 
     @Test(timeout = 180000)
     public void everyMazePatternReachesStageTenOnEverySimulation() {

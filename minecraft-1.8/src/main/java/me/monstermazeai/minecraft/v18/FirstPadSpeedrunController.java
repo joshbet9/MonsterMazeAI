@@ -605,8 +605,18 @@ public final class FirstPadSpeedrunController {
          * the recovery logic above.
          */
         if (!state.player.grounded
-                && routePositionOnCommittedEnvelope(state)
-                && !gapExecutionActive) {
+                && !gapExecutionActive
+                && state.player.y > state.center.y - 2.00D
+                && routeLength > 1) {
+            /*
+             * Sprint jumps deliberately chain while airborne. A route rebuild
+             * from an airborne continuous position can select a different
+             * corridor cell than the one whose horizontal momentum is already
+             * carrying the player, which is exactly how the simulator produced
+             * repeated mid-flight deaths. Grounded ticks are the safe point for
+             * physical validation and replanning; airborne ticks preserve the
+             * committed route and steer only.
+             */
             float airborneDesiredYaw = desiredYaw;
             float airborneYawError = normalise(airborneDesiredYaw - state.player.yaw);
             float airYawDelta = clamp(airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);

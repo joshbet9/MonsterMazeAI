@@ -2225,21 +2225,33 @@ public final class FirstPadSpeedrunController {
              * causes repeated "takeoff" attempts while the player walks away.
              */
             if (state.player.grounded) {
-                log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
-                        + " tick=" + state.worldTick
-                        + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                        + " progress=" + format(progress)
-                        + " endpointDistance=" + format(destinationDistance));
-                gapExecutionActive = false;
-                gapTakeoffStarted = false;
-                gapExecutionRouteIndex = -1;
-                gapLandingConfirmTicks = 0;
-                resetGapMomentum();
-                routeIndex++;
-                if (routeIndex > 0 && routeStartsOnPreviousPad) {
-                    routeStartsOnPreviousPad = false;
+                /*
+                 * If the player has landed beyond the destination centre, do
+                 * not blindly advance by one route node. The real 1.8 client
+                 * can carry a jump 1-2 blocks past a waypoint before the first
+                 * grounded observation. Accept only a physically supported
+                 * future route cell on the same committed straight span.
+                 */
+                int capturedIndex = findPostGapLandingIndex(
+                        state, routeIndex + 1, 6, 2.75D);
+                if (capturedIndex >= routeIndex + 1) {
+                    log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
+                            + " tick=" + state.worldTick
+                            + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                            + " progress=" + format(progress)
+                            + " endpointDistance=" + format(destinationDistance)
+                            + " capturedIndex=" + capturedIndex);
+                    gapExecutionActive = false;
+                    gapTakeoffStarted = false;
+                    gapExecutionRouteIndex = -1;
+                    gapLandingConfirmTicks = 0;
+                    resetGapMomentum();
+                    routeIndex = capturedIndex;
+                    if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                        routeStartsOnPreviousPad = false;
+                    }
+                    return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
                 }
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
             }
 
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
@@ -2281,6 +2293,37 @@ public final class FirstPadSpeedrunController {
          */
         boolean launchTick = state.player.grounded && gapTakeoffStarted;
         return new LegacyAction(1.0f, 0.0f, true, !launchTick, 0.0f, false);
+    }
+
+    private int findPostGapLandingIndex(
+            LegacyWorldObservation state, int firstIndex, int lookahead, double maxDistance) {
+        if (firstIndex >= routeLength) return -1;
+        int end = Math.min(routeLength - 1, firstIndex + lookahead);
+        int baseDr = Integer.signum(routeRows[firstIndex] - routeRows[firstIndex - 1]);
+        int baseDc = Integer.signum(routeColumns[firstIndex] - routeColumns[firstIndex - 1]);
+        int best = -1;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (int i = firstIndex; i <= end; i++) {
+            if (i > firstIndex) {
+                int dr = Integer.signum(routeRows[i] - routeRows[i - 1]);
+                int dc = Integer.signum(routeColumns[i] - routeColumns[i - 1]);
+                if (dr != baseDr || dc != baseDc || edgeType(i - 1) == EdgeType.ONE_BLOCK_GAP) {
+                    break;
+                }
+            }
+            if (!routeCellSupported(state, i)) continue;
+            double distance = Math.hypot(
+                    state.player.x - worldX(routeRows[i], state.center.x),
+                    state.player.z - worldZ(routeColumns[i], state.center.z));
+            if (distance > maxDistance || !physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z)) continue;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = i;
+            }
+        }
+        return best;
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

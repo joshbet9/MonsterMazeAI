@@ -39,6 +39,25 @@ class AutonomousMonsterMazeAgentTest {
     }
 
     @Test
+    void changedObjectivePreservesPreviousPadAsTransitionAnchor() {
+        GameState state = liveState(50, 50, 55, 50);
+        AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(controller());
+
+        assertNotEquals(Action.IDLE, agent.decide(state, true));
+
+        state.tick++;
+        state.maze.setPhysicalFloor(50, 50, false);
+        state.activePadRow = 70;
+        state.activePadColumn = 70;
+
+        Action action = agent.decide(state, true);
+
+        assertNotEquals(Action.IDLE, action,
+                "a changed active pad must remain routable while the player is still standing on the old SafePad");
+        assertTrue(state.oldPads.contains(new Cell(55, 50)));
+    }
+
+    @Test
     void lobbyDeathAndCompletionResetToIdle() {
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(controller());
         GameState state = liveState(50, 50, 55, 50);

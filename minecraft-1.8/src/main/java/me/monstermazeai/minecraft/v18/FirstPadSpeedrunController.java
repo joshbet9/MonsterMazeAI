@@ -157,7 +157,7 @@ public final class FirstPadSpeedrunController {
      * difficulty tendencies.
      */
     private static final double GAP_MOMENTUM_DISTANCE_REQUIRED = 3.0D;
-    private static final double GAP_MOMENTUM_MIN_FORWARD_SPEED = 0.22D;
+    private static final double GAP_MOMENTUM_MIN_FORWARD_SPEED = 0.10D;
     private static final float GAP_MOMENTUM_HEADING_TOLERANCE = 15.0F;
     private static final double GAP_MOMENTUM_LATERAL_SPEED_LIMIT = 0.12D;
     private static final float GAP_MOMENTUM_DIRECTION_TOLERANCE = 15.0F;
@@ -1680,8 +1680,7 @@ public final class FirstPadSpeedrunController {
         double lateralVelocity = Math.abs(state.player.vx * dz - state.player.vz * dx);
         double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
 
-        boolean qualified = state.player.grounded
-                && Math.abs(yawError) <= GAP_MOMENTUM_HEADING_TOLERANCE
+        boolean qualified = Math.abs(yawError) <= GAP_MOMENTUM_HEADING_TOLERANCE
                 && forwardVelocity >= GAP_MOMENTUM_MIN_FORWARD_SPEED
                 && lateralVelocity <= GAP_MOMENTUM_LATERAL_SPEED_LIMIT;
 

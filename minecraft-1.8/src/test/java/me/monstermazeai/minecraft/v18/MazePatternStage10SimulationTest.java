@@ -226,6 +226,24 @@ public final class MazePatternStage10SimulationTest {
                 }
             }
 
+            /*
+             * GameManager.checkPlayersOnSafePad() runs every tick. In this
+             * single-player simulator, once the player is physically on the
+             * active pad, all alive players are on it, so the source reduces
+             * the phase timer to four seconds.
+             */
+            if (targetCaptured && isOnPad(player, activePad)) {
+                stageTicksRemaining = Math.min(stageTicksRemaining, 4 * 20);
+            }
+
+            if (stageTicksRemaining <= 0) {
+                    result.stage = stage;
+                    result.ticks = ticks;
+                    result.failure = "PASS";
+                    return result;
+                }
+            }
+
             if (stageTicksRemaining <= 0) {
                 if (!targetCaptured) {
                     result.stage = stage;

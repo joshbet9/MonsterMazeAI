@@ -57,7 +57,26 @@ public final class RobustLiveController {
         lastZ = state.player.z;
 
         Action action = objective.nextAction(state, allowJump);
+        boolean useAbility = AbilityDecision.shouldUse(
+                state, objective.lastDecisionReason(), objective.lastDecisionDetail());
+
+        /*
+         * An ability is allowed to rescue a failed movement objective. In
+         * particular, Repulsor is specifically intended to clear a monster
+         * that makes the current pad deadline unreachable; returning IDLE
+         * before evaluating the ability would make that policy impossible to
+         * execute.
+         */
         if (action == Action.IDLE) {
+            if (useAbility && abilityGate.allow(state, useAbility)) {
+                abilityGate.record(state);
+                Action ability = new Action(0.0, 0.0, false, false, 0.0F, true);
+                lastDecisionDetail = "ABILITY_EMERGENCY objective=" + objective.lastDecisionReason()
+                        + " detail=" + objective.lastDecisionDetail()
+                        + " output=" + describe(ability);
+                stuckTicks = 0;
+                return ability;
+            }
             lastDecisionDetail = "OBJECTIVE_IDLE reason=" + objective.lastDecisionReason()
                     + " detail=" + objective.lastDecisionDetail()
                     + " stuckTicks=" + stuckTicks;
@@ -76,7 +95,7 @@ public final class RobustLiveController {
             return jump;
         }
 
-        if (AbilityDecision.shouldUse(state) && abilityGate.allow(state)) {
+        if (useAbility && abilityGate.allow(state)) {
             abilityGate.record(state);
             Action ability = new Action(action.forward(), action.strafe(), action.jump(),
                     action.sprint(), action.yawDelta(), true);

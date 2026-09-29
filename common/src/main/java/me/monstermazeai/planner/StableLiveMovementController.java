@@ -623,11 +623,25 @@ public final class StableLiveMovementController {
 
         int segmentRow = Integer.signum(cells.get(fromIndex + 1).row() - previousRow);
         int segmentColumn = Integer.signum(cells.get(fromIndex + 1).column() - previousColumn);
+        int segmentLength = Math.abs(cells.get(fromIndex + 1).row() - previousRow)
+                + Math.abs(cells.get(fromIndex + 1).column() - previousColumn);
 
         for (int i = fromIndex + 1; i < cells.size() - 1; i++) {
-            int nextRow = Integer.signum(cells.get(i + 1).row() - cells.get(i).row());
-            int nextColumn = Integer.signum(cells.get(i + 1).column() - cells.get(i).column());
-            if (nextRow != segmentRow || nextColumn != segmentColumn) {
+            int nextRowDelta = cells.get(i + 1).row() - cells.get(i).row();
+            int nextColumnDelta = cells.get(i + 1).column() - cells.get(i).column();
+            int nextRow = Integer.signum(nextRowDelta);
+            int nextColumn = Integer.signum(nextColumnDelta);
+            int nextLength = Math.abs(nextRowDelta) + Math.abs(nextColumnDelta);
+            /*
+             * A one-block gap is encoded as a two-cell route edge in exactly
+             * the same cardinal direction as the following floor edge. Direction
+             * alone therefore cannot identify the boundary. Treat an edge-length
+             * change as a waypoint boundary so the gap executor sees the
+             * immediate gap edge instead of being handed the final straight-run
+             * waypoint and walking past the gap.
+             */
+            if (nextRow != segmentRow || nextColumn != segmentColumn
+                    || nextLength != segmentLength) {
                 return i;
             }
         }
@@ -862,6 +876,8 @@ public final class StableLiveMovementController {
         double distanceToTakeoff = 0.50D - progress;
         if (progress >= 0.15D && progress <= 1.65D) {
             gapExecutionActive = true;
+            // Commit early enough that a single-tick physics/replan boundary
+            // cannot make us miss the jump input at the block edge.
             gapTakeoffStarted = progress >= 0.35D;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
@@ -896,7 +912,7 @@ public final class StableLiveMovementController {
             return null;
         }
         double progress = currentGapProgress(state, gapExecutionRouteIndex);
-        if (!gapTakeoffStarted && progress >= 0.50D) {
+        if (!gapTakeoffStarted && progress >= 0.35D) {
             gapTakeoffStarted = true;
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText() + " progress=" + format(progress);
         }
@@ -920,9 +936,25 @@ public final class StableLiveMovementController {
             clearGapCommitment();
             return null;
         }
+        /*
+         * The critical edge tick is the last grounded tick on the source
+         * block. Do not make the jump input depend on a narrow exact progress
+         * threshold or on whether the previous observation happened to mark
+         * takeoff as started. Once committed, keep jump held/pulsed whenever
+         * grounded until the landing is confirmed. This removes the observed
+         * "ran off the end without pressing space" failure caused by a one-tick
+         * observation boundary.
+         *
+         * allowJump means a charged/real jump is available. Non-Jumper
+         * speeding still benefits from the jump input, so the motor input is
+         * intentionally requested for the committed gap regardless of that
+         * permission; the server-side jump lock suppresses the actual jump.
+         */
+        boolean jumpInput = state.player.grounded;
         lastDecisionDetail = "GAP_EXECUTE edge=" + gapEdgeText() + " progress=" + format(progress)
-                + " takeoff=" + gapTakeoffStarted;
-        return new Action(1.0, 0.0, gapTakeoffStarted && allowJump, true, 0.0F, false);
+                + " takeoff=" + gapTakeoffStarted + " jumpInput=" + jumpInput
+                + " allowJump=" + allowJump;
+        return new Action(1.0, 0.0, jumpInput, true, 0.0F, false);
     }
 
     private boolean isGapEdge(GameState state, int fromRow, int fromColumn, int toRow, int toColumn) {

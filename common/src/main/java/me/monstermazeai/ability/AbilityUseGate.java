@@ -12,16 +12,23 @@ import me.monstermazeai.kit.Kit;
 public final class AbilityUseGate {
     private long nextAllowedTick = Long.MIN_VALUE;
     private Kit lastKit;
+    private int lastRepulsorCharges = Integer.MIN_VALUE;
 
     public boolean allow(GameState state) {
-        if (state == null || state.kit == null || !AbilityDecision.shouldUse(state)) return false;
+        return allow(state, AbilityDecision.shouldUse(state));
+    }
+
+    public boolean allow(GameState state, boolean decision) {
+        if (state == null || state.kit == null || !decision) return false;
         if (state.kit != lastKit) return true;
+        if (state.kit == Kit.REPULSOR && state.ability.charges < lastRepulsorCharges) return true;
         return state.tick >= nextAllowedTick;
     }
 
     public void record(GameState state) {
         if (state == null) return;
         lastKit = state.kit;
+        if (state.kit == Kit.REPULSOR) lastRepulsorCharges = state.ability.charges;
         switch (state.kit) {
             case SLOWBALLER:
                 nextAllowedTick = state.tick + 600;
@@ -30,7 +37,7 @@ public final class AbilityUseGate {
                 nextAllowedTick = state.tick + 200;
                 break;
             case REPULSOR:
-                nextAllowedTick = state.tick + 1;
+                nextAllowedTick = state.tick + 8;
                 break;
             default:
                 nextAllowedTick = state.tick + 1;

@@ -1660,7 +1660,7 @@ public final class FirstPadSpeedrunController {
         }
 
         double progress = currentEdgeProgress(state);
-        if (!gapTakeoffStarted && progress >= 0.50D) {
+        if (!gapTakeoffStarted && progress >= 0.35D) {
             gapTakeoffStarted = true;
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
@@ -1702,8 +1702,12 @@ public final class FirstPadSpeedrunController {
                 + " progress=" + format(progress) + " grounded=" + state.player.grounded
                 + " jumpSpam=" + gapTakeoffStarted);
         // Before takeoff: W+sprint only, preserving a straight grounded approach.
-        // From the takeoff boundary onward: W+sprint+jump every tick.
-        return new LegacyAction(1.0f, 0.0f, gapTakeoffStarted, true, 0.0f, false);
+        // From a conservative pre-edge boundary onward: keep Space requested on
+        // every grounded observation. At sprint speed a single tick is enough
+        // to cross the source block edge, so waiting for exactly +0.50 progress
+        // can miss the only grounded jump-input window.
+        boolean jumpInput = state.player.grounded && gapTakeoffStarted;
+        return new LegacyAction(1.0f, 0.0f, jumpInput, true, 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

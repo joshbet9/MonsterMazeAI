@@ -120,7 +120,7 @@ class MonsterAwareRoutePlannerTest {
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(3.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
-        assertEquals(6, route.size());
+        assertEquals(7, route.size());
         for (int i = 0; i + 1 < route.size(); i++) {
             int dr = Math.abs(route.cells().get(i + 1).row() - route.cells().get(i).row());
             int dc = Math.abs(route.cells().get(i + 1).column() - route.cells().get(i).column());

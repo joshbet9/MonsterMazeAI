@@ -48,6 +48,6 @@ class AbilityUseGateTest {
         gate.record(s);
         s.kit = Kit.REPULSOR;
         s.ability.charges = 3;
-        assertTrue(gate.allow(s));
+        assertTrue(gate.allow(s, true));
     }
 }

@@ -42,12 +42,14 @@ public final class LiveObjectiveController {
             return Action.IDLE;
         }
 
-        if (state.padReached) {
-            lastDecisionReason = "PAD_REACHED";
-            lastDecisionDetail = "observation says active pad is reached";
-            return Action.IDLE;
-        }
-
+        /*
+         * Do not latch completion from the observation boolean. The Minecraft
+         * observer recomputes padReached each observation, but a phase
+         * transition can replace the active pad while the previous completion
+         * state is still present in an in-flight observation. Authoritative
+         * geometry above is the only completion gate; the new active pad must
+         * always become actionable immediately.
+         */
         try {
             Action action = movement.nextActions(
                     state,

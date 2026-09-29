@@ -143,6 +143,15 @@ public final class StableLiveMovementController {
     private long padEntryStartTick = Long.MIN_VALUE;
     private boolean gapExecutionActive;
     private boolean gapTakeoffStarted;
+    /*
+     * When a new SafePad activates while the player is still standing on the
+     * previous pad, acquire the first route segment's heading before allowing
+     * forward input. This makes the pad transition look like a deliberate
+     * turn-and-go instead of a last-second 90/180-degree head snap.
+     */
+    private boolean padTransitionFacing;
+    private int padTransitionPreviousRow = -1;
+    private int padTransitionPreviousColumn = -1;
     private int gapExecutionRouteIndex = -1;
     private int gapLandingConfirmTicks;
 
@@ -210,6 +219,16 @@ public final class StableLiveMovementController {
         if (objectiveChanged) {
             clearRoute();
             clearGapCommitment();
+            padTransitionFacing = previousGoalRow >= 0
+                    && previousGoalColumn >= 0
+                    && PadModel.isOn(state.player, previousGoalRow + 0.5,
+                            GameState.PAD_SURFACE_Y, previousGoalColumn + 0.5);
+            if (padTransitionFacing) {
+                padTransitionPreviousRow = previousGoalRow;
+                padTransitionPreviousColumn = previousGoalColumn;
+            } else {
+                clearPadTransitionFacing();
+            }
             goalRow = goal.row();
             goalColumn = goal.column();
             goalRadius = regionRadius;
@@ -311,6 +330,16 @@ public final class StableLiveMovementController {
         if (route.size() == 1) {
             lastDecisionDetail = "REACHED routeSize=1";
             return Action.IDLE;
+        }
+
+        /*
+         * The next pad has now spawned and a route exists. While the player is
+         * still on the old pad, spend the transition ticks rotating in place
+         * toward the first route segment. Once aligned, normal movement resumes.
+         */
+        if (padTransitionFacing) {
+            Action facing = executePadTransitionFacing(state);
+            if (facing != null) return facing;
         }
 
         // A route waypoint is a turn cell. Once its centre is reached, switch
@@ -543,6 +572,7 @@ public final class StableLiveMovementController {
         previousHealth = Double.NaN;
         clearPadEntryCommitment();
         clearGapCommitment();
+        clearPadTransitionFacing();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;
@@ -666,6 +696,18 @@ public final class StableLiveMovementController {
             return;
         }
 
+        /*
+         * A background tactical route may improve the long-term path, but it
+         * must not reverse the motor's immediate cardinal segment while that
+         * segment is still physically valid. Monster updates were otherwise
+         * producing alternating first headings and left/right oscillation.
+         */
+        if (route != null && !strategicRoutePreservesCurrentHeading(
+                state, planned.route, startRow, startColumn)) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
         route = planned.route;
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
@@ -744,6 +786,76 @@ public final class StableLiveMovementController {
             }
         }
         return cells.size() - 1;
+    }
+
+    private Action executePadTransitionFacing(GameState state) {
+        if (!padTransitionFacing) return null;
+
+        if (!PadModel.isOn(state.player, padTransitionPreviousRow + 0.5,
+                GameState.PAD_SURFACE_Y, padTransitionPreviousColumn + 0.5)) {
+            clearPadTransitionFacing();
+            return null;
+        }
+
+        if (route == null || route.size() < 2) {
+            clearPadTransitionFacing();
+            return null;
+        }
+
+        Cell from = route.cells().get(0);
+        Cell to = route.cells().get(1);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (Math.abs(dirRow) + Math.abs(dirColumn) != 1) {
+            clearPadTransitionFacing();
+            return null;
+        }
+
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        if (Math.abs(yawError) <= HEADING_TOLERANCE) {
+            clearPadTransitionFacing();
+            return null;
+        }
+
+        float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        lastDecisionDetail = "PAD_TRANSITION_FACE"
+                + " oldPad=" + padTransitionPreviousRow + "," + padTransitionPreviousColumn
+                + " firstHeading=" + desiredYaw
+                + " yawError=" + format(yawError)
+                + " yawDelta=" + format(turn);
+        return new Action(0.0, 0.0, false, false, turn, false);
+    }
+
+    private void clearPadTransitionFacing() {
+        padTransitionFacing = false;
+        padTransitionPreviousRow = -1;
+        padTransitionPreviousColumn = -1;
+    }
+
+    private boolean strategicRoutePreservesCurrentHeading(
+            GameState state, PlayerRoute planned, int startRow, int startColumn) {
+        if (planned == null || planned.size() < 2 || route == null || route.size() < 2) {
+            return true;
+        }
+
+        int currentTargetIndex = Math.max(1, Math.min(waypointIndex, route.size() - 1));
+        Cell currentFrom = route.cells().get(currentTargetIndex - 1);
+        Cell currentTo = route.cells().get(currentTargetIndex);
+        int currentRowDirection = Integer.signum(currentTo.row() - currentFrom.row());
+        int currentColumnDirection = Integer.signum(currentTo.column() - currentFrom.column());
+
+        Cell plannedFrom = planned.cells().get(0);
+        Cell plannedTo = planned.cells().get(1);
+        if (plannedFrom.row() != startRow || plannedFrom.column() != startColumn) {
+            return false;
+        }
+
+        int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
+        int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());
+
+        return currentRowDirection == plannedRowDirection
+                && currentColumnDirection == plannedColumnDirection;
     }
 
     private static float cardinalYaw(int rowDirection, int columnDirection) {

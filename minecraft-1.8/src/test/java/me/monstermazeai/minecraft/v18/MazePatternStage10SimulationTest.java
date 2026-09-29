@@ -45,7 +45,9 @@ public final class MazePatternStage10SimulationTest {
     private static final int MAX_TICKS_PER_STAGE = 900;
     private static final int TRANSITION_HOLD_TICKS = 6;
 
-    // Movement is delegated to common.LegacyMovementModel, the same 1.8.9 model used by the AI runtime.
+    // Centered-world AABB footprint used by the real 1.8.9 player.
+    private static final double PLAYER_HALF_WIDTH = 0.30D;
+    // Movement is mirrored from the common 1.8.9 model used by the AI runtime.
 
     @Test(timeout = 180000)
     public void everyMazePatternReachesStageTenOnEverySimulation() {

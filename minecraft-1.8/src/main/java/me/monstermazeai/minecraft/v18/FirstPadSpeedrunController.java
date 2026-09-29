@@ -367,7 +367,7 @@ public final class FirstPadSpeedrunController {
             double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
             if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE
                     && state.player.grounded
-                    && horizontalSpeed <= 0.08D) {
+                    && horizontalSpeed <= 0.02D) {
                 aligningForStage = false;
                 log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGNED"
                         + " stage=" + state.stage

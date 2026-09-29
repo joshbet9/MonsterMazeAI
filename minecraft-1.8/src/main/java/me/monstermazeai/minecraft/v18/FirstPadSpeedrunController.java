@@ -1787,7 +1787,20 @@ public final class FirstPadSpeedrunController {
     private LegacyAction prepareOrStartGap(LegacyWorldObservation state,
                                             float desiredYaw, float yawError) {
         if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) return executeCommittedGap(state);
-        if (!state.player.grounded) return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
+
+        /*
+         * Airborne is not a reason to stop on Monster Maze. The normal
+         * speed-boost technique deliberately keeps the player in the air by
+         * holding Space. The old branch returned IDLE here whenever a gap was
+         * encountered during a jump, which converted a valid jump into a
+         * guaranteed fall. Keep W+sprint+Space active while airborne and let
+         * the normal client jump cooldown govern when another physical jump
+         * can occur.
+         */
+        if (!state.player.grounded) {
+            float airYawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
+        }
 
         if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);

@@ -26,6 +26,16 @@ public final class ObservationWorldModel {
         state.completed = observation.completed;
         state.kit = observation.kit;
         state.ability.charges = observation.abilityCharges;
+        /*
+         * Body Rush uses a separate activation counter in the source. The
+         * Minecraft observer exposes the remaining apple/activation count as
+         * abilityCharges, so carry that into the source-faithful simulator.
+         * Previously AbilityState.activations stayed at its default zero,
+         * which made tactical mob handling unable to model Body Rush at all.
+         */
+        if (state.kit == me.monstermazeai.kit.Kit.BODY_BUILDER) {
+            state.ability.activations = Math.max(0, observation.abilityCharges);
+        }
         if (!state.inMonsterMaze) {
             return state;
         }

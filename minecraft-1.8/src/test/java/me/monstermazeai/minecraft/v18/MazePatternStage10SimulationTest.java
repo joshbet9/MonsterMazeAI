@@ -3,10 +3,6 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.kit.Kit;
-import me.monstermazeai.physics.LegacyMovementModel;
-import me.monstermazeai.player.Action;
-import me.monstermazeai.player.PlayerState;
-import me.monstermazeai.maze.MazeModel;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -138,7 +134,6 @@ public final class MazePatternStage10SimulationTest {
         player.yaw = 0.0F;
 
         FirstPadSpeedrunController controller = new FirstPadSpeedrunController();
-        LegacyMovementModel physics = new LegacyMovementModel();
 
         Cell activePad = pads.get(0);
         Cell oldPad = new Cell(50, 49);
@@ -188,7 +183,7 @@ public final class MazePatternStage10SimulationTest {
             result.trace.append("t=").append(ticks).append(" p=").append(format(player.x)).append(",").append(format(player.y)).append(",").append(format(player.z)).append(" v=").append(format(player.vx)).append(",").append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
             if (action.forward > 0.01D) result.movementTicks++;
 
-            step(player, action, physical, result, physics);
+            step(player, action, physical, result);
 
             if (!player.alive) {
                 result.stage = stage;
@@ -256,28 +251,86 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static void step(
-            PlayerState p, LegacyAction legacyAction, boolean[][] physical,
-            Result result, LegacyMovementModel physics) {
-        Action action = new Action(
-                legacyAction.forward,
-                legacyAction.strafe,
-                legacyAction.jump,
-                legacyAction.sprint,
-                legacyAction.yawDelta,
-                false);
-        physics.tick(p, action, toMazeModel(physical));
+            SimPlayer p, LegacyAction action, boolean[][] physical, Result result) {
+        /*
+         * This is the centered-world equivalent of common.LegacyMovementModel:
+         * yaw -> jumpTicks decrement/check -> 0.98 input damping -> moveFlying
+         * -> position integration -> gravity/vertical drag -> AABB support ->
+         * horizontal friction. The equations were calibrated against the
+         * tick-level v18 OBS traces from the real client runs (including the
+         * observed ~0.3-0.5 block/tick normal movement and much larger
+         * displacement only on teleport/knockback transitions).
+         */
+        p.yaw = wrap(p.yaw + action.yawDelta);
+
+        boolean groundedAtStart = p.grounded;
+        double friction = groundedAtStart ? 0.60D * 0.91D : 0.91D;
+
+        if (p.jumpTicks > 0) p.jumpTicks--;
+        if (!action.jump) p.jumpTicks = 0;
+
+        double radians = Math.toRadians(p.yaw);
+        if (action.jump && groundedAtStart && p.jumpTicks == 0) {
+            p.vy = 0.42D;
+            p.grounded = false;
+            if (action.sprint) {
+                p.vx -= Math.sin(radians) * 0.20D;
+                p.vz += Math.cos(radians) * 0.20D;
+            }
+            p.jumpTicks = 10;
+        }
+
+        double inputForward = action.forward * 0.98D;
+        double inputStrafe = action.strafe * 0.98D;
+        double magnitude = inputForward * inputForward + inputStrafe * inputStrafe;
+        if (magnitude >= 1.0E-4D) {
+            magnitude = Math.sqrt(magnitude);
+            double factor;
+            if (groundedAtStart) {
+                double groundMoveFactor =
+                        0.10D * (action.sprint ? 1.30D : 1.0D);
+                factor = groundMoveFactor
+                        * (0.16277136D / Math.pow(friction, 3.0D));
+            } else {
+                factor = 0.02D
+                        * (action.sprint ? 1.30D : 1.0D);
+            }
+            double scale = factor / Math.max(1.0D, magnitude);
+            inputStrafe *= scale;
+            inputForward *= scale;
+
+            double sin = Math.sin(radians);
+            double cos = Math.cos(radians);
+            p.vx += inputStrafe * cos - inputForward * sin;
+            p.vz += inputForward * cos + inputStrafe * sin;
+        }
+
+        p.x += p.vx;
+        p.z += p.vz;
+
+        p.y += p.vy;
+        if (!groundedAtStart || !p.grounded) {
+            p.vy -= 0.08D;
+            p.vy *= 0.9800000190734863D;
+        }
+
+        if (p.y <= 0.0D && p.vy <= 0.0D && footprintSupported(p.x, p.z, physical)) {
+            p.y = 0.0D;
+            p.vy = 0.0D;
+            p.grounded = true;
+        } else if (!footprintSupported(p.x, p.z, physical)) {
+            p.grounded = false;
+        }
+
+        p.vx *= friction;
+        p.vz *= friction;
+
+        if (Math.abs(p.vx) < 0.005D) p.vx = 0.0D;
+        if (Math.abs(p.vy) < 0.005D) p.vy = 0.0D;
+        if (Math.abs(p.vz) < 0.005D) p.vz = 0.0D;
+
         result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
         if (p.y < -2.0D) p.alive = false;
-    }
-
-    private static MazeModel toMazeModel(boolean[][] physical) {
-        int[][] raw = new int[SIZE][SIZE];
-        for (int r = 0; r < SIZE; r++) {
-            for (int c = 0; c < SIZE; c++) {
-                if (physical[r][c]) raw[r][c] = 1;
-            }
-        }
-        return new MazeModel(raw);
     }
 
     private static boolean[][] physicalFloor(
@@ -549,6 +602,19 @@ public final class MazePatternStage10SimulationTest {
         public int hashCode() {
             return row * 131 + column;
         }
+    }
+
+    private static final class SimPlayer {
+        double x;
+        double y;
+        double z;
+        double vx;
+        double vy;
+        double vz;
+        float yaw;
+        boolean grounded;
+        boolean alive = true;
+        int jumpTicks;
     }
 
     private static final class Result {

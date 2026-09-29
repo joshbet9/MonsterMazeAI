@@ -2253,7 +2253,16 @@ public final class FirstPadSpeedrunController {
             // than waiting for a second observation to make the miss worse.
             gapTakeoffStarted = true;
         }
-        return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+        /*
+         * Do not take the sprint-jump impulse on the launch tick. In the
+         * empirical 1.8 traces the 0.20 sprint-jump boost is enough to move a
+         * 0.6m player completely past a one-block landing surface before the
+         * normal jump arc reaches y=0. Launch with W+Space for one tick, then
+         * restore sprint immediately while airborne. This preserves most of
+         * the speed while making the landing geometry physically reachable.
+         */
+        boolean launchTick = state.player.grounded && gapTakeoffStarted;
+        return new LegacyAction(1.0f, 0.0f, true, !launchTick, 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

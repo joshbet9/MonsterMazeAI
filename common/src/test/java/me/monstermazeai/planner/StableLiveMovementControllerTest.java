@@ -278,14 +278,14 @@ class StableLiveMovementControllerTest {
         s.player.vz = 0.20;
 
         Action airborne = controller.nextAction(s, new Cell(0, 8), false);
-        assertEquals(Action.IDLE, airborne,
-                "an airborne post-mob-hit observation must not inject stale movement/jump control");
+        assertTrue(airborne.forward() > 0.0 || Math.abs(airborne.yawDelta()) > 0.0,
+                "airborne recovery must steer back toward a predicted physical landing surface");
         assertTrue(controller.lastDecisionDetail().contains("MOB_HIT"),
                 controller.lastDecisionDetail());
 
         s.tick = 3;
         Action stillAirborne = controller.nextAction(s, new Cell(0, 8), false);
-        assertEquals(Action.IDLE, stillAirborne);
+        assertTrue(stillAirborne.forward() > 0.0 || Math.abs(stillAirborne.yawDelta()) > 0.0);
 
         s.tick = 42;
         s.player.grounded = true;

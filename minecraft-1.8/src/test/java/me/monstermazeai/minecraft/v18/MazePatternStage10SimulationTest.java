@@ -53,77 +53,66 @@ public final class MazePatternStage10SimulationTest {
     // Movement is mirrored from the common 1.8.9 model used by the AI runtime.
 
     @Test(timeout = 180000)
-    public void everyMazePatternReachesStageTenOnEverySimulation() {
+    public void stageTenAllPatternsJumper() { runKitGate(Kit.JUMPER); }
+
+    @Test(timeout = 180000)
+    public void stageTenAllPatternsSlowballer() { runKitGate(Kit.SLOWBALLER); }
+
+    @Test(timeout = 180000)
+    public void stageTenAllPatternsBodyBuilder() { runKitGate(Kit.BODY_BUILDER); }
+
+    @Test(timeout = 180000)
+    public void stageTenAllPatternsRepulsor() { runKitGate(Kit.REPULSOR); }
+
+    @Test(timeout = 180000)
+    public void stageTenAllPatternsMaverick() { runKitGate(Kit.MAVERICK); }
+
+    private static void runKitGate(Kit kit) {
         StringBuilder report = new StringBuilder();
         int total = 0;
-        int failedCases = 0;
+        int passed = 0;
 
         for (int pattern = 0; pattern < 3; pattern++) {
             int patternPassed = 0;
-            int patternTotal = 0;
 
-            for (Kit kit : TEST_KITS) {
-                int minStage = Integer.MAX_VALUE;
-                int maxStage = 0;
-                int passed = 0;
-
-                for (int seed = 0; seed < SEEDS_PER_PATTERN; seed++) {
-                    total++;
-                    patternTotal++;
-                    Result result = simulate(pattern, seed, kit);
-                    minStage = Math.min(minStage, result.stage);
-                    maxStage = Math.max(maxStage, result.stage);
-                    if (result.stage >= TARGET_STAGE) passed++;
-
-                    System.err.println("SIM Maze " + (pattern + 1)
-                            + " kit=" + kit + " seed=" + seed
-                            + " stage=" + result.stage + " pads=" + result.padsReached
-                            + " ticks=" + result.ticks + " maxSpeed=" + format(result.maxSpeed)
-                            + " failure=" + result.failure);
-                    report.append("Maze ").append(pattern + 1)
-                            .append(" kit=").append(kit)
-                            .append(" seed=").append(seed)
-                            .append(" stage=").append(result.stage)
-                            .append(" pads=").append(result.padsReached)
-                            .append(" ticks=").append(result.ticks)
-                            .append(" jumpTicks=").append(result.jumpTicks)
-                            .append(" movementTicks=").append(result.movementTicks)
-                            .append(" gaps=").append(result.gapsSeen)
-                            .append(" gapLandings=").append(result.gapLandings)
-                            .append(" maxSpeed=").append(format(result.maxSpeed))
-                            .append(" failure=").append(result.failure)
-                            .append('\n');
+            for (int seed = 0; seed < SEEDS_PER_PATTERN; seed++) {
+                total++;
+                Result result = simulate(pattern, seed, kit);
+                if (result.stage >= TARGET_STAGE) {
+                    passed++;
+                    patternPassed++;
                 }
 
-                patternPassed += passed;
-                report.append("Maze ").append(pattern + 1)
-                        .append(" kit=").append(kit)
-                        .append(" SUMMARY passed=").append(passed).append("/")
-                        .append(SEEDS_PER_PATTERN)
-                        .append(" minStage=").append(minStage)
-                        .append(" maxStage=").append(maxStage)
-                        .append('\n');
-
-                if (passed != SEEDS_PER_PATTERN || minStage < TARGET_STAGE) {
-                    throw new RuntimeException("Maze " + (pattern + 1)
-                            + " kit=" + kit + " failed Stage-10 simulation gate\\n" + report);
-                }
+                String line = "Maze " + (pattern + 1)
+                        + " kit=" + kit
+                        + " seed=" + seed
+                        + " stage=" + result.stage
+                        + " pads=" + result.padsReached
+                        + " ticks=" + result.ticks
+                        + " jumpTicks=" + result.jumpTicks
+                        + " movementTicks=" + result.movementTicks
+                        + " gaps=" + result.gapsSeen
+                        + " gapLandings=" + result.gapLandings
+                        + " maxSpeed=" + format(result.maxSpeed)
+                        + " failure=" + result.failure;
+                System.err.println("SIM " + line);
+                report.append(line).append('\\n');
             }
 
             report.append("Maze ").append(pattern + 1)
-                    .append(" ALL-KITS SUMMARY passed=").append(patternPassed)
-                    .append("/").append(patternTotal)
-                    .append('\n');
+                    .append(" kit=").append(kit)
+                    .append(" SUMMARY passed=").append(patternPassed).append("/")
+                    .append(SEEDS_PER_PATTERN)
+                    .append('\\n');
         }
 
-        System.out.println("\\n========== MAZE PATTERN STAGE-10 SIMULATION ==========\\n"
-                + report
-                + "TOTAL simulations=" + total + "\\n"
-                + "FAILED simulations=" + failedCases + "\\n"
-                + "=======================================================\\n");
-        if (failedCases > 0) {
-            throw new RuntimeException("Stage-10 all-kit gate failed: "
-                    + failedCases + " simulation(s) below stage 10\\n" + report);
+        System.err.println(report.toString());
+        writeReport(report.toString());
+
+        if (passed != total) {
+            throw new RuntimeException(
+                    "Stage-10 gate failed for kit=" + kit
+                    + ": passed=" + passed + "/" + total + "\\n" + report);
         }
     }
 

@@ -324,21 +324,45 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void activePadTransitionCanRouteFromAnOldPadWhoseCanonicalCellWasRemoved() {
-        GameState s = state(10.5, 10.5, 0.0F);
-        s.maze.setPhysicalFloor(10, 10, false);
-        s.oldPads.add(new Cell(10, 10));
-        s.activePadRow = 20;
-        s.activePadColumn = 20;
+    void activePadTransitionBridgesWholeOldPadEvenWhenCurrentCellStillLooksLikeFloor() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        // Only the current cell from the old pad remains marked as canonical
+        // floor. The source SafePad surface itself is no longer part of the
+        // canonical maze after the new pad activates.
+        raw[10][10] = 1;
+        // Physical maze route begins at the far edge of the old 5x5 pad and
+        // continues to the newly activated pad.
+        for (int row = 12; row <= 20; row++) raw[row][10] = 1;
+        for (int column = 10; column <= 20; column++) raw[20][column] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 10;
+        s.activePadColumn = 10;
+        s.player.x = 10.5;
+        s.player.z = 10.5;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
 
         StableLiveMovementController controller = new StableLiveMovementController();
         s.tick = 1;
+        // Establish the previous objective while the player is on that pad.
+        assertEquals(Action.IDLE, controller.nextAction(s, new Cell(10, 10), false));
+
+        s.activePadRow = 20;
+        s.activePadColumn = 20;
+        s.tick = 2;
+
         Action action = controller.nextAction(s, new Cell(20, 20), false);
 
         assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
-                "the previous SafePad must be usable as a temporary routing bridge after pad activation");
-        assertFalse(controller.lastDecisionDetail().contains("No physical route"));
-        assertFalse(controller.lastDecisionDetail().contains("INVALID_INPUT"));
+                "a newly active pad must remain actionable even when only the old pad's current cell is canonical floor");
+        assertFalse(controller.lastDecisionDetail().contains("No physical route"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("REACHED"),
+                controller.lastDecisionDetail());
     }
 
 }

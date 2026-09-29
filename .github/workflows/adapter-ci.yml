@@ -46,3 +46,11 @@ jobs:
       - name: Build and test adapter
         working-directory: minecraft-1.8
         run: gradle --no-daemon build
+
+      - name: Upload simulator test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maze-simulator-test-report
+          path: minecraft-1.8/build/test-results/test
+          if-no-files-found: warn

@@ -2124,6 +2124,21 @@ public final class FirstPadSpeedrunController {
         if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
 
         /*
+         * Corner lead is allowed to bias the cursor toward the next edge, but
+         * it must never redefine the current edge's safety direction. Validate
+         * the post-turn heading against the raw immediate edge as well. This
+         * prevents a lookahead turn from making an 80-120 degree heading error
+         * appear "safe" merely because the desired yaw was smoothed toward the
+         * following edge.
+         */
+        float rawEdgeYaw = desiredYawForEdge(
+                routeRows[routeIndex], routeColumns[routeIndex],
+                routeRows[nextIndex], routeColumns[nextIndex]);
+        if (Math.abs(normalise(rawEdgeYaw - commandedYaw)) > 35.0F) {
+            return "forward-vector";
+        }
+
+        /*
          * Safety is evaluated against the route surface, not against an
          * artificial four-corner player footprint. Minecraft's 1.8.9 player
          * collision box is continuous and may legitimately straddle logical

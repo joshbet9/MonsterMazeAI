@@ -2898,10 +2898,26 @@ public final class FirstPadSpeedrunController {
                 && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
                 && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
                 && distanceToWaypoint < 1.75D) {
+            int nextDr = routeRows[routeIndex + 2] - routeRows[routeIndex + 1];
+            int nextDc = routeColumns[routeIndex + 2] - routeColumns[routeIndex + 1];
+            if (nextDr == 0 && nextDc == 0) {
+                return edgeYaw;
+            }
+
             float nextEdgeYaw = desiredYawForEdge(
                     routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
             float turn = normalise(nextEdgeYaw - edgeYaw);
+
+            /*
+             * A shortest-path maze route has no reason to make an immediate
+             * 180-degree reversal at a corner. Treat such a turn as stale route
+             * geometry instead of injecting reverse lateral velocity.
+             */
+            if (Math.abs(turn) > 120.0F) {
+                return edgeYaw;
+            }
+
             double blend = clampDouble(
                     (1.75D - distanceToWaypoint) / 1.30D, 0.0D, 1.0D);
             trackedEdgeYaw = normalise(

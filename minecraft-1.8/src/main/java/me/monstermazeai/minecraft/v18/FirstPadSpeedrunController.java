@@ -454,8 +454,25 @@ public final class FirstPadSpeedrunController {
          * predicted-floor safety failure.
          */
         if (!gapExecutionActive && !recovering && routePositionNeedsRecovery(state)) {
-            if (beginRecovery(state)) {
+            /*
+             * The player is already at a physically observed position. Do not
+             * send the recovery motor back toward a guessed cell centre: that
+             * is precisely what caused the high-speed controller to fight its
+             * own newly rebuilt route. Rebuild A* directly from the observed
+             * position first. Recovery is only the grounded fallback when the
+             * current position cannot seed a physical route at all.
+             */
+            routeLength = 0;
+            routeIndex = 0;
+            if (buildRoute(state)) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] POSITION REPLAN"
+                        + " tick=" + state.worldTick
+                        + " start=" + routeRows[0] + "," + routeColumns[0]
+                        + " target=" + goalRow + "," + goalColumn);
+            } else if (state.player.grounded && beginRecovery(state)) {
                 return recoveryAction(state);
+            } else {
+                return LegacyAction.IDLE;
             }
         }
 

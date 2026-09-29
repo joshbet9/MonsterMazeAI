@@ -2686,8 +2686,7 @@ public final class FirstPadSpeedrunController {
              * capture of the selected candidate itself.
              */
             if (bestIndex > routeIndex
-                    && playerFootprintOverlapsCell(
-                    state, routeRows[bestIndex], routeColumns[bestIndex], 0.05D)) {
+                    && bestDistance + 0.05D < currentDistance) {
                 int oldIndex = routeIndex;
                 routeIndex = bestIndex;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;

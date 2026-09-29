@@ -156,7 +156,7 @@ public final class FirstPadSpeedrunController {
      * back toward an already-passed corner.
      */
     private static final double ROUTE_NEAREST_CAPTURE_RADIUS = 1.85D;
-    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 3;
+    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 8;
     private static final double DIAGONAL_SUPPORT_MIN_AREA = 0.01D;
     /*
      * A two-cell route edge is a deliberate one-block jump, not a walk across

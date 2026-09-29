@@ -640,9 +640,17 @@ public final class FirstPadSpeedrunController {
          * resulting route is then handled by the exact same movement controller
          * as a mob-free route. There is intentionally no strafe/dodge state.
          */
-        boolean physicalRouteInvalid = routeNeedsPhysicalReplan(state);
+        /*
+         * Once a route has been committed, continuous position drift is not
+         * itself a reason to throw the route away. At sprint speed the observed
+         * cell can legitimately differ from the route cursor by one cell at a
+         * corner or landing. Rebuilding from that observed cell can make a
+         * valid stage route appear disconnected (especially immediately after
+         * a pad transition). Physical safety still gates the actual movement;
+         * only an explicit dynamic obstacle requests a new A* route.
+         */
         boolean mobBlocked = routeNeedsMobReplan(state);
-        if (physicalRouteInvalid || mobBlocked) {
+        if (mobBlocked) {
             /*
              * A committed gap is a physics-critical transaction. Dynamic mob
              * replanning is suspended until the landing is confirmed; changing

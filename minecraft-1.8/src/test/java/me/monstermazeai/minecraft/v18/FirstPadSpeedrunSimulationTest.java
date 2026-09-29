@@ -57,7 +57,7 @@ public final class FirstPadSpeedrunSimulationTest {
 
         System.out.println(result.report());
         System.err.println(result.report());
-        writeReport(result.report());
+        writeReport(result.report() + "\n" + result.controllerReport);
 
         assertEquals(
                 "simulation rounds reached",
@@ -141,6 +141,9 @@ public final class FirstPadSpeedrunSimulationTest {
                 0.0F);
 
         FirstPadSpeedrunController controller = new FirstPadSpeedrunController();
+        GameRunSummaryRecorder recorder = new GameRunSummaryRecorder();
+        controller.setTelemetry(recorder);
+        recorder.begin(0L);
         SimulationResult result = new SimulationResult();
 
         long tick = 0L;
@@ -159,6 +162,7 @@ public final class FirstPadSpeedrunSimulationTest {
                         tick, round + 1, target, player, floor, kit);
 
                 LegacyAction action = controller.next(observation);
+                recorder.observe(observation, action);
 
                 if (insidePad(player, target)) {
                     reached = true;
@@ -247,6 +251,7 @@ public final class FirstPadSpeedrunSimulationTest {
              */
         }
 
+        result.controllerReport = recorder.finish(tick, result.failureReason);
         return result;
     }
 
@@ -543,6 +548,7 @@ public final class FirstPadSpeedrunSimulationTest {
         int failureRound = -1;
         int failureTick = -1;
         String failureReason = "none";
+        String controllerReport = "";
         String failureRoute = "none";
         double failureX;
         double failureZ;

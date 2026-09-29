@@ -467,28 +467,6 @@ public final class FirstPadSpeedrunController {
         advanceRouteIndex(state);
 
         /*
-         * Continuous projection catch-up for the high-speed observer case.
-         * The Minecraft logs show that a player can legitimately be several
-         * route-cell centres ahead while still following the same physical
-         * corridor. Cell-centre capture is too discrete for that situation.
-         * Find a future route segment that the actual body is already over,
-         * using point-to-segment distance, before allowing normal movement.
-         */
-        if (!gapExecutionActive && routeIndex < routeLength - 1) {
-            int projected = projectOntoFutureRoute(state, 8, 0.95D);
-            if (projected > routeIndex) {
-                int oldIndex = routeIndex;
-                routeIndex = projected;
-                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                log(state.worldTick, "[MonsterMazeAI/1.8] CONTINUOUS ROUTE CATCHUP"
-                        + " tick=" + state.worldTick
-                        + " oldIndex=" + oldIndex
-                        + " newIndex=" + routeIndex
-                        + " player=" + format(state.player.x) + "," + format(state.player.z));
-            }
-        }
-
-        /*
          * Route state is allowed to lag behind continuous player motion by a
          * fraction of a cell, but never far enough that the player is no
          * longer supported by the current route envelope. If that happens,
@@ -890,16 +868,7 @@ public final class FirstPadSpeedrunController {
             if (gapAction != null) return gapAction;
         }
 
-        /*
-         * Jump-spam is the speed technique, but a new jump immediately before
-         * a known gap can put the player into the gap with the wrong phase.
-         * The real traces show the controller repeatedly arriving at a gap
-         * while already airborne. When grounded and a gap is within the next
-         * jump-flight envelope, take one W+sprint tick without Space so the
-         * current arc settles before the deliberate gap edge is executed.
-         */
-        boolean jumpPulse = !(state.player.grounded
-                && shouldDelayJumpForUpcomingGap(state, 3.25D));
+        boolean jumpPulse = true;
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
@@ -1183,11 +1152,10 @@ public final class FirstPadSpeedrunController {
          */
         boolean transitioningFromReachedPad = activePadTransitionPending
                 || (targetReached && !routeStartsOnPreviousPad);
-        boolean initialRouteAlignment = firstRoute
-                || (routeLength == 0
+        boolean initialRouteAlignment = routeLength == 0
                 && initialStartPadAvailable
                 && state.player.grounded
-                && !targetReached);
+                && !targetReached;
         boolean mobReplan = routeLength > 0
                 && goalRow == targetRow
                 && goalColumn == targetColumn
@@ -2157,20 +2125,7 @@ public final class FirstPadSpeedrunController {
         }
 
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
-        /*
-         * A gap immediately after a full stop is a special case visible in the
-         * simulator traces: sprint-jump's fixed 0.20 horizontal impulse makes
-         * the first landing miss a one-block surface by only a few centimetres.
-         * Launch that zero-momentum jump without sprint; once moving, retain
-         * normal sprint-jump behaviour.
-         */
-        boolean lowSpeedLaunch = state.player.grounded
-                && routeIndex == 0
-                && routeStartsOnPreviousPad
-                && currentEdgeProgress(state) < 0.75D
-                && horizontalSpeed < 0.05D;
-        return new LegacyAction(1.0f, 0.0f, true, !lowSpeedLaunch, yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
@@ -2204,7 +2159,7 @@ public final class FirstPadSpeedrunController {
                 resetGapMomentum();
                 routeIndex++;
                 if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
             }
         } else {
             gapLandingConfirmTicks = 0;
@@ -2223,7 +2178,7 @@ public final class FirstPadSpeedrunController {
              * trajectory that just crossed the gap.
              */
             if (!state.player.grounded) {
-                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
             }
 
             /*
@@ -2282,22 +2237,6 @@ public final class FirstPadSpeedrunController {
         // to cross the source block edge, so waiting for exactly +0.50 progress
         // can miss the only grounded jump-input window.
         return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
-    }
-
-    private boolean shouldDelayJumpForUpcomingGap(
-            LegacyWorldObservation state, double maxDistance) {
-        int end = Math.min(routeLength - 1, routeIndex + 8);
-        for (int edge = routeIndex + 1; edge < end; edge++) {
-            if (edgeType(edge) != EdgeType.ONE_BLOCK_GAP) continue;
-
-            double gapX = worldX(routeRows[edge], state.center.x);
-            double gapZ = worldZ(routeColumns[edge], state.center.z);
-            double distance = Math.hypot(
-                    state.player.x - gapX, state.player.z - gapZ);
-            if (distance <= maxDistance) return true;
-            if (distance > maxDistance + 2.0D) break;
-        }
-        return false;
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {
@@ -2688,26 +2627,19 @@ public final class FirstPadSpeedrunController {
 
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
-                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
+                    && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
+                    || physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z));
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
-                    && playerFootprintOverlapsCell(
+                    && (playerFootprintOverlapsCell(
                     state, routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     edgeType(routeIndex) == EdgeType.DIAGONAL
-                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D);
+                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D)
+                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z));
 
-            /*
-             * Do not enter the next route edge while airborne when that edge
-             * is a one-block gap. The player may legitimately pass/cross a
-             * normal waypoint during a jump, but a gap edge requires the
-             * landing surface to be physically established before the gap
-             * controller owns the jump window.
-             */
-            boolean enteringGapWhileAirborne = (normalCapture || overshootCapture)
-                    && !state.player.grounded
-                    && edgeType(routeIndex + 1) == EdgeType.ONE_BLOCK_GAP;
-            if ((normalCapture || overshootCapture) && !enteringGapWhileAirborne) {
+            if (normalCapture || overshootCapture) {
                 routeIndex++;
                 if (overshootCapture && !normalCapture) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] EDGE OVERSHOOT CAPTURE"
@@ -2792,82 +2724,6 @@ public final class FirstPadSpeedrunController {
                         + " player=" + format(state.player.x) + "," + format(state.player.z));
             }
         }
-    }
-
-    private int projectOntoFutureRoute(
-            LegacyWorldObservation state, int lookahead, double maxSegmentDistance) {
-        int end = Math.min(routeLength - 2, routeIndex + lookahead);
-        int best = routeIndex;
-        double bestDistance = Double.POSITIVE_INFINITY;
-
-        for (int candidate = routeIndex; candidate <= end; candidate++) {
-            if (candidate > routeIndex && hasUnpassedGapBetween(routeIndex, candidate, state)) {
-                continue;
-            }
-
-            double ax = worldX(routeRows[candidate], state.center.x);
-            double az = worldZ(routeColumns[candidate], state.center.z);
-            double bx = worldX(routeRows[candidate + 1], state.center.x);
-            double bz = worldZ(routeColumns[candidate + 1], state.center.z);
-            double ex = bx - ax;
-            double ez = bz - az;
-            double len2 = ex * ex + ez * ez;
-            if (len2 <= 1.0E-9D) continue;
-
-            double px = state.player.x - ax;
-            double pz = state.player.z - az;
-            double t = clampDouble((px * ex + pz * ez) / len2, 0.0D, 1.0D);
-            double closestX = ax + ex * t;
-            double closestZ = az + ez * t;
-            double distance = Math.hypot(
-                    state.player.x - closestX, state.player.z - closestZ);
-
-            /*
-             * Catch-up may only skip cells on the same committed heading span.
-             * The player can be physically ahead of the discrete route index,
-             * but jumping across a turn would command the new heading before
-             * the body has actually reached that corner.
-             *
-             * Require the player to be materially along the candidate segment;
-             * merely being close to an earlier/later segment at a corner is not
-             * enough to advance the route cursor.
-             */
-            if (candidate > routeIndex
-                    && !sameCommittedHeadingSpan(routeIndex, candidate)) {
-                continue;
-            }
-            if (candidate > routeIndex
-                    && !state.player.grounded
-                    && edgeType(candidate) == EdgeType.ONE_BLOCK_GAP) {
-                continue;
-            }
-            if (distance <= maxSegmentDistance
-                    && t >= 0.55D
-                    && distance < bestDistance) {
-                best = candidate;
-                bestDistance = distance;
-            }
-        }
-        return best;
-    }
-
-    private boolean hasUnpassedGapBetween(
-            int fromIndex, int candidateIndex, LegacyWorldObservation state) {
-        for (int edge = fromIndex; edge < candidateIndex; edge++) {
-            if (edgeType(edge) != EdgeType.ONE_BLOCK_GAP) continue;
-            double ax = worldX(routeRows[edge], state.center.x);
-            double az = worldZ(routeColumns[edge], state.center.z);
-            double bx = worldX(routeRows[edge + 1], state.center.x);
-            double bz = worldZ(routeColumns[edge + 1], state.center.z);
-            double ex = bx - ax;
-            double ez = bz - az;
-            double len2 = ex * ex + ez * ez;
-            if (len2 <= 1.0E-9D) return true;
-            double progress = ((state.player.x - ax) * ex
-                    + (state.player.z - az) * ez) / len2;
-            if (progress < 1.10D) return true;
-        }
-        return false;
     }
 
     private boolean sameCommittedHeadingSpan(int fromIndex, int candidateIndex) {

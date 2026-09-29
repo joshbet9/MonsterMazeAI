@@ -203,6 +203,9 @@ public final class FirstPadSpeedrunSimulationTest {
                 result.failureRound = round + 1;
                 result.failureTick = result.ticks - roundStart;
                 result.failureReason = "round-timeout";
+                result.failureX = player.x;
+                result.failureZ = player.z;
+                result.failureYaw = player.yaw;
                 return result;
             }
 
@@ -509,6 +512,9 @@ public final class FirstPadSpeedrunSimulationTest {
         int failureRound = -1;
         int failureTick = -1;
         String failureReason = "none";
+        double failureX;
+        double failureZ;
+        float failureYaw;
         boolean fell;
         boolean stalled;
         final List<Integer> roundDurations = new ArrayList<Integer>();
@@ -536,6 +542,8 @@ public final class FirstPadSpeedrunSimulationTest {
                     + " failureRound=" + failureRound
                     + " failureTick=" + failureTick
                     + " failureReason=" + failureReason
+                    + " failurePos=" + String.format(java.util.Locale.ROOT, "%.2f,%.2f", failureX, failureZ)
+                    + " failureYaw=" + String.format(java.util.Locale.ROOT, "%.1f", failureYaw)
                     + " fell=" + fell
                     + " stalled=" + stalled
                     + " roundDurations=" + roundDurations;

@@ -158,6 +158,10 @@ public final class FirstPadSpeedrunController {
         this.telemetry = telemetry;
     }
 
+    public boolean hasReachedTarget() {
+        return targetReached;
+    }
+
     private void log(long tick, String message) {
         System.out.println(message);
         if (telemetry != null) {

@@ -2611,6 +2611,26 @@ public final class FirstPadSpeedrunController {
                     || physicalFloorSupportsFootprint(
                     state, state.player.x, state.player.z));
 
+            /*
+             * Begin the next cardinal edge at the physical corner approach,
+             * not only after the player's centre has entered the destination
+             * cell. This is safe only for ordinary adjacent edges: the player
+             * must be grounded, physically supported, close to the waypoint,
+             * and the following edge must itself be traversable. It keeps
+             * routeIndex and the continuous corner blend synchronized.
+             */
+            boolean cornerPreCapture = routeIndex + 2 < routeLength
+                    && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                    && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                    && state.player.grounded
+                    && physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z)
+                    && distanceToNext <= 1.35D
+                    && lateralDistance <= 0.75D
+                    && canTraverseEdge(state,
+                    routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                    routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
                     && (playerFootprintOverlapsCell(
@@ -2619,9 +2639,9 @@ public final class FirstPadSpeedrunController {
                             ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D)
                     || physicalFloorSupportsFootprint(state, state.player.x, state.player.z));
 
-            if (normalCapture || overshootCapture) {
+            if (normalCapture || cornerPreCapture || overshootCapture) {
                 routeIndex++;
-                if (overshootCapture && !normalCapture) {
+                if (overshootCapture && !normalCapture && !cornerPreCapture) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] EDGE OVERSHOOT CAPTURE"
                             + " tick=" + state.worldTick
                             + " edge=" + edgeType(routeIndex - 1)

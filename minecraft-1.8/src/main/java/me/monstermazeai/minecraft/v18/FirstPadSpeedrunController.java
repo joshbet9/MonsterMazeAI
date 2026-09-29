@@ -256,7 +256,9 @@ public final class FirstPadSpeedrunController {
             targetReached = false;
             routeLength = 0;
             routeIndex = 0;
-            aligningForStage = false;
+            // A newly active SafePad can require a large heading change. Keep
+            // the transition stationary until the first route edge is faced.
+            aligningForStage = true;
 
             log(state.worldTick, "[MonsterMazeAI/1.8] PAD TRANSITION"
                     + " tick=" + state.worldTick
@@ -1080,7 +1082,7 @@ public final class FirstPadSpeedrunController {
          * Mob replans start from the player's current heading and therefore
          * must not introduce a competing alignment state.
          */
-        aligningForStage = transitioningFromReachedPad;
+        aligningForStage = transitioningFromReachedPad || activePadTransitionPending;
 
         if (startedAtTick == Long.MIN_VALUE) {
             startedAtTick = state.worldTick;

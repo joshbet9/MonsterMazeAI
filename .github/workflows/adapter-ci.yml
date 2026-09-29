@@ -45,7 +45,16 @@ jobs:
 
       - name: Build and test adapter
         working-directory: minecraft-1.8
-        run: gradle --no-daemon build
+        run: |
+          set +e
+          gradle --no-daemon build
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "===== MAZE SIMULATOR JUNIT XML ====="
+            cat build/test-results/test/TEST-me.monstermazeai.minecraft.v18.MazePatternStage10SimulationTest.xml || true
+            echo "===== END MAZE SIMULATOR JUNIT XML ====="
+            exit $status
+          fi
 
       - name: Upload simulator test report
         if: always()

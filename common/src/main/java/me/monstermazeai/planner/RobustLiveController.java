@@ -68,7 +68,7 @@ public final class RobustLiveController {
          * execute.
          */
         if (action == Action.IDLE) {
-            if (useAbility && abilityGate.allow(state)) {
+            if (useAbility && abilityGate.allow(state, useAbility)) {
                 abilityGate.record(state);
                 Action ability = new Action(0.0, 0.0, false, false, 0.0F, true);
                 lastDecisionDetail = "ABILITY_EMERGENCY objective=" + objective.lastDecisionReason()

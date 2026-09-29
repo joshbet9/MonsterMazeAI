@@ -167,6 +167,11 @@ public final class FirstPadSpeedrunController {
      * takeoff with an arbitrary jump phase.
      */
     private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.35D;
+    // Progress is measured from the source-cell centre. With the observed
+    // sprint-jump envelope, a grounded jump around -0.25..0.15 lands inside
+    // the destination block instead of overshooting it by a few centimetres.
+    private static final double GAP_JUMP_TRIGGER_PROGRESS = -0.25D;
+    private static final double GAP_JUMP_LATE_PROGRESS = 0.30D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -2141,7 +2146,9 @@ public final class FirstPadSpeedrunController {
         }
 
         double progress = currentEdgeProgress(state);
-        if (!gapTakeoffStarted && progress >= 0.15D) {
+        if (!gapTakeoffStarted
+                && state.player.grounded
+                && progress >= GAP_JUMP_TRIGGER_PROGRESS) {
             gapTakeoffStarted = true;
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
@@ -2231,11 +2238,21 @@ public final class FirstPadSpeedrunController {
                 + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                 + " progress=" + format(progress) + " grounded=" + state.player.grounded
                 + " jumpSpam=" + gapTakeoffStarted);
-        // Before takeoff: W+sprint only, preserving a straight grounded approach.
-        // From a conservative pre-edge boundary onward: keep Space requested on
-        // every grounded observation. At sprint speed a single tick is enough
-        // to cross the source block edge, so waiting for exactly +0.50 progress
-        // can miss the only grounded jump-input window.
+        /*
+         * Before the launch window, deliberately suppress Space. This is the
+         * one exception to normal jump-spam: an early jump can put the player
+         * airborne one tick before the source edge and make the landing miss
+         * the one-block destination by ~0.1-0.3m. Once the trigger is reached,
+         * own the gap continuously with W+sprint+Space.
+         */
+        if (!gapTakeoffStarted) {
+            if (progress < GAP_JUMP_LATE_PROGRESS) {
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+            }
+            // We are already late but still grounded; take the jump now rather
+            // than waiting for a second observation to make the miss worse.
+            gapTakeoffStarted = true;
+        }
         return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
     }
 

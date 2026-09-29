@@ -2199,7 +2199,10 @@ public final class FirstPadSpeedrunController {
              * that observation leaves the controller owning the old edge and
              * causes repeated "takeoff" attempts while the player walks away.
              */
-            if (state.player.grounded) {
+            boolean landedNearEndpoint = playerFootprintOverlapsCell(
+                    state, toRow, toColumn, 0.01D)
+                    || destinationDistance <= 1.10D;
+            if (landedNearEndpoint) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
                         + " tick=" + state.worldTick
                         + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
@@ -2214,12 +2217,13 @@ public final class FirstPadSpeedrunController {
                 if (routeIndex > 0 && routeStartsOnPreviousPad) {
                     routeStartsOnPreviousPad = false;
                 }
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
             }
 
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                    + " progress=" + format(progress) + " grounded=" + state.player.grounded);
+                    + " progress=" + format(progress) + " grounded=" + state.player.grounded
+                    + " endpointDistance=" + format(destinationDistance));
             gapExecutionActive = false;
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = -1;

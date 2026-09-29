@@ -42,7 +42,7 @@ public final class MazePatternStage10SimulationTest {
     private static final int HALF = 49;
     private static final int TARGET_STAGE = 10;
     private static final int SEEDS_PER_PATTERN = 4;
-    private static final int MAX_TICKS_PER_STAGE = 900;
+    private static final int MAX_TICKS_PER_STAGE = 1200;
     // MonsterMaze SafePad starts with decayCount=11 and decays once per
     // second after the active-pad transition. 20 client ticks/second.
     private static final int OLD_PAD_LIFETIME_TICKS = 11 * 20;
@@ -129,8 +129,6 @@ public final class MazePatternStage10SimulationTest {
         result.failure = "MAX_STAGE_NOT_REACHED";
 
         SimPlayer player = new SimPlayer();
-        // Real game starts on the central SafePad. The first route benchmark
-        // historically used this same centre-side spawn coordinate.
         player.x = worldX(50);
         player.z = worldZ(49);
         player.y = 0.0D;
@@ -140,34 +138,30 @@ public final class MazePatternStage10SimulationTest {
         FirstPadSpeedrunController controller = new FirstPadSpeedrunController();
 
         Cell activePad = pads.get(0);
-        Cell oldPad = new Cell(50, 49);
+        Cell oldPad = null;
+        Cell previewPad = null;
         int stage = 1;
         int padIndex = 0;
-        int transitionTicks = 0;
+        int oldPadTicksRemaining = 0;
+        int stageTicksRemaining = stageTimeTicks(stage);
+        boolean targetCaptured = false;
         int ticks = 0;
 
         while (stage <= TARGET_STAGE && ticks < TARGET_STAGE * MAX_TICKS_PER_STAGE) {
-            boolean onActivePad = isOnPad(player, activePad);
-
-            if (onActivePad && transitionTicks == 0) {
-                result.padsReached++;
-                if (stage >= TARGET_STAGE) {
-                    result.stage = stage;
-                    result.ticks = ticks;
-                    result.failure = "PASS";
-                    return result;
-                }
-
-                // Force the exact problematic phase transition: the destination
-                // becomes active while the player remains on the old pad.
-                oldPad = activePad;
-                padIndex++;
-                activePad = pads.get(padIndex);
-                stage++;
-                transitionTicks = OLD_PAD_LIFETIME_TICKS;
+            /*
+             * Source lifecycle:
+             * - active pad is physical immediately;
+             * - two seconds before phase expiry the preview pad is spawned and
+             *   therefore also becomes physical;
+             * - when the phase expires, the active pad becomes an old pad with
+             *   an 11-second decay lifetime and the preview becomes active.
+             */
+            if (stageTicksRemaining == 40 && previewPad == null && padIndex + 1 < pads.size()) {
+                previewPad = pads.get(padIndex + 1);
             }
 
-            boolean[][] physical = physicalFloor(raw, activePad, oldPad, transitionTicks);
+            boolean[][] physical = physicalFloor(
+                    raw, activePad, oldPad, oldPadTicksRemaining, previewPad);
             LegacyWorldObservation observation = observation(
                     ticks, stage, pattern + 1, player, activePad, raw, physical);
 
@@ -183,8 +177,13 @@ public final class MazePatternStage10SimulationTest {
             }
             result.controllerLog.append(controllerLog.toString());
             if (action == null) action = LegacyAction.IDLE;
+
             if (action.jump) result.jumpTicks++;
-            result.trace.append("t=").append(ticks).append(" p=").append(format(player.x)).append(",").append(format(player.y)).append(",").append(format(player.z)).append(" v=").append(format(player.vx)).append(",").append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
+            result.trace.append("t=").append(ticks)
+                    .append(" p=").append(format(player.x)).append(",")
+                    .append(format(player.y)).append(",").append(format(player.z))
+                    .append(" v=").append(format(player.vx)).append(",")
+                    .append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
             if (action.forward > 0.01D) result.movementTicks++;
 
             step(player, action, physical, result);
@@ -202,23 +201,69 @@ public final class MazePatternStage10SimulationTest {
                 return result;
             }
 
-            if (transitionTicks > 0) transitionTicks--;
             ticks++;
+            stageTicksRemaining--;
+            if (oldPadTicksRemaining > 0) oldPadTicksRemaining--;
 
-            if (ticks % MAX_TICKS_PER_STAGE == 0 && !isOnPad(player, activePad)) {
-                result.stage = stage;
-                result.ticks = ticks;
-                result.failure = "STAGE_TIMEOUT stage=" + stage
-                        + " pos=" + format(player.x) + "," + format(player.z)
-                        + " action=" + actionText(action)
-                        + " targets=" + padSequenceText(pads)
-                        + " controllerLog=" + result.controllerLog.toString();
+            /*
+             * SafePad.isOn is the authoritative capture predicate. Capture
+             * shortens the current phase but does not immediately advance the
+             * active pad. This is the real multi-round state machine rather
+             * than the old synthetic "6 tick transition" shortcut.
+             */
+            if (!targetCaptured && isOnPad(player, activePad)) {
+                targetCaptured = true;
+                result.padsReached++;
+                int shortenedSeconds = Math.max(6, 16 - (stage - 1));
+                stageTicksRemaining = Math.min(
+                        stageTicksRemaining, shortenedSeconds * 20);
+
+                if (stage >= TARGET_STAGE) {
+                    result.stage = stage;
+                    result.ticks = ticks;
+                    result.failure = "PASS";
+                    return result;
+                }
+            }
+
+            if (stageTicksRemaining <= 0) {
+                if (!targetCaptured) {
+                    result.stage = stage;
+                    result.ticks = ticks;
+                    result.failure = "STAGE_TIMEOUT stage=" + stage
+                            + " pos=" + format(player.x) + "," + format(player.z)
+                            + " action=" + actionText(action)
+                            + " targets=" + padSequenceText(pads)
+                            + " controllerLog=" + tail(result.controllerLog.toString(), 10000);
+                    return result;
+                }
+
+                oldPad = activePad;
+                oldPadTicksRemaining = OLD_PAD_LIFETIME_TICKS;
+                padIndex++;
+                if (padIndex >= pads.size()) {
+                    result.stage = stage;
+                    result.ticks = ticks;
+                    result.failure = "PAD_SEQUENCE_EXHAUSTED";
+                    return result;
+                }
+
+                activePad = previewPad != null ? previewPad : pads.get(padIndex);
+                previewPad = null;
+                stage++;
+                targetCaptured = false;
+                stageTicksRemaining = stageTimeTicks(stage);
             }
         }
 
         result.stage = stage;
         result.ticks = ticks;
         return result;
+    }
+
+    private static int stageTimeTicks(int stage) {
+        int seconds = Math.max(15, 35 - ((stage - 1) * 20 / 9));
+        return seconds * 20;
     }
 
     private static LegacyWorldObservation observation(
@@ -336,7 +381,8 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static boolean[][] physicalFloor(
-            int[][] raw, Cell activePad, Cell oldPad, int transitionTicks) {
+            int[][] raw, Cell activePad, Cell oldPad,
+            int oldPadTicksRemaining, Cell previewPad) {
         boolean[][] floor = new boolean[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             for (int c = 0; c < SIZE; c++) {
@@ -344,16 +390,9 @@ public final class MazePatternStage10SimulationTest {
             }
         }
 
-        // SafePad.captureAndBuild replaces a 5x5 surface with physical floor.
         fillPad(floor, activePad);
-
-        // Old SafePads remain physical while their decay timer is running.
-        // The source keeps old SafePads physical for the full 11 decay ticks,
-        // not merely for a few controller-transition ticks.
-        if (transitionTicks > 0) {
-            fillPad(floor, oldPad);
-        }
-
+        if (previewPad != null) fillPad(floor, previewPad);
+        if (oldPad != null && oldPadTicksRemaining > 0) fillPad(floor, oldPad);
         return floor;
     }
 

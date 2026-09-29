@@ -2106,6 +2106,16 @@ public final class FirstPadSpeedrunController {
                 && physicalFloorCell(state, toRow, toColumn);
     }
 
+    private boolean gapSprint(LegacyWorldObservation state) {
+        /*
+         * Non-Jumpers rely on the legacy sprint-jump speed technique. Jumper's
+         * charged vanilla jump is already a large horizontal event; keep its
+         * gap crossing unsprinted so the 0.42 jump does not combine with the
+         * extra sprint impulse and overshoot the landing corridor.
+         */
+        return state.kit != me.monstermazeai.kit.Kit.JUMPER;
+    }
+
     private LegacyAction prepareOrStartGap(LegacyWorldObservation state,
                                             float desiredYaw, float yawError) {
         /*
@@ -2139,7 +2149,7 @@ public final class FirstPadSpeedrunController {
         }
 
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
@@ -2196,7 +2206,7 @@ public final class FirstPadSpeedrunController {
                     if (routeIndex > 0 && routeStartsOnPreviousPad) {
                         routeStartsOnPreviousPad = false;
                     }
-                    return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                    return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
                 }
             }
         }
@@ -2212,7 +2222,7 @@ public final class FirstPadSpeedrunController {
                 resetGapMomentum();
                 routeIndex++;
                 if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
             }
         } else {
             gapLandingConfirmTicks = 0;
@@ -2231,7 +2241,7 @@ public final class FirstPadSpeedrunController {
              * trajectory that just crossed the gap.
              */
             if (!state.player.grounded) {
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
             }
 
             /*
@@ -2293,7 +2303,7 @@ public final class FirstPadSpeedrunController {
         // every grounded observation. At sprint speed a single tick is enough
         // to cross the source block edge, so waiting for exactly +0.50 progress
         // can miss the only grounded jump-input window.
-        return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+        return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

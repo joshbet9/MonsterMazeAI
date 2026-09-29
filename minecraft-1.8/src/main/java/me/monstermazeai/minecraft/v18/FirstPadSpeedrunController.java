@@ -571,7 +571,12 @@ public final class FirstPadSpeedrunController {
         float desiredYaw = desiredYawForEdge(
                 routeRows[routeIndex], routeColumns[routeIndex],
                 routeRows[nextIndex], routeColumns[nextIndex]);
-        desiredYaw = cornerLeadYaw(state, desiredYaw);
+        /*
+         * Route tracking is the sole grounded cursor-steering authority.
+         * The separate anticipatory corner pulse can fight the current edge at
+         * sprint speed and inject lateral velocity before waypoint capture.
+         * AirborneCornerYaw remains responsible for a real in-flight turn.
+         */
         desiredYaw = routeTrackingYaw(state, desiredYaw);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);

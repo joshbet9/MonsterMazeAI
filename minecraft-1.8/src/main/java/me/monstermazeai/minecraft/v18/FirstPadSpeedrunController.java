@@ -2607,7 +2607,9 @@ public final class FirstPadSpeedrunController {
 
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
-                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
+                    && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
+                    || physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z));
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE

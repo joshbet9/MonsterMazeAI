@@ -2142,14 +2142,13 @@ public final class FirstPadSpeedrunController {
 
         double progress = currentEdgeProgress(state);
         if (!gapTakeoffStarted && progress >= 0.15D) {
-            gapTakeoffStarted = true;
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
-                    + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                    + " progress=" + format(progress));
-        }
-
-        if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
+            if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
                 && playerFootprintOverlapsCell(state, toRow, toColumn, 0.05D)) {
+            /*
+             * Preserve a genuine grounded landing for the confirmation window.
+             * Space must be released here; otherwise the very first grounded
+             * observation immediately re-jumps in the same controller cycle.
+             */
             gapLandingConfirmTicks++;
             if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
@@ -2159,20 +2158,12 @@ public final class FirstPadSpeedrunController {
                 resetGapMomentum();
                 routeIndex++;
                 if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
             }
+            return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
         } else {
             gapLandingConfirmTicks = 0;
         }
-
-        /*
-         * While committed to a gap, never fall back to ordinary route safety.
-         * The action remains W+sprint+jump until the landing predicate above
-         * succeeds or the edge is irrecoverably missed.
-         */
-        if (progress > 1.65D) {
-            /*
-             * Crossing the geometric endpoint while airborne is not a failed
              * gap. The player can still be descending toward the destination
              * block, and rebuilding A* in mid-flight destroys the very jump
              * trajectory that just crossed the gap.

@@ -1049,12 +1049,6 @@ public final class FirstPadSpeedrunController {
             goal = expandDynamicNeighbour(state, node, r, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
             goal = expandDynamicNeighbour(state, node, r, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
 
-            // Permit diagonal traversal where two floor cells touch at a corner.
-            goal = expandDynamicNeighbour(state, node, r - 1, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r - 1, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r + 1, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r + 1, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-
             // Permit a two-cell orthogonal edge only when exactly one missing
             // floor cell lies between the two supported endpoint cells.
             goal = expandDynamicNeighbour(state, node, r - 2, c, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
@@ -1108,14 +1102,6 @@ public final class FirstPadSpeedrunController {
                 goal = expandStaticNeighbour(state, node, r, c - 1, r, c, targetRow, targetColumn,
                         bestArrivalTicks, parent, open, goal);
                 goal = expandStaticNeighbour(state, node, r, c + 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r - 1, c - 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r - 1, c + 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r + 1, c - 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r + 1, c + 1, r, c, targetRow, targetColumn,
                         bestArrivalTicks, parent, open, goal);
                 goal = expandStaticNeighbour(state, node, r - 2, c, r, c, targetRow, targetColumn,
                         bestArrivalTicks, parent, open, goal);

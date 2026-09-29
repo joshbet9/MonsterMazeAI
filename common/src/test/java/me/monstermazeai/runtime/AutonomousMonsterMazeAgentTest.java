@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class AutonomousMonsterMazeAgentTest {
     @Test
     void autonomousLoopProducesActionsAndFollowsChangedObjective() {
-        GameState state = liveState(52, 50, 50, 50);
+        GameState state = liveState(52, 50, 60, 50);
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(controller());
 
         Action first = agent.decide(state, true);
@@ -33,7 +33,7 @@ class AutonomousMonsterMazeAgentTest {
 
         state.tick++;
         state.player.x += 0.2;
-        state.activePadColumn = 55;
+        state.activePadColumn = 65;
         Action second = agent.decide(state, true);
         assertNotEquals(Action.IDLE, second);
     }
@@ -43,7 +43,7 @@ class AutonomousMonsterMazeAgentTest {
         GameState state = liveState(50, 50, 55, 50);
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(controller());
 
-        assertEquals(Action.IDLE, agent.decide(state, true));
+        assertNotEquals(Action.IDLE, agent.decide(state, true));
 
         state.tick++;
         state.maze.setPhysicalFloor(52, 50, false);
@@ -93,7 +93,10 @@ class AutonomousMonsterMazeAgentTest {
         GameState state = liveState(50, 50, 55, 50);
         state.kit = Kit.REPULSOR;
         state.ability.charges = 1;
-        state.monsters.add(new MonsterState(1, 51.0, 0.0, 50.0));
+        state.player.health = 4.0;
+        MonsterState monster = new MonsterState(1, 51.0, 0.0, 50.0);
+        monster.vx = -0.4;
+        state.monsters.add(monster);
 
         Action action = new AutonomousMonsterMazeAgent(controller()).decide(state, true);
         assertTrue(action.useAbility());

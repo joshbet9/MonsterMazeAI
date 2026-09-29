@@ -524,8 +524,11 @@ public final class MazePatternStage10SimulationTest {
                 + ",Y=" + format(action.yawDelta);
     }
 
-    private static String tail(String value, int max) {\n        return value.length() <= max ? value : value.substring(value.length() - max);\n    }\n\n    private static String format(double value) {
-        return String.format(java.util.Locale.ROOT, "%.2f", value);
+    private static String tail(String value, int max) {
+        return value.length() <= max ? value : value.substring(value.length() - max);
+    }
+
+    private static String format(double value) {
     }
 
     private static final class Cell {

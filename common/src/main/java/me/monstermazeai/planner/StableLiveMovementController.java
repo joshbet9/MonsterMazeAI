@@ -103,6 +103,19 @@ public final class StableLiveMovementController {
     private double laneAnchorX;
     private double laneAnchorZ;
 
+    /*
+     * A real Monster Maze bump is not just another route deviation. The source
+     * applies a large velocity impulse and a four-health hit, then gives the
+     * player a short grace window. If the live controller keeps executing the
+     * pre-hit route while airborne, it can immediately steer/jump against the
+     * server knockback and lose the maze edge. Keep a small source-faithful
+     * recovery state in the live motor so the next grounded observation starts
+     * from the actual post-bump position.
+     */
+    private static final long MOB_HIT_RECOVERY_TICKS = 40L;
+    private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
+    private double previousHealth = Double.NaN;
+
     /**
      * Terminal SafePad transition commitment. The live observer exposes the
      * source's 5x5 pad as physical floor even where the canonical maze layout
@@ -145,6 +158,38 @@ public final class StableLiveMovementController {
         }
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
+
+        boolean mobHit = detectLiveMobHit(state);
+        if (mobHit) {
+            mobHitRecoveryUntilTick = Math.max(
+                    mobHitRecoveryUntilTick,
+                    state.tick + MOB_HIT_RECOVERY_TICKS);
+            clearRoute();
+            clearPadEntryCommitment();
+            clearGapCommitment();
+            fullRouteEvaluationPending = true;
+            lastThreatSignature = Long.MIN_VALUE;
+            lastTacticalSignature = Long.MIN_VALUE;
+            lastDecisionDetail = "MOB_HIT_RECOVERY"
+                    + " health=" + format(state.player.health)
+                    + " recoveryUntil=" + mobHitRecoveryUntilTick
+                    + " grounded=" + state.player.grounded;
+            /*
+             * While airborne, the server's bump velocity is authoritative.
+             * Do not inject a jump, strafe, or stale route turn into it.
+             * Once grounded, route construction below uses the new position.
+             */
+            if (!state.player.grounded) {
+                return Action.IDLE;
+            }
+        }
+
+        if (state.tick <= mobHitRecoveryUntilTick && !state.player.grounded) {
+            lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
+                    + " until=" + mobHitRecoveryUntilTick
+                    + " vy=" + format(state.player.vy);
+            return Action.IDLE;
+        }
 
         if (goal.row() != goalRow || goal.column() != goalColumn || regionRadius != goalRadius) {
             clearRoute();
@@ -477,6 +522,8 @@ public final class StableLiveMovementController {
         lastTacticalSignature = Long.MIN_VALUE;
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
+        mobHitRecoveryUntilTick = Long.MIN_VALUE;
+        previousHealth = Double.NaN;
         clearPadEntryCommitment();
         clearGapCommitment();
         Future<?> pending = pendingRoutePlan;
@@ -729,19 +776,52 @@ public final class StableLiveMovementController {
         for (me.monstermazeai.monster.MonsterState monster : state.monsters) {
             if (!me.monstermazeai.monster.MonsterRelevance.withinPlayerRadius(
                     monster, state.player, me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS)) continue;
+
+            /*
+             * Cell-only signatures were too coarse for live Monster Maze.
+             * Monsters can move a substantial fraction of a block without
+             * crossing a cell boundary, while their velocity changes the
+             * source-faithful predicted contact. Quantise position to 0.5
+             * blocks and velocity to 0.05 so tactical evaluation is refreshed
+             * when the threat meaningfully changes, without forcing a full
+             * simulation for every floating-point packet variation.
+             */
             h = mix(h, monster.id);
-            h = mix(h, (long) Math.floor(monster.x));
-            h = mix(h, (long) Math.floor(monster.y));
-            h = mix(h, (long) Math.floor(monster.z));
+            h = mix(h, quantise(monster.x, 0.5D));
+            h = mix(h, quantise(monster.y, 0.5D));
+            h = mix(h, quantise(monster.z, 0.5D));
+            h = mix(h, quantise(monster.vx, 0.05D));
+            h = mix(h, quantise(monster.vz, 0.05D));
             h = mix(h, monster.launched(state.tick) ? 1L : 0L);
             h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
         }
         return h;
     }
 
+    private static long quantise(double value, double quantum) {
+        return Math.round(value / quantum);
+    }
+
     private static long mix(long h, long value) {
         h ^= value;
         return h * 1099511628211L;
+    }
+
+    /**
+     * Detect a source Monster Maze hit from the live observation stream.
+     *
+     * Normal monster contact deals exactly four damage. Using the health delta
+     * as the primary live signal is more reliable than trying to catch the
+     * single tick containing the velocity packet: an asynchronous sidecar may
+     * legitimately finish a decision after that exact physics tick. The
+     * recovery state therefore remains correct even when the first airborne
+     * observation arrives a few ticks after the hit.
+     */
+    private boolean detectLiveMobHit(GameState state) {
+        boolean hit = !Double.isNaN(previousHealth)
+                && state.player.health < previousHealth - 0.5D;
+        previousHealth = state.player.health;
+        return hit;
     }
 
     /**

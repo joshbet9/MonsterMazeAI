@@ -98,7 +98,7 @@ class AbilityModelTest {
 
         // Once the remaining timer is below the traversal + reopen reserve
         // + safety margin, waiting is no longer viable.
-        s.phaseTicksRemaining = 90;
+        s.phaseTicksRemaining = 75;
         assertTrue(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
     }
 

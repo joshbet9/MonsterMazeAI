@@ -61,7 +61,13 @@ public final class FirstPadSpeedrunController {
     private static final double MOB_HAZARD_RADIUS = 1.25D;
     private static final int MOB_PREDICT_TICKS = 30;
     private static final double ESTIMATED_TICKS_PER_CELL = 5.0D;
-    private static final int MOB_ROUTE_LOOKAHEAD_CELLS = 18;
+    /*
+     * First-pad movement must not churn because of monsters far down the
+     * route. Keep dynamic replanning local to the player's actual 20-block
+     * threat envelope; the initial A* still accounts for the complete route.
+     */
+    private static final int MOB_ROUTE_LOOKAHEAD_CELLS = 5;
+    private static final double MOB_REPLAN_PLAYER_RANGE = 20.0D;
 
     private int[] routeRows;
     private int[] routeColumns;
@@ -1255,6 +1261,19 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
+        boolean nearbyMonster = false;
+        double rangeSquared = MOB_REPLAN_PLAYER_RANGE * MOB_REPLAN_PLAYER_RANGE;
+        for (LegacyWorldObservation.Monster monster : state.monsters) {
+            if (monster.removed) continue;
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            if (dx * dx + dz * dz <= rangeSquared) {
+                nearbyMonster = true;
+                break;
+            }
+        }
+        if (!nearbyMonster) return false;
+
         int end = Math.min(routeLength - 1,
                 routeIndex + MOB_ROUTE_LOOKAHEAD_CELLS);
 
@@ -1974,21 +1993,16 @@ public final class FirstPadSpeedrunController {
          * the next cell is the first normal maze cell.
          */
         /*
-         * Sweep the continuous player footprint through the short movement
-         * envelope. This permits legitimate logical-cell boundary crossing
-         * while preventing an endpoint-only check from skipping an unsupported
-         * section of floor.
+         * Do not use a predictive footprint sweep here. The route graph already
+         * guarantees that the immediate destination is physical floor, and the
+         * forward-vector guard guarantees that W is issued along that edge.
+         * A 0.48-block geometric sweep is too conservative at high-speed
+         * diagonal/corner traversal because the player's continuous position
+         * can legitimately straddle the logical cells while still being safely
+         * supported. The old sweep was responsible for the observed
+         * "predicted-floor" holds immediately after successful speed-boost
+         * movement.
          */
-        int lastSupportedRouteIndex = Math.min(targetIndex, routeLength - 1);
-        for (double distance = SAFETY_SWEEP_STEP;
-             distance <= SAFETY_PROBE_DISTANCE + 1.0E-9D;
-             distance += SAFETY_SWEEP_STEP) {
-            double probeX = state.player.x + forwardX * distance;
-            double probeZ = state.player.z + forwardZ * distance;
-            if (!routeSupportsFootprint(state, probeX, probeZ, lastSupportedRouteIndex)) {
-                return "predicted-floor";
-            }
-        }
         return null;
     }
 
@@ -2207,8 +2221,8 @@ public final class FirstPadSpeedrunController {
             double lateralDistance = Math.hypot(lateralX, lateralZ);
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
 
-            boolean normalCapture = shouldCaptureRouteWaypoint(
-                    progress, distanceToNext)
+            boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
+                    || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
                     && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
 
             boolean overshootCapture = progress >= 1.0D
@@ -2235,26 +2249,6 @@ public final class FirstPadSpeedrunController {
                 break;
             }
         }
-    }
-
-    /*
-     * Waypoint capture must be based on forward progress, not proximity alone.
-     * At speed the player's 0.6-block footprint can overlap the next cell
-     * before the player has actually traversed the current edge. Advancing the
-     * route index from that overlap makes the next edge become authoritative
-     * too early; at a corner this can make the safety controller rotate toward
-     * the following edge while the player is still on the previous one.
-     *
-     * The observed first-pad failure matched this exact signature: the player
-     * moved normally for a few ticks, then stopped at roughly the same
-     * coordinates while the commanded yaw alternated. Requiring meaningful
-     * edge progress for proximity capture keeps routeIndex monotonic with
-     * physical travel while retaining the existing high-speed progress path.
-     */
-    static boolean shouldCaptureRouteWaypoint(double progress, double distanceToNext) {
-        return progress >= ROUTE_ADVANCE_PROGRESS
-                || (distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS
-                && progress >= 0.55D);
     }
 
     private boolean routeEdgeHasPhysicalCapture(LegacyWorldObservation state, int nextIndex) {

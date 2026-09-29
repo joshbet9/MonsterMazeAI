@@ -2130,7 +2130,8 @@ public final class FirstPadSpeedrunController {
         }
 
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
+        boolean launchTick = state.player.grounded && gapTakeoffStarted;
+        return new LegacyAction(1.0f, 0.0f, true, !launchTick, yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {

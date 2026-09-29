@@ -843,7 +843,8 @@ public final class FirstPadSpeedrunController {
             return LegacyAction.IDLE;
         }
 
-        if (headingStableTicks < HEADING_STABLE_TICKS) {
+        if (headingStableTicks < HEADING_STABLE_TICKS
+                && !isCurrentEdgeGap(state)) {
             headingStableTicks++;
             return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }

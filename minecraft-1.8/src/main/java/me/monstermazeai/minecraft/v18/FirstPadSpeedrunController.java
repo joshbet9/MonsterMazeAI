@@ -2362,15 +2362,31 @@ public final class FirstPadSpeedrunController {
          * about the actual next body position, not an arbitrary future point.
          * Intentional one-block gaps have already returned above.
          */
-        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
-        double probeDistance = Math.max(0.20D, Math.min(0.32D, horizontalSpeed + 0.04D));
-        double predictedX = state.player.x + forwardX * probeDistance;
-        double predictedZ = state.player.z + forwardZ * probeDistance;
-        if (state.player.grounded
-                && !physicalFloorSupportsFootprint(state, predictedX, predictedZ)
-                && !routeSupportsFootprint(state, predictedX, predictedZ,
-                Math.min(routeIndex + 2, routeLength - 1))) {
-            return "predicted-floor";
+        /*
+         * Predict the actual next horizontal body position, not merely a point
+         * on the commanded forward ray. Real Minecraft integrates the existing
+         * vx/vz first and then adds this tick's moveFlying acceleration. The
+         * empirical Minecraft traces show persistent lateral velocity through
+         * high-speed corners; the old ray probe could therefore say "safe"
+         * while the 0.60m body was already drifting off the one-block corridor.
+         */
+        if (state.player.grounded) {
+            double inputDamping = 0.98D;
+            double groundFriction = 0.60D * 0.91D;
+            double moveFactor = 0.10D * 1.30D
+                    * (0.16277136D / Math.pow(groundFriction, 3.0D));
+            double predictedVx = state.player.vx
+                    + forwardX * moveFactor * inputDamping;
+            double predictedVz = state.player.vz
+                    + forwardZ * moveFactor * inputDamping;
+            double predictedX = state.player.x + predictedVx;
+            double predictedZ = state.player.z + predictedVz;
+
+            if (!physicalFloorSupportsFootprint(state, predictedX, predictedZ)
+                    && !routeSupportsFootprint(state, predictedX, predictedZ,
+                    Math.min(routeIndex + 2, routeLength - 1))) {
+                return "predicted-floor";
+            }
         }
 
         return null;
@@ -2411,7 +2427,7 @@ public final class FirstPadSpeedrunController {
         double minZ = z - PLAYER_HALF_WIDTH, maxZ = z + PLAYER_HALF_WIDTH;
         double overlapX = Math.min(maxX, padCenterX + 2.5D) - Math.max(minX, padCenterX - 2.5D);
         double overlapZ = Math.min(maxZ, padCenterZ + 2.5D) - Math.max(minZ, padCenterZ - 2.5D);
-        return overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D;
+        return overlapX > 0.0D && overlapZ > 0.0D;
     }
 
     private boolean activeSafePadSupportsFootprint(LegacyWorldObservation state,
@@ -2497,8 +2513,6 @@ public final class FirstPadSpeedrunController {
         int minColumn = row(minZ, state.center.z);
         int maxColumn = row(maxZ - 1.0E-9D, state.center.z);
 
-        final double minimumSupportArea = 0.05D;
-
         for (int r = minRow; r <= maxRow; r++) {
             for (int c = minColumn; c <= maxColumn; c++) {
                 if (!physicalFloorCell(state, r, c)) continue;
@@ -2510,10 +2524,7 @@ public final class FirstPadSpeedrunController {
 
                 double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
                 double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
-                if (overlapX > 0.0D && overlapZ > 0.0D
-                        && overlapX * overlapZ >= minimumSupportArea) {
-                    return true;
-                }
+                if (overlapX > 0.0D && overlapZ > 0.0D) return true;
             }
         }
 

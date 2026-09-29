@@ -2308,7 +2308,7 @@ public final class FirstPadSpeedrunController {
                     && canTraverseEdge(state,
                     nextRow, nextColumn,
                     routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
-            if (!validCornerTurn || forwardDot < 0.70D) {
+            if (!validCornerTurn || forwardDot < 0.00D) {
                 return "forward-vector";
             }
         }

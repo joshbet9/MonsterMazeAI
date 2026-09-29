@@ -208,6 +208,7 @@ public final class FirstPadSpeedrunSimulationTest {
                     result.failureRound = round + 1;
                     result.failureTick = localTick;
                     result.failureReason = "fell-below-maze";
+                    result.controllerReport = recorder.finish(tick, result.failureReason);
                     return result;
                 }
 
@@ -225,6 +226,7 @@ public final class FirstPadSpeedrunSimulationTest {
                     result.failureRound = round + 1;
                     result.failureTick = localTick;
                     result.failureReason = "stall";
+                    result.controllerReport = recorder.finish(tick, result.failureReason);
                     return result;
                 }
 
@@ -241,6 +243,7 @@ public final class FirstPadSpeedrunSimulationTest {
                 result.failureX = player.x;
                 result.failureZ = player.z;
                 result.failureYaw = player.yaw;
+                result.controllerReport = recorder.finish(tick, result.failureReason);
                 return result;
             }
 

@@ -191,7 +191,7 @@ class StableLiveMovementControllerTest {
         s.activePadRow = 10;
         s.activePadColumn = 14;
         s.player.x = 10.5;
-        s.player.z = 10.15;
+        s.player.z = 10.0;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
         s.tick = 1;

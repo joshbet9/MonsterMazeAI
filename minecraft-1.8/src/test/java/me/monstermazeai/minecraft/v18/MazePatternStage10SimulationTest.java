@@ -91,10 +91,12 @@ public final class MazePatternStage10SimulationTest {
 
             System.err.println("\\n--- Maze " + (pattern + 1) + " diagnostics ---\\n" + report);
 
-            assertTrue("Maze " + (pattern + 1) + " did not pass every simulation.\\n" + report,
-                    passed == SEEDS_PER_PATTERN);
-            assertTrue("Maze " + (pattern + 1) + " minimum stage was below 10: " + minStage + "\\n" + report,
-                    minStage >= TARGET_STAGE);
+            if (passed != SEEDS_PER_PATTERN) {
+                throw new RuntimeException("Maze " + (pattern + 1) + " failed simulation gate\n" + report);
+            }
+            if (minStage < TARGET_STAGE) {
+                throw new RuntimeException("Maze " + (pattern + 1) + " minimum stage below 10\n" + report);
+            }
         }
 
         System.out.println("\n========== MAZE PATTERN STAGE-10 SIMULATION ==========\n"

@@ -795,16 +795,7 @@ public final class FirstPadSpeedrunController {
                         1.0f, 0.0f, true, true, airborneYawDelta, false);
             }
             if (Math.abs(yawDelta) > 0.01F) {
-                /*
-                 * Rotate in place without stepping off a one-block corridor.
-                 * Keep Space pressed so a grounded turn cannot become a
-                 * stationary edge hang: the 1.8 client will launch the player
-                 * when its jump cooldown permits, while forward remains zero
-                 * until the commanded heading is safe.
-                 */
-                return new LegacyAction(
-                        0.0f, 0.0f, state.player.grounded, state.player.grounded,
-                        yawDelta, false);
+                return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
             return LegacyAction.IDLE;
         }

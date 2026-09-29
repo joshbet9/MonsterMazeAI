@@ -1336,7 +1336,8 @@ public final class FirstPadSpeedrunController {
         int end = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
         for (int i = routeIndex; i <= end; i++) {
             if (!routeCellSupported(state, i)) return true;
-            if (i > routeIndex && !isRouteEdgeTraversable(
+            if (i > routeIndex && !canTraverseEdge(
+                    state,
                     routeRows[i - 1], routeColumns[i - 1],
                     routeRows[i], routeColumns[i])) return true;
         }
@@ -1570,9 +1571,30 @@ public final class FirstPadSpeedrunController {
         int adr = Math.abs(dr);
         int adc = Math.abs(dc);
 
-        // Orthogonal and diagonal one-cell movement.
-        if (adr <= 1 && adc <= 1 && adr + adc > 0) {
+        // Orthogonal one-cell movement.
+        if (adr + adc == 1) {
             return true;
+        }
+
+        /*
+         * Diagonal movement is only physically valid when the player has
+         * continuous support through the corner. The source Monster Maze
+         * layouts are one-cell-wide orthogonal corridors; two diagonal path
+         * cells touching only at a corner are not a traversable player route.
+         * Requiring both orthogonal side cells prevents A* from cutting a
+         * corner across the void while still allowing genuine diagonals on a
+         * 5x5 SafePad where all four cells are physically present.
+         */
+        if (adr == 1 && adc == 1) {
+            int sideRowA = fromRow;
+            int sideColumnA = toColumn;
+            int sideRowB = toRow;
+            int sideColumnB = fromColumn;
+            boolean sideA = inBounds(sideRowA, sideColumnA)
+                    && state.physicalFloor[sideRowA][sideColumnA];
+            boolean sideB = inBounds(sideRowB, sideColumnB)
+                    && state.physicalFloor[sideRowB][sideColumnB];
+            return sideA && sideB;
         }
 
         // One-block gap: supported endpoint, unsupported middle cell.
@@ -1946,7 +1968,7 @@ public final class FirstPadSpeedrunController {
         int nextIndex = routeIndex + 1;
         int nextRow = routeRows[nextIndex], nextColumn = routeColumns[nextIndex];
         if (!routeCellSupported(state, nextIndex)) return "next-floor";
-        if (!isRouteEdgeTraversable(
+        if (!canTraverseEdge(state,
                 routeRows[routeIndex], routeColumns[routeIndex],
                 nextRow, nextColumn)) return "route-disconnected";
 

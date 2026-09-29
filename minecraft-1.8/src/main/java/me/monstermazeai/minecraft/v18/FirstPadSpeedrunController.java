@@ -2651,6 +2651,17 @@ public final class FirstPadSpeedrunController {
             double lateralDistance = Math.hypot(lateralX, lateralZ);
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
 
+            /*
+             * Do not promote the route cursor onto the first edge of a gap
+             * while airborne. That converts an otherwise recoverable jump arc
+             * into a committed gap transaction one or more ticks too early.
+             * The real traces show this exact failure after high-speed reindex.
+             */
+            if (!state.player.grounded
+                    && edgeType(routeIndex + 1) == EdgeType.ONE_BLOCK_GAP) {
+                break;
+            }
+
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
                     && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
@@ -2717,7 +2728,9 @@ public final class FirstPadSpeedrunController {
                  * Normal edge capture handles the corner on the next ticks.
                  */
                 if (crossesGap || !routeCellSupported(state, candidate)
-                        || !sameCommittedHeadingSpan(routeIndex, candidate)) continue;
+                        || !sameCommittedHeadingSpan(routeIndex, candidate)
+                        || (!state.player.grounded
+                        && edgeType(candidate) == EdgeType.ONE_BLOCK_GAP)) continue;
 
                 double distance = Math.hypot(
                         state.player.x - worldX(routeRows[candidate], state.center.x),

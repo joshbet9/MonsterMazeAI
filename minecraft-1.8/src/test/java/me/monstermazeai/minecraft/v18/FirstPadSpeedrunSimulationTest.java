@@ -6,6 +6,9 @@ import me.monstermazeai.kit.Kit;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
@@ -53,6 +56,7 @@ public final class FirstPadSpeedrunSimulationTest {
 
         System.out.println(result.report());
         System.err.println(result.report());
+        writeReport(result.report());
 
         assertEquals(
                 "simulation rounds reached",
@@ -80,6 +84,17 @@ public final class FirstPadSpeedrunSimulationTest {
         assertFalse(
                 "simulation must not deadlock for the stall window",
                 result.stalled);
+    }
+
+    private static void writeReport(String report) {
+        File output = new File("build/first-pad-simulation-report.txt");
+        File parent = output.getParentFile();
+        if (parent != null) parent.mkdirs();
+        try (FileWriter writer = new FileWriter(output)) {
+            writer.write(report);
+        } catch (IOException failure) {
+            throw new AssertionError("Could not write simulation report: " + failure.getMessage(), failure);
+        }
     }
 
     private static SimulationResult simulateMatch(Kit kit) {

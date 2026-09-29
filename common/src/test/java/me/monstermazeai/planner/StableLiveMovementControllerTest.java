@@ -181,6 +181,7 @@ class StableLiveMovementControllerTest {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[10][10] = 1;
         raw[10][12] = 1;
+        raw[10][14] = 1;
         MazeModel maze = new MazeModel(raw);
 
         GameState s = new GameState();

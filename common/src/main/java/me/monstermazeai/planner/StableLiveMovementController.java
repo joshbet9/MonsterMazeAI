@@ -114,12 +114,22 @@ public final class StableLiveMovementController {
     private static final double PAD_ENTRY_COMMIT_DISTANCE = 1.25;
     private static final double PAD_ENTRY_RELEASE_DISTANCE = 2.75;
     private static final long PAD_ENTRY_MAX_TICKS = 18L;
+    private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.35D;
+    private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
+    private static final double GAP_LANDING_PROGRESS = 1.20D;
+    private static final float GAP_HEADING_TOLERANCE = 5.0F;
+    private static final double GAP_LATERAL_SPEED_LIMIT = 0.12D;
+    private static final int GAP_LANDING_CONFIRM_TICKS = 2;
     private boolean padEntryCommitment;
     private int padEntryRow = -1;
     private int padEntryColumn = -1;
     private int padEntryDirRow;
     private int padEntryDirColumn;
     private long padEntryStartTick = Long.MIN_VALUE;
+    private boolean gapExecutionActive;
+    private boolean gapTakeoffStarted;
+    private int gapExecutionRouteIndex = -1;
+    private int gapLandingConfirmTicks;
 
 
     public Action nextAction(GameState state, Cell goal, boolean allowJump) {
@@ -138,6 +148,7 @@ public final class StableLiveMovementController {
 
         if (goal.row() != goalRow || goal.column() != goalColumn || regionRadius != goalRadius) {
             clearRoute();
+            clearGapCommitment();
             goalRow = goal.row();
             goalColumn = goal.column();
             goalRadius = regionRadius;
@@ -148,6 +159,10 @@ public final class StableLiveMovementController {
         // on the pad, losing the edge, or a bounded timeout/recovery condition.
         if (padEntryCommitment) {
             Action committed = executePadEntryCommitment(state, goal, allowJump);
+            if (committed != null) return committed;
+        }
+        if (gapExecutionActive) {
+            Action committed = executeCommittedGap(state, allowJump);
             if (committed != null) return committed;
         }
 
@@ -169,7 +184,7 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        if (!padEntryCommitment) {
+        if (!padEntryCommitment && !gapExecutionActive) {
             applyCompletedRoutePlan(state, startRow, startColumn, goal, regionRadius);
         }
 
@@ -198,8 +213,8 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
-            boolean routeInvalid = !route.cells().contains(new Cell(startRow, startColumn))
-                    || distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION;
+            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
+                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
 
             if (routeInvalid) {
                 /*
@@ -291,9 +306,16 @@ public final class StableLiveMovementController {
         int dirRow = Integer.signum(targetCellRow - startCellRow);
         int dirColumn = Integer.signum(targetCellColumn - startCellColumn);
 
-        if (Math.abs(dirRow) + Math.abs(dirColumn) != 1) {
-            // Defensive failure: PlayerRoute must be cardinal. Never issue a
-            // diagonal command if the route invariant is broken.
+        boolean gapEdge = isGapEdge(state, startCellRow, startCellColumn, targetCellRow, targetCellColumn);
+        if (gapEdge) {
+            Action gapAction = prepareOrStartGap(state, dirRow, dirColumn, allowJump);
+            if (gapAction != null) return gapAction;
+        }
+
+        if (!gapEdge && Math.abs(dirRow) + Math.abs(dirColumn) != 1) {
+            // Defensive failure: PlayerRoute is normally cardinal, with the
+            // sole exception of a two-cell orthogonal edge representing one
+            // missing block. Diagonal movement remains forbidden.
             lastDecisionDetail += " INVALID_SEGMENT="
                     + startCellRow + "," + startCellColumn + "->"
                     + targetCellRow + "," + targetCellColumn;
@@ -455,6 +477,7 @@ public final class StableLiveMovementController {
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
         clearPadEntryCommitment();
+        clearGapCommitment();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;
@@ -771,6 +794,133 @@ public final class StableLiveMovementController {
         double dx = Math.max(0.0, Math.abs(state.player.x - centerX) - 2.5);
         double dz = Math.max(0.0, Math.abs(state.player.z - centerZ) - 2.5);
         return Math.hypot(dx, dz);
+    }
+
+    private Action prepareOrStartGap(GameState state, int dirRow, int dirColumn, boolean allowJump) {
+        if (gapExecutionActive && gapExecutionRouteIndex == waypointIndex - 1) {
+            return executeCommittedGap(state, allowJump);
+        }
+        if (!state.player.grounded) return new Action(0.0, 0.0, false, false, 0.0F, false);
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
+            float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            lastDecisionDetail = "GAP_ALIGN edge=" + gapEdgeText() + " yawError=" + format(yawError);
+            return new Action(0.0, 0.0, false, false, yawDelta, false);
+        }
+        double rad = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
+        double lateralVelocity = Math.abs(state.player.vx * forwardZ - state.player.vz * forwardX);
+        if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
+            lastDecisionDetail = "GAP_BRAKE edge=" + gapEdgeText() + " lateralSpeed=" + format(lateralVelocity);
+            return new Action(0.0, 0.0, false, false, 0.0F, false);
+        }
+        double progress = currentGapProgress(state);
+        double distanceToTakeoff = 0.50D - progress;
+        if (progress >= 0.15D && progress <= 1.65D) {
+            gapExecutionActive = true;
+            gapTakeoffStarted = progress >= 0.35D;
+            gapExecutionRouteIndex = waypointIndex - 1;
+            gapLandingConfirmTicks = 0;
+            return executeCommittedGap(state, allowJump);
+        }
+        if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
+            lastDecisionDetail = "GAP_APPROACH edge=" + gapEdgeText() + " progress=" + format(progress);
+            return new Action(1.0, 0.0, false, true, 0.0F, false);
+        }
+        if (distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
+            lastDecisionDetail = "GAP_MISSED edge=" + gapEdgeText() + " progress=" + format(progress);
+            return null;
+        }
+        gapExecutionActive = true;
+        gapTakeoffStarted = false;
+        gapExecutionRouteIndex = waypointIndex - 1;
+        gapLandingConfirmTicks = 0;
+        return executeCommittedGap(state, allowJump);
+    }
+
+    private Action executeCommittedGap(GameState state, boolean allowJump) {
+        if (!gapExecutionActive || gapExecutionRouteIndex != waypointIndex - 1 || waypointIndex >= route.size()) {
+            clearGapCommitment();
+            return null;
+        }
+        int fromRow = route.cells().get(gapExecutionRouteIndex).row();
+        int fromColumn = route.cells().get(gapExecutionRouteIndex).column();
+        int toRow = route.cells().get(waypointIndex).row();
+        int toColumn = route.cells().get(waypointIndex).column();
+        if (!isGapEdge(state, fromRow, fromColumn, toRow, toColumn)) {
+            clearGapCommitment();
+            return null;
+        }
+        double progress = currentGapProgress(state);
+        if (!gapTakeoffStarted && progress >= 0.50D) {
+            gapTakeoffStarted = true;
+            lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText() + " progress=" + format(progress);
+        }
+        if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
+                && playerOverlapsCell(state, toRow, toColumn, 0.05D)) {
+            gapLandingConfirmTicks++;
+            if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
+                int completedIndex = waypointIndex;
+                clearGapCommitment();
+                waypointIndex = nextTurnWaypoint(route, completedIndex);
+                anchoredSegmentIndex = -1;
+                lastDecisionDetail = "GAP_LANDING_CONFIRMED edge=" + fromRow + "," + fromColumn + "->"
+                        + toRow + "," + toColumn + " progress=" + format(progress);
+                return new Action(1.0, 0.0, allowJump, true, 0.0F, false);
+            }
+        } else {
+            gapLandingConfirmTicks = 0;
+        }
+        if (progress > 1.65D || state.player.y < GameState.PATH_Y - 3.0D) {
+            lastDecisionDetail = "GAP_LANDING_FAILED edge=" + gapEdgeText() + " progress=" + format(progress);
+            clearGapCommitment();
+            return null;
+        }
+        lastDecisionDetail = "GAP_EXECUTE edge=" + gapEdgeText() + " progress=" + format(progress)
+                + " takeoff=" + gapTakeoffStarted;
+        return new Action(1.0, 0.0, gapTakeoffStarted && allowJump, true, 0.0F, false);
+    }
+
+    private boolean isGapEdge(GameState state, int fromRow, int fromColumn, int toRow, int toColumn) {
+        int dr = toRow - fromRow, dc = toColumn - fromColumn;
+        if (!((Math.abs(dr) == 2 && dc == 0) || (Math.abs(dc) == 2 && dr == 0))) return false;
+        int middleRow = fromRow + Integer.signum(dr);
+        int middleColumn = fromColumn + Integer.signum(dc);
+        return state.maze.isPhysicalFloor(fromRow, fromColumn)
+                && !state.maze.isPhysicalFloor(middleRow, middleColumn)
+                && state.maze.isPhysicalFloor(toRow, toColumn);
+    }
+
+    private double currentGapProgress(GameState state) {
+        int fromRow = route.cells().get(gapExecutionRouteIndex).row();
+        int fromColumn = route.cells().get(gapExecutionRouteIndex).column();
+        int toRow = route.cells().get(waypointIndex).row();
+        int toColumn = route.cells().get(waypointIndex).column();
+        double fromX = fromRow + 0.5, fromZ = fromColumn + 0.5;
+        double edgeX = toRow - fromRow, edgeZ = toColumn - fromColumn;
+        double length = Math.hypot(edgeX, edgeZ);
+        edgeX /= length; edgeZ /= length;
+        return (state.player.x - fromX) * edgeX + (state.player.z - fromZ) * edgeZ;
+    }
+
+    private boolean playerOverlapsCell(GameState state, int row, int column, double tolerance) {
+        return state.player.x > row + tolerance && state.player.x < row + 1.0 - tolerance
+                && state.player.z > column + tolerance && state.player.z < column + 1.0 - tolerance;
+    }
+
+    private String gapEdgeText() {
+        if (route == null || gapExecutionRouteIndex < 0 || waypointIndex >= route.size()) return "unknown";
+        Cell from = route.cells().get(gapExecutionRouteIndex);
+        Cell to = route.cells().get(waypointIndex);
+        return from.row() + "," + from.column() + "->" + to.row() + "," + to.column();
+    }
+
+    private void clearGapCommitment() {
+        gapExecutionActive = false;
+        gapTakeoffStarted = false;
+        gapExecutionRouteIndex = -1;
+        gapLandingConfirmTicks = 0;
     }
 
     private void clearPadEntryCommitment() {

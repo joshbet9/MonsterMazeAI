@@ -895,7 +895,7 @@ public final class StableLiveMovementController {
 
     private double currentGapProgress(GameState state, int gapIndex) {
         int fromRow = route.cells().get(gapIndex).row();
-        int fromColumn = route.cells().get(gapExecutionRouteIndex).column();
+        int fromColumn = route.cells().get(gapIndex).column();
         int toRow = route.cells().get(waypointIndex).row();
         int toColumn = route.cells().get(waypointIndex).column();
         double fromX = fromRow + 0.5, fromZ = fromColumn + 0.5;

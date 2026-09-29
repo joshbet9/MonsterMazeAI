@@ -173,7 +173,7 @@ public final class MazePatternStage10SimulationTest {
             boolean[][] physical = physicalFloor(
                     raw, activePad, oldPad, oldPadTicksRemaining, previewPad);
             LegacyWorldObservation observation = observation(
-                    ticks, stage, pattern + 1, player, activePad, raw, physical);
+                    ticks, stage, pattern + 1, kit, player, activePad, raw, physical);
 
             LegacyAction action;
             ByteArrayOutputStream controllerLog = new ByteArrayOutputStream();
@@ -283,7 +283,7 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static LegacyWorldObservation observation(
-            long tick, int stage, int pattern, SimPlayer p, Cell pad,
+            long tick, int stage, int pattern, Kit kit, SimPlayer p, Cell pad,
             int[][] raw, boolean[][] physical) {
         return new LegacyWorldObservation(
                 tick,

@@ -140,7 +140,14 @@ public final class FirstPadSpeedrunController {
     private static final double KNOCKBACK_ACCELERATION = 0.22D;
     private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.75D;
     private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
-    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 0.85D;
+    /*
+     * The player's 0.60m footprint can remain physically supported while its
+     * centre is nearly 0.93 blocks from a one-block route centreline at a
+     * diagonal/cell-boundary crossing. 0.85m was therefore below the actual
+     * geometric support envelope and caused false POSITION REPLAN events on
+     * otherwise valid grounded crossings.
+     */
+    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 0.95D;
     /*
      * At the simulator's capped sprint speed the player can cross a corner
      * before a single-cell waypoint capture is observed. Allow a bounded

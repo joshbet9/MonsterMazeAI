@@ -3051,8 +3051,7 @@ public final class FirstPadSpeedrunController {
             if (playerFootprintOverlapsCell(
                     state, routeRows[i], routeColumns[i], minimumArea)
                     || playerFootprintOverlapsCell(
-                    state, routeRows[i + 1], routeColumns[i + 1], minimumArea)
-                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z)) {
+                    state, routeRows[i + 1], routeColumns[i + 1], minimumArea)) {
                 return true;
             }
         }

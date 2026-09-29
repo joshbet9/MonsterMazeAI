@@ -2146,7 +2146,29 @@ public final class FirstPadSpeedrunController {
          */
         double rad = Math.toRadians(commandedYaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
-        if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
+        double forwardDot = forwardX * edgeX + forwardZ * edgeZ;
+        if (forwardDot < EDGE_FORWARD_DOT_MIN) {
+            /*
+             * A 90-degree cardinal corner is physically traversable without
+             * stopping: during the final block the player can safely rotate
+             * through a diagonal heading provided the next edge is itself a
+             * valid physical edge. Allow that bounded transition band instead
+             * of dropping W/Space and destroying the speed-boost jump cycle.
+             */
+            boolean validCornerTurn = routeIndex + 2 < routeLength
+                    && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                    && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                    && Math.hypot(
+                    state.player.x - worldX(nextRow, state.center.x),
+                    state.player.z - worldZ(nextColumn, state.center.z))
+                    <= 1.00D
+                    && canTraverseEdge(state,
+                    nextRow, nextColumn,
+                    routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+            if (!validCornerTurn || forwardDot < 0.70D) {
+                return "forward-vector";
+            }
+        }
 
         /*
          * Corner lead is allowed to bias the cursor toward the next edge, but

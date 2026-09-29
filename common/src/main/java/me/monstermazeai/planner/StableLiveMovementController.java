@@ -870,16 +870,15 @@ public final class StableLiveMovementController {
         double predictedX = state.player.x;
         double predictedZ = state.player.z;
         double vy = state.player.vy;
+        double predictedY = state.player.y;
         int landingTicks = 0;
 
         for (int i = 1; i <= 40; i++) {
             predictedX += vx;
+            predictedY += vy;
             predictedZ += vz;
             vy = (vy - 0.08D) * 0.98D;
-            if (predictedX >= -1.0 && predictedX < me.monstermazeai.maze.MazeModel.SIZE
-                    && predictedZ >= -1.0 && predictedZ < me.monstermazeai.maze.MazeModel.SIZE
-                    && state.maze.isPhysicalFloor((int) Math.floor(predictedX), (int) Math.floor(predictedZ))
-                    && state.player.y + landingHeightOffset(vy, i) <= 0.35D) {
+            if (predictedY <= 0.0D && vy <= 0.0D) {
                 landingTicks = i;
                 break;
             }
@@ -912,12 +911,6 @@ public final class StableLiveMovementController {
         }
 
         return new double[]{bestX, bestZ};
-    }
-
-    private static double landingHeightOffset(double vy, int ticks) {
-        // Conservative estimate used only for selecting a steering target.
-        // The exact server physics remains authoritative in the live client.
-        return vy * ticks * 0.5D;
     }
 
     private static double sq(double value) {

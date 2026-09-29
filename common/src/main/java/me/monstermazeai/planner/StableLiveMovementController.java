@@ -5,6 +5,8 @@ import me.monstermazeai.game.PadModel;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.maze.PlayerRoute;
+import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.monster.MobInteractionDecision;
 import me.monstermazeai.player.Action;
 
 import java.util.List;
@@ -180,15 +182,24 @@ public final class StableLiveMovementController {
              * Once grounded, route construction below uses the new position.
              */
             if (!state.player.grounded) {
-                return Action.IDLE;
+                return airborneMobRecoveryAction(state, goal);
             }
         }
 
         if (state.tick <= mobHitRecoveryUntilTick && !state.player.grounded) {
-            lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
-                    + " until=" + mobHitRecoveryUntilTick
-                    + " vy=" + format(state.player.vy);
-            return Action.IDLE;
+            return airborneMobRecoveryAction(state, goal);
+        }
+
+        /*
+         * Emergency contact is deliberately separate from ordinary tactical
+         * avoidance. If the deadline is already unattainable by normal travel,
+         * a nearby monster can be used as a source-faithful bump toward the
+         * active pad. MobInteractionDecision refuses this at <= 2 hearts.
+         */
+        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
+        if (intentionalBump != null) {
+            Action bumpAction = steerIntoMonster(state, intentionalBump);
+            if (bumpAction != null) return bumpAction;
         }
 
         if (goal.row() != goalRow || goal.column() != goalColumn || regionRadius != goalRadius) {
@@ -822,6 +833,112 @@ public final class StableLiveMovementController {
                 && state.player.health < previousHealth - 0.5D;
         previousHealth = state.player.health;
         return hit;
+    }
+
+    /**
+     * Airborne mob-hit recovery. The bump velocity is authoritative, but
+     * Minecraft 1.8 still permits a small amount of air steering. Aim that
+     * steering at a physical floor landing point, preferring the active pad
+     * whenever its surface is plausibly reachable before the fall.
+     */
+    private Action airborneMobRecoveryAction(GameState state, Cell goal) {
+        double[] target = findAirRecoveryTarget(state, goal);
+        double dx = target[0] - state.player.x;
+        double dz = target[1] - state.player.z;
+        if (Math.hypot(dx, dz) < 0.20D) {
+            lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
+                    + " target=under-player"
+                    + " vx=" + format(state.player.vx)
+                    + " vz=" + format(state.player.vz);
+            return new Action(1.0, 0.0, false, true, 0.0F, false);
+        }
+
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
+                + " target=" + format(target[0]) + "," + format(target[1])
+                + " yawError=" + format(yawError)
+                + " yawDelta=" + format(yawDelta)
+                + " vy=" + format(state.player.vy);
+        return new Action(1.0, 0.0, false, true, yawDelta, false);
+    }
+
+    private double[] findAirRecoveryTarget(GameState state, Cell goal) {
+        double vx = state.player.vx;
+        double vz = state.player.vz;
+        double predictedX = state.player.x;
+        double predictedZ = state.player.z;
+        double vy = state.player.vy;
+        int landingTicks = 0;
+
+        for (int i = 1; i <= 40; i++) {
+            predictedX += vx;
+            predictedZ += vz;
+            vy = (vy - 0.08D) * 0.98D;
+            if (predictedX >= -1.0 && predictedX < me.monstermazeai.maze.MazeModel.SIZE
+                    && predictedZ >= -1.0 && predictedZ < me.monstermazeai.maze.MazeModel.SIZE
+                    && state.maze.isPhysicalFloor((int) Math.floor(predictedX), (int) Math.floor(predictedZ))
+                    && state.player.y + landingHeightOffset(vy, i) <= 0.35D) {
+                landingTicks = i;
+                break;
+            }
+        }
+
+        double padX = goal.row() + 0.5D;
+        double padZ = goal.column() + 0.5D;
+        double bestX = padX;
+        double bestZ = padZ;
+        double bestScore = Double.POSITIVE_INFINITY;
+
+        if (landingTicks > 0) {
+            int centreRow = (int) Math.floor(predictedX);
+            int centreCol = (int) Math.floor(predictedZ);
+            for (int row = Math.max(0, centreRow - 5); row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 5); row++) {
+                for (int col = Math.max(0, centreCol - 5); col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 5); col++) {
+                    if (!state.maze.isPhysicalFloor(row, col)) continue;
+                    double x = row + 0.5D;
+                    double z = col + 0.5D;
+                    double landing = sq(x - predictedX) + sq(z - predictedZ);
+                    double pad = sq(x - padX) + sq(z - padZ);
+                    double score = landing + 0.10D * pad;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestX = x;
+                        bestZ = z;
+                    }
+                }
+            }
+        }
+
+        return new double[]{bestX, bestZ};
+    }
+
+    private static double landingHeightOffset(double vy, int ticks) {
+        // Conservative estimate used only for selecting a steering target.
+        // The exact server physics remains authoritative in the live client.
+        return vy * ticks * 0.5D;
+    }
+
+    private static double sq(double value) {
+        return value * value;
+    }
+
+    private Action steerIntoMonster(GameState state, MonsterState monster) {
+        double dx = monster.x - state.player.x;
+        double dz = monster.z - state.player.z;
+        if (Math.hypot(dx, dz) < 0.15D) return null;
+
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        lastDecisionDetail = "MOB_INTENTIONAL_BUMP"
+                + " monster=" + monster.id
+                + " health=" + format(state.player.health)
+                + " distance=" + format(Math.hypot(dx, dz))
+                + " yawError=" + format(yawError);
+        return new Action(1.0, 0.0, false, true, yawDelta, false);
     }
 
     /**

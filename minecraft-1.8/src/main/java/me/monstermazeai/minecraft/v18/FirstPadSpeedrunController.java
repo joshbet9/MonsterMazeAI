@@ -1520,6 +1520,21 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * Route-position recovery is a grounded re-anchoring operation. An
+         * airborne player can legitimately be ahead of the discrete route
+         * index and temporarily outside the footprint of the current logical
+         * cell; re-anchoring at that instant sends the recovery motor back
+         * toward a cell centre and destroys the jump trajectory.
+         *
+         * Let airborne control finish the current flight. If the player
+         * actually leaves the route, the next grounded observation will
+         * perform the physical recovery/replan from a valid position.
+         */
+        if (!state.player.grounded) {
+            return false;
+        }
+
+        /*
          * While executing an intentional one-block jump, the player's
          * horizontal footprint is expected to be unsupported over the missing
          * middle cell. Do not mistake that airborne span for a recovery event.

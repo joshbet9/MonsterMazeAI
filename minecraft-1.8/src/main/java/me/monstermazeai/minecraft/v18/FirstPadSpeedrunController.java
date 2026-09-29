@@ -766,8 +766,13 @@ public final class FirstPadSpeedrunController {
             if (!state.player.grounded
                     && state.player.y > state.center.y - 1.50D
                     && !suddenHorizontalImpulse) {
+                float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
+                float airborneYawError = normalise(
+                        airborneDesiredYaw - state.player.yaw);
+                float airborneYawDelta = clamp(
+                        airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
                 return new LegacyAction(
-                        1.0f, 0.0f, true, true, yawDelta, false);
+                        1.0f, 0.0f, true, true, airborneYawDelta, false);
             }
             if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);

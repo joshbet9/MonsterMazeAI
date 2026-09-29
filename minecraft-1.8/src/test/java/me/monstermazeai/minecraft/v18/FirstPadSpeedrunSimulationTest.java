@@ -52,6 +52,7 @@ public final class FirstPadSpeedrunSimulationTest {
         SimulationResult result = simulateMatch(Kit.REPULSOR);
 
         System.out.println(result.report());
+        System.err.println(result.report());
 
         assertTrue(
                 "simulation did not reach the required 10-pad average: " + result.report(),

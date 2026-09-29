@@ -7,6 +7,8 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.io.File;
+import java.io.FileWriter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
@@ -90,6 +92,7 @@ public final class MazePatternStage10SimulationTest {
                     .append('\n');
 
             System.err.println("\\n--- Maze " + (pattern + 1) + " diagnostics ---\\n" + report);
+            writeReport(report);
 
             if (passed != SEEDS_PER_PATTERN) {
                 throw new RuntimeException("Maze " + (pattern + 1) + " failed simulation gate\n" + report);
@@ -103,6 +106,19 @@ public final class MazePatternStage10SimulationTest {
                 + report
                 + "TOTAL simulations=" + total + "\n"
                 + "=======================================================\n");
+    }
+
+    private static void writeReport(String report) {
+        try {
+            File file = new File("build/maze-simulator-report.txt");
+            File parent = file.getParentFile();
+            if (parent != null) parent.mkdirs();
+            FileWriter writer = new FileWriter(file, false);
+            writer.write(report);
+            writer.close();
+        } catch (Exception e) {
+            System.err.println("Could not write simulator report: " + e);
+        }
     }
 
     private static Result simulate(int pattern, int seed) {

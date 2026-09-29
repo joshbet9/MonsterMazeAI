@@ -51,7 +51,7 @@ jobs:
           status=$?
           if [ $status -ne 0 ]; then
             echo "===== MAZE SIMULATOR JUNIT XML ====="
-            cat build/test-results/test/TEST-me.monstermazeai.minecraft.v18.MazePatternStage10SimulationTest.xml || true
+            cat build/maze-simulator-report.txt || true
             echo "===== END MAZE SIMULATOR JUNIT XML ====="
             exit $status
           fi

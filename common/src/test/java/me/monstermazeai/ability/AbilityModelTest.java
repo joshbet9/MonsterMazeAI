@@ -90,6 +90,16 @@ class AbilityModelTest {
         assertTrue(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
         s.phaseTicksRemaining = 100;
         assertFalse(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
+
+        // There is still enough time to tolerate a transient obstruction,
+        // replan, and traverse the route.
+        s.phaseTicksRemaining = 120;
+        assertFalse(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
+
+        // Once the remaining timer is below the traversal + reopen reserve
+        // + safety margin, waiting is no longer viable.
+        s.phaseTicksRemaining = 75;
+        assertTrue(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
     }
 
     @Test

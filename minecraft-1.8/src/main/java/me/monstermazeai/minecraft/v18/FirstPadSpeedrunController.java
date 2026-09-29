@@ -792,6 +792,7 @@ public final class FirstPadSpeedrunController {
              * physical analogue and was a direct source of simulated falls.
              */
             if (!state.player.grounded
+                    && state.player.y > state.center.y - 1.50D
                     && !suddenHorizontalImpulse) {
                 float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
                 float airborneYawError = normalise(
@@ -809,21 +810,6 @@ public final class FirstPadSpeedrunController {
 
         if (headingStableTicks < HEADING_STABLE_TICKS) {
             headingStableTicks++;
-            if (!state.player.grounded) {
-                /*
-                 * Heading stabilization is a grounded safety concept. Once
-                 * airborne, stopping W/Space for a "stable" tick creates a
-                 * deterministic loss of horizontal momentum and can turn a
-                 * recoverable landing into a fall.
-                 */
-                float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
-                float airborneYawError = normalise(
-                        airborneDesiredYaw - state.player.yaw);
-                float airborneYawDelta = clamp(
-                        airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-                return new LegacyAction(
-                        1.0f, 0.0f, true, true, airborneYawDelta, false);
-            }
             return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
 
@@ -2628,14 +2614,7 @@ public final class FirstPadSpeedrunController {
          * constraint (cos(30) ~= 0.866 > 0.85), while the next observation
          * can either capture the waypoint or continue the same lead.
          */
-        /*
-         * A full 30-degree lead is too much lateral displacement for a
-         * one-block corridor at the empirical 0.28 blocks/tick envelope.
-         * Delay the lead until the waypoint is genuinely close and use a
-         * smaller pre-turn; the normal controller can still apply the full
-         * 30-degree correction once the edge itself changes.
-         */
-        if (progress < 0.65D && distanceToWaypoint > 1.25D) {
+        if (progress < 0.45D && distanceToWaypoint > 1.0D) {
             return currentEdgeYaw;
         }
 
@@ -2645,7 +2624,7 @@ public final class FirstPadSpeedrunController {
         float turn = normalise(nextYaw - currentEdgeYaw);
         if (Math.abs(turn) < 5.0F) return currentEdgeYaw;
 
-        float lead = clamp(turn, -15.0F, 15.0F);
+        float lead = clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP);
         return normalise(currentEdgeYaw + lead);
     }
 

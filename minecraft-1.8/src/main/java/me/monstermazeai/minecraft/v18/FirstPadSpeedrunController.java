@@ -1975,7 +1975,7 @@ public final class FirstPadSpeedrunController {
         for (int i = routeIndex; i < targetIndex; i++) {
             int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
             if (!routeCellSupported(state, i) || !routeCellSupported(state, i + 1)) return "lookahead-floor";
-            if (!isRouteEdgeTraversable(r1, c1, r2, c2)) return "lookahead-disconnected";
+            if (!canTraverseEdge(state, r1, c1, r2, c2)) return "lookahead-disconnected";
         }
 
         /*

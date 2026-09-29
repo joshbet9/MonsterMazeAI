@@ -464,6 +464,10 @@ public final class MazePatternStage10SimulationTest {
         return false;
     }
 
+    private static boolean inBounds(int r, int c) {
+        return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
+    }
+
     private static int floorRow(double x) {
         return (int) Math.floor(x + HALF);
     }

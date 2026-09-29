@@ -181,7 +181,7 @@ class StableLiveMovementControllerTest {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[10][10] = 1;
         raw[10][12] = 1;
-        for (int column = 14; column <= 20; column++) raw[10][column] = 1;
+        for (int column = 14; column <= 30; column++) raw[10][column] = 1;
         MazeModel maze = new MazeModel(raw);
 
         GameState s = new GameState();
@@ -189,7 +189,7 @@ class StableLiveMovementControllerTest {
         s.alive = true;
         s.maze = maze;
         s.activePadRow = 10;
-        s.activePadColumn = 14;
+        s.activePadColumn = 30;
         s.player.x = 10.5;
         s.player.z = 10.0;
         s.player.yaw = 0.0F;
@@ -197,13 +197,13 @@ class StableLiveMovementControllerTest {
         s.tick = 1;
 
         StableLiveMovementController controller = new StableLiveMovementController();
-        Action approach = controller.nextAction(s, new Cell(10, 20), true);
+        Action approach = controller.nextAction(s, new Cell(10, 30), true);
         assertEquals(1.0, approach.forward(), 0.0);
         assertFalse(approach.jump(), "before the takeoff boundary the controller should approach, not pulse early");
 
         s.player.z = 10.99;
         s.tick++;
-        Action committed = controller.nextAction(s, new Cell(10, 14), true);
+        Action committed = controller.nextAction(s, new Cell(10, 30), true);
         assertTrue(committed.forward() > 0.0);
         assertTrue(committed.jump(), "the committed gap must pulse jump at the takeoff boundary");
         assertTrue(controller.lastDecisionDetail().contains("GAP_"), controller.lastDecisionDetail());

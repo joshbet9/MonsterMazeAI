@@ -15,7 +15,11 @@ public final class AbilityUseGate {
     private int lastRepulsorCharges = Integer.MIN_VALUE;
 
     public boolean allow(GameState state) {
-        if (state == null || state.kit == null || !AbilityDecision.shouldUse(state)) return false;
+        return allow(state, AbilityDecision.shouldUse(state));
+    }
+
+    public boolean allow(GameState state, boolean decision) {
+        if (state == null || state.kit == null || !decision) return false;
         if (state.kit != lastKit) return true;
         if (state.kit == Kit.REPULSOR && state.ability.charges < lastRepulsorCharges) return true;
         return state.tick >= nextAllowedTick;

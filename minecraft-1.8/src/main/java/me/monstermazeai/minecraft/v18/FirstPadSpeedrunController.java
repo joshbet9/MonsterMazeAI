@@ -592,6 +592,18 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * A route index can legitimately arrive at a one-block gap while the
+         * player is still completing the previous jump. The airborne continuity
+         * branch below must not bypass the explicit gap transaction: doing so
+         * postpones gap ownership until the next grounded tick, when the player
+         * may already be beyond the two-block route edge.
+         */
+        if (!gapExecutionActive && isCurrentEdgeGap(state)) {
+            LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
+            if (gapAction != null) return gapAction;
+        }
+
+        /*
          * Airborne route continuity is a physics-critical state. A sprint jump
          * carries substantial horizontal momentum, so stopping to satisfy the
          * grounded corner/heading safety rules can turn a valid route corner

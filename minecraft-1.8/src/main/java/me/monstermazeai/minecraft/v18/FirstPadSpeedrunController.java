@@ -2148,7 +2148,18 @@ public final class FirstPadSpeedrunController {
         }
 
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
+        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+        /*
+         * A gap immediately after a full stop is a special case visible in the
+         * simulator traces: sprint-jump's fixed 0.20 horizontal impulse makes
+         * the first landing miss a one-block surface by only a few centimetres.
+         * Launch that zero-momentum jump without sprint; once moving, retain
+         * normal sprint-jump behaviour.
+         */
+        boolean lowSpeedLaunch = state.player.grounded
+                && currentEdgeProgress(state) < 0.35D
+                && horizontalSpeed < 0.05D;
+        return new LegacyAction(1.0f, 0.0f, true, !lowSpeedLaunch, yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {

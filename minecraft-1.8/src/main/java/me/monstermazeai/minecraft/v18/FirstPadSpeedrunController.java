@@ -2672,7 +2672,17 @@ public final class FirstPadSpeedrunController {
                     edgeType(routeIndex) == EdgeType.DIAGONAL
                             ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D);
 
-            if (normalCapture || overshootCapture) {
+            /*
+             * Do not enter the next route edge while airborne when that edge
+             * is a one-block gap. The player may legitimately pass/cross a
+             * normal waypoint during a jump, but a gap edge requires the
+             * landing surface to be physically established before the gap
+             * controller owns the jump window.
+             */
+            boolean enteringGapWhileAirborne = (normalCapture || overshootCapture)
+                    && !state.player.grounded
+                    && edgeType(routeIndex + 1) == EdgeType.ONE_BLOCK_GAP;
+            if ((normalCapture || overshootCapture) && !enteringGapWhileAirborne) {
                 routeIndex++;
                 if (overshootCapture && !normalCapture) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] EDGE OVERSHOOT CAPTURE"
@@ -2799,6 +2809,11 @@ public final class FirstPadSpeedrunController {
              */
             if (candidate > routeIndex
                     && !sameCommittedHeadingSpan(routeIndex, candidate)) {
+                continue;
+            }
+            if (candidate > routeIndex
+                    && !state.player.grounded
+                    && edgeType(candidate) == EdgeType.ONE_BLOCK_GAP) {
                 continue;
             }
             if (distance <= maxSegmentDistance

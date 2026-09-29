@@ -2226,11 +2226,13 @@ public final class FirstPadSpeedrunController {
              */
             if (state.player.grounded) {
                 /*
-                 * If the player has landed beyond the destination centre, do
-                 * not blindly advance by one route node. The real 1.8 client
-                 * can carry a jump 1-2 blocks past a waypoint before the first
-                 * grounded observation. Accept only a physically supported
-                 * future route cell on the same committed straight span.
+                 * If the player landed beyond the destination centre, only
+                 * accept the gap as complete when the player's actual AABB
+                 * overlaps a committed future route cell. Merely being
+                 * physically supported somewhere is not enough: the previous
+                 * implementation advanced the route onto the destination
+                 * while the body had already overshot it, producing the exact
+                 * post-gap falls seen in the simulator and real telemetry.
                  */
                 int capturedIndex = findPostGapLandingIndex(
                         state, routeIndex + 1, 6, 2.75D);
@@ -2250,6 +2252,30 @@ public final class FirstPadSpeedrunController {
                     if (routeIndex > 0 && routeStartsOnPreviousPad) {
                         routeStartsOnPreviousPad = false;
                     }
+                    return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                }
+
+                /*
+                 * A grounded player with no route-cell footprint capture has
+                 * physically landed somewhere else. Re-anchor from the actual
+                 * supported position rather than continuing an invalid gap
+                 * transaction. This is a real recovery, not a simulator-only
+                 * teleport or route-index adjustment.
+                 */
+                gapExecutionActive = false;
+                gapTakeoffStarted = false;
+                gapExecutionRouteIndex = -1;
+                gapLandingConfirmTicks = 0;
+                resetGapMomentum();
+                routeLength = 0;
+                routeIndex = 0;
+                if (buildRoute(state)) {
+                    log(state.worldTick, "[MonsterMazeAI/1.8] GAP OVERSHOOT REPLAN"
+                            + " tick=" + state.worldTick
+                            + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                            + " progress=" + format(progress)
+                            + " endpointDistance=" + format(destinationDistance)
+                            + " start=" + routeRows[0] + "," + routeColumns[0]);
                     return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
                 }
             }
@@ -2312,7 +2338,8 @@ public final class FirstPadSpeedrunController {
                     break;
                 }
             }
-            if (!routeCellSupported(state, i)) continue;
+            if (!routeCellSupported(state, i)
+                    || !playerFootprintOverlapsCell(state, routeRows[i], routeColumns[i], 0.0D)) continue;
             double distance = Math.hypot(
                     state.player.x - worldX(routeRows[i], state.center.x),
                     state.player.z - worldZ(routeColumns[i], state.center.z));

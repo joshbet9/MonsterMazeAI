@@ -3,7 +3,9 @@ package me.monstermazeai.runtime;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyProtocol;
 import me.monstermazeai.adapter.LegacyWorldObservation;
-import me.monstermazeai.planner.FirstPadMovementController;
+import me.monstermazeai.planner.LiveObjectiveController;
+import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
+import me.monstermazeai.planner.RobustLiveController;
 import me.monstermazeai.adapter.ObservationWorldModel;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
@@ -23,7 +25,10 @@ public final class AiSidecarMain {
     public static void main(String[] args) throws Exception {
         DataInputStream in = new DataInputStream(new BufferedInputStream(System.in));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(System.out));
-        FirstPadMovementController firstPadController = null;
+        AutonomousMonsterMazeAgent fullRoutingAgent = new AutonomousMonsterMazeAgent(
+                new RobustLiveController(
+                        new LiveObjectiveController(
+                                new MazeAwareRecedingHorizonController(1))));
         TelemetryRecorder telemetry = null;
         ReplayRecorder replay = null;
         String telemetryPath = System.getProperty("monstermazeai.telemetry");
@@ -77,36 +82,30 @@ public final class AiSidecarMain {
                 }
 
                 if (decisionReady) {
-                    if (firstPadController == null) {
-                        firstPadController = new FirstPadMovementController();
-                        System.err.println("[MonsterMazeAI] FIRST_PAD_MOVEMENT_ONLY initialized at tick="
-                                + observation.worldTick
-                                + " source=MonsterMaze 1.8 physical-floor + jump-spam parity");
-                    }
-
-                    Action action = firstPadController.nextAction(state);
+                    boolean allowJump = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                            && state.player.jumpCharges > 0;
+                    Action action = fullRoutingAgent.decide(state, allowJump);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
-                            action.sprint(), action.yawDelta(), false);
+                            action.sprint(), action.yawDelta(), action.useAbility());
 
                     if (observationCount <= 3 || observationCount % 20 == 0
-                            || action.yawDelta() != 0.0F) {
+                            || action.yawDelta() != 0.0F
+                            || action.useAbility()) {
                         long decisionMicros = (System.nanoTime() - decisionStart) / 1000L;
-                        System.err.println("[MonsterMazeAI] FIRST_PAD_DECISION tick=" + observation.worldTick
+                        System.err.println("[MonsterMazeAI] FULL_ROUTING_DECISION tick=" + observation.worldTick
                                 + " legacyOut=" + describe(result)
-                                + " detail=" + firstPadController.lastDecisionDetail()
-                                + " routeSize=" + firstPadController.routeSize()
-                                + " segment=" + firstPadController.segmentIndex()
+                                + " detail=" + fullRoutingAgent.lastDecisionDetail()
                                 + " decisionUs=" + decisionMicros
                                 + " localMonsters=" + state.monsters.size()
-                                + " mode=movement-only");
+                                + " mode=full-routing");
                     }
-                } else if (firstPadController != null) {
-                    firstPadController.reset();
-                    System.err.println("[MonsterMazeAI] FIRST_PAD_MOVEMENT reset by gate at tick="
+                } else {
+                    fullRoutingAgent.reset();
+                    System.err.println("[MonsterMazeAI] FULL_ROUTING reset by gate at tick="
                             + observation.worldTick);
                 }
             } catch (RuntimeException failure) {
-                if (firstPadController != null) firstPadController.reset();
+                fullRoutingAgent.reset();
                 System.err.println("[MonsterMazeAI] sidecar decision failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
                 failure.printStackTrace(System.err);

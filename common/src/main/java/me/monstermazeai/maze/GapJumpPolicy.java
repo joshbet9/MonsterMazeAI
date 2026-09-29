@@ -14,11 +14,11 @@ package me.monstermazeai.maze;
  */
 public final class GapJumpPolicy {
     /**
-     * Conservative baseline: one gap must save more than one normal route step
-     * before it is preferred. This makes equal-length routes deterministic in
-     * favour of the no-gap route.
+     * Conservative baseline: a gap must save more than three normal route steps
+     * before it is preferred. Equal-length routes therefore deterministically
+     * favour the no-gap route.
      */
-    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(1.0);
+    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(3.0);
 
     private final double riskCostPerGap;
 

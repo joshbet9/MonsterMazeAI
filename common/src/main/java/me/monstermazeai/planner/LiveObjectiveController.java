@@ -16,6 +16,9 @@ import me.monstermazeai.player.Action;
  * objective gate.
  */
 public final class LiveObjectiveController {
+    /** SafePad is a symmetric 5x5 surface: any cell within +/-2 is a valid routing terminal. */
+    private static final int SAFE_PAD_ROUTE_RADIUS = 2;
+
     private final MazeAwareRecedingHorizonController movement;
     private String lastDecisionReason = "UNSET";
     private String lastDecisionDetail = "UNSET";
@@ -49,7 +52,8 @@ public final class LiveObjectiveController {
             Action action = movement.nextActions(
                     state,
                     new Cell(state.activePadRow, state.activePadColumn),
-                    allowJump)[0];
+                    allowJump,
+                    SAFE_PAD_ROUTE_RADIUS)[0];
             lastDecisionReason = "MOVEMENT_PLANNER";
             lastDecisionDetail = movement.lastDecisionDetail()
                     + " | action=" + describe(action);

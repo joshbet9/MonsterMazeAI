@@ -890,7 +890,15 @@ public final class FirstPadSpeedrunController {
             if (gapAction != null) return gapAction;
         }
 
-        boolean jumpPulse = true;
+        /*
+         * Jumper charges are finite in the authoritative 1.8 MonsterMaze
+         * implementation. Do not waste them on ordinary ground movement:
+         * non-Jumpers already get the legacy -10 sprint-jump momentum, while
+         * Jumper's real advantage is a charged vanilla jump when a gap or
+         * other aerial traversal actually requires it. Gap execution above
+         * owns the jump input for a committed gap.
+         */
+        boolean jumpPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER;
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"

@@ -33,6 +33,10 @@ public final class PlayerPathfinder {
             add(maze, current, new Cell(r + 1, c), queue, previous);
             add(maze, current, new Cell(r, c - 1), queue, previous);
             add(maze, current, new Cell(r, c + 1), queue, previous);
+            addMovement(maze, current, new Cell(r - 2, c), queue, previous);
+            addMovement(maze, current, new Cell(r + 2, c), queue, previous);
+            addMovement(maze, current, new Cell(r, c - 2), queue, previous);
+            addMovement(maze, current, new Cell(r, c + 2), queue, previous);
         }
 
         return List.of();
@@ -77,6 +81,10 @@ public final class PlayerPathfinder {
             add(maze, current, new Cell(r + 1, c), queue, previous, distance, currentDistance + 1);
             add(maze, current, new Cell(r, c - 1), queue, previous, distance, currentDistance + 1);
             add(maze, current, new Cell(r, c + 1), queue, previous, distance, currentDistance + 1);
+            addMovement(maze, current, new Cell(r - 2, c), queue, previous, distance, currentDistance + 1);
+            addMovement(maze, current, new Cell(r + 2, c), queue, previous, distance, currentDistance + 1);
+            addMovement(maze, current, new Cell(r, c - 2), queue, previous, distance, currentDistance + 1);
+            addMovement(maze, current, new Cell(r, c + 2), queue, previous, distance, currentDistance + 1);
         }
         return bestGoal == null ? List.of() : reconstruct(previous, bestGoal);
     }
@@ -104,6 +112,13 @@ public final class PlayerPathfinder {
         previous.put(next, current);
         queue.addLast(next);
     }
+    private void addMovement(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
+                             Map<Cell, Cell> previous) {
+        if (!isGapEdge(maze, current, next) || previous.containsKey(next)) return;
+        previous.put(next, current);
+        queue.addLast(next);
+    }
+
 
     private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
                      Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
@@ -111,6 +126,23 @@ public final class PlayerPathfinder {
         previous.put(next, current);
         distance.put(next, nextDistance);
         queue.addLast(next);
+    }
+    private void addMovement(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
+                             Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
+        if (!isGapEdge(maze, current, next) || previous.containsKey(next)) return;
+        previous.put(next, current);
+        distance.put(next, nextDistance);
+        queue.addLast(next);
+    }
+
+    private boolean isGapEdge(MazeModel maze, Cell from, Cell to) {
+        int dr = to.row() - from.row(), dc = to.column() - from.column();
+        if (!((Math.abs(dr) == 2 && dc == 0) || (Math.abs(dc) == 2 && dr == 0))) return false;
+        int middleRow = from.row() + Integer.signum(dr);
+        int middleColumn = from.column() + Integer.signum(dc);
+        return isPhysicalFloor(maze, from)
+                && !isPhysicalFloor(maze, new Cell(middleRow, middleColumn))
+                && isPhysicalFloor(maze, to);
     }
 
     private List<Cell> reconstruct(Map<Cell, Cell> previous, Cell goal) {

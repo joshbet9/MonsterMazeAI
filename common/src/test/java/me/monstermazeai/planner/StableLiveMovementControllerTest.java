@@ -259,4 +259,45 @@ class StableLiveMovementControllerTest {
         assertEquals(0.0, action.strafe(), 1.0e-6);
     }
 
+    @Test
+    void activePadChangeImmediatelyUsesTheNewOrdinaryRoute() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        Action first = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0);
+
+        // Simulate the server activating a new pad while an ordinary floor
+        // route remains available. The previous objective must not leave the
+        // full-routing motor latched in IDLE.
+        s.activePadRow = 8;
+        s.activePadColumn = 8;
+        s.tick = 2;
+        Action afterTransition = controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(afterTransition.forward() > 0.0 || Math.abs(afterTransition.yawDelta()) > 0.0,
+                "a reachable new active pad must remain actionable without requiring a gap jump");
+        assertFalse(controller.lastDecisionDetail().contains("REACHED"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
+    void activePadTransitionCanRouteFromAnOldPadWhoseCanonicalCellWasRemoved() {
+        GameState s = state(10.5, 10.5, 0.0F);
+        s.maze.setPhysicalFloor(10, 10, false);
+        s.oldPads.add(new Cell(10, 10));
+        s.activePadRow = 20;
+        s.activePadColumn = 20;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+        Action action = controller.nextAction(s, new Cell(20, 20), false);
+
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "the previous SafePad must be usable as a temporary routing bridge after pad activation");
+        assertFalse(controller.lastDecisionDetail().contains("No physical route"));
+        assertFalse(controller.lastDecisionDetail().contains("INVALID_INPUT"));
+    }
+
 }

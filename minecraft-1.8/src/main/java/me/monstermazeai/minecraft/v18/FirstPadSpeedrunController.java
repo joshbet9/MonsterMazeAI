@@ -703,7 +703,7 @@ public final class FirstPadSpeedrunController {
             if (gapAction != null) return gapAction;
         }
 
-        boolean jumpPulse = (state.worldTick & 1L) == 0L;
+        boolean jumpPulse = true;
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
@@ -1611,7 +1611,7 @@ public final class FirstPadSpeedrunController {
          */
         if (progress >= 0.15D && progress <= 1.65D) {
             gapExecutionActive = true;
-            gapTakeoffStarted = progress >= 0.35D;
+            gapTakeoffStarted = progress >= 0.15D;
             gapExecutionRouteIndex = routeIndex;
             gapLandingConfirmTicks = 0;
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP RECOVER COMMIT"
@@ -1660,7 +1660,7 @@ public final class FirstPadSpeedrunController {
         }
 
         double progress = currentEdgeProgress(state);
-        if (!gapTakeoffStarted && progress >= 0.35D) {
+        if (!gapTakeoffStarted && progress >= 0.15D) {
             gapTakeoffStarted = true;
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn

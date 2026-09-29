@@ -199,7 +199,8 @@ public final class MazePatternStage10SimulationTest {
                         + "," + format(player.z)
                         + " action=" + actionText(action)
                         + " targets=" + padSequenceText(pads)
-                        + " trace=" + tail(result.trace.toString(), 6000)\n                        + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
+                        + " trace=" + tail(result.trace.toString(), 6000).replace("\n", " | ")
+                        + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
                 return result;
             }
 
@@ -578,6 +579,7 @@ public final class MazePatternStage10SimulationTest {
         int gapLandings;
         double maxSpeed;
         String failure;
-        StringBuilder controllerLog = new StringBuilder();\n        StringBuilder trace = new StringBuilder();
+        StringBuilder controllerLog = new StringBuilder();
+        StringBuilder trace = new StringBuilder();
     }
 }

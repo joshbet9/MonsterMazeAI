@@ -1889,23 +1889,13 @@ public final class FirstPadSpeedrunController {
     }
 
     private boolean isGapJumpWindow(LegacyWorldObservation state) {
-        if (!isCurrentEdgeGap(state)) return false;
-        double progress = currentEdgeProgress(state);
-        double distanceToTakeoff = 0.50D - progress;
-        // Allow the controller to approach the missing cell without the normal
-        // floor sweep rejecting the intentionally unsupported middle block.
         /*
-         * Speed-boosting keeps the player airborne for multiple ticks. Once an
-         * airborne player is actually over a current one-block gap, the floor
-         * safety probe must not turn that valid jump into a stationary hold.
-         * The gap controller already owns the forward/jump action in this
-         * state; this predicate only tells the safety layer not to reject it.
+         * A genuine one-block gap is a deliberate airborne route edge. The
+         * normal movement motor continuously holds W+sprint+Space; the safety
+         * layer must therefore never reject the unsupported middle cell.
+         * Landing is confirmed separately by advanceRouteIndex().
          */
-        if (!state.player.grounded) return true;
-
-        return gapExecutionActive && gapExecutionRouteIndex == routeIndex
-                || (distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
-                && distanceToTakeoff >= -GAP_JUMP_LATE_TOLERANCE);
+        return isCurrentEdgeGap(state);
     }
 
     private boolean isGapTraversalActive(LegacyWorldObservation state) {
@@ -1936,83 +1926,19 @@ public final class FirstPadSpeedrunController {
 
     private LegacyAction prepareOrStartGap(LegacyWorldObservation state,
                                             float desiredYaw, float yawError) {
-        if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) {
-            return executeCommittedGap(state);
-        }
-
         /*
-         * Airborne is not a reason to stop on Monster Maze. The normal
-         * speed-boost technique deliberately keeps the player in the air by
-         * holding Space. The gap controller owns the same continuous
-         * W+sprint+Space policy; Minecraft's jump cooldown decides when the
-         * next physical jump can occur.
+         * Gap traversal uses the same continuous jump policy as the normal
+         * speedrun. There is no runway/momentum gate and no edge-timed IDLE
+         * phase. The route edge itself proves that the missing middle cell is
+         * intentional.
          */
-        if (!state.player.grounded) {
-            float airYawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
-        }
-
-        if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
+        if (Math.abs(yawError) > GAP_HEADING_TOLERANCE && state.player.grounded) {
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-            if (state.worldTick % 2L == 0L) {
-                log(state.worldTick, "[MonsterMazeAI/1.8] GAP ALIGN"
-                        + " tick=" + state.worldTick
-                        + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                        + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                        + " yawError=" + format(yawError));
-            }
             return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
-        double rad = Math.toRadians(state.player.yaw);
-        double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
-        double lateralVelocity = Math.abs(
-                state.player.vx * forwardZ - state.player.vz * forwardX);
-        if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
-            /*
-             * Preserve the route rather than aborting. The next tick can
-             * continue the same edge after the lateral component decays.
-             */
-            return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
-        }
-
-        double progress = currentEdgeProgress(state);
-
-        /*
-         * The edge itself is the commitment proof. Do not wait for an
-         * arbitrary three-block runway or for the player to reach the
-         * takeoff boundary: the controller is already continuously pressing
-         * jump, and the real client enforces the physical jump cooldown.
-         *
-         * Commit as soon as the player is on/approaching the source half of
-         * the edge. This is important because some authoritative maze paths
-         * place the first gap before three blocks of usable runway exist.
-         */
-        if (progress >= -0.25D && progress <= 1.65D) {
-            gapExecutionActive = true;
-            gapTakeoffStarted = progress >= 0.15D;
-            gapExecutionRouteIndex = routeIndex;
-            gapLandingConfirmTicks = 0;
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP COMMIT"
-                    + " tick=" + state.worldTick
-                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " progress=" + format(progress)
-                    + " headingAligned=true lateralSpeed=" + format(lateralVelocity));
-            return executeCommittedGap(state);
-        }
-
-        /*
-         * If the player is already beyond the committed edge, do not manufacture
-         * an old-style IDLE gate. Replan from the observed position instead.
-         */
-        gapExecutionActive = false;
-        gapTakeoffStarted = false;
-        gapExecutionRouteIndex = -1;
-        gapLandingConfirmTicks = 0;
-        routeLength = 0;
-        routeIndex = 0;
-        return LegacyAction.IDLE;
+        float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
@@ -2355,6 +2281,18 @@ public final class FirstPadSpeedrunController {
          * side while the player is still airborne.
          */
         if (isCurrentEdgeGap(state)) {
+            /*
+             * The gap edge is owned until its landing is actually observed.
+             * While airborne, never advance the route index onto the landing
+             * cell early; that would let ordinary route capture/replanning
+             * outrun the physical jump.
+             */
+            if (state.player.grounded
+                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
+                routeIndex++;
+                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                resetGapMomentum();
+            }
             return;
         }
 

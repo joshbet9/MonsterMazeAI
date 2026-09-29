@@ -2661,6 +2661,20 @@ public final class FirstPadSpeedrunController {
                             ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D);
 
             if (normalCapture || overshootCapture) {
+                /*
+                 * During a sprint jump the player's footprint can cross more
+                 * than one one-cell waypoint in a single tick. Do not promote
+                 * the route cursor across an actual heading change while still
+                 * airborne: the body is still physically carrying momentum from
+                 * the previous edge. Grounded capture will commit the turn once
+                 * the player has actually reached the corner surface.
+                 */
+                if (!state.player.grounded
+                        && routeIndex + 2 < routeLength
+                        && turnsAfterEdge(routeIndex)) {
+                    break;
+                }
+
                 routeIndex++;
                 if (overshootCapture && !normalCapture) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] EDGE OVERSHOOT CAPTURE"
@@ -2746,6 +2760,15 @@ public final class FirstPadSpeedrunController {
                         + " player=" + format(state.player.x) + "," + format(state.player.z));
             }
         }
+    }
+
+    private boolean turnsAfterEdge(int index) {
+        if (index < 0 || index + 2 >= routeLength) return false;
+        int firstDr = Integer.signum(routeRows[index + 1] - routeRows[index]);
+        int firstDc = Integer.signum(routeColumns[index + 1] - routeColumns[index]);
+        int nextDr = Integer.signum(routeRows[index + 2] - routeRows[index + 1]);
+        int nextDc = Integer.signum(routeColumns[index + 2] - routeColumns[index + 1]);
+        return firstDr != nextDr || firstDc != nextDc;
     }
 
     private boolean sameCommittedHeadingSpan(int fromIndex, int candidateIndex) {

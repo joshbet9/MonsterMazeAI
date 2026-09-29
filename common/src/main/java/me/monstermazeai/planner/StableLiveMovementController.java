@@ -678,7 +678,7 @@ public final class StableLiveMovementController {
         double outside = distanceOutsidePad(state, goal);
         if (outside > PAD_ENTRY_COMMIT_DISTANCE) return null;
 
-        Cell current = containingCell(state.player.x, state.player.z);
+        Cell current = new Cell((int) Math.floor(state.player.x), (int) Math.floor(state.player.z));
         if (!state.maze.isPhysicalFloor(current.row(), current.column())) return null;
 
         int[] direction = terminalRouteDirection();

@@ -2569,6 +2569,24 @@ public final class FirstPadSpeedrunController {
         return best;
     }
 
+    private double currentEdgeLateralDistance(LegacyWorldObservation state) {
+        if (routeIndex < 0 || routeIndex >= routeLength - 1) return Double.POSITIVE_INFINITY;
+        double ax = worldX(routeRows[routeIndex], state.center.x);
+        double az = worldZ(routeColumns[routeIndex], state.center.z);
+        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+        double ex = bx - ax;
+        double ez = bz - az;
+        double len2 = ex * ex + ez * ez;
+        if (len2 <= 1.0E-9D) return Double.POSITIVE_INFINITY;
+        double px = state.player.x - ax;
+        double pz = state.player.z - az;
+        double progress = (px * ex + pz * ez) / len2;
+        double lateralX = px - ex * progress;
+        double lateralZ = pz - ez * progress;
+        return Math.hypot(lateralX, lateralZ);
+    }
+
     private void advanceRouteIndex(LegacyWorldObservation state) {
         /*
          * A committed one-block gap owns the route edge until its landing is
@@ -2590,18 +2608,36 @@ public final class FirstPadSpeedrunController {
          */
         if (isCurrentEdgeGap(state)) {
             /*
-             * The gap edge is owned until its landing is actually observed.
-             * While airborne, never advance the route index onto the landing
-             * cell early; that would let ordinary route capture/replanning
-             * outrun the physical jump.
+             * Normally a gap owns its edge until landing. There is one
+             * high-speed exception: the observer can first sample the player
+             * several blocks beyond the gap while still airborne. The real
+             * traces show this after successful jumps; keeping the old gap
+             * index then freezes route progress and makes the controller face a
+             * stale cardinal edge until it falls. Once progress is clearly
+             * beyond the destination and lateral error is small, advance past
+             * the already-crossed gap and let the ordinary cursor catch-up
+             * process continue.
              */
+            double gapProgress = currentEdgeProgress(state);
+            double gapLateral = currentEdgeLateralDistance(state);
             if (state.player.grounded
                     && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
                 routeIndex++;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
                 resetGapMomentum();
+                return;
             }
-            return;
+            if (!state.player.grounded
+                    && gapProgress > 1.25D
+                    && gapLateral <= ROUTE_EDGE_LATERAL_TOLERANCE) {
+                routeIndex++;
+                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                resetGapMomentum();
+                // Continue into the normal while-loop below so consecutive
+                // already-crossed edges can be consumed in one observation.
+            } else {
+                return;
+            }
         }
 
         /*

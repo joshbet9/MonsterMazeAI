@@ -141,12 +141,32 @@ public final class FirstPadSpeedrunController {
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
     private static final double GAP_LATERAL_SPEED_LIMIT = 0.12D;
+    /*
+     * A gap jump is only committed after the player has demonstrably built
+     * enough forward momentum in the gap's travel direction. This is a
+     * physical qualification, not a timer: it survives observations at the
+     * same speed and is invalidated by a meaningful turn or loss of forward
+     * velocity. Three blocks is the baseline "running straight" requirement
+     * and is intentionally exposed as a policy constant for future player/
+     * difficulty tendencies.
+     */
+    private static final double GAP_MOMENTUM_DISTANCE_REQUIRED = 3.0D;
+    private static final double GAP_MOMENTUM_MIN_FORWARD_SPEED = 0.22D;
+    private static final float GAP_MOMENTUM_HEADING_TOLERANCE = 15.0F;
+    private static final double GAP_MOMENTUM_LATERAL_SPEED_LIMIT = 0.12D;
+    private static final float GAP_MOMENTUM_DIRECTION_TOLERANCE = 15.0F;
+    private static final int GAP_MOMENTUM_LOG_INTERVAL_TICKS = 10;
+
     private static final int GAP_LANDING_CONFIRM_TICKS = 2;
     private int gapJumpTriggeredRouteIndex = -1;
     private boolean gapExecutionActive;
     private boolean gapTakeoffStarted;
     private int gapExecutionRouteIndex = -1;
     private int gapLandingConfirmTicks;
+    private double gapQualifiedMomentumDistance;
+    private double gapMomentumDirectionX = Double.NaN;
+    private double gapMomentumDirectionZ = Double.NaN;
+    private int gapMomentumRouteIndex = -1;
 
     private enum EdgeType {
         ORTHOGONAL,
@@ -692,11 +712,19 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * Maintain a physical momentum qualification before any gap commit.
+         * The accumulator follows the current route direction, so a mob replan
+         * that preserves the same heading does not throw away useful momentum,
+         * while a meaningful turn immediately invalidates the straight-run
+         * qualification.
+         */
+        updateGapMomentum(state, desiredYaw, yawError);
+
+        /*
          * Normal speedrun movement uses jump spam. A one-block gap gets a
          * special edge-timed pulse: press jump while grounded just before the
-         * source block's far edge. This makes the jump deterministic instead
-         * of depending on whether the global jump-spam phase happens to line
-         * up with the takeoff boundary.
+         * source block's far edge. The pulse is only permitted once the player
+         * has built the required straight-line momentum.
          */
         if (isCurrentEdgeGap(state)) {
             LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
@@ -759,6 +787,7 @@ public final class FirstPadSpeedrunController {
         gapTakeoffStarted = false;
         gapExecutionRouteIndex = -1;
         gapLandingConfirmTicks = 0;
+        resetGapMomentum();
         routeStartsOnPreviousPad = false;
         previousPadSeedRow = -1;
         previousPadSeedColumn = -1;
@@ -1000,6 +1029,16 @@ public final class FirstPadSpeedrunController {
         gapTakeoffStarted = false;
         gapExecutionRouteIndex = -1;
         gapLandingConfirmTicks = 0;
+        /*
+         * Preserve momentum through a mob replan when the selected route keeps
+         * the same travel direction. updateGapMomentum() compares the new
+         * route direction on the next observation and resets it automatically
+         * if the replan introduced a meaningful turn. A genuine pad/stage
+         * transition starts a new momentum run.
+         */
+        if (!mobReplan) {
+            resetGapMomentum();
+        }
         goalRow = targetRow;
         goalColumn = targetColumn;
         centerX = state.center.x;
@@ -1518,6 +1557,111 @@ public final class FirstPadSpeedrunController {
      * from the source cell centre. For a two-cell gap, the takeoff boundary is
      * exactly +0.5 block from the source centre.
      */
+    /**
+     * Accumulate actual forward movement along the current route edge. The
+     * accumulator deliberately uses observed velocity rather than commanded
+     * W input: a player who has been turned sideways, stopped, or knocked
+     * around has not earned a gap-jump commitment merely by holding W.
+     *
+     * The direction is retained across route-index changes and mob replans when
+     * the route continues straight. A meaningful route-direction change resets
+     * the qualification, which prevents "turn sideways, turn back, jump" from
+     * being treated as a three-block straight approach.
+     */
+    private void updateGapMomentum(LegacyWorldObservation state,
+                                    float desiredYaw,
+                                    float yawError) {
+        if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) {
+            resetGapMomentum();
+            return;
+        }
+
+        int fromRow = routeRows[routeIndex];
+        int fromColumn = routeColumns[routeIndex];
+        int toRow = routeRows[routeIndex + 1];
+        int toColumn = routeColumns[routeIndex + 1];
+
+        double dx = toRow - fromRow;
+        double dz = toColumn - fromColumn;
+        double length = Math.hypot(dx, dz);
+        if (length <= 1.0E-9D) {
+            resetGapMomentum();
+            return;
+        }
+        dx /= length;
+        dz /= length;
+
+        if (!Double.isNaN(gapMomentumDirectionX)) {
+            double directionDot = gapMomentumDirectionX * dx
+                    + gapMomentumDirectionZ * dz;
+            double minDirectionDot = Math.cos(Math.toRadians(GAP_MOMENTUM_DIRECTION_TOLERANCE));
+            if (directionDot < minDirectionDot) {
+                resetGapMomentum();
+            }
+        }
+
+        gapMomentumDirectionX = dx;
+        gapMomentumDirectionZ = dz;
+        gapMomentumRouteIndex = routeIndex;
+
+        double forwardVelocity = state.player.vx * dx + state.player.vz * dz;
+        double lateralVelocity = Math.abs(state.player.vx * dz - state.player.vz * dx);
+        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+
+        boolean qualified = state.player.grounded
+                && Math.abs(yawError) <= GAP_MOMENTUM_HEADING_TOLERANCE
+                && forwardVelocity >= GAP_MOMENTUM_MIN_FORWARD_SPEED
+                && lateralVelocity <= GAP_MOMENTUM_LATERAL_SPEED_LIMIT;
+
+        if (qualified) {
+            /*
+             * Velocity is expressed in blocks/tick by the adapter, so one
+             * observation contributes one tick of physical travel. Clamp the
+             * contribution to the observed forward component; never count
+             * sideways or reverse motion toward the qualification.
+             */
+            gapQualifiedMomentumDistance += forwardVelocity;
+            if (gapQualifiedMomentumDistance > GAP_MOMENTUM_DISTANCE_REQUIRED) {
+                gapQualifiedMomentumDistance = GAP_MOMENTUM_DISTANCE_REQUIRED;
+            }
+        } else if (horizontalSpeed < GAP_MOMENTUM_MIN_FORWARD_SPEED
+                || Math.abs(yawError) > GAP_MOMENTUM_HEADING_TOLERANCE
+                || lateralVelocity > GAP_MOMENTUM_LATERAL_SPEED_LIMIT
+                || forwardVelocity < 0.0D) {
+            /*
+             * Any meaningful interruption starts the straight-run requirement
+             * again. This is intentionally stricter than merely requiring
+             * enough instantaneous speed at the jump edge.
+             */
+            gapQualifiedMomentumDistance = 0.0D;
+        }
+
+        if (state.worldTick % GAP_MOMENTUM_LOG_INTERVAL_TICKS == 0L
+                && (gapQualifiedMomentumDistance > 0.0D
+                || isCurrentEdgeGap(state))) {
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MOMENTUM"
+                    + " tick=" + state.worldTick
+                    + " routeIndex=" + routeIndex
+                    + " distance=" + format(gapQualifiedMomentumDistance)
+                    + "/" + format(GAP_MOMENTUM_DISTANCE_REQUIRED)
+                    + " forwardSpeed=" + format(forwardVelocity)
+                    + " lateralSpeed=" + format(lateralVelocity)
+                    + " headingError=" + format(yawError)
+                    + " qualified=" + (gapQualifiedMomentumDistance >= GAP_MOMENTUM_DISTANCE_REQUIRED));
+        }
+    }
+
+    private boolean hasQualifiedGapMomentum() {
+        return gapQualifiedMomentumDistance >= GAP_MOMENTUM_DISTANCE_REQUIRED;
+    }
+
+    private void resetGapMomentum() {
+        gapQualifiedMomentumDistance = 0.0D;
+        gapMomentumDirectionX = Double.NaN;
+        gapMomentumDirectionZ = Double.NaN;
+        gapMomentumRouteIndex = -1;
+    }
+
     private double currentEdgeProgress(LegacyWorldObservation state) {
         int fromRow = routeRows[routeIndex];
         int fromColumn = routeColumns[routeIndex];
@@ -1601,15 +1745,16 @@ public final class FirstPadSpeedrunController {
         double distanceToTakeoff = 0.50D - progress;
 
         /*
-         * A route replan can discover a gap while the player is already close
-         * to, or physically over, its source/missing cell. In that case the
-         * old controller could re-enter normal movement with the gap state
-         * clear and either walk into the void or issue an ineffective late
-         * jump. Once progress has entered the committed gap envelope, take
-         * ownership immediately and keep the jump held until landing is
-         * confirmed.
+         * Never recover-commit a gap simply because the player happens to be
+         * inside its source-cell envelope. That was the exact failure mode
+         * where a preceding turn destroyed the useful forward momentum and the
+         * controller immediately treated the restored heading as jump-ready.
+         *
+         * A gap may still be discovered late by a dynamic replan, but the
+         * baseline controller now requires the same physical momentum gate as
+         * an ordinary gap approach.
          */
-        if (progress >= 0.15D && progress <= 1.65D) {
+        if (progress >= 0.15D && progress <= 1.65D && hasQualifiedGapMomentum()) {
             gapExecutionActive = true;
             gapTakeoffStarted = progress >= 0.15D;
             gapExecutionRouteIndex = routeIndex;
@@ -1619,21 +1764,43 @@ public final class FirstPadSpeedrunController {
                     + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
                     + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
                     + " progress=" + format(progress)
-                    + " takeoff=" + gapTakeoffStarted);
+                    + " takeoff=" + gapTakeoffStarted
+                    + " momentum=" + format(gapQualifiedMomentumDistance));
             return executeCommittedGap(state);
         }
 
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
             return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
         }
-        if (distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MISSED"
-                    + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+
+        /*
+         * The jump window has arrived. Do not press Space merely because the
+         * heading is now correct: if the preceding run was interrupted, the
+         * player no longer has the physical momentum needed for the baseline
+         * speedrun jump. Hold before the takeoff boundary rather than issuing
+         * an unqualified jump and recreating the observed failure.
+         *
+         * If there is not enough runway left to rebuild the qualification,
+         * abandon this edge and let the normal route builder choose a fresh
+         * route on the next observation. This is preferable to knowingly
+         * committing the player to unsupported space.
+         */
+        if (!hasQualifiedGapMomentum()) {
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MOMENTUM INSUFFICIENT"
+                    + " tick=" + state.worldTick
+                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
                     + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " progress=" + format(progress));
-            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
-            routeLength = 0; routeIndex = 0;
-            return null;
+                    + " progress=" + format(progress)
+                    + " momentum=" + format(gapQualifiedMomentumDistance)
+                    + "/" + format(GAP_MOMENTUM_DISTANCE_REQUIRED)
+                    + " action=ABORT_ROUTE");
+            gapExecutionActive = false;
+            gapTakeoffStarted = false;
+            gapExecutionRouteIndex = -1;
+            gapLandingConfirmTicks = 0;
+            routeLength = 0;
+            routeIndex = 0;
+            return LegacyAction.IDLE;
         }
 
         gapExecutionActive = true;
@@ -1675,6 +1842,7 @@ public final class FirstPadSpeedrunController {
                         + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                         + " progress=" + format(progress));
                 gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+                resetGapMomentum();
                 routeIndex++;
                 if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
                 return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);

@@ -12,7 +12,7 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final float AIR_MOVE_FACTOR = 0.02F;
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
-    private static final double JUMP_VELOCITY = 0.42D;
+    private static final double JUMP_VELOCITY = -0.48D;
     private static final double SPRINT_JUMP_IMPULSE = 0.2D;
 
     @Override
@@ -38,6 +38,10 @@ public final class LegacyMovementModel implements PhysicsModel {
 
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             p.vy = JUMP_VELOCITY;
+            // MonsterMaze applies Jump amplifier -10 to non-Jumpers. Vanilla 1.8
+            // therefore receives a negative jump velocity: the player never rises,
+            // but sprint-jump's horizontal 0.2 impulse still occurs. This is the
+            // legacy "speeding" mechanic used by the real game.
             p.grounded = false;
             if (action.sprint()) {
                 float yaw = p.yaw * 0.017453292F;

@@ -11,6 +11,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.lang.reflect.Field;
 
 import static org.junit.Assert.*;
 
@@ -84,6 +85,35 @@ public final class FirstPadSpeedrunSimulationTest {
         assertFalse(
                 "simulation must not deadlock for the stall window",
                 result.stalled);
+    }
+
+    private static String routeDescription(FirstPadSpeedrunController controller) {
+        try {
+            Field rowsField = FirstPadSpeedrunController.class.getDeclaredField("routeRows");
+            Field columnsField = FirstPadSpeedrunController.class.getDeclaredField("routeColumns");
+            Field indexField = FirstPadSpeedrunController.class.getDeclaredField("routeIndex");
+            Field lengthField = FirstPadSpeedrunController.class.getDeclaredField("routeLength");
+            rowsField.setAccessible(true);
+            columnsField.setAccessible(true);
+            indexField.setAccessible(true);
+            lengthField.setAccessible(true);
+            int[] rows = (int[]) rowsField.get(controller);
+            int[] columns = (int[]) columnsField.get(controller);
+            int index = lengthField.getInt(controller) == 0 ? -1 : indexField.getInt(controller);
+            int length = lengthField.getInt(controller);
+            if (rows == null || columns == null || length == 0) return "none";
+            StringBuilder out = new StringBuilder();
+            int start = Math.max(0, index - 3);
+            int end = Math.min(length, index + 8);
+            out.append("index=").append(index).append("/").append(length - 1).append(" ");
+            for (int i = start; i < end; i++) {
+                if (i > start) out.append("->");
+                out.append(rows[i]).append(",").append(columns[i]);
+            }
+            return out.toString();
+        } catch (Exception failure) {
+            return "reflection-error=" + failure.getClass().getSimpleName();
+        }
     }
 
     private static void writeReport(String report) {
@@ -203,6 +233,7 @@ public final class FirstPadSpeedrunSimulationTest {
                 result.failureRound = round + 1;
                 result.failureTick = result.ticks - roundStart;
                 result.failureReason = "round-timeout";
+                result.failureRoute = routeDescription(controller);
                 result.failureX = player.x;
                 result.failureZ = player.z;
                 result.failureYaw = player.yaw;
@@ -512,6 +543,7 @@ public final class FirstPadSpeedrunSimulationTest {
         int failureRound = -1;
         int failureTick = -1;
         String failureReason = "none";
+        String failureRoute = "none";
         double failureX;
         double failureZ;
         float failureYaw;
@@ -542,6 +574,7 @@ public final class FirstPadSpeedrunSimulationTest {
                     + " failureRound=" + failureRound
                     + " failureTick=" + failureTick
                     + " failureReason=" + failureReason
+                    + " failureRoute=" + failureRoute
                     + " failurePos=" + String.format(java.util.Locale.ROOT, "%.2f,%.2f", failureX, failureZ)
                     + " failureYaw=" + String.format(java.util.Locale.ROOT, "%.1f", failureYaw)
                     + " fell=" + fell

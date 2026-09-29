@@ -72,6 +72,32 @@ class MazePathfinderTest {
     }
 
     @Test
+    void playerCanRouteAcrossExactlyOneMissingCellAsAJumpEdge() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        List<Cell> path = new PlayerPathfinder().shortestPath(
+                maze, new Cell(10, 10), new Cell(10, 12));
+
+        assertEquals(List.of(new Cell(10, 10), new Cell(10, 12)), path);
+    }
+
+    @Test
+    void playerDoesNotRouteAcrossTwoMissingCells() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][10] = 1;
+        raw[10][13] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        List<Cell> path = new PlayerPathfinder().shortestPath(
+                maze, new Cell(10, 10), new Cell(10, 13));
+
+        assertTrue(path.isEmpty());
+    }
+
+    @Test
     void playerCanReachDisabledSafePadFloor() {
         MazeModel maze = openMaze();
         for (int r = 47; r <= 51; r++) {

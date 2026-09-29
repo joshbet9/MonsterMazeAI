@@ -1971,6 +1971,7 @@ public final class FirstPadSpeedrunController {
         if (Math.abs(state.player.y - state.center.y) > 3.50D) return "vertical";
         if (!state.player.grounded
                 && state.player.y < state.center.y - 0.25D
+                && !isGapJumpWindow(state)
                 && !isGapTraversalActive(state)
                 && !routePositionOnCommittedEnvelope(state)) {
             return "vertical";

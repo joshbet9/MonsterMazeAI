@@ -2148,7 +2148,12 @@ public final class FirstPadSpeedrunController {
         }
         int fromRow = routeRows[routeIndex], fromColumn = routeColumns[routeIndex];
         int toRow = routeRows[routeIndex + 1], toColumn = routeColumns[routeIndex + 1];
-        if (!isGapRouteEdge(fromRow, fromColumn, toRow, toColumn, state)) {
+        int dr = toRow - fromRow;
+        int dc = toColumn - fromColumn;
+        boolean committedGapGeometry =
+                (Math.abs(dr) == 2 && dc == 0)
+                || (Math.abs(dc) == 2 && dr == 0);
+        if (!committedGapGeometry) {
             gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
             return null;
         }
@@ -2593,9 +2598,11 @@ public final class FirstPadSpeedrunController {
          * chance to arm the jump and the route is re-indexed onto the landing
          * side while the player is still airborne.
          */
-        if (isCurrentEdgeGap(state)) {
+        if (edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP) {
             /*
-             * The gap edge is owned until its landing is actually observed.
+             * Once A* commits a two-cell edge, that transaction remains
+             * authoritative until the jump lands. A transient physical-floor
+             * overlay must not invalidate the committed edge.
              * While airborne, never advance the route index onto the landing
              * cell early; that would let ordinary route capture/replanning
              * outrun the physical jump.

@@ -167,11 +167,6 @@ public final class FirstPadSpeedrunController {
      * takeoff with an arbitrary jump phase.
      */
     private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.35D;
-    // Progress is measured from the source-cell centre. With the observed
-    // sprint-jump envelope, a grounded jump around -0.25..0.15 lands inside
-    // the destination block instead of overshooting it by a few centimetres.
-    private static final double GAP_JUMP_TRIGGER_PROGRESS = -0.25D;
-    private static final double GAP_JUMP_LATE_PROGRESS = 0.30D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -2130,25 +2125,7 @@ public final class FirstPadSpeedrunController {
         }
 
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-        double progress = currentEdgeProgress(state);
-        if (!gapTakeoffStarted) {
-            if (state.player.grounded && progress >= GAP_JUMP_TRIGGER_PROGRESS) {
-                gapTakeoffStarted = true;
-                log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
-                        + " tick=" + state.worldTick
-                        + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                        + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                        + " progress=" + format(progress));
-            } else {
-                // Do not create a new jump while approaching the gap. If we are
-                // airborne, keep W only so the current jump arc is preserved.
-                return new LegacyAction(
-                        1.0f, 0.0f, false, state.player.grounded, yawDelta, false);
-            }
-        }
-
-        boolean launchTick = state.player.grounded && gapTakeoffStarted;
-        return new LegacyAction(1.0f, 0.0f, true, !launchTick, yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
@@ -2164,9 +2141,7 @@ public final class FirstPadSpeedrunController {
         }
 
         double progress = currentEdgeProgress(state);
-        if (!gapTakeoffStarted
-                && state.player.grounded
-                && progress >= GAP_JUMP_TRIGGER_PROGRESS) {
+        if (!gapTakeoffStarted && progress >= 0.15D) {
             gapTakeoffStarted = true;
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
@@ -2174,7 +2149,7 @@ public final class FirstPadSpeedrunController {
         }
 
         if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
-                && playerFootprintOverlapsCell(state, toRow, toColumn, 0.0D)) {
+                && playerFootprintOverlapsCell(state, toRow, toColumn, 0.05D)) {
             gapLandingConfirmTicks++;
             if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
@@ -2226,42 +2201,31 @@ public final class FirstPadSpeedrunController {
              */
             if (state.player.grounded) {
                 /*
-                 * If the player landed beyond the destination centre, only
-                 * accept the gap as complete when the player's actual AABB
-                 * overlaps a committed future route cell. Merely being
-                 * physically supported somewhere is not enough: the previous
-                 * implementation advanced the route onto the destination
-                 * while the body had already overshot it, producing the exact
-                 * post-gap falls seen in the simulator and real telemetry.
+                 * The fallback may observe the first grounded tick after the
+                 * jump has already carried the player beyond the destination
+                 * centre. Never claim the destination route node blindly.
+                 * If the body is not actually overlapping the destination,
+                 * rebuild from the physical landing position instead.
                  */
-                int capturedIndex = findPostGapLandingIndex(
-                        state, routeIndex + 1, 6, 2.75D);
-                if (capturedIndex >= routeIndex + 1) {
+                if (playerFootprintOverlapsCell(
+                        state, toRow, toColumn, 0.0D)) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
                             + " tick=" + state.worldTick
                             + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                             + " progress=" + format(progress)
-                            + " endpointDistance=" + format(destinationDistance)
-                            + " capturedIndex=" + capturedIndex);
+                            + " endpointDistance=" + format(destinationDistance));
                     gapExecutionActive = false;
                     gapTakeoffStarted = false;
                     gapExecutionRouteIndex = -1;
                     gapLandingConfirmTicks = 0;
                     resetGapMomentum();
-                    routeIndex = capturedIndex;
+                    routeIndex++;
                     if (routeIndex > 0 && routeStartsOnPreviousPad) {
                         routeStartsOnPreviousPad = false;
                     }
                     return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
                 }
 
-                /*
-                 * A grounded player with no route-cell footprint capture has
-                 * physically landed somewhere else. Re-anchor from the actual
-                 * supported position rather than continuing an invalid gap
-                 * transaction. This is a real recovery, not a simulator-only
-                 * teleport or route-index adjustment.
-                 */
                 gapExecutionActive = false;
                 gapTakeoffStarted = false;
                 gapExecutionRouteIndex = -1;
@@ -2279,7 +2243,6 @@ public final class FirstPadSpeedrunController {
                     return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
                 }
             }
-
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                     + " progress=" + format(progress) + " grounded=" + state.player.grounded);
@@ -2294,63 +2257,12 @@ public final class FirstPadSpeedrunController {
                 + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                 + " progress=" + format(progress) + " grounded=" + state.player.grounded
                 + " jumpSpam=" + gapTakeoffStarted);
-        /*
-         * Before the launch window, deliberately suppress Space. This is the
-         * one exception to normal jump-spam: an early jump can put the player
-         * airborne one tick before the source edge and make the landing miss
-         * the one-block destination by ~0.1-0.3m. Once the trigger is reached,
-         * own the gap continuously with W+sprint+Space.
-         */
-        if (!gapTakeoffStarted) {
-            if (progress < GAP_JUMP_LATE_PROGRESS) {
-                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
-            }
-            // We are already late but still grounded; take the jump now rather
-            // than waiting for a second observation to make the miss worse.
-            gapTakeoffStarted = true;
-        }
-        /*
-         * Do not take the sprint-jump impulse on the launch tick. In the
-         * empirical 1.8 traces the 0.20 sprint-jump boost is enough to move a
-         * 0.6m player completely past a one-block landing surface before the
-         * normal jump arc reaches y=0. Launch with W+Space for one tick, then
-         * restore sprint immediately while airborne. This preserves most of
-         * the speed while making the landing geometry physically reachable.
-         */
-        boolean launchTick = state.player.grounded && gapTakeoffStarted;
-        return new LegacyAction(1.0f, 0.0f, true, !launchTick, 0.0f, false);
-    }
-
-    private int findPostGapLandingIndex(
-            LegacyWorldObservation state, int firstIndex, int lookahead, double maxDistance) {
-        if (firstIndex >= routeLength) return -1;
-        int end = Math.min(routeLength - 1, firstIndex + lookahead);
-        int baseDr = Integer.signum(routeRows[firstIndex] - routeRows[firstIndex - 1]);
-        int baseDc = Integer.signum(routeColumns[firstIndex] - routeColumns[firstIndex - 1]);
-        int best = -1;
-        double bestDistance = Double.POSITIVE_INFINITY;
-
-        for (int i = firstIndex; i <= end; i++) {
-            if (i > firstIndex) {
-                int dr = Integer.signum(routeRows[i] - routeRows[i - 1]);
-                int dc = Integer.signum(routeColumns[i] - routeColumns[i - 1]);
-                if (dr != baseDr || dc != baseDc || edgeType(i - 1) == EdgeType.ONE_BLOCK_GAP) {
-                    break;
-                }
-            }
-            if (!routeCellSupported(state, i)
-                    || !playerFootprintOverlapsCell(state, routeRows[i], routeColumns[i], 0.0D)) continue;
-            double distance = Math.hypot(
-                    state.player.x - worldX(routeRows[i], state.center.x),
-                    state.player.z - worldZ(routeColumns[i], state.center.z));
-            if (distance > maxDistance || !physicalFloorSupportsFootprint(
-                    state, state.player.x, state.player.z)) continue;
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-        return best;
+        // Before takeoff: W+sprint only, preserving a straight grounded approach.
+        // From a conservative pre-edge boundary onward: keep Space requested on
+        // every grounded observation. At sprint speed a single tick is enough
+        // to cross the source block edge, so waiting for exactly +0.50 progress
+        // can miss the only grounded jump-input window.
+        return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

@@ -2184,16 +2184,29 @@ public final class FirstPadSpeedrunController {
          * the next cell is the first normal maze cell.
          */
         /*
-         * Do not use a predictive footprint sweep here. The route graph already
-         * guarantees that the immediate destination is physical floor, and the
-         * forward-vector guard guarantees that W is issued along that edge.
-         * A 0.48-block geometric sweep is too conservative at high-speed
-         * diagonal/corner traversal because the player's continuous position
-         * can legitimately straddle the logical cells while still being safely
-         * supported. The old sweep was responsible for the observed
-         * "predicted-floor" holds immediately after successful speed-boost
-         * movement.
+         * The immediate route cell being physical is not sufficient at sprint
+         * speed: the player's centre can be near a cell boundary while the
+         * current footprint is supported, yet the next physics step can move
+         * the complete 0.6m body beyond the corridor. Use a one-tick physical
+         * prediction rather than a fixed 0.48m sweep.
+         *
+         * The probe distance is derived from the observed horizontal velocity
+         * plus a small acceleration allowance and is capped just above the
+         * simulator's measured 0.28 blocks/tick envelope. This makes the check
+         * about the actual next body position, not an arbitrary future point.
+         * Intentional one-block gaps have already returned above.
          */
+        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double probeDistance = Math.max(0.20D, Math.min(0.32D, horizontalSpeed + 0.04D));
+        double predictedX = state.player.x + forwardX * probeDistance;
+        double predictedZ = state.player.z + forwardZ * probeDistance;
+        if (state.player.grounded
+                && !physicalFloorSupportsFootprint(state, predictedX, predictedZ)
+                && !routeSupportsFootprint(state, predictedX, predictedZ,
+                Math.min(routeIndex + 2, routeLength - 1))) {
+            return "predicted-floor";
+        }
+
         return null;
     }
 

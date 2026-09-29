@@ -54,7 +54,7 @@ class AutonomousMonsterMazeAgentTest {
 
         assertNotEquals(Action.IDLE, action,
                 "a changed active pad must remain routable while the player is still standing on the old SafePad");
-        assertTrue(state.oldPads.contains(new Cell(50, 50)));
+        assertTrue(state.oldPads.contains(new Cell(55, 50)));
     }
 
     @Test

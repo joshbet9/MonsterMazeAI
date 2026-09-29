@@ -2582,10 +2582,35 @@ public final class FirstPadSpeedrunController {
 
         /*
          * Pure-pursuit style correction: keep a small forward lookahead while
-         * biasing toward the route centreline. Limit the bias to 25 degrees so
+         * biasing toward the route centreline. Limit the lateral correction so
          * it cannot turn a straight corridor into a diagonal cut.
          */
-        if (lateralDistance < 0.30D) return edgeYaw;
+        float trackedEdgeYaw = edgeYaw;
+        double distanceToWaypoint = Math.hypot(
+                state.player.x - bx, state.player.z - bz);
+
+        /*
+         * The planner remains cardinal, but the continuous player can begin a
+         * turn before the exact waypoint centre. Blend toward the NEXT cardinal
+         * edge over the final ~1.75 blocks instead of issuing a discrete
+         * +/-30-degree corner pulse. At the waypoint the blend reaches 50%
+         * rather than demanding an instantaneous 90-degree turn; route capture
+         * then completes the turn on the following observations.
+         */
+        if (routeIndex + 2 < routeLength
+                && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                && distanceToWaypoint < 1.75D) {
+            float nextEdgeYaw = desiredYawForEdge(
+                    routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                    routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+            float turn = normalise(nextEdgeYaw - edgeYaw);
+            double blend = clampDouble((1.75D - distanceToWaypoint) / 1.25D, 0.0D, 1.0D);
+            trackedEdgeYaw = normalise(edgeYaw
+                    + clamp((float) (turn * 0.50D * blend), -30.0F, 30.0F));
+        }
+
+        if (lateralDistance < 0.30D) return trackedEdgeYaw;
 
         double lookahead = Math.min(1.15D, Math.max(0.45D, length * 0.75D));
         double targetX = closestX + ex * lookahead;
@@ -2597,9 +2622,9 @@ public final class FirstPadSpeedrunController {
         float targetYaw = (float) Math.toDegrees(
                 Math.atan2(-(targetX - state.player.x),
                         targetZ - state.player.z));
-        float correction = normalise(targetYaw - edgeYaw);
+        float correction = normalise(targetYaw - trackedEdgeYaw);
         correction = clamp(correction, -25.0F, 25.0F);
-        return normalise(edgeYaw + correction);
+        return normalise(trackedEdgeYaw + correction);
     }
 
     private float airborneCornerYaw(LegacyWorldObservation state, float currentEdgeYaw) {

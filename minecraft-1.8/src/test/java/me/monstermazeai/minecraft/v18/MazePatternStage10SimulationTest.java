@@ -41,6 +41,7 @@ public final class MazePatternStage10SimulationTest {
     private static final int SIZE = 99;
     private static final int HALF = 49;
     private static final int TARGET_STAGE = 10;
+    private static final int ENDURANCE_STAGE = 100;
     private static final int SEEDS_PER_PATTERN = 4;
     private static final Kit[] TEST_KITS = Kit.values();
     private static final int MAX_TICKS_PER_STAGE = 1200;
@@ -66,6 +67,43 @@ public final class MazePatternStage10SimulationTest {
 
     @Test(timeout = 180000)
     public void stageTenAllPatternsMaverick() { runKitGate(Kit.MAVERICK); }
+
+    @Test(timeout = 300000)
+    public void enduranceAllKitsAllPatterns() { runEnduranceMatrix(); }
+
+    private static void runEnduranceMatrix() {
+        StringBuilder report = new StringBuilder();
+        int failures = 0;
+
+        for (Kit kit : TEST_KITS) {
+            for (int pattern = 0; pattern < 3; pattern++) {
+                int minStage = Integer.MAX_VALUE;
+                int maxStage = 0;
+                for (int seed = 0; seed < SEEDS_PER_PATTERN; seed++) {
+                    Result result = simulate(pattern, seed, kit, ENDURANCE_STAGE);
+                    minStage = Math.min(minStage, result.stage);
+                    maxStage = Math.max(maxStage, result.stage);
+                    String line = "ENDURANCE Maze " + (pattern + 1)
+                            + " kit=" + kit + " seed=" + seed
+                            + " stage=" + result.stage + " pads=" + result.padsReached
+                            + " ticks=" + result.ticks + " failure=" + result.failure;
+                    System.err.println(line);
+                    report.append(line).append('\n');
+                    if (result.stage < ENDURANCE_STAGE) failures++;
+                }
+                report.append("ENDURANCE Maze ").append(pattern + 1)
+                        .append(" kit=").append(kit)
+                        .append(" MIN=").append(minStage)
+                        .append(" MAX=").append(maxStage).append('\n');
+            }
+        }
+
+        writeReport(report.toString(), "endurance");
+        if (failures > 0) {
+            throw new RuntimeException("Endurance simulation had " + failures
+                    + " cases below stage " + ENDURANCE_STAGE + "\n" + report);
+        }
+    }
 
     private static void runKitGate(Kit kit) {
         StringBuilder report = new StringBuilder();
@@ -129,9 +167,9 @@ public final class MazePatternStage10SimulationTest {
         }
     }
 
-    private static Result simulate(int pattern, int seed, Kit kit) {
+    private static Result simulate(int pattern, int seed, Kit kit) {\n        return simulate(pattern, seed, kit, TARGET_STAGE);\n    }\n\n    private static Result simulate(int pattern, int seed, Kit kit, int targetStage) {
         int[][] raw = copy(MazeLayouts.ALL_MAZES[pattern]);
-        List<Cell> pads = buildPadSequence(raw, seed);
+        List<Cell> pads = buildPadSequence(raw, seed, targetStage);
 
         Result result = new Result();
         result.failure = "MAX_STAGE_NOT_REACHED";
@@ -157,7 +195,7 @@ public final class MazePatternStage10SimulationTest {
         boolean targetCaptured = false;
         int ticks = 0;
 
-        while (stage <= TARGET_STAGE && ticks < TARGET_STAGE * MAX_TICKS_PER_STAGE) {
+        while (stage <= targetStage && ticks < targetStage * MAX_TICKS_PER_STAGE) {
             /*
              * Source lifecycle:
              * - active pad is physical immediately;
@@ -228,7 +266,7 @@ public final class MazePatternStage10SimulationTest {
                 stageTicksRemaining = Math.min(
                         stageTicksRemaining, shortenedSeconds * 20);
 
-                if (stage >= TARGET_STAGE) {
+                if (stage >= targetStage) {
                     result.stage = stage;
                     result.ticks = ticks;
                     result.failure = "PASS";
@@ -441,7 +479,7 @@ public final class MazePatternStage10SimulationTest {
         }
     }
 
-    private static List<Cell> buildPadSequence(int[][] raw, int seed) {
+    private static List<Cell> buildPadSequence(int[][] raw, int seed, int targetStage) {
         // Exact 1.8 MonsterMaze MazeGenerator candidate construction.
         List<Cell> pathPoints = new ArrayList<Cell>();
         List<Cell> spawns = new ArrayList<Cell>();
@@ -490,7 +528,7 @@ public final class MazePatternStage10SimulationTest {
         // Source first spawnSafePad(): no avoid list, therefore furthest from centre.
         pads.add(furthestFromCenterTiedRandom(valid, center, random));
 
-        while (pads.size() < TARGET_STAGE) {
+        while (pads.size() < targetStage) {
             List<Cell> best = new ArrayList<Cell>();
             for (Cell candidate : valid) {
                 boolean allowed = true;

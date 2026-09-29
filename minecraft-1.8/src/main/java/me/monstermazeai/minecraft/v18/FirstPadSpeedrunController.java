@@ -1714,35 +1714,13 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
-        if (routeSupportsFootprint(state, state.player.x, state.player.z,
-                Math.min(routeIndex + 2, routeLength - 1))) {
-            return false;
-        }
-
         /*
-         * The player may be physically ahead of routeIndex after a fast
-         * diagonal/orthogonal crossing. Keep executing the committed route
-         * while the current position is still close to one of its next edges.
+         * A route is still valid only when the player's continuous footprint
+         * overlaps the currently committed edge. Do not use generic floor
+         * support or several future route edges as proof: doing so masks a
+         * missed turn/gap and can leave the safety controller holding forever.
          */
-        if (routePositionOnCommittedEnvelope(state)) {
-            return false;
-        }
-
-        /*
-         * A grounded player can be physically supported at a cell boundary
-         * while the route centreline is more than the airborne envelope
-         * tolerance away. Do not discard the committed route in that state:
-         * the player still has a real floor beneath the footprint and can
-         * correct back onto the route. This is specifically a grounded
-         * boundary-crossing case, not permission to continue unsupported.
-         */
-        if (state.player.grounded
-                && physicalFloorSupportsFootprint(state, state.player.x, state.player.z)
-                && groundedPositionNearCommittedRoute(state)) {
-            return false;
-        }
-
-        return true;
+        return !routePositionOnCommittedEnvelope(state);
     }
 
     private boolean groundedPositionNearCommittedRoute(LegacyWorldObservation state) {

@@ -256,6 +256,51 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void mobHitClearsStaleRouteAndWaitsForGroundBeforeResuming() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        Action first = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0);
+
+        /*
+         * Monster Maze normal bump damage is four health. The live controller
+         * must use that authoritative observation to invalidate the pre-hit
+         * route even if the sidecar did not observe the exact velocity packet.
+         */
+        s.tick = 2;
+        s.player.health -= 4.0;
+        s.player.grounded = false;
+        s.player.y = 1.0;
+        s.player.vx = 0.35;
+        s.player.vy = -0.20;
+        s.player.vz = 0.20;
+
+        Action airborne = controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(Action.IDLE, airborne,
+                "an airborne post-mob-hit observation must not inject stale movement/jump control");
+        assertTrue(controller.lastDecisionDetail().contains("MOB_HIT"),
+                controller.lastDecisionDetail());
+
+        s.tick = 3;
+        Action stillAirborne = controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(Action.IDLE, stillAirborne);
+
+        s.tick = 42;
+        s.player.grounded = true;
+        s.player.y = 0.0;
+        s.player.vx = 0.0;
+        s.player.vy = 0.0;
+        s.player.vz = 0.0;
+
+        Action recovered = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(recovered.forward() > 0.0 || Math.abs(recovered.yawDelta()) > 0.0,
+                "once grounded, the controller must rebuild from the post-hit position");
+        assertFalse(controller.lastDecisionDetail().contains("MOB_HIT_AIRBORNE_RECOVERY"));
+    }
+
+    @Test
     void activePadChangeImmediatelyUsesTheNewOrdinaryRoute() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -185,7 +185,7 @@ public final class MazePatternStage10SimulationTest {
             }
             result.controllerLog.append(controllerLog.toString());
             if (action == null) action = LegacyAction.IDLE;
-            if (action.jump) result.jumpTicks++;
+            if (action.jump) result.jumpTicks++;\n            result.trace.append("t=").append(ticks).append(" p=").append(format(player.x)).append(",").append(format(player.z)).append(" v=").append(format(player.vx)).append(",").append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
             if (action.forward > 0.01D) result.movementTicks++;
 
             step(player, action, physical, result);
@@ -198,7 +198,7 @@ public final class MazePatternStage10SimulationTest {
                         + "," + format(player.z)
                         + " action=" + actionText(action)
                         + " targets=" + padSequenceText(pads)
-                        + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
+                        + " trace=" + tail(result.trace.toString(), 6000)\n                        + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
                 return result;
             }
 
@@ -577,6 +577,6 @@ public final class MazePatternStage10SimulationTest {
         int gapLandings;
         double maxSpeed;
         String failure;
-        StringBuilder controllerLog = new StringBuilder();
+        StringBuilder controllerLog = new StringBuilder();\n        StringBuilder trace = new StringBuilder();
     }
 }

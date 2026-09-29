@@ -86,7 +86,7 @@ public final class MazePatternStage10SimulationTest {
                             .append(" gapLandings=").append(result.gapLandings)
                             .append(" maxSpeed=").append(format(result.maxSpeed))
                             .append(" failure=").append(result.failure)
-                            .append('\\n');
+                            .append('\n');
                 }
 
                 patternPassed += passed;
@@ -96,7 +96,7 @@ public final class MazePatternStage10SimulationTest {
                         .append(SEEDS_PER_PATTERN)
                         .append(" minStage=").append(minStage)
                         .append(" maxStage=").append(maxStage)
-                        .append('\\n');
+                        .append('\n');
 
                 if (passed != SEEDS_PER_PATTERN || minStage < TARGET_STAGE) {
                     throw new RuntimeException("Maze " + (pattern + 1)
@@ -107,7 +107,7 @@ public final class MazePatternStage10SimulationTest {
             report.append("Maze ").append(pattern + 1)
                     .append(" ALL-KITS SUMMARY passed=").append(patternPassed)
                     .append("/").append(patternTotal)
-                    .append('\\n');
+                    .append('\n');
         }
 
         System.out.println("\\n========== MAZE PATTERN STAGE-10 SIMULATION ==========\\n"

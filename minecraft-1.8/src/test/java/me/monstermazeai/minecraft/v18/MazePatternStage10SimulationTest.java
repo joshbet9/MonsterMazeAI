@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.io.File;
 import java.io.FileWriter;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
@@ -171,9 +173,18 @@ public final class MazePatternStage10SimulationTest {
             LegacyWorldObservation observation = observation(
                     ticks, stage, pattern + 1, player, activePad, raw, physical);
 
-            LegacyAction action = controller.next(observation);
+            LegacyAction action;
+            ByteArrayOutputStream controllerLog = new ByteArrayOutputStream();
+            PrintStream originalOut = System.out;
+            System.setOut(new PrintStream(controllerLog));
+            try {
+                action = controller.next(observation);
+            } finally {
+                System.out.flush();
+                System.setOut(originalOut);
+            }
+            result.controllerLog.append(controllerLog.toString());
             if (action == null) action = LegacyAction.IDLE;
-
             if (action.jump) result.jumpTicks++;
             if (action.forward > 0.01D) result.movementTicks++;
 
@@ -550,5 +561,6 @@ public final class MazePatternStage10SimulationTest {
         int gapLandings;
         double maxSpeed;
         String failure;
+        StringBuilder controllerLog = new StringBuilder();
     }
 }

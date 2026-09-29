@@ -2628,7 +2628,14 @@ public final class FirstPadSpeedrunController {
          * constraint (cos(30) ~= 0.866 > 0.85), while the next observation
          * can either capture the waypoint or continue the same lead.
          */
-        if (progress < 0.45D && distanceToWaypoint > 1.0D) {
+        /*
+         * A full 30-degree lead is too much lateral displacement for a
+         * one-block corridor at the empirical 0.28 blocks/tick envelope.
+         * Delay the lead until the waypoint is genuinely close and use a
+         * smaller pre-turn; the normal controller can still apply the full
+         * 30-degree correction once the edge itself changes.
+         */
+        if (progress < 0.65D && distanceToWaypoint > 1.25D) {
             return currentEdgeYaw;
         }
 
@@ -2638,7 +2645,7 @@ public final class FirstPadSpeedrunController {
         float turn = normalise(nextYaw - currentEdgeYaw);
         if (Math.abs(turn) < 5.0F) return currentEdgeYaw;
 
-        float lead = clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP);
+        float lead = clamp(turn, -15.0F, 15.0F);
         return normalise(currentEdgeYaw + lead);
     }
 

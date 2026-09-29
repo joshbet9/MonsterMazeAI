@@ -1673,7 +1673,52 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
+        /*
+         * A grounded player can be physically supported at a cell boundary
+         * while the route centreline is more than the airborne envelope
+         * tolerance away. Do not discard the committed route in that state:
+         * the player still has a real floor beneath the footprint and can
+         * correct back onto the route. This is specifically a grounded
+         * boundary-crossing case, not permission to continue unsupported.
+         */
+        if (state.player.grounded
+                && physicalFloorSupportsFootprint(state, state.player.x, state.player.z)
+                && groundedPositionNearCommittedRoute(state)) {
+            return false;
+        }
+
         return true;
+    }
+
+    private boolean groundedPositionNearCommittedRoute(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1) return false;
+
+        int last = Math.min(routeLength - 2, routeIndex + 4);
+        final double maximumLateralDistance = 1.20D;
+
+        for (int i = routeIndex; i <= last; i++) {
+            double ax = worldX(routeRows[i], state.center.x);
+            double az = worldZ(routeColumns[i], state.center.z);
+            double bx = worldX(routeRows[i + 1], state.center.x);
+            double bz = worldZ(routeColumns[i + 1], state.center.z);
+            double ex = bx - ax;
+            double ez = bz - az;
+            double lengthSquared = ex * ex + ez * ez;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double px = state.player.x - ax;
+            double pz = state.player.z - az;
+            double progress = (px * ex + pz * ez) / lengthSquared;
+            if (progress < -0.50D || progress > 1.50D) continue;
+
+            double lateralX = px - ex * progress;
+            double lateralZ = pz - ez * progress;
+            if (Math.hypot(lateralX, lateralZ) <= maximumLateralDistance) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private boolean beginRecovery(LegacyWorldObservation state) {

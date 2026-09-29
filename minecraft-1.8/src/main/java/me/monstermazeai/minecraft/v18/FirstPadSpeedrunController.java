@@ -2845,17 +2845,27 @@ public final class FirstPadSpeedrunController {
          * the safest correction is the next waypoint itself: steer toward the
          * physical destination while preserving forward input.
          */
-        if (lateralDistance <= 0.55D || distanceToNext > 2.50D) {
+        /*
+         * The real-client traces show the dangerous case that this method is
+         * intended to catch: after a sprint jump/turn the player can be only
+         * ~0.3-0.5 blocks laterally off the corridor centre while still airborne.
+         * Waiting until 0.55m lets the 0.60m body cross completely beyond a
+         * one-block corridor before the correction begins. Start a small
+         * centreline correction at 0.25m, but only when the next waypoint is
+         * already close enough that the correction cannot become a long-range
+         * diagonal cut.
+         */
+        if (lateralDistance <= 0.25D || distanceToNext > 3.00D) {
             return currentEdgeYaw;
         }
 
         float targetYaw = (float) Math.toDegrees(
                 Math.atan2(-(bx - state.player.x), bz - state.player.z));
         float turn = normalise(targetYaw - currentEdgeYaw);
-        if (Math.abs(turn) <= 5.0F) return currentEdgeYaw;
+        if (Math.abs(turn) <= 3.0F) return currentEdgeYaw;
 
         return normalise(currentEdgeYaw
-                + clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP));
+                + clamp(turn, -20.0F, 20.0F));
     }
 
     private float cornerLeadYaw(LegacyWorldObservation state, float currentEdgeYaw) {

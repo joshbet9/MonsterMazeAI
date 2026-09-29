@@ -2367,7 +2367,18 @@ public final class FirstPadSpeedrunController {
          * a straight run materially sideways.
          */
         float rawHeadingError = Math.abs(normalise(rawEdgeYaw - commandedYaw));
-        if (rawHeadingError > 12.0F) {
+        boolean nearValidatedCorner = routeIndex + 2 < routeLength
+                && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                && Math.hypot(
+                state.player.x - worldX(nextRow, state.center.x),
+                state.player.z - worldZ(nextColumn, state.center.z))
+                <= 1.00D
+                && canTraverseEdge(
+                state, nextRow, nextColumn,
+                routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+        float allowedRawHeadingError = nearValidatedCorner ? 35.0F : 12.0F;
+        if (rawHeadingError > allowedRawHeadingError) {
             return "forward-vector";
         }
 

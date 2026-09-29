@@ -642,7 +642,7 @@ public final class FirstPadSpeedrunController {
                         + " pos=" + format(state.player.x) + "," + format(state.player.y)
                         + "," + format(state.player.z));
             }
-            return new LegacyAction(1.0f, 0.0f, true, false, airYawDelta, false);
+            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
         }
 
         /*
@@ -898,7 +898,7 @@ public final class FirstPadSpeedrunController {
                     + " jump=" + jumpPulse);
         }
 
-        return new LegacyAction(1.0f, 0.0f, jumpPulse, isCurrentEdgeGap(state), yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
     }
 
     public void reset() {

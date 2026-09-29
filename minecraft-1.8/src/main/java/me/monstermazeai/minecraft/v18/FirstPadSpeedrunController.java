@@ -2157,7 +2157,7 @@ public final class FirstPadSpeedrunController {
          * normal sprint-jump behaviour.
          */
         boolean lowSpeedLaunch = state.player.grounded
-                && currentEdgeProgress(state) < 0.35D
+                && currentEdgeProgress(state) < 0.75D
                 && horizontalSpeed < 0.05D;
         return new LegacyAction(1.0f, 0.0f, true, !lowSpeedLaunch, yawDelta, false);
     }

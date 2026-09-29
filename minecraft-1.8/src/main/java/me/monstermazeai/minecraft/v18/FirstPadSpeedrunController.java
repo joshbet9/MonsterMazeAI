@@ -809,6 +809,21 @@ public final class FirstPadSpeedrunController {
 
         if (headingStableTicks < HEADING_STABLE_TICKS) {
             headingStableTicks++;
+            if (!state.player.grounded) {
+                /*
+                 * Heading stabilization is a grounded safety concept. Once
+                 * airborne, stopping W/Space for a "stable" tick creates a
+                 * deterministic loss of horizontal momentum and can turn a
+                 * recoverable landing into a fall.
+                 */
+                float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
+                float airborneYawError = normalise(
+                        airborneDesiredYaw - state.player.yaw);
+                float airborneYawDelta = clamp(
+                        airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+                return new LegacyAction(
+                        1.0f, 0.0f, true, true, airborneYawDelta, false);
+            }
             return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
 

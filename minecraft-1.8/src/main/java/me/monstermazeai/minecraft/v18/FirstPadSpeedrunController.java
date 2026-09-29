@@ -837,7 +837,8 @@ public final class FirstPadSpeedrunController {
              * continuous W+Space speedrun policy and gives the player a chance
              * to land on the validated corridor.
              */
-            if ("predicted-floor".equals(safetyReason)
+            if (("predicted-floor".equals(safetyReason)
+                    || "landing-floor".equals(safetyReason))
                     && routeIndex + 2 < routeLength
                     && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
                     && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
@@ -1751,6 +1752,45 @@ public final class FirstPadSpeedrunController {
         return true;
     }
 
+    private boolean predictedLandingOnCommittedRoute(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1) return true;
+
+        /*
+         * Simulator gravity is approximately -0.08 blocks/tick^2. Solve the
+         * observed vertical trajectory for the next y=0 crossing. Clamp the
+         * horizon because the controller only needs the imminent landing.
+         */
+        double relativeY = state.player.y - state.center.y;
+        double velocityY = state.player.vy;
+        double discriminant = velocityY * velocityY + 0.16D * relativeY;
+        if (discriminant < 0.0D) return true;
+
+        double ticksToGround = (velocityY + Math.sqrt(discriminant)) / 0.08D;
+        if (ticksToGround < 0.0D || ticksToGround > 8.0D) return true;
+
+        double predictedX = state.player.x + state.player.vx * ticksToGround;
+        double predictedZ = state.player.z + state.player.vz * ticksToGround;
+
+        if (physicalFloorSupportsFootprint(state, predictedX, predictedZ)) {
+            return true;
+        }
+
+        int last = Math.min(routeLength - 1, routeIndex + 3);
+        for (int i = routeIndex; i <= last; i++) {
+            if (playerFootprintOverlapsCell(
+                    state, routeRows[i], routeColumns[i], 0.05D)) {
+                /*
+                 * The current body may overlap a route cell while the
+                 * predicted landing point does not. Keep looking for the
+                 * actual predicted cell below instead of accepting current
+                 * overlap.
+                 */
+            }
+        }
+
+        return routeSupportsFootprint(state, predictedX, predictedZ, last);
+    }
+
     private boolean groundedPositionNearCommittedRoute(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1) return false;
 
@@ -2265,6 +2305,24 @@ public final class FirstPadSpeedrunController {
                 && !isGapTraversalActive(state)
                 && !routePositionOnCommittedEnvelope(state)) {
             return "vertical";
+        }
+
+        /*
+         * The current horizontal footprint can still overlap the committed
+         * route while the descending trajectory is already aimed beyond the
+         * one-cell corridor. Predict the next ground crossing from the
+         * simulator's observed vertical velocity/gravity and validate that
+         * landing position against the physical route. This catches a fall
+         * before y has crossed the floor, without treating a deliberate gap as
+         * a safety failure.
+         */
+        if (!state.player.grounded
+                && state.player.vy < -0.02D
+                && state.player.y <= state.center.y + 0.90D
+                && !isGapJumpWindow(state)
+                && !isGapTraversalActive(state)
+                && !predictedLandingOnCommittedRoute(state)) {
+            return "landing-floor";
         }
 
         int nextIndex = routeIndex + 1;

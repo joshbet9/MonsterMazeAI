@@ -103,6 +103,25 @@ public final class StableLiveMovementController {
     private double laneAnchorX;
     private double laneAnchorZ;
 
+    /**
+     * Terminal SafePad transition commitment. The live observer exposes the
+     * source's 5x5 pad as physical floor even where the canonical maze layout
+     * was air. Near the outer edge that surface must be treated as a special
+     * transition, not as an ordinary one-block corridor: align to the entry
+     * direction, commit the crossing, and do not let a concurrent strategic
+     * replan replace the motor command mid-transition.
+     */
+    private static final double PAD_ENTRY_COMMIT_DISTANCE = 1.25;
+    private static final double PAD_ENTRY_RELEASE_DISTANCE = 2.75;
+    private static final long PAD_ENTRY_MAX_TICKS = 18L;
+    private boolean padEntryCommitment;
+    private int padEntryRow = -1;
+    private int padEntryColumn = -1;
+    private int padEntryDirRow;
+    private int padEntryDirColumn;
+    private long padEntryStartTick = Long.MIN_VALUE;
+
+
     public Action nextAction(GameState state, Cell goal, boolean allowJump) {
         return nextAction(state, goal, allowJump, 0);
     }
@@ -124,6 +143,14 @@ public final class StableLiveMovementController {
             goalRadius = regionRadius;
         }
 
+        // Once a pad-edge crossing is committed, a newer strategic route is
+        // not allowed to replace it. The only authoritative exits are landing
+        // on the pad, losing the edge, or a bounded timeout/recovery condition.
+        if (padEntryCommitment) {
+            Action committed = executePadEntryCommitment(state, goal, allowJump);
+            if (committed != null) return committed;
+        }
+
         int startRow = (int) Math.floor(state.player.x);
         int startColumn = (int) Math.floor(state.player.z);
         if (!inBounds(startRow, startColumn) || !inBounds(goal.row(), goal.column())) {
@@ -142,7 +169,9 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        applyCompletedRoutePlan(state, startRow, startColumn, goal, regionRadius);
+        if (!padEntryCommitment) {
+            applyCompletedRoutePlan(state, startRow, startColumn, goal, regionRadius);
+        }
 
         if (route == null) {
             /*
@@ -221,6 +250,9 @@ public final class StableLiveMovementController {
             lastDecisionDetail = "REACHED routeSize=" + route.size();
             return Action.IDLE;
         }
+
+        Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
+        if (padEntry != null) return padEntry;
 
         // When a source interaction is close enough to matter this tick, hand
         // control to the same tactical simulator used during route selection.
@@ -422,6 +454,7 @@ public final class StableLiveMovementController {
         lastTacticalSignature = Long.MIN_VALUE;
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
+        clearPadEntryCommitment();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;
@@ -630,6 +663,123 @@ public final class StableLiveMovementController {
     private static long mix(long h, long value) {
         h ^= value;
         return h * 1099511628211L;
+    }
+
+    /**
+     * Detect the final approach to the active SafePad. This is deliberately
+     * geometric rather than based on the raw maze cells because SafePad.build
+     * replaces a 5x5 area, including cells that were air in the canonical maze.
+     */
+    private Action maybeBeginPadEntryCommitment(GameState state, Cell goal, boolean allowJump) {
+        if (route == null || route.size() < 2 || padEntryCommitment) return null;
+        if (state.padReached || PadModel.isOn(state.player, goal.row() + 0.5,
+                GameState.PAD_SURFACE_Y, goal.column() + 0.5)) return null;
+
+        double outside = distanceOutsidePad(state, goal);
+        if (outside > PAD_ENTRY_COMMIT_DISTANCE) return null;
+
+        Cell current = containingCell(state.player.x, state.player.z);
+        if (!state.maze.isPhysicalFloor(current.row(), current.column())) return null;
+
+        int[] direction = terminalRouteDirection();
+        if (direction == null) return null;
+
+        double centerDx = (goal.row() + 0.5) - state.player.x;
+        double centerDz = (goal.column() + 0.5) - state.player.z;
+        double toward = direction[0] * centerDx + direction[1] * centerDz;
+        if (toward < 0.25) return null;
+
+        padEntryCommitment = true;
+        padEntryRow = goal.row();
+        padEntryColumn = goal.column();
+        padEntryDirRow = direction[0];
+        padEntryDirColumn = direction[1];
+        padEntryStartTick = state.tick;
+        lastDecisionDetail = "PAD_ENTRY_COMMIT"
+                + " pad=" + goal.row() + "," + goal.column()
+                + " outside=" + format(outside)
+                + " dir=" + direction[0] + "," + direction[1]
+                + " allowJump=" + allowJump;
+        return executePadEntryCommitment(state, goal, allowJump);
+    }
+
+    /** Execute a committed pad-edge crossing without allowing route churn. */
+    private Action executePadEntryCommitment(GameState state, Cell goal, boolean allowJump) {
+        if (!padEntryCommitment) return null;
+        if (goal.row() != padEntryRow || goal.column() != padEntryColumn) {
+            clearPadEntryCommitment();
+            return null;
+        }
+
+        if (state.padReached || PadModel.isOn(state.player, goal.row() + 0.5,
+                GameState.PAD_SURFACE_Y, goal.column() + 0.5)) {
+            clearPadEntryCommitment();
+            lastDecisionDetail = "PAD_ENTRY_LANDED";
+            return Action.IDLE;
+        }
+
+        double outside = distanceOutsidePad(state, goal);
+        long elapsed = state.tick - padEntryStartTick;
+        if (outside > PAD_ENTRY_RELEASE_DISTANCE || elapsed > PAD_ENTRY_MAX_TICKS) {
+            lastDecisionDetail = "PAD_ENTRY_ABORT"
+                    + " outside=" + format(outside)
+                    + " elapsed=" + elapsed;
+            clearPadEntryCommitment();
+            return null;
+        }
+
+        float desiredYaw = cardinalYaw(padEntryDirRow, padEntryDirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        if (Math.abs(yawError) > HEADING_TOLERANCE) {
+            lastDecisionDetail = "PAD_ENTRY_ALIGN"
+                    + " pad=" + goal.row() + "," + goal.column()
+                    + " outside=" + format(outside)
+                    + " yawError=" + format(yawError)
+                    + " yawDelta=" + format(yawDelta);
+            return new Action(0.0, 0.0, false, false, yawDelta, false);
+        }
+
+        // The source's non-Jumper "speeding" mechanic is jump-spam while
+        // jump-locked; Jumpers use a real charged jump. The caller supplies
+        // exactly that permission, so this commitment does not guess at kit
+        // state or consume a charge outside the normal Action pipeline.
+        boolean jump = allowJump && state.player.grounded;
+        lastDecisionDetail = "PAD_ENTRY_CROSS"
+                + " pad=" + goal.row() + "," + goal.column()
+                + " outside=" + format(outside)
+                + " dir=" + padEntryDirRow + "," + padEntryDirColumn
+                + " jump=" + jump
+                + " elapsed=" + elapsed;
+        return new Action(1.0, 0.0, jump, true, yawDelta, false);
+    }
+
+    private int[] terminalRouteDirection() {
+        if (route == null || route.size() < 2) return null;
+        Cell a = route.cells().get(route.size() - 2);
+        Cell b = route.cells().get(route.size() - 1);
+        int dr = Integer.signum(b.row() - a.row());
+        int dc = Integer.signum(b.column() - a.column());
+        if (Math.abs(dr) + Math.abs(dc) != 1) return null;
+        return new int[]{dr, dc};
+    }
+
+    private static double distanceOutsidePad(GameState state, Cell goal) {
+        double centerX = goal.row() + 0.5;
+        double centerZ = goal.column() + 0.5;
+        double dx = Math.max(0.0, Math.abs(state.player.x - centerX) - 2.5);
+        double dz = Math.max(0.0, Math.abs(state.player.z - centerZ) - 2.5);
+        return Math.hypot(dx, dz);
+    }
+
+    private void clearPadEntryCommitment() {
+        padEntryCommitment = false;
+        padEntryRow = -1;
+        padEntryColumn = -1;
+        padEntryDirRow = 0;
+        padEntryDirColumn = 0;
+        padEntryStartTick = Long.MIN_VALUE;
     }
 
     private void clearRoute() {

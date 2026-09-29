@@ -534,7 +534,8 @@ public final class MazePatternStage10SimulationTest {
         double vz;
         float yaw;
         boolean grounded;
-        boolean alive = true;\n        int jumpCooldown;
+        boolean alive = true;
+        int jumpCooldown;
     }
 
     private static final class Result {

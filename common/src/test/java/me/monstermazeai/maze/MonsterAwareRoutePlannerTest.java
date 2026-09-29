@@ -70,6 +70,44 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void currentHeadingIsViableWhenAReachableTacticalRouteKeepsThatDirection() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.grounded = true;
+
+        MonsterAwareRoutePlanner planner = new MonsterAwareRoutePlanner();
+
+        assertTrue(planner.hasViableInitialHeading(
+                state, new Cell(0, 0), new Cell(0, 4), 0, 0, 1));
+        assertFalse(planner.hasViableInitialHeading(
+                state, new Cell(0, 0), new Cell(0, 4), 0, 0, -1));
+    }
+
+    @Test
+    void currentHeadingIsNotViableWhenTopologyLeavesNoRouteThatWay() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[1][1] = 1;
+        raw[1][2] = 1;
+        raw[0][2] = 1;
+        GameState state = new GameState();
+        state.maze = new MazeModel(raw);
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.grounded = true;
+
+        MonsterAwareRoutePlanner planner = new MonsterAwareRoutePlanner();
+
+        assertFalse(planner.hasViableInitialHeading(
+                state, new Cell(0, 0), new Cell(0, 2), 0, 0, -1));
+        assertTrue(planner.hasViableInitialHeading(
+                state, new Cell(0, 0), new Cell(0, 2), 0, 1, 0));
+    }
+
+    @Test
     void nearbyMonsterIsEvaluatedByTrajectorySimulationRatherThanAStaticRadiusPenalty() {
         GameState state = new GameState();
         state.maze = openMaze();

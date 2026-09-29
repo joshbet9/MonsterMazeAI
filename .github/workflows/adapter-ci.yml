@@ -61,5 +61,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: maze-simulator-test-report
-          path: minecraft-1.8/build/test-results/test
+          path: |
+            minecraft-1.8/build/test-results/test
+            minecraft-1.8/build/maze-simulator-report.txt
           if-no-files-found: warn

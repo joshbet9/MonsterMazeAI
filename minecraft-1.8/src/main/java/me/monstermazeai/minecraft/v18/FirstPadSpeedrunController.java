@@ -2091,6 +2091,20 @@ public final class FirstPadSpeedrunController {
             return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
+        /*
+         * Commit the gap as soon as the edge is identified and the launch
+         * heading is aligned. There is deliberately no three-block runway
+         * qualification: Maze 1 can present a gap before that much straight
+         * runway exists. Once committed, executeCommittedGap() owns the edge
+         * until the physical landing predicate succeeds.
+         */
+        if (!gapExecutionActive || gapExecutionRouteIndex != routeIndex) {
+            gapExecutionActive = true;
+            gapExecutionRouteIndex = routeIndex;
+            gapTakeoffStarted = false;
+            gapLandingConfirmTicks = 0;
+        }
+
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
     }

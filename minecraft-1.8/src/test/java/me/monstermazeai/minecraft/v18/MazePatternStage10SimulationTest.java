@@ -298,7 +298,11 @@ public final class MazePatternStage10SimulationTest {
         inputForward *= INPUT_DAMPING;
         inputStrafe *= INPUT_DAMPING;
 
-        double accel = wasGrounded ? GROUND_ACCEL : AIR_ACCEL;
+        // EntityPlayer 1.8.9 raises jumpMovementFactor by 30% while sprinting.
+        // The simulator must model the player, not the base EntityLiving value.
+        double accel = wasGrounded
+                ? GROUND_ACCEL
+                : AIR_ACCEL * (action.sprint ? SPRINT_MOVE_MULTIPLIER : 1.0D);
 
         p.vx += (forwardX * inputForward + strafeX * inputStrafe) * accel;
         p.vz += (forwardZ * inputForward + strafeZ * inputStrafe) * accel;
@@ -484,7 +488,7 @@ public final class MazePatternStage10SimulationTest {
                 double cellMaxZ = cellMinZ + 1.0D;
                 double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
                 double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
-                if (overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D) return true;
+                if (overlapX > 0.0D && overlapZ > 0.0D) return true;
             }
         }
         return false;

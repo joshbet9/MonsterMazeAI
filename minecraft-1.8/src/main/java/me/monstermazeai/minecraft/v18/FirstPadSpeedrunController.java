@@ -156,7 +156,7 @@ public final class FirstPadSpeedrunController {
      * back toward an already-passed corner.
      */
     private static final double ROUTE_NEAREST_CAPTURE_RADIUS = 1.85D;
-    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 8;
+    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 3;
     private static final double DIAGONAL_SUPPORT_MIN_AREA = 0.01D;
     /*
      * A two-cell route edge is a deliberate one-block jump, not a walk across
@@ -2681,7 +2681,17 @@ public final class FirstPadSpeedrunController {
                         break;
                     }
                 }
-                if (crossesGap || !routeCellSupported(state, candidate)) continue;
+                /*
+                 * Never use nearest-cell reindex to jump across a corner. The
+                 * real traces showed exactly why: a fast airborne crossing can
+                 * make a cell several positions ahead look closer than the
+                 * current waypoint, but if the skipped span contains a turn,
+                 * immediately commanding the new cardinal edge can inject a
+                 * large lateral velocity while the body is still in flight.
+                 * Normal edge capture handles the corner on the next ticks.
+                 */
+                if (crossesGap || !routeCellSupported(state, candidate)
+                        || !sameCommittedHeadingSpan(routeIndex, candidate)) continue;
 
                 double distance = Math.hypot(
                         state.player.x - worldX(routeRows[candidate], state.center.x),
@@ -2714,6 +2724,20 @@ public final class FirstPadSpeedrunController {
                         + " player=" + format(state.player.x) + "," + format(state.player.z));
             }
         }
+    }
+
+    private boolean sameCommittedHeadingSpan(int fromIndex, int candidateIndex) {
+        if (fromIndex < 0 || candidateIndex <= fromIndex || candidateIndex >= routeLength) {
+            return false;
+        }
+        int baseDr = Integer.signum(routeRows[fromIndex + 1] - routeRows[fromIndex]);
+        int baseDc = Integer.signum(routeColumns[fromIndex + 1] - routeColumns[fromIndex]);
+        for (int i = fromIndex + 1; i < candidateIndex; i++) {
+            int dr = Integer.signum(routeRows[i + 1] - routeRows[i]);
+            int dc = Integer.signum(routeColumns[i + 1] - routeColumns[i]);
+            if (dr != baseDr || dc != baseDc) return false;
+        }
+        return true;
     }
 
     private boolean routeEdgeHasPhysicalCapture(LegacyWorldObservation state, int nextIndex) {

@@ -680,6 +680,16 @@ public final class FirstPadSpeedrunController {
                 state, targetIndex, desiredYaw, yawError, commandedYaw);
         boolean safetyOk = safetyReason == null;
         if (!safetyOk) {
+            /*
+             * A safety hold is a real interruption to the straight-line run.
+             * Do not carry previously accumulated gap momentum through a
+             * rotation/hold and then allow the newly aligned edge to inherit
+             * the old qualification. The previous implementation only
+             * updated momentum after safety passed, which meant the accumulator
+             * could survive exactly the "turn sideways -> turn back -> jump"
+             * sequence this gate is intended to prevent.
+             */
+            resetGapMomentum();
             headingStableTicks = 0;
             if (state.worldTick % 5L == 0L) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] MOVEMENT SAFETY HOLD"

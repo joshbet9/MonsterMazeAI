@@ -198,7 +198,8 @@ public final class MazePatternStage10SimulationTest {
                         + "," + format(player.z)
                         + " action=" + actionText(action)
                         + " targets=" + padSequenceText(pads)
-                        + " controllerLog=" + result.controllerLog.toString();
+                        + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
+                return result;
             }
 
             if (transitionTicks > 0) transitionTicks--;
@@ -523,7 +524,7 @@ public final class MazePatternStage10SimulationTest {
                 + ",Y=" + format(action.yawDelta);
     }
 
-    private static String format(double value) {
+    private static String tail(String value, int max) {\n        return value.length() <= max ? value : value.substring(value.length() - max);\n    }\n\n    private static String format(double value) {
         return String.format(java.util.Locale.ROOT, "%.2f", value);
     }
 

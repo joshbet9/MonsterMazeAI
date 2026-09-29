@@ -885,21 +885,46 @@ public final class StableLiveMovementController {
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {
-        if (targetIndex <= 0 || targetIndex >= route.size()) return 0.0;
+        if (route == null || route.size() < 2) return 0.0;
 
-        Cell start = route.cells().get(targetIndex - 1);
-        Cell target = route.cells().get(targetIndex);
-        double startX = start.row() + 0.5;
-        double startZ = start.column() + 0.5;
-        double targetX = target.row() + 0.5;
-        double targetZ = target.column() + 0.5;
+        /*
+         * targetIndex is the next turn/goal waypoint, not necessarily the
+         * segment the player is currently traversing. Using only
+         * targetIndex-1 -> targetIndex made a fast player look "off route" while
+         * still travelling along an earlier straight segment, which triggered
+         * repeated FAST_RECOVERY_ROUTE calls and caused left/right oscillation.
+         *
+         * Measure against the complete cardinal route corridor instead. This
+         * still detects a genuine lateral escape, but it is invariant to how far
+         * ahead the next corner is.
+         */
+        double best = Double.POSITIVE_INFINITY;
+        List<Cell> cells = route.cells();
+        for (int i = 0; i < cells.size() - 1; i++) {
+            Cell start = cells.get(i);
+            Cell target = cells.get(i + 1);
+            double startX = start.row() + 0.5;
+            double startZ = start.column() + 0.5;
+            double targetX = target.row() + 0.5;
+            double targetZ = target.column() + 0.5;
 
-        double dx = targetX - startX;
-        double dz = targetZ - startZ;
-        if (Math.abs(dx) > Math.abs(dz)) {
-            return Math.abs(state.player.z - startZ);
+            double segmentX = targetX - startX;
+            double segmentZ = targetZ - startZ;
+            double lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+            if (lengthSquared <= 1.0E-9) continue;
+
+            double playerX = state.player.x - startX;
+            double playerZ = state.player.z - startZ;
+            double projection = (playerX * segmentX + playerZ * segmentZ) / lengthSquared;
+            projection = Math.max(0.0, Math.min(1.0, projection));
+
+            double nearestX = startX + projection * segmentX;
+            double nearestZ = startZ + projection * segmentZ;
+            best = Math.min(best, Math.hypot(
+                    state.player.x - nearestX,
+                    state.player.z - nearestZ));
         }
-        return Math.abs(state.player.x - startX);
+        return best == Double.POSITIVE_INFINITY ? 0.0 : best;
     }
 
     private static boolean insideRegion(int row, int column, Cell center, int radius) {

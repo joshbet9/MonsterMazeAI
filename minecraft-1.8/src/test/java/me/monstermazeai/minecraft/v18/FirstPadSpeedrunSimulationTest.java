@@ -64,8 +64,8 @@ public final class FirstPadSpeedrunSimulationTest {
 
         assertTrue(
                 "non-gap movement must request jump on essentially every movement tick: "
-                        + result.jumpCommandRate,
-                result.jumpCommandRate >= 0.95D);
+                        + result.jumpCommandRate(),
+                result.jumpCommandRate() >= 0.95D);
 
         assertTrue(
                 "simulation must demonstrate actual physical jump events, not merely held jump input",

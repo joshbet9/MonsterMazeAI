@@ -103,13 +103,8 @@ class StableLiveMovementControllerPadTransitionTest {
         state.activePadRow = 30;
         state.activePadColumn = 20;
 
-        Action action = controller.nextAction(state, new Cell(30, 20), false);
-
-        assertEquals(0.0, action.forward(), 1.0e-6);
-        assertEquals(0.0, action.strafe(), 1.0e-6);
-        assertEquals(0.0F, action.yawDelta(), 1.0e-6F);
-        assertTrue(controller.lastDecisionDetail().contains("No physical route")
-                        || action == Action.IDLE,
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.nextAction(state, new Cell(30, 20), false),
                 "the transition bridge must not turn arbitrary air into a valid starting surface");
     }
 }

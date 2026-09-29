@@ -592,18 +592,6 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
-         * A route index can legitimately arrive at a one-block gap while the
-         * player is still completing the previous jump. The airborne continuity
-         * branch below must not bypass the explicit gap transaction: doing so
-         * postpones gap ownership until the next grounded tick, when the player
-         * may already be beyond the two-block route edge.
-         */
-        if (!gapExecutionActive && isCurrentEdgeGap(state)) {
-            LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
-            if (gapAction != null) return gapAction;
-        }
-
-        /*
          * Airborne route continuity is a physics-critical state. A sprint jump
          * carries substantial horizontal momentum, so stopping to satisfy the
          * grounded corner/heading safety rules can turn a valid route corner
@@ -2211,10 +2199,7 @@ public final class FirstPadSpeedrunController {
              * that observation leaves the controller owning the old edge and
              * causes repeated "takeoff" attempts while the player walks away.
              */
-            boolean landedNearEndpoint = playerFootprintOverlapsCell(
-                    state, toRow, toColumn, 0.01D)
-                    || destinationDistance <= 1.10D;
-            if (landedNearEndpoint) {
+            if (state.player.grounded) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
                         + " tick=" + state.worldTick
                         + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
@@ -2229,20 +2214,8 @@ public final class FirstPadSpeedrunController {
                 if (routeIndex > 0 && routeStartsOnPreviousPad) {
                     routeStartsOnPreviousPad = false;
                 }
-                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
             }
-
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
-                    + " tick=" + state.worldTick
-                    + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                    + " progress=" + format(progress)
-                    + " grounded=" + state.player.grounded
-                    + " endpointDistance=" + format(destinationDistance));
-            gapExecutionActive = false;
-            gapTakeoffStarted = false;
-            gapExecutionRouteIndex = -1;
-            gapLandingConfirmTicks = 0;
-            return null;
 
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
@@ -2584,24 +2557,6 @@ public final class FirstPadSpeedrunController {
         return best;
     }
 
-    private double currentEdgeLateralDistance(LegacyWorldObservation state) {
-        if (routeIndex < 0 || routeIndex >= routeLength - 1) return Double.POSITIVE_INFINITY;
-        double ax = worldX(routeRows[routeIndex], state.center.x);
-        double az = worldZ(routeColumns[routeIndex], state.center.z);
-        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
-        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
-        double ex = bx - ax;
-        double ez = bz - az;
-        double len2 = ex * ex + ez * ez;
-        if (len2 <= 1.0E-9D) return Double.POSITIVE_INFINITY;
-        double px = state.player.x - ax;
-        double pz = state.player.z - az;
-        double progress = (px * ex + pz * ez) / len2;
-        double lateralX = px - ex * progress;
-        double lateralZ = pz - ez * progress;
-        return Math.hypot(lateralX, lateralZ);
-    }
-
     private void advanceRouteIndex(LegacyWorldObservation state) {
         /*
          * A committed one-block gap owns the route edge until its landing is
@@ -2623,36 +2578,18 @@ public final class FirstPadSpeedrunController {
          */
         if (isCurrentEdgeGap(state)) {
             /*
-             * Normally a gap owns its edge until landing. There is one
-             * high-speed exception: the observer can first sample the player
-             * several blocks beyond the gap while still airborne. The real
-             * traces show this after successful jumps; keeping the old gap
-             * index then freezes route progress and makes the controller face a
-             * stale cardinal edge until it falls. Once progress is clearly
-             * beyond the destination and lateral error is small, advance past
-             * the already-crossed gap and let the ordinary cursor catch-up
-             * process continue.
+             * The gap edge is owned until its landing is actually observed.
+             * While airborne, never advance the route index onto the landing
+             * cell early; that would let ordinary route capture/replanning
+             * outrun the physical jump.
              */
-            double gapProgress = currentEdgeProgress(state);
-            double gapLateral = currentEdgeLateralDistance(state);
             if (state.player.grounded
                     && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
                 routeIndex++;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
                 resetGapMomentum();
-                return;
             }
-            if (!state.player.grounded
-                    && gapProgress > 1.25D
-                    && gapLateral <= ROUTE_EDGE_LATERAL_TOLERANCE) {
-                routeIndex++;
-                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                resetGapMomentum();
-                // Continue into the normal while-loop below so consecutive
-                // already-crossed edges can be consumed in one observation.
-            } else {
-                return;
-            }
+            return;
         }
 
         /*

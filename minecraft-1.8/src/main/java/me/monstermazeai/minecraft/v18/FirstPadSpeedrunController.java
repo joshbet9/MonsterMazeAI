@@ -1753,9 +1753,17 @@ public final class FirstPadSpeedrunController {
         double distanceToTakeoff = 0.50D - progress;
         // Allow the controller to approach the missing cell without the normal
         // floor sweep rejecting the intentionally unsupported middle block.
+        /*
+         * Speed-boosting keeps the player airborne for multiple ticks. Once an
+         * airborne player is actually over a current one-block gap, the floor
+         * safety probe must not turn that valid jump into a stationary hold.
+         * The gap controller already owns the forward/jump action in this
+         * state; this predicate only tells the safety layer not to reject it.
+         */
+        if (!state.player.grounded) return true;
+
         return gapExecutionActive && gapExecutionRouteIndex == routeIndex
-                || (state.player.grounded
-                && distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
+                || (distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
                 && distanceToTakeoff >= -GAP_JUMP_LATE_TOLERANCE);
     }
 

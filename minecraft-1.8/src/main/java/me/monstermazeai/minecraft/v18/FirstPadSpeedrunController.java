@@ -2145,6 +2145,40 @@ public final class FirstPadSpeedrunController {
                     + " progress=" + format(progress));
         }
 
+        /*
+         * At sprint-jump speed the player may land one physical corridor cell
+         * beyond the graph's compressed gap endpoint. This is still a legal
+         * traversal when that downstream cell is on the same committed heading
+         * span and the player's actual footprint captures it. Advance only to
+         * an explicitly captured route cell; never accept arbitrary distance
+         * beyond the gap.
+         */
+        if (gapTakeoffStarted && state.player.grounded && progress > 0.90D) {
+            int downstreamLimit = Math.min(routeLength - 1, routeIndex + 3);
+            for (int candidate = routeIndex + 1;
+                 candidate <= downstreamLimit; candidate++) {
+                if (!sameCommittedHeadingSpan(routeIndex, candidate)) break;
+                if (routeEdgeHasPhysicalCapture(state, candidate)) {
+                    log(state.worldTick,
+                            "[MonsterMazeAI/1.8] GAP DOWNSTREAM CAPTURE"
+                                    + " tick=" + state.worldTick
+                                    + " oldIndex=" + routeIndex
+                                    + " newIndex=" + candidate
+                                    + " progress=" + format(progress));
+                    routeIndex = candidate;
+                    gapExecutionActive = false;
+                    gapTakeoffStarted = false;
+                    gapExecutionRouteIndex = -1;
+                    gapLandingConfirmTicks = 0;
+                    resetGapMomentum();
+                    if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                        routeStartsOnPreviousPad = false;
+                    }
+                    return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                }
+            }
+        }
+
         if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
                 && playerFootprintOverlapsCell(state, toRow, toColumn, 0.05D)) {
             gapLandingConfirmTicks++;

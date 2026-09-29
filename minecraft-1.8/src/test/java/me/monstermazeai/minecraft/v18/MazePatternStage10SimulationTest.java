@@ -237,14 +237,6 @@ public final class MazePatternStage10SimulationTest {
             }
 
             if (stageTicksRemaining <= 0) {
-                    result.stage = stage;
-                    result.ticks = ticks;
-                    result.failure = "PASS";
-                    return result;
-                }
-            }
-
-            if (stageTicksRemaining <= 0) {
                 if (!targetCaptured) {
                     result.stage = stage;
                     result.ticks = ticks;

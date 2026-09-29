@@ -181,7 +181,7 @@ class StableLiveMovementControllerTest {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[10][10] = 1;
         raw[10][12] = 1;
-        raw[10][14] = 1;
+        for (int column = 14; column <= 20; column++) raw[10][column] = 1;
         MazeModel maze = new MazeModel(raw);
 
         GameState s = new GameState();
@@ -197,7 +197,7 @@ class StableLiveMovementControllerTest {
         s.tick = 1;
 
         StableLiveMovementController controller = new StableLiveMovementController();
-        Action approach = controller.nextAction(s, new Cell(10, 14), true);
+        Action approach = controller.nextAction(s, new Cell(10, 20), true);
         assertEquals(1.0, approach.forward(), 0.0);
         assertFalse(approach.jump(), "before the takeoff boundary the controller should approach, not pulse early");
 

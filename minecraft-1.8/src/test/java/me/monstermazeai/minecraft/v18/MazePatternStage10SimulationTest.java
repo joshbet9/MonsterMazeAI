@@ -89,9 +89,9 @@ public final class MazePatternStage10SimulationTest {
                     .append(" maxStage=").append(maxStage)
                     .append('\n');
 
-            assertEquals("Maze " + (pattern + 1) + " did not pass every simulation",
-                    SEEDS_PER_PATTERN, passed);
-            assertTrue("Maze " + (pattern + 1) + " minimum stage was below 10: " + minStage,
+            assertTrue("Maze " + (pattern + 1) + " did not pass every simulation.\\n" + report,
+                    passed == SEEDS_PER_PATTERN);
+            assertTrue("Maze " + (pattern + 1) + " minimum stage was below 10: " + minStage + "\\n" + report,
                     minStage >= TARGET_STAGE);
         }
 

@@ -88,20 +88,23 @@ public final class MazePatternStage10SimulationTest {
                             + " stage=" + result.stage + " pads=" + result.padsReached
                             + " ticks=" + result.ticks + " failure=" + result.failure;
                     System.err.println(line);
-                    report.append(line).append('\n');
+                    report.append(line).append('
+');
                     if (result.stage < ENDURANCE_STAGE) failures++;
                 }
                 report.append("ENDURANCE Maze ").append(pattern + 1)
                         .append(" kit=").append(kit)
                         .append(" MIN=").append(minStage)
-                        .append(" MAX=").append(maxStage).append('\n');
+                        .append(" MAX=").append(maxStage).append('
+');
             }
         }
 
         writeReport(report.toString(), "endurance");
         if (failures > 0) {
             throw new RuntimeException("Endurance simulation had " + failures
-                    + " cases below stage " + ENDURANCE_STAGE + "\n" + report);
+                    + " cases below stage " + ENDURANCE_STAGE + "
+" + report);
         }
     }
 
@@ -134,14 +137,16 @@ public final class MazePatternStage10SimulationTest {
                         + " maxSpeed=" + format(result.maxSpeed)
                         + " failure=" + result.failure;
                 System.err.println("SIM " + line);
-                report.append(line).append('\n');
+                report.append(line).append('
+');
             }
 
             report.append("Maze ").append(pattern + 1)
                     .append(" kit=").append(kit)
                     .append(" SUMMARY passed=").append(patternPassed).append("/")
                     .append(SEEDS_PER_PATTERN)
-                    .append('\n');
+                    .append('
+');
         }
 
         System.err.println(report.toString());
@@ -150,7 +155,8 @@ public final class MazePatternStage10SimulationTest {
         if (passed != total) {
             throw new RuntimeException(
                     "Stage-10 gate failed for kit=" + kit
-                    + ": passed=" + passed + "/" + total + "\\n" + report);
+                    + ": passed=" + passed + "/" + total + "\
+" + report);
         }
     }
 
@@ -167,7 +173,11 @@ public final class MazePatternStage10SimulationTest {
         }
     }
 
-    private static Result simulate(int pattern, int seed, Kit kit) {\n        return simulate(pattern, seed, kit, TARGET_STAGE);\n    }\n\n    private static Result simulate(int pattern, int seed, Kit kit, int targetStage) {
+    private static Result simulate(int pattern, int seed, Kit kit) {
+        return simulate(pattern, seed, kit, TARGET_STAGE);
+    }
+
+    private static Result simulate(int pattern, int seed, Kit kit, int targetStage) {
         int[][] raw = copy(MazeLayouts.ALL_MAZES[pattern]);
         List<Cell> pads = buildPadSequence(raw, seed, targetStage);
 
@@ -231,7 +241,8 @@ public final class MazePatternStage10SimulationTest {
                     .append(" p=").append(format(player.x)).append(",")
                     .append(format(player.y)).append(",").append(format(player.z))
                     .append(" v=").append(format(player.vx)).append(",")
-                    .append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
+                    .append(format(player.vz)).append(" a=").append(actionText(action)).append("
+");
             if (action.forward > 0.01D) result.movementTicks++;
 
             step(player, action, physical, result);
@@ -244,7 +255,8 @@ public final class MazePatternStage10SimulationTest {
                         + "," + format(player.z)
                         + " action=" + actionText(action)
                         + " targets=" + padSequenceText(pads)
-                        + " trace=" + tail(result.trace.toString(), 6000).replace("\n", " | ")
+                        + " trace=" + tail(result.trace.toString(), 6000).replace("
+", " | ")
                         + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
                 return result;
             }

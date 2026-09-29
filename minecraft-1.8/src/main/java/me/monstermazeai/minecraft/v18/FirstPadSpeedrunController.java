@@ -1191,8 +1191,14 @@ public final class FirstPadSpeedrunController {
          * direct diagonal is independently proven traversable by the same
          * physical-floor rules as the planner. Gaps are never collapsed.
          */
-        int smoothedCount = smoothRouteCorners(
-                state, newRouteRows, newRouteColumns, count);
+        /*
+         * Keep the planner's authoritative cardinal graph intact. Corner
+         * smoothing can create diagonal/shortcut edges that are geometrically
+         * plausible for a point but do not correspond to a one-cell Monster
+         * Maze movement corridor. The simulator gate is specifically intended
+         * to validate physical traversal of every underlying edge.
+         */
+        int smoothedCount = count;
         int[] smoothedRows = new int[smoothedCount];
         int[] smoothedColumns = new int[smoothedCount];
         System.arraycopy(newRouteRows, 0, smoothedRows, 0, smoothedCount);

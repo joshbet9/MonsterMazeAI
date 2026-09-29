@@ -184,12 +184,7 @@ public final class MonsterMaze18Mod {
             runtime.submit(state);
             LegacyAction completed = runtime.pollCompleted(state.worldTick);
             if (completed != null) {
-                if (runtime.lastCompletedWasStaleTurn()) {
-                    executor.applyForTicks(completed, state.worldTick, 1L);
-                    System.err.println("[MonsterMazeAI/1.8] RUNTIME accepted one-tick stale turn recovery");
-                } else {
-                    executor.apply(completed, state.worldTick);
-                }
+                executor.apply(completed, state.worldTick);
             }
             executor.expireIfNeeded(state.worldTick);
             action = executor.currentAction();

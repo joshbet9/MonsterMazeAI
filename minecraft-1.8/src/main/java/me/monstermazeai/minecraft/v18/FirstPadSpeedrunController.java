@@ -1581,7 +1581,10 @@ public final class FirstPadSpeedrunController {
                 || (acceleration >= KNOCKBACK_ACCELERATION && horizontalSpeed >= 0.40D)
                 || (tickDisplacement >= KNOCKBACK_TICK_DISPLACEMENT
                     && horizontalSpeed >= 0.40D)
-                || (directionDot < -0.35D && acceleration >= 0.18D);
+                || (directionDot < -0.35D
+                    && acceleration >= 0.18D
+                    && previousSpeed >= 0.30D
+                    && horizontalSpeed >= 0.30D);
     }
 
     private boolean routePositionNeedsRecovery(LegacyWorldObservation state) {

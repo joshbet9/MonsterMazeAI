@@ -25,11 +25,13 @@ public final class MonsterMaze18Mod {
     private Minecraft18Observer observer;
     private Minecraft18ActionExecutor executor;
     private LiveMovementValidator movementValidator;
+    private Minecraft18AiRuntime runtime;
     private FirstPadSpeedrunController firstPadSpeedrun;
     private GameRunSummaryRecorder gameSummary;
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private boolean aiEnabled;
     private boolean runEndedLatch;
+    private boolean fullRoutingMode;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
     private long observationLogCount;
 
@@ -38,6 +40,7 @@ public final class MonsterMaze18Mod {
         observer = new Minecraft18Observer();
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
         movementValidator = new LiveMovementValidator();
+        runtime = new Minecraft18AiRuntime();
         firstPadSpeedrun = new FirstPadSpeedrunController();
         gameSummary = new GameRunSummaryRecorder();
         firstPadSpeedrun.setTelemetry(gameSummary);
@@ -48,14 +51,15 @@ public final class MonsterMaze18Mod {
 
         aiEnabled = false;
         runEndedLatch = false;
+        fullRoutingMode = false;
         observationLogCount = 0L;
         executor.setAiEnabled(false);
 
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
 
-        System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN mode ready (F8)");
-        System.out.println("[MonsterMazeAI/1.8] No sidecar/planner is used in this benchmark");
+        System.out.println("[MonsterMazeAI/1.8] HYBRID mode ready (F8)");
+        System.out.println("[MonsterMazeAI/1.8] First pad uses synchronous optimal speedrun; subsequent pads use normal live AI runtime");
         System.out.println("[MonsterMazeAI/1.8] Per-game GPT summary telemetry enabled");
     }
 
@@ -76,6 +80,7 @@ public final class MonsterMaze18Mod {
             executor.releaseAll();
             executor.setAiEnabled(false);
             aiEnabled = false;
+            fullRoutingMode = false;
             firstPadSpeedrun.reset();
             observationLogCount = 0L;
             controlledPlayer = null;
@@ -96,14 +101,16 @@ public final class MonsterMaze18Mod {
                 }
                 executor.releaseAll();
                 firstPadSpeedrun.reset();
+                fullRoutingMode = false;
                 movementValidator.reset();
-                System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN disabled (F8)");
+                System.out.println("[MonsterMazeAI/1.8] HYBRID disabled (F8)");
             } else {
                 firstPadSpeedrun.reset();
+                fullRoutingMode = false;
                 runEndedLatch = false;
                 observationLogCount = 0L;
                 gameSummary.reset();
-                System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN enabled (F8)");
+                System.out.println("[MonsterMazeAI/1.8] HYBRID enabled (F8): first-pad speedrun -> full routing");
             }
         }
 
@@ -117,7 +124,8 @@ public final class MonsterMaze18Mod {
         observationLogCount++;
 
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
-            System.out.println("[MonsterMazeAI/1.8] FIRST_PAD_OBS#" + observationLogCount
+            System.out.println("[MonsterMazeAI/1.8] OBS#" + observationLogCount
+                    + " mode=" + (fullRoutingMode ? "FULL_ROUTING" : "FIRST_PAD")
                     + " tick=" + state.worldTick
                     + " inMaze=" + state.inMonsterMaze
                     + " detected=" + state.mazeDetected
@@ -126,20 +134,66 @@ public final class MonsterMaze18Mod {
                     + " player=" + format(state.player.x) + "," + format(state.player.z)
                     + " pad=" + (state.pad == null ? "none"
                         : state.pad.row + "," + state.pad.column
-                            + " reached=" + state.pad.reached));
+                            + " reached=" + state.pad.reached)
+                    + " monsters=" + state.monsters.size());
         }
 
-        // This benchmark is deliberately synchronous. Route calculation and the
-        // movement decision happen on the client thread, then MovementInput
-        // consumes the command later in the same Minecraft tick. There is no IPC,
-        // Future, stale-action window, command queue, or sidecar latency.
         if (state.inMonsterMaze && !gameSummary.isActive()) {
             gameSummary.begin(state.worldTick);
         }
 
-        LegacyAction action = firstPadSpeedrun.next(state);
-        executor.applyForTicks(action, state.worldTick, 1L);
-        executor.expireIfNeeded(state.worldTick);
+        LegacyAction action;
+        if (!fullRoutingMode) {
+            /*
+             * The first-pad controller is intentionally retained as the proven
+             * synchronous bootstrap. It owns movement until it geometrically
+             * reaches the first active SafePad.
+             */
+            action = firstPadSpeedrun.next(state);
+            executor.applyForTicks(action, state.worldTick, 1L);
+            executor.expireIfNeeded(state.worldTick);
+
+            if (firstPadSpeedrun.hasReachedTarget()) {
+                /*
+                 * Do not ask the normal runtime to make the first-pad journey
+                 * again. Start it only after bootstrap completion; its first
+                 * observation is therefore the player safely standing on the
+                 * first active pad. On the next active-pad transition,
+                 * LiveObjectiveController sees the new target and routes away.
+                 */
+                fullRoutingMode = true;
+                runtime.startIfConfigured();
+                if (gameSummary != null && gameSummary.isActive()) {
+                    gameSummary.controllerEvent(state.worldTick,
+                            "[MonsterMazeAI/1.8] FULL ROUTING HANDOFF"
+                                    + " tick=" + state.worldTick
+                                    + " firstPad=" + state.pad.row + "," + state.pad.column
+                                    + " runtime=" + runtime.runtimeStatus());
+                }
+                System.out.println("[MonsterMazeAI/1.8] FULL ROUTING HANDOFF"
+                        + " tick=" + state.worldTick
+                        + " firstPad=" + state.pad.row + "," + state.pad.column);
+            }
+        } else {
+            /*
+             * Restore the same asynchronous closed-loop runtime that previously
+             * drove multi-pad progression. It receives the live state after the
+             * first-pad bootstrap instead of competing with the bootstrap
+             * controller for ownership of the first leg.
+             */
+            runtime.submit(state);
+            LegacyAction completed = runtime.pollCompleted(state.worldTick);
+            if (completed != null) {
+                if (runtime.lastCompletedWasStaleTurn()) {
+                    executor.applyForTicks(completed, state.worldTick, 1L);
+                    System.err.println("[MonsterMazeAI/1.8] RUNTIME accepted one-tick stale turn recovery");
+                } else {
+                    executor.apply(completed, state.worldTick);
+                }
+            }
+            executor.expireIfNeeded(state.worldTick);
+            action = executor.currentAction();
+        }
 
         if (state.inMonsterMaze) {
             movementValidator.observe(state, executor.currentAction());
@@ -171,6 +225,7 @@ public final class MonsterMaze18Mod {
             executor.setAiEnabled(false);
             executor.releaseAll();
             firstPadSpeedrun.reset();
+            fullRoutingMode = false;
             movementValidator.reset();
             System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat=\"" + text + "\"");
         }

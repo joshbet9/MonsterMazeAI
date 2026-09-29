@@ -20,6 +20,7 @@ import java.util.Map;
 public final class GameRunSummaryRecorder {
     private static final int MAX_EVENTS = 400;
     private static final int MAX_SAMPLES = 80;
+    private static final String BUILD_VERSION = System.getProperty("monstermazeai.version", "unknown");
 
     private long gameNumber;
     private boolean active;
@@ -210,6 +211,7 @@ public final class GameRunSummaryRecorder {
         StringBuilder out = new StringBuilder(7000);
 
         out.append("\n========== MONSTER MAZE GPT GAME SUMMARY ==========\n");
+        out.append("version=").append(BUILD_VERSION).append("\n");
         out.append("game=").append(gameNumber)
                 .append(" startTick=").append(startTick)
                 .append(" endTick=").append(endTick)

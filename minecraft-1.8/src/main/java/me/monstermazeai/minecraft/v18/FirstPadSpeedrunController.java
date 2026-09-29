@@ -1834,39 +1834,19 @@ public final class FirstPadSpeedrunController {
         }
 
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
-            return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+            return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
         }
 
         /*
-         * The jump window has arrived. Do not press Space merely because the
-         * heading is now correct: if the preceding run was interrupted, the
-         * player no longer has the physical momentum needed for the baseline
-         * speedrun jump. Hold before the takeoff boundary rather than issuing
-         * an unqualified jump and recreating the observed failure.
+         * Jump input is intentionally continuous. The real 1.8.9 client
+         * already rate-limits the physical jump through its jump cooldown;
+         * withholding Space here is therefore not a useful safety mechanism.
          *
-         * If there is not enough runway left to rebuild the qualification,
-         * abandon this edge and let the normal route builder choose a fresh
-         * route on the next observation. This is preferable to knowingly
-         * committing the player to unsupported space.
+         * A gap is committed from the actual edge geometry and heading, not
+         * from an arbitrary accumulated-distance threshold. This matters on
+         * real Maze layouts because the first gap can occur before three full
+         * blocks of straight runway exist.
          */
-        if (!hasQualifiedGapMomentum()) {
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MOMENTUM INSUFFICIENT"
-                    + " tick=" + state.worldTick
-                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " progress=" + format(progress)
-                    + " momentum=" + format(gapQualifiedMomentumDistance)
-                    + "/" + format(GAP_MOMENTUM_DISTANCE_REQUIRED)
-                    + " action=ABORT_ROUTE");
-            gapExecutionActive = false;
-            gapTakeoffStarted = false;
-            gapExecutionRouteIndex = -1;
-            gapLandingConfirmTicks = 0;
-            routeLength = 0;
-            routeIndex = 0;
-            return LegacyAction.IDLE;
-        }
-
         gapExecutionActive = true;
         gapTakeoffStarted = false;
         gapExecutionRouteIndex = routeIndex;
@@ -1938,8 +1918,7 @@ public final class FirstPadSpeedrunController {
         // every grounded observation. At sprint speed a single tick is enough
         // to cross the source block edge, so waiting for exactly +0.50 progress
         // can miss the only grounded jump-input window.
-        boolean jumpInput = state.player.grounded && gapTakeoffStarted;
-        return new LegacyAction(1.0f, 0.0f, jumpInput, true, 0.0f, false);
+        return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

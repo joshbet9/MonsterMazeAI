@@ -364,14 +364,18 @@ public final class FirstPadSpeedrunController {
             float yawError = normalise(desiredYaw - state.player.yaw);
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
-            if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE) {
+            double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+            if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE
+                    && state.player.grounded
+                    && horizontalSpeed <= 0.08D) {
                 aligningForStage = false;
                 log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGNED"
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
                         + " yaw=" + format(state.player.yaw)
-                        + " desiredYaw=" + format(desiredYaw));
+                        + " desiredYaw=" + format(desiredYaw)
+                        + " speed=" + format(horizontalSpeed));
             } else {
                 if (state.worldTick % 2L == 0L) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGN"
@@ -380,7 +384,9 @@ public final class FirstPadSpeedrunController {
                             + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
                             + " yaw=" + format(state.player.yaw)
                             + " desiredYaw=" + format(desiredYaw)
-                            + " yawDelta=" + format(yawDelta));
+                            + " yawDelta=" + format(yawDelta)
+                            + " grounded=" + state.player.grounded
+                            + " speed=" + format(horizontalSpeed));
                 }
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }

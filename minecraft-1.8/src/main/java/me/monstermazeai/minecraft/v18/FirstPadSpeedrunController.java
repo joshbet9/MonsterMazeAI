@@ -88,6 +88,7 @@ public final class FirstPadSpeedrunController {
     private long lastLogTick = Long.MIN_VALUE;
     private boolean targetReached;
     private boolean aligningForStage;
+    private boolean aligningForReplan;
     private int lastLoggedStage = -1;
     private long startedAtTick = Long.MIN_VALUE;
     private int headingStableTicks;
@@ -376,7 +377,7 @@ public final class FirstPadSpeedrunController {
          * transition, so this is the earliest safe point at which the new
          * route can be used for pre-alignment.
          */
-        if (aligningForStage) {
+        if (aligningForStage || aligningForReplan) {
             int headingIndex = firstRouteHeadingIndex();
             int fromIndex = Math.max(0, headingIndex - 1);
             float desiredYaw = desiredYawForEdge(
@@ -386,8 +387,12 @@ public final class FirstPadSpeedrunController {
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
             if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE) {
+                boolean wasStageAlignment = aligningForStage;
                 aligningForStage = false;
-                log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGNED"
+                aligningForReplan = false;
+                log(state.worldTick, wasStageAlignment
+                        ? "[MonsterMazeAI/1.8] PAD ALIGNED"
+                        : "[MonsterMazeAI/1.8] REPLAN ALIGNED"
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
@@ -1215,6 +1220,27 @@ public final class FirstPadSpeedrunController {
          * must not introduce a competing alignment state.
          */
         aligningForStage = transitioningFromReachedPad;
+        aligningForReplan = false;
+        if (!transitioningFromReachedPad
+                && state.player.grounded
+                && routeLength > 1) {
+            double speed = Math.hypot(state.player.vx, state.player.vz);
+            if (speed >= 0.12D) {
+                double edgeX = routeRows[1] - routeRows[0];
+                double edgeZ = routeColumns[1] - routeColumns[0];
+                double edgeLength = Math.hypot(edgeX, edgeZ);
+                if (edgeLength > 1.0E-9D) {
+                    edgeX /= edgeLength;
+                    edgeZ /= edgeLength;
+                    double velocityX = state.player.vx / speed;
+                    double velocityZ = state.player.vz / speed;
+                    double headingDot = velocityX * edgeX + velocityZ * edgeZ;
+                    if (headingDot < 0.65D) {
+                        aligningForReplan = true;
+                    }
+                }
+            }
+        }
 
         if (startedAtTick == Long.MIN_VALUE) {
             startedAtTick = state.worldTick;

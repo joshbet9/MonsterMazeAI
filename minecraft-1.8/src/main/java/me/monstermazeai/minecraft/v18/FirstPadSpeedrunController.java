@@ -1929,16 +1929,16 @@ public final class FirstPadSpeedrunController {
 
     private LegacyAction prepareOrStartGap(LegacyWorldObservation state,
                                             float desiredYaw, float yawError) {
-        if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) return executeCommittedGap(state);
+        if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) {
+            return executeCommittedGap(state);
+        }
 
         /*
          * Airborne is not a reason to stop on Monster Maze. The normal
          * speed-boost technique deliberately keeps the player in the air by
-         * holding Space. The old branch returned IDLE here whenever a gap was
-         * encountered during a jump, which converted a valid jump into a
-         * guaranteed fall. Keep W+sprint+Space active while airborne and let
-         * the normal client jump cooldown govern when another physical jump
-         * can occur.
+         * holding Space. The gap controller owns the same continuous
+         * W+sprint+Space policy; Minecraft's jump cooldown decides when the
+         * next physical jump can occur.
          */
         if (!state.player.grounded) {
             float airYawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
@@ -1947,70 +1947,65 @@ public final class FirstPadSpeedrunController {
 
         if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-            if (state.worldTick % 2L == 0L) log(state.worldTick, "[MonsterMazeAI/1.8] GAP ALIGN"
-                    + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " yawError=" + format(yawError));
+            if (state.worldTick % 2L == 0L) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] GAP ALIGN"
+                        + " tick=" + state.worldTick
+                        + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+                        + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
+                        + " yawError=" + format(yawError));
+            }
             return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
         double rad = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
-        double lateralVelocity = Math.abs(state.player.vx * forwardZ - state.player.vz * forwardX);
+        double lateralVelocity = Math.abs(
+                state.player.vx * forwardZ - state.player.vz * forwardX);
         if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
-            return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
+            /*
+             * Preserve the route rather than aborting. The next tick can
+             * continue the same edge after the lateral component decays.
+             */
+            return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
         }
 
         double progress = currentEdgeProgress(state);
-        double distanceToTakeoff = 0.50D - progress;
 
         /*
-         * A committed gap is an edge transaction. The route geometry and
-         * current heading are the qualification; do not impose an arbitrary
-         * accumulated-runway requirement. Source mazes can place a genuine
-         * one-block gap before three full blocks of straight runway.
+         * The edge itself is the commitment proof. Do not wait for an
+         * arbitrary three-block runway or for the player to reach the
+         * takeoff boundary: the controller is already continuously pressing
+         * jump, and the real client enforces the physical jump cooldown.
          *
-         * Momentum remains telemetry only. It is never a prerequisite for
-         * committing the jump.
+         * Commit as soon as the player is on/approaching the source half of
+         * the edge. This is important because some authoritative maze paths
+         * place the first gap before three blocks of usable runway exist.
          */
-        if (progress >= 0.15D && progress <= 1.65D) {
+        if (progress >= -0.25D && progress <= 1.65D) {
             gapExecutionActive = true;
             gapTakeoffStarted = progress >= 0.15D;
             gapExecutionRouteIndex = routeIndex;
             gapLandingConfirmTicks = 0;
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP RECOVER COMMIT"
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP COMMIT"
                     + " tick=" + state.worldTick
                     + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
                     + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
                     + " progress=" + format(progress)
-                    + " takeoff=" + gapTakeoffStarted
-                    + " momentum=" + format(gapQualifiedMomentumDistance));
+                    + " headingAligned=true lateralSpeed=" + format(lateralVelocity));
             return executeCommittedGap(state);
         }
 
-        if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
-            return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
-        }
-
         /*
-         * Jump input is intentionally continuous. The real 1.8.9 client
-         * already rate-limits the physical jump through its jump cooldown;
-         * withholding Space here is therefore not a useful safety mechanism.
-         *
-         * A gap is committed from the actual edge geometry and heading, not
-         * from an arbitrary accumulated-distance threshold. This matters on
-         * real Maze layouts because the first gap can occur before three full
-         * blocks of straight runway exist.
+         * If the player is already beyond the committed edge, do not manufacture
+         * an old-style IDLE gate. Replan from the observed position instead.
          */
-        gapExecutionActive = true;
+        gapExecutionActive = false;
         gapTakeoffStarted = false;
-        gapExecutionRouteIndex = routeIndex;
+        gapExecutionRouteIndex = -1;
         gapLandingConfirmTicks = 0;
-        log(state.worldTick, "[MonsterMazeAI/1.8] GAP COMMIT"
-                + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                + " progress=" + format(progress) + " headingAligned=true lateralSpeed=" + format(lateralVelocity));
-        return executeCommittedGap(state);
+        routeLength = 0;
+        routeIndex = 0;
+        return LegacyAction.IDLE;
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {

@@ -597,7 +597,9 @@ public final class FirstPadSpeedrunController {
          * final portion of the previous jump. Waiting for a later grounded tick
          * delays Space until the player has already traversed the missing cell.
          */
-        if (!gapExecutionActive && isCurrentEdgeGap(state)) {
+        if (!gapExecutionActive
+                && (isCurrentEdgeGap(state)
+                || edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP)) {
             LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
             if (gapAction != null) return gapAction;
         }

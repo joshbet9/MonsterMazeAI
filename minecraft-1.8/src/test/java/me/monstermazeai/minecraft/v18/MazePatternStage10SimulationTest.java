@@ -74,7 +74,6 @@ public final class MazePatternStage10SimulationTest {
     private static void runEnduranceMatrix() {
         StringBuilder report = new StringBuilder();
         int failures = 0;
-
         for (Kit kit : TEST_KITS) {
             for (int pattern = 0; pattern < 3; pattern++) {
                 int minStage = Integer.MAX_VALUE;
@@ -97,10 +96,10 @@ public final class MazePatternStage10SimulationTest {
                         .append(" MAX=").append(maxStage).append('\n');
             }
         }
-
         writeReport(report.toString(), "endurance");
         if (failures > 0) {
-            throw new RuntimeException("Endurance simulation had " + failures\n                    + " cases below stage " + ENDURANCE_STAGE + "\n" + report);
+            throw new RuntimeException("Endurance simulation had " + failures
+                    + " cases below stage " + ENDURANCE_STAGE + "\n" + report);
         }
     }
 
@@ -149,7 +148,7 @@ public final class MazePatternStage10SimulationTest {
         if (passed != total) {
             throw new RuntimeException(
                     "Stage-10 gate failed for kit=" + kit
-                    + ": passed=" + passed + "/" + total + "\n" + report);
+                    + ": passed=" + passed + "/" + total + "\\n" + report);
         }
     }
 
@@ -234,8 +233,7 @@ public final class MazePatternStage10SimulationTest {
                     .append(" p=").append(format(player.x)).append(",")
                     .append(format(player.y)).append(",").append(format(player.z))
                     .append(" v=").append(format(player.vx)).append(",")
-                    .append(format(player.vz)).append(" a=").append(actionText(action)).append("
-");
+                    .append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
             if (action.forward > 0.01D) result.movementTicks++;
 
             step(player, action, physical, result);
@@ -248,8 +246,7 @@ public final class MazePatternStage10SimulationTest {
                         + "," + format(player.z)
                         + " action=" + actionText(action)
                         + " targets=" + padSequenceText(pads)
-                        + " trace=" + tail(result.trace.toString(), 6000).replace("
-", " | ")
+                        + " trace=" + tail(result.trace.toString(), 6000).replace("\n", " | ")
                         + " controllerLog=" + tail(result.controllerLog.toString(), 6000);
                 return result;
             }

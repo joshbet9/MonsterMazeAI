@@ -202,7 +202,12 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        if (goal.row() != goalRow || goal.column() != goalColumn || regionRadius != goalRadius) {
+        int previousGoalRow = goalRow;
+        int previousGoalColumn = goalColumn;
+        boolean objectiveChanged = goal.row() != goalRow
+                || goal.column() != goalColumn
+                || regionRadius != goalRadius;
+        if (objectiveChanged) {
             clearRoute();
             clearGapCommitment();
             goalRow = goal.row();
@@ -222,7 +227,8 @@ public final class StableLiveMovementController {
             if (committed != null) return committed;
         }
 
-        GameState routingState = transitionRoutingState(state);
+        GameState routingState = transitionRoutingState(
+                state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
         int startRow = (int) Math.floor(state.player.x);
         int startColumn = (int) Math.floor(state.player.z);
         if (!inBounds(startRow, startColumn) || !inBounds(goal.row(), goal.column())) {
@@ -397,8 +403,7 @@ public final class StableLiveMovementController {
              * when a segment begins. This is important at a source-accurate
              * SafePad transition: SafePad.isOn() is centred on integer block
              * coordinates, whereas route cell centres are half-block positions.
-             * Only accept a modest offset; larger deviations still fail closed.
-             */
+             * Only accept a modest offset; larger deviations still fail closed.             */
             double nominalLaneX = startCellRow + 0.5;
             double nominalLaneZ = startCellColumn + 0.5;
             if (dirRow == 0) {
@@ -554,13 +559,36 @@ public final class StableLiveMovementController {
      * routing bridge. This is a transition bootstrap, not a permanent floor
      * mutation; subsequent observations remain authoritative.
      */
-    private GameState transitionRoutingState(GameState state) {
+    private GameState transitionRoutingState(GameState state,
+                                               int previousGoalRow, int previousGoalColumn) {
         int currentRow = (int) Math.floor(state.player.x);
         int currentColumn = (int) Math.floor(state.player.z);
         if (state.maze.isPhysicalFloor(currentRow, currentColumn)) return state;
 
         Cell oldPad = null;
         double bestDistance = Double.POSITIVE_INFINITY;
+
+        /*
+         * The live protocol does not carry the source plugin's historical
+         * SafePad list. At the exact pad-transition tick, the observer removes
+         * the previous 5x5 pad from physicalFloor and marks only the newly
+         * active pad. The player is nevertheless still standing on the old pad,
+         * so a raw-layout start cell can become "air" even though it is the
+         * authoritative physical surface under the player.
+         *
+         * The controller already knows the previous objective. Use that
+         * objective as the transition bridge when the player is still inside
+         * its source-accurate 5x5 surface. This is strictly limited to an
+         * objective change and therefore cannot turn arbitrary air into floor.
+         */
+        if (previousGoalRow >= 0 && previousGoalColumn >= 0
+                && PadModel.isOn(state.player, previousGoalRow + 0.5,
+                        GameState.PAD_SURFACE_Y, previousGoalColumn + 0.5)) {
+            oldPad = new Cell(previousGoalRow, previousGoalColumn);
+            bestDistance = sq(state.player.x - (previousGoalRow + 0.5))
+                    + sq(state.player.z - (previousGoalColumn + 0.5));
+        }
+
         for (Cell candidate : state.oldPads) {
             if (!PadModel.isOn(state.player, candidate.row() + 0.5,
                     GameState.PAD_SURFACE_Y, candidate.column() + 0.5)) continue;
@@ -797,8 +825,7 @@ public final class StableLiveMovementController {
              * when the threat meaningfully changes, without forcing a full
              * simulation for every floating-point packet variation.
              */
-            h = mix(h, monster.id);
-            h = mix(h, quantise(monster.x, 0.5D));
+            h = mix(h, monster.id);            h = mix(h, quantise(monster.x, 0.5D));
             h = mix(h, quantise(monster.y, 0.5D));
             h = mix(h, quantise(monster.z, 0.5D));
             h = mix(h, quantise(monster.vx, 0.05D));
@@ -1197,8 +1224,7 @@ public final class StableLiveMovementController {
         padEntryStartTick = Long.MIN_VALUE;
     }
 
-    private void clearRoute() {
-        route = null;
+    private void clearRoute() {        route = null;
         waypointIndex = 0;
         anchoredSegmentIndex = -1;
     }

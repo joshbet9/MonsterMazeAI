@@ -890,7 +890,16 @@ public final class FirstPadSpeedrunController {
             if (gapAction != null) return gapAction;
         }
 
-        boolean jumpPulse = true;
+        /*
+         * Jump-spam is the speed technique, but a new jump immediately before
+         * a known gap can put the player into the gap with the wrong phase.
+         * The real traces show the controller repeatedly arriving at a gap
+         * while already airborne. When grounded and a gap is within the next
+         * jump-flight envelope, take one W+sprint tick without Space so the
+         * current arc settles before the deliberate gap edge is executed.
+         */
+        boolean jumpPulse = !(state.player.grounded
+                && shouldDelayJumpForUpcomingGap(state, 3.25D));
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
@@ -2273,6 +2282,22 @@ public final class FirstPadSpeedrunController {
         // to cross the source block edge, so waiting for exactly +0.50 progress
         // can miss the only grounded jump-input window.
         return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+    }
+
+    private boolean shouldDelayJumpForUpcomingGap(
+            LegacyWorldObservation state, double maxDistance) {
+        int end = Math.min(routeLength - 1, routeIndex + 8);
+        for (int edge = routeIndex + 1; edge < end; edge++) {
+            if (edgeType(edge) != EdgeType.ONE_BLOCK_GAP) continue;
+
+            double gapX = worldX(routeRows[edge], state.center.x);
+            double gapZ = worldZ(routeColumns[edge], state.center.z);
+            double distance = Math.hypot(
+                    state.player.x - gapX, state.player.z - gapZ);
+            if (distance <= maxDistance) return true;
+            if (distance > maxDistance + 2.0D) break;
+        }
+        return false;
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {

@@ -518,8 +518,9 @@ public final class StableLiveMovementController {
 
         GameState routingState = state.copyForSimulation();
         routingState.maze = state.maze.copy();
-        for (int row = oldPad.row() - 2; row <= oldPad.row() + 2; row++) {
-            for (int column = oldPad.column() - 2; column <= oldPad.column() + 2; column++) {
+        for (int row = Math.max(0, oldPad.row() - 2); row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, oldPad.row() + 2); row++) {
+            for (int column = Math.max(0, oldPad.column() - 2);
+                 column <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, oldPad.column() + 2); column++) {
                 routingState.maze.setPhysicalFloor(row, column, true);
             }
         }

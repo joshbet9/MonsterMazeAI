@@ -564,12 +564,14 @@ public final class FirstPadSpeedrunController {
         if (!state.player.grounded
                 && routePositionOnCommittedEnvelope(state)
                 && !gapExecutionActive) {
-            float airYawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+            float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
+            float airborneYawError = normalise(airborneDesiredYaw - state.player.yaw);
+            float airYawDelta = clamp(airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
             if (state.worldTick % 10L == 0L) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] AIRBORNE ROUTE CONTINUE"
                         + " tick=" + state.worldTick
                         + " routeIndex=" + routeIndex
-                        + " yawError=" + format(yawError)
+                        + " yawError=" + format(airborneYawError)
                         + " yawDelta=" + format(airYawDelta)
                         + " pos=" + format(state.player.x) + "," + format(state.player.y)
                         + "," + format(state.player.z));
@@ -2475,6 +2477,50 @@ public final class FirstPadSpeedrunController {
 
         return playerFootprintOverlapsCell(
                 state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
+    }
+
+    private float airborneCornerYaw(LegacyWorldObservation state, float currentEdgeYaw) {
+        if (routeRows == null || routeColumns == null
+                || routeIndex < 0 || routeIndex >= routeLength - 1
+                || gapExecutionActive) {
+            return currentEdgeYaw;
+        }
+
+        double ax = worldX(routeRows[routeIndex], state.center.x);
+        double az = worldZ(routeColumns[routeIndex], state.center.z);
+        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+        double ex = bx - ax;
+        double ez = bz - az;
+        double lengthSquared = ex * ex + ez * ez;
+        if (lengthSquared <= 1.0E-9D) return currentEdgeYaw;
+
+        double px = state.player.x - ax;
+        double pz = state.player.z - az;
+        double progress = (px * ex + pz * ez) / lengthSquared;
+        double lateralX = px - ex * progress;
+        double lateralZ = pz - ez * progress;
+        double lateralDistance = Math.hypot(lateralX, lateralZ);
+        double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
+
+        /*
+         * When sprint-jump momentum carries the player laterally around a
+         * corner, continuing to face the old discrete edge can make the motor
+         * fly past the next corridor and then trigger recovery. During flight
+         * the safest correction is the next waypoint itself: steer toward the
+         * physical destination while preserving forward input.
+         */
+        if (lateralDistance <= 0.55D || distanceToNext > 2.50D) {
+            return currentEdgeYaw;
+        }
+
+        float targetYaw = (float) Math.toDegrees(
+                Math.atan2(-(bx - state.player.x), bz - state.player.z));
+        float turn = normalise(targetYaw - currentEdgeYaw);
+        if (Math.abs(turn) <= 5.0F) return currentEdgeYaw;
+
+        return normalise(currentEdgeYaw
+                + clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP));
     }
 
     private float cornerLeadYaw(LegacyWorldObservation state, float currentEdgeYaw) {

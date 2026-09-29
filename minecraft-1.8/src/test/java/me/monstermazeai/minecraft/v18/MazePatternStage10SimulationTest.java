@@ -96,14 +96,14 @@ public final class MazePatternStage10SimulationTest {
                         + " maxSpeed=" + format(result.maxSpeed)
                         + " failure=" + result.failure;
                 System.err.println("SIM " + line);
-                report.append(line).append('\\n');
+                report.append(line).append('\n');
             }
 
             report.append("Maze ").append(pattern + 1)
                     .append(" kit=").append(kit)
                     .append(" SUMMARY passed=").append(patternPassed).append("/")
                     .append(SEEDS_PER_PATTERN)
-                    .append('\\n');
+                    .append('\n');
         }
 
         System.err.println(report.toString());

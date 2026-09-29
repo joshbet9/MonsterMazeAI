@@ -88,23 +88,19 @@ public final class MazePatternStage10SimulationTest {
                             + " stage=" + result.stage + " pads=" + result.padsReached
                             + " ticks=" + result.ticks + " failure=" + result.failure;
                     System.err.println(line);
-                    report.append(line).append('
-');
+                    report.append(line).append('\n');
                     if (result.stage < ENDURANCE_STAGE) failures++;
                 }
                 report.append("ENDURANCE Maze ").append(pattern + 1)
                         .append(" kit=").append(kit)
                         .append(" MIN=").append(minStage)
-                        .append(" MAX=").append(maxStage).append('
-');
+                        .append(" MAX=").append(maxStage).append('\n');
             }
         }
 
         writeReport(report.toString(), "endurance");
         if (failures > 0) {
-            throw new RuntimeException("Endurance simulation had " + failures
-                    + " cases below stage " + ENDURANCE_STAGE + "
-" + report);
+            throw new RuntimeException("Endurance simulation had " + failures\n                    + " cases below stage " + ENDURANCE_STAGE + "\n" + report);
         }
     }
 
@@ -137,16 +133,14 @@ public final class MazePatternStage10SimulationTest {
                         + " maxSpeed=" + format(result.maxSpeed)
                         + " failure=" + result.failure;
                 System.err.println("SIM " + line);
-                report.append(line).append('
-');
+                report.append(line).append('\n');
             }
 
             report.append("Maze ").append(pattern + 1)
                     .append(" kit=").append(kit)
                     .append(" SUMMARY passed=").append(patternPassed).append("/")
                     .append(SEEDS_PER_PATTERN)
-                    .append('
-');
+                    .append('\n');
         }
 
         System.err.println(report.toString());
@@ -155,8 +149,7 @@ public final class MazePatternStage10SimulationTest {
         if (passed != total) {
             throw new RuntimeException(
                     "Stage-10 gate failed for kit=" + kit
-                    + ": passed=" + passed + "/" + total + "\
-" + report);
+                    + ": passed=" + passed + "/" + total + "\n" + report);
         }
     }
 

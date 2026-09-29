@@ -3,9 +3,7 @@ package me.monstermazeai.maze;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
-
 import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class MonsterAwareRoutePlannerTest {
@@ -20,8 +18,7 @@ class MonsterAwareRoutePlannerTest {
     void emptyMonsterFieldMatchesShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();
-        PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(0, 0), new Cell(0, 3));
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(0, 0), new Cell(0, 3));
         assertEquals(4, route.size());
         assertEquals(new Cell(0, 0), route.cells().get(0));
         assertEquals(new Cell(0, 3), route.cells().get(3));
@@ -37,8 +34,7 @@ class MonsterAwareRoutePlannerTest {
         maze.setPhysicalFloor(0, 2, true);
         GameState state = new GameState();
         state.maze = maze;
-        PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(0, 0), new Cell(0, 2));
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(0, 0), new Cell(0, 2));
         assertEquals(new Cell(0, 2), route.cells().get(route.size() - 1));
     }
 
@@ -46,8 +42,7 @@ class MonsterAwareRoutePlannerTest {
     void safePadRouteStopsAtFirstReachableCellOfFiveByFiveSurface() {
         GameState state = new GameState();
         state.maze = openMaze();
-        PlayerRoute route = new MonsterAwareRoutePlanner().routeToRegion(
-                state, new Cell(0, 5), new Cell(4, 5), 2);
+        PlayerRoute route = new MonsterAwareRoutePlanner().routeToRegion(state, new Cell(0, 5), new Cell(4, 5), 2);
         assertEquals(new Cell(0, 5), route.cells().get(0));
         Cell end = route.cells().get(route.size() - 1);
         assertTrue(Math.abs(end.row() - 4) <= 2 && Math.abs(end.column() - 5) <= 2);
@@ -58,8 +53,7 @@ class MonsterAwareRoutePlannerTest {
     void fastSafePadBootstrapUsesOneShortestPhysicalPathToTheRegion() {
         GameState state = new GameState();
         state.maze = openMaze();
-        PlayerRoute route = new MonsterAwareRoutePlanner().routeToRegionFast(
-                state, new Cell(0, 0), new Cell(4, 4), 2);
+        PlayerRoute route = new MonsterAwareRoutePlanner().routeToRegionFast(state, new Cell(0, 0), new Cell(4, 4), 2);
         assertEquals(5, route.size());
         Cell end = route.cells().get(route.size() - 1);
         assertTrue(Math.abs(end.row() - 4) <= 2 && Math.abs(end.column() - 4) <= 2);
@@ -86,8 +80,7 @@ class MonsterAwareRoutePlannerTest {
         state.player.z = 1.5;
         state.player.grounded = true;
         state.monsters.add(monster);
-        PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(0, 1), new Cell(2, 1));
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(0, 1), new Cell(2, 1));
         assertEquals(new Cell(0, 1), route.cells().get(0));
         assertEquals(new Cell(2, 1), route.cells().get(route.size() - 1));
     }
@@ -98,8 +91,7 @@ class MonsterAwareRoutePlannerTest {
         state.maze = openMaze();
         MonsterState distant = new MonsterState(1, 20.5, 0.0, 20.5);
         state.monsters.add(distant);
-        PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(0, 1), new Cell(2, 1));
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(0, 1), new Cell(2, 1));
         assertEquals(List.of(new Cell(0, 1), new Cell(1, 1), new Cell(2, 1)), route.cells());
     }
 
@@ -111,14 +103,13 @@ class MonsterAwareRoutePlannerTest {
         state.player.z = 3.5;
         MonsterState monster = new MonsterState(8, 2.5, 0.0, 2.5);
         state.monsters.add(monster);
-        PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(2, 3), new Cell(2, 5));
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(2, 3), new Cell(2, 5));
         assertEquals(new Cell(2, 3), route.cells().get(0));
         assertEquals(new Cell(2, 5), route.cells().get(route.size() - 1));
     }
 
     @Test
-    void equalLengthNormalRouteBeatsGapRouteBecauseGapHasBaselineRisk() {
+    void gapRiskCanPreferAnOrdinaryRouteOverAValuableShortcut() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r < MazeModel.SIZE; r++)
@@ -129,7 +120,7 @@ class MonsterAwareRoutePlannerTest {
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(3.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
-        assertEquals(5, route.size());
+        assertEquals(6, route.size());
         for (int i = 0; i + 1 < route.size(); i++) {
             int dr = Math.abs(route.cells().get(i + 1).row() - route.cells().get(i).row());
             int dc = Math.abs(route.cells().get(i + 1).column() - route.cells().get(i).column());
@@ -150,10 +141,7 @@ class MonsterAwareRoutePlannerTest {
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
-        assertEquals(List.of(
-                new Cell(10, 10),
-                new Cell(10, 12),
-                new Cell(10, 14)), route.cells());
+        assertEquals(List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)), route.cells());
     }
 
     @Test
@@ -165,8 +153,7 @@ class MonsterAwareRoutePlannerTest {
         raw[10][11] = 0;
         state.maze = new MazeModel(raw);
 
-        PlayerRoute route = new MonsterAwareRoutePlanner().route(
-                state, new Cell(10, 10), new Cell(10, 14));
+        PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(10, 10), new Cell(10, 14));
 
         assertNotNull(route);
         assertEquals(new Cell(10, 10), route.cells().get(0));

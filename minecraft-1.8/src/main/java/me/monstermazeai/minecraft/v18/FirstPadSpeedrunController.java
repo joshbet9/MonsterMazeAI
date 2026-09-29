@@ -2348,6 +2348,17 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * A genuine one-block gap owns its edge before commitment as well.
+         * Generic waypoint/overshoot capture must not advance across the
+         * unsupported middle block, otherwise the gap controller never gets a
+         * chance to arm the jump and the route is re-indexed onto the landing
+         * side while the player is still airborne.
+         */
+        if (isCurrentEdgeGap(state)) {
+            return;
+        }
+
+        /*
          * The speedrun can move roughly half a block per client tick. A
          * one-cell waypoint can therefore be crossed between observations.
          * Route progress is edge-based: once the player has clearly passed a

@@ -8,36 +8,27 @@ import me.monstermazeai.player.Action;
 import java.util.*;
 import java.util.stream.IntStream;
 
-/**
- * Physical route planner for Monster Maze.
- *
- * The route graph is deliberately mob-agnostic. It generates a small set of
- * physically valid alternatives, then evaluates those alternatives by running
- * the source-faithful movement/contact simulator against the observed monster
- * state. A monster therefore matters only when the simulated trajectory
- * actually encounters it.
- *
- * Selection is lexicographic rather than a hand-tuned weighted risk formula:
- * 1. successful Safe Pad arrival;
- * 2. earliest simulated arrival tick;
- * 3. highest remaining health;
- * 4. lowest damage taken;
- * 5. shortest physical route as a deterministic tie-break.
- */
 public final class MonsterAwareRoutePlanner {
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
+    private final GapJumpPolicy gapJumpPolicy;
 
-    /*
-     * Candidate topology is independent of monster positions. Cache it by the
-     * physical start cell, objective region and the maze's compact dynamic
-     * signature, then re-evaluate the cached corridors against every fresh
-     * monster observation. This preserves continuous replanning without paying
-     * for repeated A-star/BFS route generation when only monsters moved.
-     */
+    public MonsterAwareRoutePlanner() {
+        this(GapJumpPolicy.BASELINE);
+    }
+
+    public MonsterAwareRoutePlanner(GapJumpPolicy gapJumpPolicy) {
+        if (gapJumpPolicy == null) throw new IllegalArgumentException("gapJumpPolicy");
+        this.gapJumpPolicy = gapJumpPolicy;
+    }
+
+    public GapJumpPolicy gapJumpPolicy() {
+        return gapJumpPolicy;
+    }
+
     private List<PlayerRoute> cachedCandidates = List.of();
     private long cachedTopologySignature = Long.MIN_VALUE;
     private int cachedStartRow = Integer.MIN_VALUE;
@@ -47,42 +38,38 @@ public final class MonsterAwareRoutePlanner {
     private int cachedRegionRadius = Integer.MIN_VALUE;
     private boolean cachedRegionGoal;
 
-    /**
-     * Low-latency physical bootstrap. It intentionally ignores monster risk for
-     * this first command so the live motor can begin turning/driving while the
-     * next observation performs the full source-faithful evaluation.
-     */
     public PlayerRoute routeFast(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
-        /*
-         * Bootstrap is on the live-control critical path. A single BFS is
-         * sufficient to obtain a physically valid cardinal route; K-route
-         * generation is reserved for the background source-faithful planner.
-         */
-        List<Cell> path = new PlayerPathfinder().shortestPath(state.maze, start, goal);
-        if (path.isEmpty()) throw new IllegalArgumentException("No physical route from start to goal");
-        return new PlayerRoute(path);
+
+        PlayerPathfinder pathfinder = new PlayerPathfinder();
+        PlayerRoute chosen = chooseByGapRisk(
+                pathfinder.shortestPathWithoutGaps(state.maze, start, goal),
+                pathfinder.shortestPath(state.maze, start, goal));
+        if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
+        return chosen;
     }
 
-    /** Low-latency Safe Pad bootstrap counterpart. */
     public PlayerRoute routeToRegionFast(GameState state, Cell start, Cell regionCenter, int radius) {
         validate(state, start, regionCenter);
         if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+
         if (me.monstermazeai.game.PadModel.isOn(state.player,
                 regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
                 regionCenter.column() + 0.5)) {
             return new PlayerRoute(List.of(start));
         }
+
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        List<Cell> path = pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius);
-        if (path.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
-        return new PlayerRoute(path);
+        PlayerRoute chosen = chooseByGapRisk(
+                pathfinder.shortestPathToRegionWithoutGaps(state.maze, start, regionCenter, radius),
+                pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius));
+        if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
+        return chosen;
     }
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
-
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
         List<PlayerRoute> candidates = cachedCandidatesFor(
@@ -90,11 +77,6 @@ public final class MonsterAwareRoutePlanner {
         return choose(state, candidates, goal, false, 0);
     }
 
-    /**
-     * Finds a physical route to the first reachable cell of the Safe Pad
-     * region, then evaluates alternate corridors against the live monster
-     * field. The beacon is only the region anchor.
-     */
     public PlayerRoute routeToRegion(GameState state, Cell start, Cell regionCenter, int radius) {
         validate(state, start, regionCenter);
         if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
@@ -111,8 +93,7 @@ public final class MonsterAwareRoutePlanner {
     }
 
     private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,
-                                                       int regionRadius, int limit,
-                                                       boolean regionGoal) {
+                                                    int regionRadius, int limit, boolean regionGoal) {
         long topology = state.maze.dynamicSignature();
         if (topology == cachedTopologySignature
                 && start.row() == cachedStartRow && start.column() == cachedStartColumn
@@ -125,37 +106,36 @@ public final class MonsterAwareRoutePlanner {
 
         List<PlayerRoute> candidates;
         if (!regionGoal) {
-            candidates = alternatives.generate(state.maze, start, goal, limit);
+            ArrayList<PlayerRoute> generated = new ArrayList<>();
+            List<Cell> normal = new PlayerPathfinder().shortestPathWithoutGaps(state.maze, start, goal);
+            if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
+            generated.addAll(alternatives.generate(state.maze, start, goal, limit));
+            candidates = distinct(generated, limit * 3);
         } else {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
             Set<String> seen = new HashSet<>();
             PlayerPathfinder pathfinder = new PlayerPathfinder();
 
-            // Evaluate the shortest physical route to every physical cell in
-            // the Safe Pad region, not just the beacon centre.
             for (int r = goal.row() - regionRadius; r <= goal.row() + regionRadius; r++) {
                 for (int c = goal.column() - regionRadius; c <= goal.column() + regionRadius; c++) {
                     Cell target = new Cell(r, c);
                     if (r < 0 || r >= MazeModel.SIZE || c < 0 || c >= MazeModel.SIZE
                             || !state.maze.isPhysicalFloor(r, c)) continue;
 
-                    List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
-                    if (path.isEmpty()) continue;
-                    addCandidate(generated, seen, new PlayerRoute(path));
+                    List<Cell> normalPath = pathfinder.shortestPathWithoutGaps(state.maze, start, target);
+                    if (!normalPath.isEmpty()) addCandidate(generated, seen, new PlayerRoute(normalPath));
 
-                    if (generated.size() < limit) {
-                        for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {
-                            addCandidate(generated, seen, alt);
-                            if (generated.size() >= limit) break;
-                        }
+                    List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
+                    if (!path.isEmpty()) addCandidate(generated, seen, new PlayerRoute(path));
+
+                    for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {
+                        addCandidate(generated, seen, alt);
                     }
                 }
             }
 
-            if (generated.isEmpty()) {
-                throw new IllegalArgumentException("No physical route to Safe Pad region");
-            }
-            generated.sort(Comparator.comparingInt(PlayerRoute::size));
+            if (generated.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
+            generated.sort(this::compareByGapRisk);
             if (generated.size() > limit) {
                 generated = new ArrayList<>(generated.subList(0, limit));
             }
@@ -183,16 +163,6 @@ public final class MonsterAwareRoutePlanner {
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
-        /*
-         * If no observed monster is inside the player's 20-block interaction
-         * radius, source-faithful monster simulation cannot change the immediate
-         * decision. Select the shortest physical candidate directly.
-         *
-         * This is a structural fast path, not a reduction in replanning
-         * frequency: fresh observations still reach this method immediately,
-         * and a monster entering the local interaction radius takes the full
-         * simulator on that fresh observation.
-         */
         boolean hasRelevantMonster = false;
         for (var monster : state.monsters) {
             if (MonsterRelevance.withinPlayerRadius(
@@ -203,12 +173,6 @@ public final class MonsterAwareRoutePlanner {
         }
         if (!hasRelevantMonster) return shortest(candidates);
 
-        /*
-         * Candidate routes are independent simulations. Evaluate them in parallel
-         * so the AI can use the available CPU cores instead of serialising the
-         * most expensive part of planning. Results are then selected in candidate
-         * order so route choice remains deterministic.
-         */
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
         IntStream.range(0, candidates.size()).parallel().forEach(i -> {
             results[i] = simulator.simulate(
@@ -232,25 +196,71 @@ public final class MonsterAwareRoutePlanner {
                            TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute) {
         if (candidate.reached() != incumbent.reached()) return candidate.reached();
 
-        if (candidate.reached() && candidate.arrivalTicks() != incumbent.arrivalTicks()) {
-            return candidate.arrivalTicks() < incumbent.arrivalTicks();
+        if (candidate.reached()) {
+            double candidateTime = candidate.arrivalTicks()
+                    + gapJumpPolicy.riskCostPerGap() * gapCount(candidateRoute);
+            double incumbentTime = incumbent.arrivalTicks()
+                    + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
+            int timeCompare = Double.compare(candidateTime, incumbentTime);
+            if (timeCompare != 0) return timeCompare < 0;
         }
 
         if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {
             return candidate.remainingHealth() > incumbent.remainingHealth();
         }
-
         if (Double.compare(candidate.damageTaken(), incumbent.damageTaken()) != 0) {
             return candidate.damageTaken() < incumbent.damageTaken();
         }
 
+        int gapCompare = Integer.compare(gapCount(candidateRoute), gapCount(incumbentRoute));
+        if (gapCompare != 0) return gapCompare < 0;
         return candidateRoute.size() < incumbentRoute.size();
     }
 
+    private PlayerRoute chooseByGapRisk(List<Cell> normalPath, List<Cell> gapAwarePath) {
+        PlayerRoute normal = normalPath.isEmpty() ? null : new PlayerRoute(normalPath);
+        PlayerRoute gapAware = gapAwarePath.isEmpty() ? null : new PlayerRoute(gapAwarePath);
+        if (normal == null) return gapAware;
+        if (gapAware == null) return normal;
+        return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
+    }
 
-    private static PlayerRoute shortest(List<PlayerRoute> candidates) {
+    private int compareByGapRisk(PlayerRoute a, PlayerRoute b) {
+        int cost = Double.compare(routeCost(a), routeCost(b));
+        if (cost != 0) return cost;
+        int gaps = Integer.compare(gapCount(a), gapCount(b));
+        if (gaps != 0) return gaps;
+        return Integer.compare(a.size(), b.size());
+    }
+
+    private double routeCost(PlayerRoute route) {
+        return gapJumpPolicy.routeCost(route.size(), gapCount(route));
+    }
+
+    private static int gapCount(PlayerRoute route) {
+        int count = 0;
+        List<Cell> cells = route.cells();
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            int dr = Math.abs(cells.get(i + 1).row() - cells.get(i).row());
+            int dc = Math.abs(cells.get(i + 1).column() - cells.get(i).column());
+            if ((dr == 2 && dc == 0) || (dc == 2 && dr == 0)) count++;
+        }
+        return count;
+    }
+
+    private List<PlayerRoute> distinct(List<PlayerRoute> routes, int limit) {
+        ArrayList<PlayerRoute> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (PlayerRoute route : routes) {
+            addCandidate(out, seen, route);
+            if (out.size() >= limit) break;
+        }
+        return out;
+    }
+
+    private PlayerRoute shortest(List<PlayerRoute> candidates) {
         return candidates.stream()
-                .min(Comparator.comparingInt(PlayerRoute::size))
+                .min(this::compareByGapRisk)
                 .orElseThrow(() -> new IllegalArgumentException("No route candidates"));
     }
 
@@ -263,25 +273,13 @@ public final class MonsterAwareRoutePlanner {
         if (seen.add(key.toString())) candidates.add(route);
     }
 
-    private static boolean insideRegion(Cell cell, Cell center, int radius) {
-        return Math.abs(cell.row() - center.row()) <= radius
-                && Math.abs(cell.column() - center.column()) <= radius;
-    }
-
     private static void validate(GameState state, Cell start, Cell goal) {
-        if (state == null || state.maze == null) {
-            throw new IllegalArgumentException("Maze state is required");
-        }
-        if (start == null || goal == null) {
-            throw new IllegalArgumentException("Start and goal are required");
-        }
+        if (state == null || state.maze == null) throw new IllegalArgumentException("Maze state is required");
+        if (start == null || goal == null) throw new IllegalArgumentException("Start and goal are required");
         if (!state.maze.isPhysicalFloor(start.row(), start.column())) {
             throw new IllegalArgumentException("Start is not physical floor: " + start);
         }
         if (!state.maze.isPhysicalFloor(goal.row(), goal.column())) {
-            // Region centres may be an anchor whose exact block is not the
-            // player's required destination, so callers to routeToRegion can
-            // still use it. Exact route() requires a real floor goal.
             throw new IllegalArgumentException("Goal is not physical floor: " + goal);
         }
     }

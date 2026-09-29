@@ -124,7 +124,7 @@ public final class MazePatternStage10SimulationTest {
         Result result = new Result();
         result.failure = "MAX_STAGE_NOT_REACHED";
 
-        PlayerState player = new PlayerState();
+        SimPlayer player = new SimPlayer();
         // Real game starts on the central SafePad. The first route benchmark
         // historically used this same centre-side spawn coordinate.
         player.x = worldX(50);
@@ -253,16 +253,18 @@ public final class MazePatternStage10SimulationTest {
     private static void step(
             SimPlayer p, LegacyAction action, boolean[][] physical, Result result) {
         /*
-         * This is the centered-world equivalent of common.LegacyMovementModel:
-         * yaw -> jumpTicks decrement/check -> 0.98 input damping -> moveFlying
-         * -> position integration -> gravity/vertical drag -> AABB support ->
-         * horizontal friction. The equations were calibrated against the
-         * tick-level v18 OBS traces from the real client runs (including the
-         * observed ~0.3-0.5 block/tick normal movement and much larger
-         * displacement only on teleport/knockback transitions).
+         * Centered-world equivalent of the common 1.8.9 movement model used by
+         * MonsterMazeAI. The ordering is intentionally the same as the runtime:
+         * yaw -> jump cooldown -> jump impulse -> 0.98 input damping ->
+         * moveFlying -> position -> gravity/vertical drag -> physical AABB
+         * support -> horizontal friction.
+         *
+         * The numerical envelope is checked against the tick-level v18 OBS
+         * traces collected from real Minecraft runs; those traces are our
+         * empirical calibration source for normal displacement/velocity and
+         * heading behaviour.
          */
         p.yaw = wrap(p.yaw + action.yawDelta);
-
         boolean groundedAtStart = p.grounded;
         double friction = groundedAtStart ? 0.60D * 0.91D : 0.91D;
 
@@ -287,18 +289,14 @@ public final class MazePatternStage10SimulationTest {
             magnitude = Math.sqrt(magnitude);
             double factor;
             if (groundedAtStart) {
-                double groundMoveFactor =
-                        0.10D * (action.sprint ? 1.30D : 1.0D);
-                factor = groundMoveFactor
-                        * (0.16277136D / Math.pow(friction, 3.0D));
+                double groundMoveFactor = 0.10D * (action.sprint ? 1.30D : 1.0D);
+                factor = groundMoveFactor * (0.16277136D / Math.pow(friction, 3.0D));
             } else {
-                factor = 0.02D
-                        * (action.sprint ? 1.30D : 1.0D);
+                factor = 0.02D * (action.sprint ? 1.30D : 1.0D);
             }
             double scale = factor / Math.max(1.0D, magnitude);
             inputStrafe *= scale;
             inputForward *= scale;
-
             double sin = Math.sin(radians);
             double cos = Math.cos(radians);
             p.vx += inputStrafe * cos - inputForward * sin;
@@ -307,14 +305,15 @@ public final class MazePatternStage10SimulationTest {
 
         p.x += p.vx;
         p.z += p.vz;
-
         p.y += p.vy;
+
         if (!groundedAtStart || !p.grounded) {
             p.vy -= 0.08D;
             p.vy *= 0.9800000190734863D;
         }
 
-        if (p.y <= 0.0D && p.vy <= 0.0D && footprintSupported(p.x, p.z, physical)) {
+        if (p.y <= 0.0D && p.vy <= 0.0D
+                && footprintSupported(p.x, p.z, physical)) {
             p.y = 0.0D;
             p.vy = 0.0D;
             p.grounded = true;
@@ -324,7 +323,6 @@ public final class MazePatternStage10SimulationTest {
 
         p.vx *= friction;
         p.vz *= friction;
-
         if (Math.abs(p.vx) < 0.005D) p.vx = 0.0D;
         if (Math.abs(p.vy) < 0.005D) p.vy = 0.0D;
         if (Math.abs(p.vz) < 0.005D) p.vz = 0.0D;
@@ -489,14 +487,14 @@ public final class MazePatternStage10SimulationTest {
         return dr * dr + dc * dc;
     }
 
-    private static boolean isOnPad(PlayerState p, Cell pad) {
+    private static boolean isOnPad(SimPlayer p, Cell pad) {
         return Math.abs(p.x - worldX(pad.row)) < 2.5D
                 && Math.abs(p.z - worldZ(pad.column)) < 2.5D
                 && p.y > -1.0D
                 && p.y < 4.0D;
     }
 
-    private static double distanceSqToPad(PlayerState p, Cell pad) {
+    private static double distanceSqToPad(SimPlayer p, Cell pad) {
         double dx = p.x - worldX(pad.row);
         double dz = p.z - worldZ(pad.column);
         return dx * dx + dz * dz;

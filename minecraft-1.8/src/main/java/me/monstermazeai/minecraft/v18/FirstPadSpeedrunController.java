@@ -2373,7 +2373,7 @@ public final class FirstPadSpeedrunController {
                 && Math.hypot(
                 state.player.x - worldX(nextRow, state.center.x),
                 state.player.z - worldZ(nextColumn, state.center.z))
-                <= 1.00D
+                <= 1.25D
                 && canTraverseEdge(
                 state, nextRow, nextColumn,
                 routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);

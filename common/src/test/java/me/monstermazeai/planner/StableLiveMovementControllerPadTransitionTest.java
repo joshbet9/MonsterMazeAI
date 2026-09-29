@@ -83,7 +83,7 @@ class StableLiveMovementControllerPadTransitionTest {
         state.player.x = 10.5;
         state.player.z = 10.5;
         state.player.y = 0.0;
-        state.player.yaw = 0.0F;
+        state.player.yaw = -90.0F;
         state.player.grounded = true;
 
         StableLiveMovementController controller = new StableLiveMovementController();

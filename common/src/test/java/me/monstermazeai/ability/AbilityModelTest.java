@@ -171,7 +171,7 @@ class AbilityModelTest {
         s.phaseTicksRemaining = 20;
         s.player.x = 0.5;
         s.player.z = 0.5;
-        s.monsters.add(new MonsterState(10, 1.4, 0.0, 0.5));
+        s.monsters.add(new MonsterState(10, -0.4, 0.0, 0.5));
 
         assertFalse(AbilityDecision.shouldUse(s, "NO_ROUTE", "positive mob KB available"));
     }

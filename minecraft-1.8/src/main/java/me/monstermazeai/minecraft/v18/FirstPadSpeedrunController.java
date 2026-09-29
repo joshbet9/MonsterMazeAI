@@ -2529,14 +2529,16 @@ public final class FirstPadSpeedrunController {
             }
 
             /*
-             * A nearest-cell match is not sufficient at sprint speed: the
-             * player's centre can be close to a future cell while its 0.60m
-             * footprint is already outside the continuous corridor. Only
-             * re-index when the complete footprint is physically supported.
+             * A nearest-cell match is not sufficient at sprint speed, but the
+             * converse matters too: routeSupportsFootprint() intentionally
+             * accepts ANY currently committed route cell, so using it here can
+             * advance onto a future waypoint while the player's body is still
+             * supported only by the previous cell. Require actual footprint
+             * capture of the selected candidate itself.
              */
             if (bestIndex > routeIndex
-                    && routeSupportsFootprint(state, state.player.x, state.player.z,
-                            bestIndex)) {
+                    && playerFootprintOverlapsCell(
+                    state, routeRows[bestIndex], routeColumns[bestIndex], 0.05D)) {
                 int oldIndex = routeIndex;
                 routeIndex = bestIndex;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;

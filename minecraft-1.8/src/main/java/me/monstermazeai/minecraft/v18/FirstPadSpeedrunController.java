@@ -944,12 +944,15 @@ public final class FirstPadSpeedrunController {
          * player position.
          */
         int[] physicalStart;
-        if (standingOnPreviousPad
-                && inBounds(nominalStartRow, nominalStartColumn)
-                && state.physicalFloor[nominalStartRow][nominalStartColumn]) {
+        if (standingOnPreviousPad) {
+            /*
+             * The transition predicate already proves that the player is
+             * inside the previous SafePad. Use the observed logical cell as
+             * the graph seed even if the observer has already stopped exposing
+             * that old pad through physicalFloor. routeCellSupported() treats
+             * this first node as the legitimate previous-pad source.
+             */
             physicalStart = new int[] {nominalStartRow, nominalStartColumn};
-        } else if (standingOnPreviousPad) {
-            physicalStart = new int[] {previousPadCenterRow, previousPadCenterColumn};
         } else {
             physicalStart = findNearestPhysicalStartCell(
                     state, nominalStartRow, nominalStartColumn, false);
@@ -2657,12 +2660,15 @@ public final class FirstPadSpeedrunController {
         double distanceToWaypoint = Math.hypot(state.player.x - bx, state.player.z - bz);
 
         /*
-         * Begin the cursor turn while the player still has runway. A single
-         * 30-degree pulse is safe against the current edge's forward-vector
-         * constraint (cos(30) ~= 0.866 > 0.85), while the next observation
-         * can either capture the waypoint or continue the same lead.
+         * Only begin the lead once the player is genuinely near the waypoint.
+         * Starting at 45% edge progress let the 30-degree cursor budget fight
+         * the current edge for several ticks at sprint speed. The resulting
+         * +/-30-degree oscillation could push the continuous player body off a
+         * one-cell corridor even though both discrete route edges were valid.
+         * A near-waypoint lead preserves the speed advantage without making the
+         * current edge compete with the following edge too early.
          */
-        if (progress < 0.45D && distanceToWaypoint > 1.0D) {
+        if (progress < 0.65D && distanceToWaypoint > 0.80D) {
             return currentEdgeYaw;
         }
 

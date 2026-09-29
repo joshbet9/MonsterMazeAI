@@ -2468,7 +2468,15 @@ public final class FirstPadSpeedrunController {
                 }
             }
 
-            if (bestIndex > routeIndex) {
+            /*
+             * A nearest-cell match is not sufficient at sprint speed: the
+             * player's centre can be close to a future cell while its 0.60m
+             * footprint is already outside the continuous corridor. Only
+             * re-index when the complete footprint is physically supported.
+             */
+            if (bestIndex > routeIndex
+                    && routeSupportsFootprint(state, state.player.x, state.player.z,
+                            bestIndex)) {
                 int oldIndex = routeIndex;
                 routeIndex = bestIndex;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;

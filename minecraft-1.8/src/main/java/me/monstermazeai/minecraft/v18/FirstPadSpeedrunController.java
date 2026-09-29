@@ -928,20 +928,32 @@ public final class FirstPadSpeedrunController {
                 && Math.abs(nominalStartColumn - previousPadCenterColumn) <= PAD_RADIUS;
 
         /*
-         * During a pad transition the player's continuous position can already
-         * be several tenths of a block inside a neighbouring logical cell,
-         * while the old SafePad is still the actual launch surface. The route
-         * graph represents that launch surface by the previous pad centre.
-         * Starting A* from the player's nominal cell here can therefore create
-         * an invalid synthetic start: canTraverseEdge() only permits the
-         * previous-pad exception when the source node is the previous pad
-         * centre itself. Force the graph start back to that authoritative
-         * previous-pad seed whenever the player is still inside it.
+         * During a pad transition the player may already have crossed several
+         * logical cells while still physically standing on the previous
+         * SafePad. If that observed nominal cell is itself part of the old
+         * pad's live physical surface, it is the correct launch state and
+         * should seed A* directly. Re-anchoring to the old pad centre creates
+         * a route behind the player's actual momentum, which can immediately
+         * produce an overshoot/replan cycle during the stationary heading
+         * alignment.
+         *
+         * Only fall back to the previous-pad centre when the observed nominal
+         * cell is not represented by the transition's physical floor. That
+         * preserves the synthetic previous-pad exception for the genuinely
+         * missing logical representation without discarding valid continuous
+         * player position.
          */
-        int[] physicalStart = standingOnPreviousPad
-                ? new int[] {previousPadCenterRow, previousPadCenterColumn}
-                : findNearestPhysicalStartCell(
-                        state, nominalStartRow, nominalStartColumn, false);
+        int[] physicalStart;
+        if (standingOnPreviousPad
+                && inBounds(nominalStartRow, nominalStartColumn)
+                && state.physicalFloor[nominalStartRow][nominalStartColumn]) {
+            physicalStart = new int[] {nominalStartRow, nominalStartColumn};
+        } else if (standingOnPreviousPad) {
+            physicalStart = new int[] {previousPadCenterRow, previousPadCenterColumn};
+        } else {
+            physicalStart = findNearestPhysicalStartCell(
+                    state, nominalStartRow, nominalStartColumn, false);
+        }
         if (physicalStart == null) {
             lastRouteBuildFailureReason = "no-physical-support-cell";
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"

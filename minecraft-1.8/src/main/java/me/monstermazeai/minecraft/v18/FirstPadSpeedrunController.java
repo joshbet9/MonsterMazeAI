@@ -915,7 +915,14 @@ public final class FirstPadSpeedrunController {
                     + " jump=" + jumpPulse);
         }
 
-        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
+        /*
+         * Jumper has a real vanilla charged jump rather than the non-Jumper
+         * -10 speeding impulse. Keep its ordinary ground traversal at the
+         * controlled walking envelope; sprint is reserved for the committed
+         * gap transaction, where the horizontal jump impulse is intentional.
+         */
+        boolean sprintPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER;
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, sprintPulse, yawDelta, false);
     }
 
     public void reset() {

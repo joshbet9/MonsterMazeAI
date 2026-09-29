@@ -403,7 +403,8 @@ public final class StableLiveMovementController {
              * when a segment begins. This is important at a source-accurate
              * SafePad transition: SafePad.isOn() is centred on integer block
              * coordinates, whereas route cell centres are half-block positions.
-             * Only accept a modest offset; larger deviations still fail closed.             */
+             * Only accept a modest offset; larger deviations still fail closed.
+             */
             double nominalLaneX = startCellRow + 0.5;
             double nominalLaneZ = startCellColumn + 0.5;
             if (dirRow == 0) {
@@ -825,7 +826,8 @@ public final class StableLiveMovementController {
              * when the threat meaningfully changes, without forcing a full
              * simulation for every floating-point packet variation.
              */
-            h = mix(h, monster.id);            h = mix(h, quantise(monster.x, 0.5D));
+            h = mix(h, monster.id);
+            h = mix(h, quantise(monster.x, 0.5D));
             h = mix(h, quantise(monster.y, 0.5D));
             h = mix(h, quantise(monster.z, 0.5D));
             h = mix(h, quantise(monster.vx, 0.05D));
@@ -1224,7 +1226,8 @@ public final class StableLiveMovementController {
         padEntryStartTick = Long.MIN_VALUE;
     }
 
-    private void clearRoute() {        route = null;
+    private void clearRoute() {
+        route = null;
         waypointIndex = 0;
         anchoredSegmentIndex = -1;
     }

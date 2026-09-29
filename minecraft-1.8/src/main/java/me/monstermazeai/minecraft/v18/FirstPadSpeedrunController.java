@@ -788,7 +788,12 @@ public final class FirstPadSpeedrunController {
             desiredYaw = desiredYawForEdge(
                     routeRows[routeIndex], routeColumns[routeIndex],
                     routeRows[nextIndex], routeColumns[nextIndex]);
-            desiredYaw = cornerLeadYaw(state, desiredYaw);
+            /*
+             * routeTrackingYaw owns corner anticipation. Do not apply the
+             * legacy cornerLeadYaw pass first: doing so compounds two separate
+             * turn controllers and can turn a valid cardinal edge into a
+             * ~150-degree reverse command at sprint speed.
+             */
             desiredYaw = routeTrackingYaw(state, desiredYaw);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);

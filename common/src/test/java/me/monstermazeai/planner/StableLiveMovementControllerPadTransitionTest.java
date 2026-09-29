@@ -37,7 +37,7 @@ class StableLiveMovementControllerPadTransitionTest {
         state.player.x = 20.0;
         state.player.z = 20.0;
         state.player.y = 0.0;
-        state.player.yaw = 0.0F;
+        state.player.yaw = -90.0F;
         state.player.grounded = true;
 
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -68,6 +68,16 @@ class StableLiveMovementControllerPadTransitionTest {
         state.inMonsterMaze = true;
         state.alive = true;
         state.maze = transitionMaze();
+
+        // Give the first objective a legitimate route so the controller can
+        // remember it, then remove that route before the pad transition.
+        for (int row = 10; row <= 20; row++) {
+            state.maze.setPhysicalFloor(row, 10, true);
+        }
+        for (int column = 10; column <= 20; column++) {
+            state.maze.setPhysicalFloor(20, column, true);
+        }
+
         state.activePadRow = 20;
         state.activePadColumn = 20;
         state.player.x = 10.5;
@@ -79,7 +89,15 @@ class StableLiveMovementControllerPadTransitionTest {
         StableLiveMovementController controller = new StableLiveMovementController();
 
         state.tick = 1L;
-        controller.nextAction(state, new Cell(20, 20), false);
+        Action first = controller.nextAction(state, new Cell(20, 20), false);
+        assertTrue(first.forward() > 0.0);
+
+        for (int row = 10; row <= 20; row++) {
+            state.maze.setPhysicalFloor(row, 10, false);
+        }
+        for (int column = 10; column <= 20; column++) {
+            state.maze.setPhysicalFloor(20, column, false);
+        }
 
         state.tick = 2L;
         state.activePadRow = 30;
@@ -88,8 +106,9 @@ class StableLiveMovementControllerPadTransitionTest {
         Action action = controller.nextAction(state, new Cell(30, 20), false);
 
         assertEquals(0.0, action.forward(), 1.0e-6);
+        assertEquals(0.0, action.strafe(), 1.0e-6);
+        assertEquals(0.0F, action.yawDelta(), 1.0e-6F);
         assertTrue(controller.lastDecisionDetail().contains("No physical route")
-                        || controller.lastDecisionDetail().contains("OUT_OF_BOUNDS")
                         || action == Action.IDLE,
                 "the transition bridge must not turn arbitrary air into a valid starting surface");
     }

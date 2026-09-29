@@ -149,6 +149,8 @@ public final class FirstPadSpeedrunController {
      * otherwise valid grounded crossings.
      */
     private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 1.35D;
+    /** Corner anticipation must be tighter than route-recovery tolerance. */
+    private static final double CORNER_ANTICIPATION_LATERAL_TOLERANCE = 0.55D;
     /*
      * At the simulator's capped sprint speed the player can cross a corner
      * before a single-cell waypoint capture is observed. Allow a bounded
@@ -2903,7 +2905,7 @@ public final class FirstPadSpeedrunController {
                 && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
                 && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
                 && distanceToWaypoint < 1.75D
-                && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE) {
+                && lateralDistance <= CORNER_ANTICIPATION_LATERAL_TOLERANCE) {
             int nextDr = routeRows[routeIndex + 2] - routeRows[routeIndex + 1];
             int nextDc = routeColumns[routeIndex + 2] - routeColumns[routeIndex + 1];
             if (nextDr == 0 && nextDc == 0) {

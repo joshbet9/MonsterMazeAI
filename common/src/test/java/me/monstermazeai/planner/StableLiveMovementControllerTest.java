@@ -177,6 +177,49 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void commitsAndExecutesOneBlockGapAtTakeoff() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = maze;
+        s.activePadRow = 10;
+        s.activePadColumn = 14;
+        s.player.x = 10.5;
+        s.player.z = 10.15;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action approach = controller.nextAction(s, new Cell(10, 12), true);
+        assertEquals(1.0, approach.forward(), 0.0);
+        assertFalse(approach.jump(), "before the takeoff boundary the controller should approach, not pulse early");
+
+        s.player.z = 10.99;
+        s.tick++;
+        Action committed = controller.nextAction(s, new Cell(10, 12), true);
+        assertTrue(committed.forward() > 0.0);
+        assertTrue(committed.jump(), "the committed gap must pulse jump at the takeoff boundary");
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"), controller.lastDecisionDetail());
+
+        // During the unsupported span, the controller must keep the committed
+        // edge rather than declaring the route invalid because the current
+        // containing cell is the missing middle block.
+        s.player.z = 11.10;
+        s.player.grounded = false;
+        s.tick++;
+        Action airborne = controller.nextAction(s, new Cell(10, 12), true);
+        assertTrue(airborne.forward() > 0.0);
+        assertTrue(airborne.jump());
+        assertTrue(controller.lastDecisionDetail().contains("GAP_EXECUTE"), controller.lastDecisionDetail());
+    }
+
+    @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -95,6 +95,31 @@ public final class MazeModel {
      * so monsters cannot use it. Players are still allowed to walk onto that
      * surface. Disabled cells therefore remain valid player-routing cells.
      */
+    /**
+     * Player movement neighbours, including the source Monster Maze's
+     * deliberate one-block jumps: supported endpoint -> one air cell ->
+     * supported endpoint. The missing middle cell is never exposed as a
+     * standable route node; the edge itself is represented by the two-cell
+     * route transition so the motor can time the jump at the takeoff boundary.
+     */
+    public List<Cell> physicalMovementNeighbours(Cell cell) {
+        List<Cell> out = new ArrayList<>(8);
+        out.addAll(physicalCardinalNeighbours(cell));
+        int r = cell.row(), c = cell.column();
+        addGapNeighbour(out, r - 2, c, r - 1, c);
+        addGapNeighbour(out, r + 2, c, r + 1, c);
+        addGapNeighbour(out, r, c - 2, r, c - 1);
+        addGapNeighbour(out, r, c + 2, r, c + 1);
+        return out;
+    }
+
+    private void addGapNeighbour(List<Cell> out, int row, int col, int middleRow, int middleColumn) {
+        if (!isPhysicalFloor(row, col)
+                || isPhysicalFloor(middleRow, middleColumn)) return;
+        Cell candidate = new Cell(row, col);
+        if (!out.contains(candidate)) out.add(candidate);
+    }
+
     public List<Cell> physicalCardinalNeighbours(Cell cell) {
         int r = cell.row(), c = cell.column();
         List<Cell> out = new ArrayList<>(4);

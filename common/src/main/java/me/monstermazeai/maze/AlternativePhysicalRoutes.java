@@ -62,7 +62,7 @@ public final class AlternativePhysicalRoutes {
         while (!queue.isEmpty()) {
             Cell current = queue.removeFirst();
             if (current.equals(goal)) return reconstruct(previous, goal);
-            for (Cell next : maze.physicalCardinalNeighbours(current)) {
+            for (Cell next : maze.physicalMovementNeighbours(current)) {
                 if ((current.equals(blockedA) && next.equals(blockedB))
                         || (current.equals(blockedB) && next.equals(blockedA))) continue;
                 if (previous.containsKey(next)) continue;

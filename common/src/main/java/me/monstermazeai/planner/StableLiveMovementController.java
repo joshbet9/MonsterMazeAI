@@ -623,11 +623,25 @@ public final class StableLiveMovementController {
 
         int segmentRow = Integer.signum(cells.get(fromIndex + 1).row() - previousRow);
         int segmentColumn = Integer.signum(cells.get(fromIndex + 1).column() - previousColumn);
+        int segmentLength = Math.abs(cells.get(fromIndex + 1).row() - previousRow)
+                + Math.abs(cells.get(fromIndex + 1).column() - previousColumn);
 
         for (int i = fromIndex + 1; i < cells.size() - 1; i++) {
-            int nextRow = Integer.signum(cells.get(i + 1).row() - cells.get(i).row());
-            int nextColumn = Integer.signum(cells.get(i + 1).column() - cells.get(i).column());
-            if (nextRow != segmentRow || nextColumn != segmentColumn) {
+            int nextRowDelta = cells.get(i + 1).row() - cells.get(i).row();
+            int nextColumnDelta = cells.get(i + 1).column() - cells.get(i).column();
+            int nextRow = Integer.signum(nextRowDelta);
+            int nextColumn = Integer.signum(nextColumnDelta);
+            int nextLength = Math.abs(nextRowDelta) + Math.abs(nextColumnDelta);
+            /*
+             * A one-block gap is encoded as a two-cell route edge in exactly
+             * the same cardinal direction as the following floor edge. Direction
+             * alone therefore cannot identify the boundary. Treat an edge-length
+             * change as a waypoint boundary so the gap executor sees the
+             * immediate gap edge instead of being handed the final straight-run
+             * waypoint and walking past the gap.
+             */
+            if (nextRow != segmentRow || nextColumn != segmentColumn
+                    || nextLength != segmentLength) {
                 return i;
             }
         }

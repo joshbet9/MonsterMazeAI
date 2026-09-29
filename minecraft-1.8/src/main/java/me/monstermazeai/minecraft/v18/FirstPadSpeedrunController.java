@@ -156,7 +156,7 @@ public final class FirstPadSpeedrunController {
      * and is intentionally exposed as a policy constant for future player/
      * difficulty tendencies.
      */
-    private static final double GAP_MOMENTUM_DISTANCE_REQUIRED = 3.0D;
+    private static final double GAP_MOMENTUM_DISTANCE_REQUIRED = 2.5D;
     private static final double GAP_MOMENTUM_MIN_FORWARD_SPEED = 0.10D;
     private static final float GAP_MOMENTUM_HEADING_TOLERANCE = 15.0F;
     private static final double GAP_MOMENTUM_LATERAL_SPEED_LIMIT = 0.12D;

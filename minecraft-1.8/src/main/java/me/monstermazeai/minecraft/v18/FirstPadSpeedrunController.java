@@ -1184,6 +1184,10 @@ public final class FirstPadSpeedrunController {
          */
         boolean transitioningFromReachedPad = activePadTransitionPending
                 || (targetReached && !routeStartsOnPreviousPad);
+        boolean initialRouteAlignment = routeLength == 0
+                && initialStartPadAvailable
+                && state.player.grounded
+                && !targetReached;
         boolean mobReplan = routeLength > 0
                 && goalRow == targetRow
                 && goalColumn == targetColumn
@@ -1255,7 +1259,7 @@ public final class FirstPadSpeedrunController {
          * Mob replans start from the player's current heading and therefore
          * must not introduce a competing alignment state.
          */
-        aligningForStage = transitioningFromReachedPad;
+        aligningForStage = transitioningFromReachedPad || initialRouteAlignment;
         aligningForReplan = false;
         if (!transitioningFromReachedPad
                 && state.player.grounded

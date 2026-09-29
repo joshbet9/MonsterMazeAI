@@ -3,6 +3,7 @@ package me.monstermazeai.runtime;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.maze.Cell;
 import me.monstermazeai.planner.RobustLiveController;
 
 /**
@@ -11,6 +12,8 @@ import me.monstermazeai.planner.RobustLiveController;
 public final class AutonomousMonsterMazeAgent {
     private final RobustLiveController controller;
     private long lastMazeSignature = Long.MIN_VALUE;
+    private int lastActivePadRow = -1;
+    private int lastActivePadColumn = -1;
     private String lastDecisionDetail = "UNSET";
 
     public AutonomousMonsterMazeAgent(RobustLiveController controller) {
@@ -23,6 +26,8 @@ public final class AutonomousMonsterMazeAgent {
             lastDecisionDetail = "NULL_STATE -> RESET";
             controller.reset();
             lastMazeSignature = Long.MIN_VALUE;
+            lastActivePadRow = -1;
+            lastActivePadColumn = -1;
             return Action.IDLE;
         }
 
@@ -33,6 +38,20 @@ public final class AutonomousMonsterMazeAgent {
             lastMazeSignature = Long.MIN_VALUE;
             return Action.IDLE;
         }
+
+        /*
+         * The adapter's physical-floor snapshot correctly removes the previous
+         * SafePad when the next pad activates. Preserve that previous pad as a
+         * transition anchor before the controller sees the new objective.
+         */
+        if (state.activePadRow >= 0 && state.activePadColumn >= 0
+                && lastActivePadRow >= 0
+                && (state.activePadRow != lastActivePadRow
+                    || state.activePadColumn != lastActivePadColumn)) {
+            state.oldPads.add(new Cell(lastActivePadRow, lastActivePadColumn));
+        }
+        lastActivePadRow = state.activePadRow;
+        lastActivePadColumn = state.activePadColumn;
 
         long signature = mazeSignature(state);
         if (lastMazeSignature != Long.MIN_VALUE && signature != lastMazeSignature) {
@@ -54,6 +73,8 @@ public final class AutonomousMonsterMazeAgent {
     public void reset() {
         controller.reset();
         lastMazeSignature = Long.MIN_VALUE;
+        lastActivePadRow = -1;
+        lastActivePadColumn = -1;
         lastDecisionDetail = "RESET";
     }
 

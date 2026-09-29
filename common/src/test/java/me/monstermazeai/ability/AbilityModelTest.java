@@ -76,6 +76,53 @@ class AbilityModelTest {
     }
 
     @Test
+    void repulsorIsReservedForADeadlineBlockedByAMonster() {
+        GameState s = new GameState();
+        s.kit = Kit.REPULSOR;
+        s.ability.charges = 3;
+        s.activePadRow = 10;
+        s.activePadColumn = 0;
+        s.phaseTicksRemaining = 20;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.monsters.add(new MonsterState(2, 3.0, 0.0, 0.5));
+
+        assertTrue(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
+        s.phaseTicksRemaining = 100;
+        assertFalse(AbilityDecision.shouldUse(s, "NO_ROUTE", "dynamic-mob-block"));
+    }
+
+    @Test
+    void repulsorProtectsLowHealthPlayerFromImminentMonsterHit() {
+        GameState s = new GameState();
+        s.kit = Kit.REPULSOR;
+        s.ability.charges = 1;
+        s.player.health = 4.0;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        MonsterState m = new MonsterState(3, 2.0, 0.0, 0.5);
+        m.vx = -0.5;
+        s.monsters.add(m);
+
+        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
+
+        s.player.health = 6.0;
+        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
+    }
+
+    @Test
+    void repulsorDoesNotFireJustBecauseAMonsterIsNearby() {
+        GameState s = new GameState();
+        s.kit = Kit.REPULSOR;
+        s.ability.charges = 3;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.monsters.add(new MonsterState(4, 2.0, 0.0, 0.5));
+
+        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
+    }
+
+    @Test
     void bodyRushTurnsMonsterContactIntoDeflectionAndShortensDuration() {
         GameState s = new GameState();
         s.mode = Mode.MODERN;

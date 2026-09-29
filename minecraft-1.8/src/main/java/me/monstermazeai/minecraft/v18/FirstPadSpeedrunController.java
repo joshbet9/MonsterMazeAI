@@ -473,7 +473,9 @@ public final class FirstPadSpeedrunController {
          * explicitly re-anchor instead of repeatedly returning IDLE from a
          * predicted-floor safety failure.
          */
-        if (!gapExecutionActive && !recovering && routePositionNeedsRecovery(state)) {
+        if (!gapExecutionActive && !recovering
+                && state.player.grounded
+                && routePositionNeedsRecovery(state)) {
             /*
              * The player is already at a physically observed position. Do not
              * send the recovery motor back toward a guessed cell centre: that
@@ -3030,7 +3032,14 @@ public final class FirstPadSpeedrunController {
 
     private boolean routePositionOnCommittedEnvelope(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1) return false;
-        int last = Math.min(routeLength - 2, routeIndex + 5);
+        /*
+         * Looking five edges ahead made a crossed turn appear "on route" even
+         * when the cursor was still committed to the previous heading. Keep a
+         * two-edge envelope: current edge plus the immediate next edge. Straight
+         * speedrun lag is still captured by advanceRouteIndex(); a missed turn
+         * becomes a genuine route-loss/replan event once grounded.
+         */
+        int last = Math.min(routeLength - 2, routeIndex + 1);
         for (int i = routeIndex; i <= last; i++) {
             double ax = worldX(routeRows[i], state.center.x);
             double az = worldZ(routeColumns[i], state.center.z);

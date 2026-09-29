@@ -2152,11 +2152,54 @@ public final class FirstPadSpeedrunController {
          * succeeds or the edge is irrecoverably missed.
          */
         if (progress > 1.65D) {
+            /*
+             * Crossing the geometric endpoint while airborne is not a failed
+             * gap. The player can still be descending toward the destination
+             * block, and rebuilding A* in mid-flight destroys the very jump
+             * trajectory that just crossed the gap.
+             */
+            if (!state.player.grounded) {
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+            }
+
+            /*
+             * Once grounded, accept the crossing if the player's footprint is
+             * physically supported near the destination. Otherwise this is a
+             * genuine miss and the normal grounded recovery/replan path may
+             * take over.
+             */
+            double destinationX = worldX(toRow, state.center.x);
+            double destinationZ = worldZ(toColumn, state.center.z);
+            double destinationDistance = Math.hypot(
+                    state.player.x - destinationX,
+                    state.player.z - destinationZ);
+            if (destinationDistance <= 1.25D
+                    && physicalFloorSupportsFootprint(
+                    state, state.player.x, state.player.z)) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
+                        + " tick=" + state.worldTick
+                        + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                        + " progress=" + format(progress)
+                        + " endpointDistance=" + format(destinationDistance));
+                gapExecutionActive = false;
+                gapTakeoffStarted = false;
+                gapExecutionRouteIndex = -1;
+                gapLandingConfirmTicks = 0;
+                resetGapMomentum();
+                routeIndex++;
+                if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                    routeStartsOnPreviousPad = false;
+                }
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+            }
+
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                     + " progress=" + format(progress) + " grounded=" + state.player.grounded);
-            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
-            routeLength = 0; routeIndex = 0;
+            gapExecutionActive = false;
+            gapTakeoffStarted = false;
+            gapExecutionRouteIndex = -1;
+            gapLandingConfirmTicks = 0;
             return null;
         }
 

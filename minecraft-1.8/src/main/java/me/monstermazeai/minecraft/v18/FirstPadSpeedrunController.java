@@ -2129,71 +2129,95 @@ public final class FirstPadSpeedrunController {
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
-        if (!gapExecutionActive || gapExecutionRouteIndex != routeIndex || routeIndex >= routeLength - 1) {
-            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+        if (!gapExecutionActive || gapExecutionRouteIndex != routeIndex
+                || routeIndex >= routeLength - 1) {
+            gapExecutionActive = false;
+            gapTakeoffStarted = false;
+            gapExecutionRouteIndex = -1;
+            gapLandingConfirmTicks = 0;
             return null;
         }
-        int fromRow = routeRows[routeIndex], fromColumn = routeColumns[routeIndex];
-        int toRow = routeRows[routeIndex + 1], toColumn = routeColumns[routeIndex + 1];
+
+        int fromRow = routeRows[routeIndex];
+        int fromColumn = routeColumns[routeIndex];
+        int toRow = routeRows[routeIndex + 1];
+        int toColumn = routeColumns[routeIndex + 1];
+
         if (!isGapRouteEdge(fromRow, fromColumn, toRow, toColumn, state)) {
-            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+            gapExecutionActive = false;
+            gapTakeoffStarted = false;
+            gapExecutionRouteIndex = -1;
+            gapLandingConfirmTicks = 0;
             return null;
         }
 
         double progress = currentEdgeProgress(state);
+
         if (!gapTakeoffStarted && progress >= 0.15D) {
-            if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
-                && playerFootprintOverlapsCell(state, toRow, toColumn, 0.05D)) {
-            /*
-             * Preserve a genuine grounded landing for the confirmation window.
-             * Space must be released here; otherwise the very first grounded
-             * observation immediately re-jumps in the same controller cycle.
-             */
+            gapTakeoffStarted = true;
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
+                    + " tick=" + state.worldTick
+                    + " edge=" + fromRow + "," + fromColumn
+                    + "->" + toRow + "," + toColumn
+                    + " progress=" + format(progress));
+        }
+
+        /*
+         * Treat landing as a genuine grounded state. Release Space while
+         * confirming so the 1.8 client cannot immediately chain another jump
+         * and erase the grounded observation.
+         */
+        if (gapTakeoffStarted && state.player.grounded
+                && progress > 0.90D
+                && playerFootprintOverlapsCell(
+                state, toRow, toColumn, 0.05D)) {
             gapLandingConfirmTicks++;
             if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
-                        + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                        + " tick=" + state.worldTick
+                        + " edge=" + fromRow + "," + fromColumn
+                        + "->" + toRow + "," + toColumn
                         + " progress=" + format(progress));
-                gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
+                gapExecutionActive = false;
+                gapTakeoffStarted = false;
+                gapExecutionRouteIndex = -1;
+                gapLandingConfirmTicks = 0;
                 resetGapMomentum();
                 routeIndex++;
-                if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                    routeStartsOnPreviousPad = false;
+                }
                 return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
             }
             return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
-        } else {
+        }
+
+        if (!state.player.grounded) {
             gapLandingConfirmTicks = 0;
         }
-             * gap. The player can still be descending toward the destination
-             * block, and rebuilding A* in mid-flight destroys the very jump
-             * trajectory that just crossed the gap.
-             */
+
+        /*
+         * The geometric endpoint can be crossed while descending. Preserve
+         * the jump transaction in flight rather than rebuilding the route.
+         */
+        if (progress > 1.65D) {
             if (!state.player.grounded) {
                 return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
             }
 
-            /*
-             * Once grounded, accept the crossing if the player's footprint is
-             * physically supported near the destination. Otherwise this is a
-             * genuine miss and the normal grounded recovery/replan path may
-             * take over.
-             */
             double destinationX = worldX(toRow, state.center.x);
             double destinationZ = worldZ(toColumn, state.center.z);
             double destinationDistance = Math.hypot(
                     state.player.x - destinationX,
                     state.player.z - destinationZ);
-            /*
-             * Once grounded beyond the gap endpoint, the jump has completed.
-             * At sprint speed the player can be more than one block past the
-             * endpoint centre by the first grounded observation. Rejecting
-             * that observation leaves the controller owning the old edge and
-             * causes repeated "takeoff" attempts while the player walks away.
-             */
-            if (state.player.grounded) {
+
+            if (playerFootprintOverlapsCell(
+                    state, toRow, toColumn, 0.01D)
+                    || destinationDistance <= 1.10D) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
                         + " tick=" + state.worldTick
-                        + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                        + " edge=" + fromRow + "," + fromColumn
+                        + "->" + toRow + "," + toColumn
                         + " progress=" + format(progress)
                         + " endpointDistance=" + format(destinationDistance));
                 gapExecutionActive = false;
@@ -2205,12 +2229,15 @@ public final class FirstPadSpeedrunController {
                 if (routeIndex > 0 && routeStartsOnPreviousPad) {
                     routeStartsOnPreviousPad = false;
                 }
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
             }
 
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
-                    + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                    + " progress=" + format(progress) + " grounded=" + state.player.grounded);
+                    + " tick=" + state.worldTick
+                    + " edge=" + fromRow + "," + fromColumn
+                    + "->" + toRow + "," + toColumn
+                    + " progress=" + format(progress)
+                    + " grounded=" + state.player.grounded);
             gapExecutionActive = false;
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = -1;
@@ -2218,15 +2245,16 @@ public final class FirstPadSpeedrunController {
             return null;
         }
 
-        if (state.worldTick % 5L == 0L) log(state.worldTick, "[MonsterMazeAI/1.8] GAP EXECUTE"
-                + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                + " progress=" + format(progress) + " grounded=" + state.player.grounded
-                + " jumpSpam=" + gapTakeoffStarted);
-        // Before takeoff: W+sprint only, preserving a straight grounded approach.
-        // From a conservative pre-edge boundary onward: keep Space requested on
-        // every grounded observation. At sprint speed a single tick is enough
-        // to cross the source block edge, so waiting for exactly +0.50 progress
-        // can miss the only grounded jump-input window.
+        if (state.worldTick % 5L == 0L) {
+            log(state.worldTick, "[MonsterMazeAI/1.8] GAP EXECUTE"
+                    + " tick=" + state.worldTick
+                    + " edge=" + fromRow + "," + fromColumn
+                    + "->" + toRow + "," + toColumn
+                    + " progress=" + format(progress)
+                    + " grounded=" + state.player.grounded
+                    + " jumpSpam=" + gapTakeoffStarted);
+        }
+
         return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
     }
 

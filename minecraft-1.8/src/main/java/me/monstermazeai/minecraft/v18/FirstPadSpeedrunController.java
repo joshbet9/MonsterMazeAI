@@ -2112,6 +2112,18 @@ public final class FirstPadSpeedrunController {
          * A separate committed transaction is deliberately not entered here
          * until the controller has a physically validated takeoff state.
          */
+        /*
+         * A two-cell route edge is an explicit one-block gap. Once the launch
+         * heading is aligned, own the edge immediately; there is no arbitrary
+         * runway/momentum threshold. The edge itself is the qualification.
+         */
+        if (!gapExecutionActive || gapExecutionRouteIndex != routeIndex) {
+            gapExecutionActive = true;
+            gapExecutionRouteIndex = routeIndex;
+            gapTakeoffStarted = false;
+            gapLandingConfirmTicks = 0;
+        }
+
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         return new LegacyAction(1.0f, 0.0f, true, true, yawDelta, false);
     }

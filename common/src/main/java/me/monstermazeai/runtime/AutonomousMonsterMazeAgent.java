@@ -36,6 +36,8 @@ public final class AutonomousMonsterMazeAgent {
                     + " alive=" + state.alive + " completed=" + state.completed;
             controller.reset();
             lastMazeSignature = Long.MIN_VALUE;
+            lastActivePadRow = -1;
+            lastActivePadColumn = -1;
             return Action.IDLE;
         }
 

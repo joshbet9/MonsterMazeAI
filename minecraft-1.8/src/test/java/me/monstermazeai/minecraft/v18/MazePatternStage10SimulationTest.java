@@ -92,7 +92,7 @@ public final class MazePatternStage10SimulationTest {
                     .append('\n');
 
             System.err.println("\\n--- Maze " + (pattern + 1) + " diagnostics ---\\n" + report);
-            writeReport(report);
+            writeReport(report.toString());
 
             if (passed != SEEDS_PER_PATTERN) {
                 throw new RuntimeException("Maze " + (pattern + 1) + " failed simulation gate\n" + report);

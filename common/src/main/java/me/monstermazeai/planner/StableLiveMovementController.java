@@ -815,7 +815,8 @@ public final class StableLiveMovementController {
             lastDecisionDetail = "GAP_BRAKE edge=" + gapEdgeText() + " lateralSpeed=" + format(lateralVelocity);
             return new Action(0.0, 0.0, false, false, 0.0F, false);
         }
-        double progress = currentGapProgress(state);
+        int gapIndex = waypointIndex - 1;
+        double progress = currentGapProgress(state, gapIndex);
         double distanceToTakeoff = 0.50D - progress;
         if (progress >= 0.15D && progress <= 1.65D) {
             gapExecutionActive = true;
@@ -845,14 +846,14 @@ public final class StableLiveMovementController {
             return null;
         }
         int fromRow = route.cells().get(gapExecutionRouteIndex).row();
-        int fromColumn = route.cells().get(gapExecutionRouteIndex).column();
+        int fromColumn = route.cells().get(gapIndex).column();
         int toRow = route.cells().get(waypointIndex).row();
         int toColumn = route.cells().get(waypointIndex).column();
         if (!isGapEdge(state, fromRow, fromColumn, toRow, toColumn)) {
             clearGapCommitment();
             return null;
         }
-        double progress = currentGapProgress(state);
+        double progress = currentGapProgress(state, gapExecutionRouteIndex);
         if (!gapTakeoffStarted && progress >= 0.50D) {
             gapTakeoffStarted = true;
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText() + " progress=" + format(progress);
@@ -892,8 +893,8 @@ public final class StableLiveMovementController {
                 && state.maze.isPhysicalFloor(toRow, toColumn);
     }
 
-    private double currentGapProgress(GameState state) {
-        int fromRow = route.cells().get(gapExecutionRouteIndex).row();
+    private double currentGapProgress(GameState state, int gapIndex) {
+        int fromRow = route.cells().get(gapIndex).row();
         int fromColumn = route.cells().get(gapExecutionRouteIndex).column();
         int toRow = route.cells().get(waypointIndex).row();
         int toColumn = route.cells().get(waypointIndex).column();

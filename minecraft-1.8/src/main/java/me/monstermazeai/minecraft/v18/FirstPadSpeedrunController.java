@@ -629,7 +629,7 @@ public final class FirstPadSpeedrunController {
                         + " pos=" + format(state.player.x) + "," + format(state.player.y)
                         + "," + format(state.player.z));
             }
-            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
+            return new LegacyAction(1.0f, 0.0f, true, false, airYawDelta, false);
         }
 
         /*
@@ -835,7 +835,7 @@ public final class FirstPadSpeedrunController {
                 float airborneYawDelta = clamp(
                         airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
                 return new LegacyAction(
-                        1.0f, 0.0f, true, true, airborneYawDelta, false);
+                        1.0f, 0.0f, true, false, airborneYawDelta, false);
             }
             if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
@@ -843,8 +843,7 @@ public final class FirstPadSpeedrunController {
             return LegacyAction.IDLE;
         }
 
-        if (headingStableTicks < HEADING_STABLE_TICKS
-                && !isCurrentEdgeGap(state)) {
+        if (headingStableTicks < HEADING_STABLE_TICKS) {
             headingStableTicks++;
             return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
@@ -886,7 +885,7 @@ public final class FirstPadSpeedrunController {
                     + " jump=" + jumpPulse);
         }
 
-        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, isCurrentEdgeGap(state), yawDelta, false);
     }
 
     public void reset() {
@@ -2201,49 +2200,23 @@ public final class FirstPadSpeedrunController {
              * causes repeated "takeoff" attempts while the player walks away.
              */
             if (state.player.grounded) {
-                /*
-                 * The fallback may observe the first grounded tick after the
-                 * jump has already carried the player beyond the destination
-                 * centre. Never claim the destination route node blindly.
-                 * If the body is not actually overlapping the destination,
-                 * rebuild from the physical landing position instead.
-                 */
-                if (playerFootprintOverlapsCell(
-                        state, toRow, toColumn, 0.0D)) {
-                    log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
-                            + " tick=" + state.worldTick
-                            + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                            + " progress=" + format(progress)
-                            + " endpointDistance=" + format(destinationDistance));
-                    gapExecutionActive = false;
-                    gapTakeoffStarted = false;
-                    gapExecutionRouteIndex = -1;
-                    gapLandingConfirmTicks = 0;
-                    resetGapMomentum();
-                    routeIndex++;
-                    if (routeIndex > 0 && routeStartsOnPreviousPad) {
-                        routeStartsOnPreviousPad = false;
-                    }
-                    return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
-                }
-
+                log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
+                        + " tick=" + state.worldTick
+                        + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                        + " progress=" + format(progress)
+                        + " endpointDistance=" + format(destinationDistance));
                 gapExecutionActive = false;
                 gapTakeoffStarted = false;
                 gapExecutionRouteIndex = -1;
                 gapLandingConfirmTicks = 0;
                 resetGapMomentum();
-                routeLength = 0;
-                routeIndex = 0;
-                if (buildRoute(state)) {
-                    log(state.worldTick, "[MonsterMazeAI/1.8] GAP OVERSHOOT REPLAN"
-                            + " tick=" + state.worldTick
-                            + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                            + " progress=" + format(progress)
-                            + " endpointDistance=" + format(destinationDistance)
-                            + " start=" + routeRows[0] + "," + routeColumns[0]);
-                    return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                routeIndex++;
+                if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                    routeStartsOnPreviousPad = false;
                 }
+                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
             }
+
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                     + " progress=" + format(progress) + " grounded=" + state.player.grounded);
@@ -2652,17 +2625,6 @@ public final class FirstPadSpeedrunController {
             double lateralDistance = Math.hypot(lateralX, lateralZ);
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
 
-            /*
-             * Do not promote the route cursor onto the first edge of a gap
-             * while airborne. That converts an otherwise recoverable jump arc
-             * into a committed gap transaction one or more ticks too early.
-             * The real traces show this exact failure after high-speed reindex.
-             */
-            if (!state.player.grounded
-                    && edgeType(routeIndex + 1) == EdgeType.ONE_BLOCK_GAP) {
-                break;
-            }
-
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
                     && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
@@ -2729,9 +2691,7 @@ public final class FirstPadSpeedrunController {
                  * Normal edge capture handles the corner on the next ticks.
                  */
                 if (crossesGap || !routeCellSupported(state, candidate)
-                        || !sameCommittedHeadingSpan(routeIndex, candidate)
-                        || (!state.player.grounded
-                        && edgeType(candidate) == EdgeType.ONE_BLOCK_GAP)) continue;
+                        || !sameCommittedHeadingSpan(routeIndex, candidate)) continue;
 
                 double distance = Math.hypot(
                         state.player.x - worldX(routeRows[candidate], state.center.x),

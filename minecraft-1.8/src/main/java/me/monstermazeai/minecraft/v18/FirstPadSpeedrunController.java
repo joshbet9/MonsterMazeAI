@@ -158,6 +158,15 @@ public final class FirstPadSpeedrunController {
         this.telemetry = telemetry;
     }
 
+    /**
+     * True once this controller has geometrically reached its current target.
+     * The Minecraft adapter uses this only to hand control back to the normal
+     * multi-pad runtime; it does not alter first-pad movement behaviour.
+     */
+    public boolean hasReachedTarget() {
+        return targetReached;
+    }
+
     private void log(long tick, String message) {
         System.out.println(message);
         if (telemetry != null) {

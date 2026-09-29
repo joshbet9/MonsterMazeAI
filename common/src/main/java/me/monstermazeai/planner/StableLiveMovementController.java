@@ -815,12 +815,15 @@ public final class StableLiveMovementController {
         float yawError = normalise(desiredYaw - state.player.yaw);
         if (Math.abs(yawError) <= HEADING_TOLERANCE) {
             clearPadTransitionFacing();
+            lastDecisionDetail = "PAD_TRANSITION_RELEASED"
+                    + " goal=" + goalRow + "," + goalColumn;
             return null;
         }
 
         float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         lastDecisionDetail = "PAD_TRANSITION_FACE"
                 + " oldPad=" + padTransitionPreviousRow + "," + padTransitionPreviousColumn
+                + " goal=" + goalRow + "," + goalColumn
                 + " firstHeading=" + desiredYaw
                 + " yawError=" + format(yawError)
                 + " yawDelta=" + format(turn);

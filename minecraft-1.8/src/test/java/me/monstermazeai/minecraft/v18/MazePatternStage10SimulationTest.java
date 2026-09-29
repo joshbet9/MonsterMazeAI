@@ -402,7 +402,10 @@ public final class MazePatternStage10SimulationTest {
         boolean[][] floor = new boolean[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             for (int c = 0; c < SIZE; c++) {
-                floor[r][c] = raw[r][c] != 0;
+                // MonsterMaze MazeGenerator.isPath(): only 1,2,5,6 are
+                // traversable path blocks. Values 3/4 are not walkable floor.
+                int value = raw[r][c];
+                floor[r][c] = value == 1 || value == 2 || value == 5 || value == 6;
             }
         }
 

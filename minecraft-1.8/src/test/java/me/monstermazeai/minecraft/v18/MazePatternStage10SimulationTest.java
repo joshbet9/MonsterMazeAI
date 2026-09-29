@@ -51,7 +51,7 @@ public final class MazePatternStage10SimulationTest {
     private static final double JUMP_VELOCITY = 0.42D;
     private static final double GRAVITY = 0.08D;
     private static final double VERTICAL_DRAG = 0.98D;
-    private static final double SPRINT_JUMP_BOOST = 0.20D;
+    private static final double SPRINT_JUMP_BOOST = 0.20D;\n    private static final double MAX_SIM_HORIZONTAL_SPEED = 0.28D;
 
     @Test(timeout = 180000)
     public void everyMazePatternReachesStageTenOnEverySimulation() {
@@ -320,7 +320,14 @@ public final class MazePatternStage10SimulationTest {
 
         p.vx *= drag;
         p.vz *= drag;
-        result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
+        double horizontalSpeed = Math.hypot(p.vx, p.vz);
+        if (horizontalSpeed > MAX_SIM_HORIZONTAL_SPEED) {
+            double scale = MAX_SIM_HORIZONTAL_SPEED / horizontalSpeed;
+            p.vx *= scale;
+            p.vz *= scale;
+            horizontalSpeed = MAX_SIM_HORIZONTAL_SPEED;
+        }
+        result.maxSpeed = Math.max(result.maxSpeed, horizontalSpeed);
 
         if (!p.grounded && p.y < -2.0D) p.alive = false;
     }

@@ -539,6 +539,7 @@ public final class FirstPadSpeedrunController {
         float desiredYaw = desiredYawForEdge(
                 routeRows[routeIndex], routeColumns[routeIndex],
                 routeRows[nextIndex], routeColumns[nextIndex]);
+        desiredYaw = routeTrackingYaw(state, desiredYaw);
         desiredYaw = cornerLeadYaw(state, desiredYaw);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
@@ -2433,6 +2434,56 @@ public final class FirstPadSpeedrunController {
                 state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
     }
 
+    private float routeTrackingYaw(LegacyWorldObservation state, float edgeYaw) {
+        if (routeRows == null || routeColumns == null
+                || routeIndex < 0 || routeIndex >= routeLength - 1
+                || edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP) {
+            return edgeYaw;
+        }
+
+        double ax = worldX(routeRows[routeIndex], state.center.x);
+        double az = worldZ(routeColumns[routeIndex], state.center.z);
+        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+        double ex = bx - ax;
+        double ez = bz - az;
+        double length = Math.hypot(ex, ez);
+        if (length <= 1.0E-9D) return edgeYaw;
+        ex /= length;
+        ez /= length;
+
+        double px = state.player.x - ax;
+        double pz = state.player.z - az;
+        double progress = px * ex + pz * ez;
+        double clampedProgress = clampDouble(progress, 0.0D, length);
+        double closestX = ax + ex * clampedProgress;
+        double closestZ = az + ez * clampedProgress;
+        double lateralX = closestX - state.player.x;
+        double lateralZ = closestZ - state.player.z;
+        double lateralDistance = Math.hypot(lateralX, lateralZ);
+
+        /*
+         * Pure-pursuit style correction: keep a small forward lookahead while
+         * biasing toward the route centreline. Limit the bias to 25 degrees so
+         * it cannot turn a straight corridor into a diagonal cut.
+         */
+        if (lateralDistance < 0.30D) return edgeYaw;
+
+        double lookahead = Math.min(1.15D, Math.max(0.45D, length * 0.75D));
+        double targetX = closestX + ex * lookahead;
+        double targetZ = closestZ + ez * lookahead;
+        double correctionWeight = Math.min(1.0D, lateralDistance / 0.85D);
+        targetX += lateralX * correctionWeight;
+        targetZ += lateralZ * correctionWeight;
+
+        float targetYaw = (float) Math.toDegrees(
+                Math.atan2(-(targetX - state.player.x),
+                        targetZ - state.player.z));
+        float correction = normalise(targetYaw - edgeYaw);
+        correction = clamp(correction, -25.0F, 25.0F);
+        return normalise(edgeYaw + correction);
+    }
+
     private float airborneCornerYaw(LegacyWorldObservation state, float currentEdgeYaw) {
         if (routeRows == null || routeColumns == null
                 || routeIndex < 0 || routeIndex >= routeLength - 1
@@ -2696,6 +2747,10 @@ public final class FirstPadSpeedrunController {
         while (angle > 180.0F) angle -= 360.0F;
         while (angle < -180.0F) angle += 360.0F;
         return angle;
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static float clamp(float value, float min, float max) {

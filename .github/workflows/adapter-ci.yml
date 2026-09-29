@@ -51,7 +51,7 @@ jobs:
           status=$?
           if [ $status -ne 0 ]; then
             echo "===== MAZE SIMULATOR JUNIT XML ====="
-            cat build/maze-simulator-report.txt || true
+            find . -name maze-simulator-report.txt -type f -print -exec cat {} \\; || true
             echo "===== END MAZE SIMULATOR JUNIT XML ====="
             exit $status
           fi

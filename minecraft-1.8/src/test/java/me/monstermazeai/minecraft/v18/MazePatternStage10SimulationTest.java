@@ -56,6 +56,7 @@ public final class MazePatternStage10SimulationTest {
     public void everyMazePatternReachesStageTenOnEverySimulation() {
         StringBuilder report = new StringBuilder();
         int total = 0;
+        int failedCases = 0;
 
         for (int pattern = 0; pattern < 3; pattern++) {
             int patternPassed = 0;
@@ -113,7 +114,12 @@ public final class MazePatternStage10SimulationTest {
         System.out.println("\\n========== MAZE PATTERN STAGE-10 SIMULATION ==========\\n"
                 + report
                 + "TOTAL simulations=" + total + "\\n"
+                + "FAILED simulations=" + failedCases + "\\n"
                 + "=======================================================\\n");
+        if (failedCases > 0) {
+            throw new RuntimeException("Stage-10 all-kit gate failed: "
+                    + failedCases + " simulation(s) below stage 10\\n" + report);
+        }
     }
 
     private static void writeReport(String report) {

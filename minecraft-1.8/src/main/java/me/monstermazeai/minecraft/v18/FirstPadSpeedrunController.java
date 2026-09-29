@@ -62,6 +62,14 @@ public final class FirstPadSpeedrunController {
     private static final int MOB_PREDICT_TICKS = 30;
     private static final double ESTIMATED_TICKS_PER_CELL = 5.0D;
     /*
+     * A physical replan must respect the player's existing momentum. Without
+     * this, A* can select a geometrically short first edge that points behind
+     * the current velocity, forcing a 90-180 degree turn at a one-block
+     * corridor corner and recreating the exact route-fighting failure.
+     */
+    private static final double REPLAN_HEADING_SPEED_THRESHOLD = 0.08D;
+    private static final double REPLAN_HEADING_PENALTY_TICKS = 12.0D;
+    /*
      * First-pad movement must not churn because of monsters far down the
      * route. Keep dynamic replanning local to the player's actual 20-block
      * threat envelope; the initial A* still accounts for the complete route.
@@ -1248,6 +1256,33 @@ public final class FirstPadSpeedrunController {
         int next = index(r, c);
         double edgeDistance = Math.hypot(r - fromRow, c - fromColumn);
         double arrivalTicks = node.gTicks + edgeDistance * ESTIMATED_TICKS_PER_CELL;
+
+        /*
+         * Only the first edge of a replan is heading-sensitive. Once the
+         * player has entered the new route, normal A* geometry takes over.
+         * Penalize, rather than absolutely forbid, a first edge that points
+         * against current velocity so a genuinely forced turn still remains
+         * possible when the graph offers no compatible alternative.
+         */
+        if (node.gTicks <= 1.0E-9D) {
+            double speed = Math.hypot(state.player.vx, state.player.vz);
+            if (speed >= REPLAN_HEADING_SPEED_THRESHOLD) {
+                double edgeX = (r - fromRow);
+                double edgeZ = (c - fromColumn);
+                double edgeLength = Math.hypot(edgeX, edgeZ);
+                if (edgeLength > 1.0E-9D) {
+                    edgeX /= edgeLength;
+                    edgeZ /= edgeLength;
+                    double velocityX = state.player.vx / speed;
+                    double velocityZ = state.player.vz / speed;
+                    double headingDot = velocityX * edgeX + velocityZ * edgeZ;
+                    if (headingDot < 0.50D) {
+                        arrivalTicks += (0.50D - headingDot)
+                                * REPLAN_HEADING_PENALTY_TICKS;
+                    }
+                }
+            }
+        }
         if (arrivalTicks + 1.0E-6D >= bestArrivalTicks[next]) return currentGoal;
         bestArrivalTicks[next] = arrivalTicks;
         parent[next] = node.index;

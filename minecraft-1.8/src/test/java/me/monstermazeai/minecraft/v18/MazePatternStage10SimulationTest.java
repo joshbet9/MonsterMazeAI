@@ -70,49 +70,50 @@ public final class MazePatternStage10SimulationTest {
                     total++;
                     patternTotal++;
                     Result result = simulate(pattern, seed, kit);
-                minStage = Math.min(minStage, result.stage);
-                maxStage = Math.max(maxStage, result.stage);
-                if (result.stage >= TARGET_STAGE) {
-                    passed++;
-                }
+                    minStage = Math.min(minStage, result.stage);
+                    maxStage = Math.max(maxStage, result.stage);
+                    if (result.stage >= TARGET_STAGE) passed++;
 
                     report.append("Maze ").append(pattern + 1)
+                            .append(" kit=").append(kit)
+                            .append(" seed=").append(seed)
+                            .append(" stage=").append(result.stage)
+                            .append(" pads=").append(result.padsReached)
+                            .append(" ticks=").append(result.ticks)
+                            .append(" jumpTicks=").append(result.jumpTicks)
+                            .append(" movementTicks=").append(result.movementTicks)
+                            .append(" gaps=").append(result.gapsSeen)
+                            .append(" gapLandings=").append(result.gapLandings)
+                            .append(" maxSpeed=").append(format(result.maxSpeed))
+                            .append(" failure=").append(result.failure)
+                            .append('\\n');
+                }
+
+                patternPassed += passed;
+                report.append("Maze ").append(pattern + 1)
                         .append(" kit=").append(kit)
-                        .append(" seed=").append(seed)
-                        .append(" stage=").append(result.stage)
-                        .append(" pads=").append(result.padsReached)
-                        .append(" ticks=").append(result.ticks)
-                        .append(" jumpTicks=").append(result.jumpTicks)
-                        .append(" movementTicks=").append(result.movementTicks)
-                        .append(" gaps=").append(result.gapsSeen)
-                        .append(" gapLandings=").append(result.gapLandings)
-                        .append(" maxSpeed=").append(format(result.maxSpeed))
-                        .append(" failure=").append(result.failure)
-                        .append('\n');
+                        .append(" SUMMARY passed=").append(passed).append("/")
+                        .append(SEEDS_PER_PATTERN)
+                        .append(" minStage=").append(minStage)
+                        .append(" maxStage=").append(maxStage)
+                        .append('\\n');
+
+                if (passed != SEEDS_PER_PATTERN || minStage < TARGET_STAGE) {
+                    throw new RuntimeException("Maze " + (pattern + 1)
+                            + " kit=" + kit + " failed Stage-10 simulation gate\\n" + report);
+                }
             }
 
             report.append("Maze ").append(pattern + 1)
-                    .append(" SUMMARY passed=").append(passed).append("/")
-                    .append(SEEDS_PER_PATTERN)
-                    .append(" minStage=").append(minStage)
-                    .append(" maxStage=").append(maxStage)
-                    .append('\n');
-
-            System.err.println("\\n--- Maze " + (pattern + 1) + " diagnostics ---\\n" + report);
-            writeReport(report.toString());
-
-            if (passed != SEEDS_PER_PATTERN) {
-                throw new RuntimeException("Maze " + (pattern + 1) + " failed simulation gate\n" + report);
-            }
-            if (minStage < TARGET_STAGE) {
-                throw new RuntimeException("Maze " + (pattern + 1) + " minimum stage below 10\n" + report);
-            }
+                    .append(" ALL-KITS SUMMARY passed=").append(patternPassed)
+                    .append("/").append(patternTotal)
+                    .append('\\n');
         }
 
-        System.out.println("\n========== MAZE PATTERN STAGE-10 SIMULATION ==========\n"
+        System.out.println("\\n========== MAZE PATTERN STAGE-10 SIMULATION ==========\\n"
                 + report
-                + "TOTAL simulations=" + total + "\n"
-                + "=======================================================\n");
+                + "TOTAL simulations=" + total + "\\n"
+                + "=======================================================\\n");
     }
 
     private static void writeReport(String report) {

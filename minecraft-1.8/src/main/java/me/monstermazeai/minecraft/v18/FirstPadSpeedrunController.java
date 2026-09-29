@@ -602,7 +602,7 @@ public final class FirstPadSpeedrunController {
         if (!state.player.grounded
                 && routePositionOnCommittedEnvelope(state)
                 && !gapExecutionActive) {
-            float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
+            float airborneDesiredYaw = desiredYaw;
             float airborneYawError = normalise(airborneDesiredYaw - state.player.yaw);
             float airYawDelta = clamp(airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
             if (state.worldTick % 10L == 0L) {
@@ -806,7 +806,7 @@ public final class FirstPadSpeedrunController {
             if (!state.player.grounded
                     && state.player.y > state.center.y - 1.50D
                     && !suddenHorizontalImpulse) {
-                float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
+                float airborneDesiredYaw = desiredYaw;
                 float airborneYawError = normalise(
                         airborneDesiredYaw - state.player.yaw);
                 float airborneYawDelta = clamp(

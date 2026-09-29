@@ -1427,6 +1427,16 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
+        /*
+         * The player can enter the gap while already airborne because the
+         * speed-boost technique chains jumps. In that case the gap need not
+         * have been "committed" on a prior grounded tick; the current edge
+         * geometry is sufficient to keep the jump transaction alive.
+         */
+        if (!state.player.grounded && isCurrentEdgeGap(state)) {
+            return false;
+        }
+
         if (routeSupportsFootprint(state, state.player.x, state.player.z,
                 Math.min(routeIndex + 2, routeLength - 1))) {
             return false;

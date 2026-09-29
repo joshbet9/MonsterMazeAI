@@ -1038,9 +1038,24 @@ public final class FirstPadSpeedrunController {
         previousPadSeedRow = routeStartsOnPreviousPad ? startRow : -1;
         previousPadSeedColumn = routeStartsOnPreviousPad ? startColumn : -1;
 
-        routeRows = newRouteRows;
-        routeColumns = newRouteColumns;
-        routeLength = count;
+        /*
+         * The A* graph is intentionally conservative and may return a
+         * one-cell stair-step around an open corner. At speedrun velocity that
+         * creates a physically unnecessary 45 -> 0 -> 90 degree steering
+         * sequence while airborne. Collapse only those kinks for which the
+         * direct diagonal is independently proven traversable by the same
+         * physical-floor rules as the planner. Gaps are never collapsed.
+         */
+        int smoothedCount = smoothRouteCorners(
+                state, newRouteRows, newRouteColumns, count);
+        int[] smoothedRows = new int[smoothedCount];
+        int[] smoothedColumns = new int[smoothedCount];
+        System.arraycopy(newRouteRows, 0, smoothedRows, 0, smoothedCount);
+        System.arraycopy(newRouteColumns, 0, smoothedColumns, 0, smoothedCount);
+
+        routeRows = smoothedRows;
+        routeColumns = smoothedColumns;
+        routeLength = smoothedCount;
         routeIndex = 0;
 
         /*
@@ -1100,6 +1115,50 @@ public final class FirstPadSpeedrunController {
         }
 
         return true;
+    }
+
+    private int smoothRouteCorners(
+            LegacyWorldObservation state, int[] rows, int[] columns, int count) {
+        if (count <= 2) return count;
+
+        int write = 0;
+        for (int read = 0; read < count; read++) {
+            rows[write] = rows[read];
+            columns[write] = columns[read];
+            write++;
+
+            while (write >= 3) {
+                int a = write - 3;
+                int b = write - 2;
+                int c = write - 1;
+                int dr = Math.abs(rows[c] - rows[a]);
+                int dc = Math.abs(columns[c] - columns[a]);
+
+                if (dr == 1 && dc == 1
+                        && edgeTypeForCells(rows[a], columns[a], rows[b], columns[b])
+                        != EdgeType.ONE_BLOCK_GAP
+                        && edgeTypeForCells(rows[b], columns[b], rows[c], columns[c])
+                        != EdgeType.ONE_BLOCK_GAP
+                        && canTraverseEdge(state,
+                                rows[a], columns[a], rows[c], columns[c])) {
+                    rows[a + 1] = rows[c];
+                    rows[b + 1] = rows[c];
+                    write--;
+                } else {
+                    break;
+                }
+            }
+        }
+        return write;
+    }
+
+    private EdgeType edgeTypeForCells(int fromRow, int fromColumn,
+                                      int toRow, int toColumn) {
+        int dr = Math.abs(toRow - fromRow);
+        int dc = Math.abs(toColumn - fromColumn);
+        if (dr == 2 || dc == 2) return EdgeType.ONE_BLOCK_GAP;
+        if (dr == 1 && dc == 1) return EdgeType.DIAGONAL;
+        return EdgeType.ORTHOGONAL;
     }
 
     private int expandStaticNeighbour(LegacyWorldObservation state,

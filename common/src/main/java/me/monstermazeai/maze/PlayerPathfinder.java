@@ -2,22 +2,18 @@ package me.monstermazeai.maze;
 
 import java.util.*;
 
-/**
- * Shortest physical route for the player.
- *
- * The live game has two different notions of walkability:
- * - monster waypoints use the logical maze topology (1/2/5/6);
- * - the player can physically stand on every non-air maze cell, including the
- *   central safe area (3/4) and temporarily disabled Safe Pad cells.
- *
- * Player routing must therefore ignore logical waypoint disabling and use the
- * physical floor represented by any non-zero source layout cell.
- */
 public final class PlayerPathfinder {
     public List<Cell> shortestPath(MazeModel maze, Cell start, Cell goal) {
-        if (!isPhysicalFloor(maze, start) || !isPhysicalFloor(maze, goal)) {
-            return List.of();
-        }
+        return shortestPath(maze, start, goal, true);
+    }
+
+    /** Shortest physical route using only adjacent floor cells. */
+    public List<Cell> shortestPathWithoutGaps(MazeModel maze, Cell start, Cell goal) {
+        return shortestPath(maze, start, goal, false);
+    }
+
+    private List<Cell> shortestPath(MazeModel maze, Cell start, Cell goal, boolean allowGaps) {
+        if (!isPhysicalFloor(maze, start) || !isPhysicalFloor(maze, goal)) return List.of();
 
         ArrayDeque<Cell> queue = new ArrayDeque<>();
         Map<Cell, Cell> previous = new HashMap<>();
@@ -33,24 +29,27 @@ public final class PlayerPathfinder {
             add(maze, current, new Cell(r + 1, c), queue, previous);
             add(maze, current, new Cell(r, c - 1), queue, previous);
             add(maze, current, new Cell(r, c + 1), queue, previous);
-            addMovement(maze, current, new Cell(r - 2, c), queue, previous);
-            addMovement(maze, current, new Cell(r + 2, c), queue, previous);
-            addMovement(maze, current, new Cell(r, c - 2), queue, previous);
-            addMovement(maze, current, new Cell(r, c + 2), queue, previous);
+            if (allowGaps) {
+                addMovement(maze, current, new Cell(r - 2, c), queue, previous);
+                addMovement(maze, current, new Cell(r + 2, c), queue, previous);
+                addMovement(maze, current, new Cell(r, c - 2), queue, previous);
+                addMovement(maze, current, new Cell(r, c + 2), queue, previous);
+            }
         }
-
         return List.of();
     }
 
-
-    /**
-     * Shortest physical route to any cell in an axis-aligned goal region.
-     *
-     * This is a single BFS, not one BFS per goal cell. It is the correct
-     * bootstrap primitive for Safe Pads because every cell in the 5x5 surface
-     * is a terminal success state for the player.
-     */
     public List<Cell> shortestPathToRegion(MazeModel maze, Cell start, Cell center, int radius) {
+        return shortestPathToRegion(maze, start, center, radius, true);
+    }
+
+    /** Shortest physical route to a Safe Pad region without gap jumps. */
+    public List<Cell> shortestPathToRegionWithoutGaps(MazeModel maze, Cell start, Cell center, int radius) {
+        return shortestPathToRegion(maze, start, center, radius, false);
+    }
+
+    private List<Cell> shortestPathToRegion(MazeModel maze, Cell start, Cell center,
+                                            int radius, boolean allowGaps) {
         if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
         if (!isPhysicalFloor(maze, start)) return List.of();
 
@@ -81,10 +80,12 @@ public final class PlayerPathfinder {
             add(maze, current, new Cell(r + 1, c), queue, previous, distance, currentDistance + 1);
             add(maze, current, new Cell(r, c - 1), queue, previous, distance, currentDistance + 1);
             add(maze, current, new Cell(r, c + 1), queue, previous, distance, currentDistance + 1);
-            addMovement(maze, current, new Cell(r - 2, c), queue, previous, distance, currentDistance + 1);
-            addMovement(maze, current, new Cell(r + 2, c), queue, previous, distance, currentDistance + 1);
-            addMovement(maze, current, new Cell(r, c - 2), queue, previous, distance, currentDistance + 1);
-            addMovement(maze, current, new Cell(r, c + 2), queue, previous, distance, currentDistance + 1);
+            if (allowGaps) {
+                addMovement(maze, current, new Cell(r - 2, c), queue, previous, distance, currentDistance + 1);
+                addMovement(maze, current, new Cell(r + 2, c), queue, previous, distance, currentDistance + 1);
+                addMovement(maze, current, new Cell(r, c - 2), queue, previous, distance, currentDistance + 1);
+                addMovement(maze, current, new Cell(r, c + 2), queue, previous, distance, currentDistance + 1);
+            }
         }
         return bestGoal == null ? List.of() : reconstruct(previous, bestGoal);
     }
@@ -112,13 +113,13 @@ public final class PlayerPathfinder {
         previous.put(next, current);
         queue.addLast(next);
     }
+
     private void addMovement(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
                              Map<Cell, Cell> previous) {
         if (!isGapEdge(maze, current, next) || previous.containsKey(next)) return;
         previous.put(next, current);
         queue.addLast(next);
     }
-
 
     private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
                      Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
@@ -127,6 +128,7 @@ public final class PlayerPathfinder {
         distance.put(next, nextDistance);
         queue.addLast(next);
     }
+
     private void addMovement(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
                              Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
         if (!isGapEdge(maze, current, next) || previous.containsKey(next)) return;

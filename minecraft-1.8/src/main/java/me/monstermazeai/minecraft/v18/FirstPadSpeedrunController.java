@@ -133,6 +133,14 @@ public final class FirstPadSpeedrunController {
     private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.75D;
     private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
     private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 0.85D;
+    /*
+     * At the simulator's capped sprint speed the player can cross a corner
+     * before a single-cell waypoint capture is observed. Allow a bounded
+     * forward re-index to the nearest future route cell instead of steering
+     * back toward an already-passed corner.
+     */
+    private static final double ROUTE_NEAREST_CAPTURE_RADIUS = 1.85D;
+    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 8;
     private static final double DIAGONAL_SUPPORT_MIN_AREA = 0.01D;
     /*
      * A two-cell route edge is a deliberate one-block jump, not a walk across
@@ -2396,6 +2404,56 @@ public final class FirstPadSpeedrunController {
                 }
             } else {
                 break;
+            }
+        }
+
+        /*
+         * Fast corner crossings can leave the player materially closer to a
+         * later route waypoint than to the current one without ever producing
+         * the exact edge projection required by the normal capture predicate.
+         * Re-index forward in that case. This is deliberately bounded and
+         * never skips a committed one-block gap; it only prevents the motor
+         * from fighting a corner that the player has already physically passed.
+         */
+        if (!gapExecutionActive && routeIndex < routeLength - 1) {
+            double currentDistance = Math.hypot(
+                    state.player.x - worldX(routeRows[routeIndex], state.center.x),
+                    state.player.z - worldZ(routeColumns[routeIndex], state.center.z));
+            int bestIndex = routeIndex;
+            double bestDistance = currentDistance;
+
+            int end = Math.min(routeLength - 1,
+                    routeIndex + ROUTE_NEAREST_CAPTURE_LOOKAHEAD);
+            for (int candidate = routeIndex + 1; candidate <= end; candidate++) {
+                boolean crossesGap = false;
+                for (int edge = routeIndex; edge < candidate; edge++) {
+                    if (edgeType(edge) == EdgeType.ONE_BLOCK_GAP) {
+                        crossesGap = true;
+                        break;
+                    }
+                }
+                if (crossesGap || !routeCellSupported(state, candidate)) continue;
+
+                double distance = Math.hypot(
+                        state.player.x - worldX(routeRows[candidate], state.center.x),
+                        state.player.z - worldZ(routeColumns[candidate], state.center.z));
+                if (distance <= ROUTE_NEAREST_CAPTURE_RADIUS
+                        && distance + 0.05D < bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = candidate;
+                }
+            }
+
+            if (bestIndex > routeIndex) {
+                int oldIndex = routeIndex;
+                routeIndex = bestIndex;
+                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                log(state.worldTick, "[MonsterMazeAI/1.8] FORWARD ROUTE REINDEX"
+                        + " tick=" + state.worldTick
+                        + " oldIndex=" + oldIndex
+                        + " newIndex=" + routeIndex
+                        + " distance=" + format(bestDistance)
+                        + " player=" + format(state.player.x) + "," + format(state.player.z));
             }
         }
     }

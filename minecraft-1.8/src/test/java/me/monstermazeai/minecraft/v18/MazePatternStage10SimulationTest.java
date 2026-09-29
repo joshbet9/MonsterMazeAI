@@ -262,7 +262,13 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static int stageTimeTicks(int stage) {
-        int seconds = Math.max(15, 35 - ((stage - 1) * 20 / 9));
+        /*
+         * The 1.8 Speed/Original game uses the original phase pacing:
+         * 60 seconds at stage 1, minus 2 seconds per completed stage,
+         * with a 15-second floor. This must match MonsterMaze GameManager
+         * stageTimer() rather than the Modern 35 -> 15 second schedule.
+         */
+        int seconds = Math.max(15, 60 - ((stage - 1) * 2));
         return seconds * 20;
     }
 

@@ -754,7 +754,8 @@ public final class FirstPadSpeedrunController {
              * physical analogue and was a direct source of simulated falls.
              */
             if (!state.player.grounded
-                    && routePositionOnCommittedEnvelope(state)) {
+                    && state.player.y > state.center.y - 1.50D
+                    && !suddenHorizontalImpulse) {
                 return new LegacyAction(
                         1.0f, 0.0f, true, true, yawDelta, false);
             }

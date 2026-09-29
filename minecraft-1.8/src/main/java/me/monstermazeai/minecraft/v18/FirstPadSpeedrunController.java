@@ -2627,9 +2627,7 @@ public final class FirstPadSpeedrunController {
 
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
-                    && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
-                    || physicalFloorSupportsFootprint(
-                    state, state.player.x, state.player.z));
+                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
@@ -2712,7 +2710,8 @@ public final class FirstPadSpeedrunController {
              * capture of the selected candidate itself.
              */
             if (bestIndex > routeIndex
-                    && bestDistance + 0.05D < currentDistance) {
+                    && bestDistance + 0.05D < currentDistance
+                    && routeEdgeHasPhysicalCapture(state, bestIndex)) {
                 int oldIndex = routeIndex;
                 routeIndex = bestIndex;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;

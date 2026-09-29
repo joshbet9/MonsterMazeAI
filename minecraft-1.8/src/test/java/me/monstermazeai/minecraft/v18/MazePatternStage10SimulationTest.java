@@ -209,8 +209,9 @@ public final class MazePatternStage10SimulationTest {
                 result.ticks = ticks;
                 result.failure = "STAGE_TIMEOUT stage=" + stage
                         + " pos=" + format(player.x) + "," + format(player.z)
-                        + " action=" + actionText(action);
-                return result;
+                        + " action=" + actionText(action)
+                        + " targets=" + padSequenceText(pads)
+                        + " controllerLog=" + result.controllerLog.toString();
             }
         }
 

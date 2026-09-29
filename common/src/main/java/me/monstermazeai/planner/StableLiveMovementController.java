@@ -846,7 +846,7 @@ public final class StableLiveMovementController {
             return null;
         }
         int fromRow = route.cells().get(gapExecutionRouteIndex).row();
-        int fromColumn = route.cells().get(gapIndex).column();
+        int fromColumn = route.cells().get(gapExecutionRouteIndex).column();
         int toRow = route.cells().get(waypointIndex).row();
         int toColumn = route.cells().get(waypointIndex).column();
         if (!isGapEdge(state, fromRow, fromColumn, toRow, toColumn)) {

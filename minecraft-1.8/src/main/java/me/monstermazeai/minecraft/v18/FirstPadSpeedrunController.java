@@ -62,6 +62,14 @@ public final class FirstPadSpeedrunController {
     private static final int MOB_PREDICT_TICKS = 30;
     private static final double ESTIMATED_TICKS_PER_CELL = 5.0D;
     /*
+     * A physical replan must respect the player's existing momentum. Without
+     * this, A* can select a geometrically short first edge that points behind
+     * the current velocity, forcing a 90-180 degree turn at a one-block
+     * corridor corner and recreating the exact route-fighting failure.
+     */
+    private static final double REPLAN_HEADING_SPEED_THRESHOLD = 0.08D;
+    private static final double REPLAN_HEADING_PENALTY_TICKS = 12.0D;
+    /*
      * First-pad movement must not churn because of monsters far down the
      * route. Keep dynamic replanning local to the player's actual 20-block
      * threat envelope; the initial A* still accounts for the complete route.
@@ -80,6 +88,7 @@ public final class FirstPadSpeedrunController {
     private long lastLogTick = Long.MIN_VALUE;
     private boolean targetReached;
     private boolean aligningForStage;
+    private boolean aligningForReplan;
     private int lastLoggedStage = -1;
     private long startedAtTick = Long.MIN_VALUE;
     private int headingStableTicks;
@@ -132,7 +141,24 @@ public final class FirstPadSpeedrunController {
     private static final double KNOCKBACK_ACCELERATION = 0.22D;
     private static final double KNOCKBACK_TICK_DISPLACEMENT = 0.75D;
     private static final int KNOCKBACK_RECOVERY_COOLDOWN_TICKS = 8;
-    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 0.85D;
+    /*
+     * The player's 0.60m footprint can remain physically supported while its
+     * centre is nearly 0.93 blocks from a one-block route centreline at a
+     * diagonal/cell-boundary crossing. 0.85m was therefore below the actual
+     * geometric support envelope and caused false POSITION REPLAN events on
+     * otherwise valid grounded crossings.
+     */
+    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 1.35D;
+    /** Corner anticipation must be tighter than route-recovery tolerance. */
+    private static final double CORNER_ANTICIPATION_LATERAL_TOLERANCE = 0.55D;
+    /*
+     * At the simulator's capped sprint speed the player can cross a corner
+     * before a single-cell waypoint capture is observed. Allow a bounded
+     * forward re-index to the nearest future route cell instead of steering
+     * back toward an already-passed corner.
+     */
+    private static final double ROUTE_NEAREST_CAPTURE_RADIUS = 1.85D;
+    private static final int ROUTE_NEAREST_CAPTURE_LOOKAHEAD = 3;
     private static final double DIAGONAL_SUPPORT_MIN_AREA = 0.01D;
     /*
      * A two-cell route edge is a deliberate one-block jump, not a walk across
@@ -353,7 +379,7 @@ public final class FirstPadSpeedrunController {
          * transition, so this is the earliest safe point at which the new
          * route can be used for pre-alignment.
          */
-        if (aligningForStage) {
+        if (aligningForStage || aligningForReplan) {
             int headingIndex = firstRouteHeadingIndex();
             int fromIndex = Math.max(0, headingIndex - 1);
             float desiredYaw = desiredYawForEdge(
@@ -363,8 +389,12 @@ public final class FirstPadSpeedrunController {
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
             if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE) {
+                boolean wasStageAlignment = aligningForStage;
                 aligningForStage = false;
-                log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGNED"
+                aligningForReplan = false;
+                log(state.worldTick, wasStageAlignment
+                        ? "[MonsterMazeAI/1.8] PAD ALIGNED"
+                        : "[MonsterMazeAI/1.8] REPLAN ALIGNED"
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
@@ -445,9 +475,28 @@ public final class FirstPadSpeedrunController {
          * explicitly re-anchor instead of repeatedly returning IDLE from a
          * predicted-floor safety failure.
          */
-        if (!gapExecutionActive && !recovering && routePositionNeedsRecovery(state)) {
-            if (beginRecovery(state)) {
+        if (!gapExecutionActive && !recovering
+                && state.player.grounded
+                && routePositionNeedsRecovery(state)) {
+            /*
+             * The player is already at a physically observed position. Do not
+             * send the recovery motor back toward a guessed cell centre: that
+             * is precisely what caused the high-speed controller to fight its
+             * own newly rebuilt route. Rebuild A* directly from the observed
+             * position first. Recovery is only the grounded fallback when the
+             * current position cannot seed a physical route at all.
+             */
+            routeLength = 0;
+            routeIndex = 0;
+            if (buildRoute(state)) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] POSITION REPLAN"
+                        + " tick=" + state.worldTick
+                        + " start=" + routeRows[0] + "," + routeColumns[0]
+                        + " target=" + goalRow + "," + goalColumn);
+            } else if (state.player.grounded && beginRecovery(state)) {
                 return recoveryAction(state);
+            } else {
+                return LegacyAction.IDLE;
             }
         }
 
@@ -531,12 +580,73 @@ public final class FirstPadSpeedrunController {
         float desiredYaw = desiredYawForEdge(
                 routeRows[routeIndex], routeColumns[routeIndex],
                 routeRows[nextIndex], routeColumns[nextIndex]);
+        /*
+         * Route tracking is the sole grounded cursor-steering authority.
+         * The separate anticipatory corner pulse can fight the current edge at
+         * sprint speed and inject lateral velocity before waypoint capture.
+         * AirborneCornerYaw remains responsible for a real in-flight turn.
+         */
+        desiredYaw = routeTrackingYaw(state, desiredYaw);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
         if (gapExecutionActive) {
             LegacyAction gapAction = executeCommittedGap(state);
             if (gapAction != null) return gapAction;
+        }
+
+        /*
+         * Arm the gap transaction before the airborne continuity fast-path.
+         * A route cursor can enter a gap edge while the player is still in the
+         * final portion of the previous jump. Waiting for a later grounded tick
+         * delays Space until the player has already traversed the missing cell.
+         */
+        if (!gapExecutionActive
+                && (isCurrentEdgeGap(state)
+                || edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP)) {
+            LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
+            if (gapAction != null) return gapAction;
+        }
+
+        /*
+         * Airborne route continuity is a physics-critical state. A sprint jump
+         * carries substantial horizontal momentum, so stopping to satisfy the
+         * grounded corner/heading safety rules can turn a valid route corner
+         * into a fall. While the player is airborne and still inside the
+         * committed route envelope, keep W+sprint+Space active and steer toward
+         * the current edge. Do not replan or recover in mid-flight; the next
+         * grounded observation can safely validate the new edge.
+         *
+         * This is intentionally narrower than "always move while airborne":
+         * sudden knockback and a genuinely lost route envelope are handled by
+         * the recovery logic above.
+         */
+        if (!state.player.grounded
+                && !gapExecutionActive
+                && state.player.y > state.center.y - 2.00D
+                && routeLength > 1) {
+            /*
+             * Sprint jumps deliberately chain while airborne. A route rebuild
+             * from an airborne continuous position can select a different
+             * corridor cell than the one whose horizontal momentum is already
+             * carrying the player, which is exactly how the simulator produced
+             * repeated mid-flight deaths. Grounded ticks are the safe point for
+             * physical validation and replanning; airborne ticks preserve the
+             * committed route and steer only.
+             */
+            float airborneDesiredYaw = desiredYaw;
+            float airborneYawError = normalise(airborneDesiredYaw - state.player.yaw);
+            float airYawDelta = clamp(airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+            if (state.worldTick % 10L == 0L) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] AIRBORNE ROUTE CONTINUE"
+                        + " tick=" + state.worldTick
+                        + " routeIndex=" + routeIndex
+                        + " yawError=" + format(airborneYawError)
+                        + " yawDelta=" + format(airYawDelta)
+                        + " pos=" + format(state.player.x) + "," + format(state.player.y)
+                        + "," + format(state.player.z));
+            }
+            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
         }
 
         /*
@@ -547,9 +657,17 @@ public final class FirstPadSpeedrunController {
          * resulting route is then handled by the exact same movement controller
          * as a mob-free route. There is intentionally no strafe/dodge state.
          */
-        boolean physicalRouteInvalid = routeNeedsPhysicalReplan(state);
+        /*
+         * Once a route has been committed, continuous position drift is not
+         * itself a reason to throw the route away. At sprint speed the observed
+         * cell can legitimately differ from the route cursor by one cell at a
+         * corner or landing. Rebuilding from that observed cell can make a
+         * valid stage route appear disconnected (especially immediately after
+         * a pad transition). Physical safety still gates the actual movement;
+         * only an explicit dynamic obstacle requests a new A* route.
+         */
         boolean mobBlocked = routeNeedsMobReplan(state);
-        if (physicalRouteInvalid || mobBlocked) {
+        if (mobBlocked) {
             /*
              * A committed gap is a physics-critical transaction. Dynamic mob
              * replanning is suspended until the landing is confirmed; changing
@@ -672,6 +790,13 @@ public final class FirstPadSpeedrunController {
             desiredYaw = desiredYawForEdge(
                     routeRows[routeIndex], routeColumns[routeIndex],
                     routeRows[nextIndex], routeColumns[nextIndex]);
+            /*
+             * routeTrackingYaw owns corner anticipation. Do not apply the
+             * legacy cornerLeadYaw pass first: doing so compounds two separate
+             * turn controllers and can turn a valid cardinal edge into a
+             * ~150-degree reverse command at sprint speed.
+             */
+            desiredYaw = routeTrackingYaw(state, desiredYaw);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         }
@@ -716,6 +841,24 @@ public final class FirstPadSpeedrunController {
              * floor/vertical/vector constraint failed, rotate in place rather
              * than advancing into the unsafe direction.
              */
+            /*
+             * If we are airborne but the route envelope has already been
+             * invalidated, do not freeze the player in the air. Continue the
+             * current heading for one control tick while the route/recovery
+             * machinery catches up. A stationary airborne action has no useful
+             * physical analogue and was a direct source of simulated falls.
+             */
+            if (!state.player.grounded
+                    && state.player.y > state.center.y - 1.50D
+                    && !suddenHorizontalImpulse) {
+                float airborneDesiredYaw = desiredYaw;
+                float airborneYawError = normalise(
+                        airborneDesiredYaw - state.player.yaw);
+                float airborneYawDelta = clamp(
+                        airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+                return new LegacyAction(
+                        1.0f, 0.0f, true, false, airborneYawDelta, false);
+            }
             if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
@@ -747,7 +890,15 @@ public final class FirstPadSpeedrunController {
             if (gapAction != null) return gapAction;
         }
 
-        boolean jumpPulse = true;
+        /*
+         * Jumper charges are finite in the authoritative 1.8 MonsterMaze
+         * implementation. Do not waste them on ordinary ground movement:
+         * non-Jumpers already get the legacy -10 sprint-jump momentum, while
+         * Jumper's real advantage is a charged vanilla jump when a gap or
+         * other aerial traversal actually requires it. Gap execution above
+         * owns the jump input for a committed gap.
+         */
+        boolean jumpPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER;
 
         if (state.worldTick % 10L == 0L) {
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN"
@@ -764,7 +915,14 @@ public final class FirstPadSpeedrunController {
                     + " jump=" + jumpPulse);
         }
 
-        return new LegacyAction(1.0f, 0.0f, jumpPulse, true, yawDelta, false);
+        /*
+         * Jumper has a real vanilla charged jump rather than the non-Jumper
+         * -10 speeding impulse. Keep its ordinary ground traversal at the
+         * controlled walking envelope; sprint is reserved for the committed
+         * gap transaction, where the horizontal jump impulse is intentional.
+         */
+        boolean sprintPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER;
+        return new LegacyAction(1.0f, 0.0f, jumpPulse, sprintPulse, yawDelta, false);
     }
 
     public void reset() {
@@ -835,20 +993,35 @@ public final class FirstPadSpeedrunController {
                 && Math.abs(nominalStartColumn - previousPadCenterColumn) <= PAD_RADIUS;
 
         /*
-         * During a pad transition the player's continuous position can already
-         * be several tenths of a block inside a neighbouring logical cell,
-         * while the old SafePad is still the actual launch surface. The route
-         * graph represents that launch surface by the previous pad centre.
-         * Starting A* from the player's nominal cell here can therefore create
-         * an invalid synthetic start: canTraverseEdge() only permits the
-         * previous-pad exception when the source node is the previous pad
-         * centre itself. Force the graph start back to that authoritative
-         * previous-pad seed whenever the player is still inside it.
+         * During a pad transition the player may already have crossed several
+         * logical cells while still physically standing on the previous
+         * SafePad. If that observed nominal cell is itself part of the old
+         * pad's live physical surface, it is the correct launch state and
+         * should seed A* directly. Re-anchoring to the old pad centre creates
+         * a route behind the player's actual momentum, which can immediately
+         * produce an overshoot/replan cycle during the stationary heading
+         * alignment.
+         *
+         * Only fall back to the previous-pad centre when the observed nominal
+         * cell is not represented by the transition's physical floor. That
+         * preserves the synthetic previous-pad exception for the genuinely
+         * missing logical representation without discarding valid continuous
+         * player position.
          */
-        int[] physicalStart = standingOnPreviousPad
-                ? new int[] {previousPadCenterRow, previousPadCenterColumn}
-                : findNearestPhysicalStartCell(
-                        state, nominalStartRow, nominalStartColumn, false);
+        int[] physicalStart;
+        if (standingOnPreviousPad) {
+            /*
+             * The transition predicate already proves that the player is
+             * inside the previous SafePad. Use the observed logical cell as
+             * the graph seed even if the observer has already stopped exposing
+             * that old pad through physicalFloor. routeCellSupported() treats
+             * this first node as the legitimate previous-pad source.
+             */
+            physicalStart = new int[] {nominalStartRow, nominalStartColumn};
+        } else {
+            physicalStart = findNearestPhysicalStartCell(
+                    state, nominalStartRow, nominalStartColumn, false);
+        }
         if (physicalStart == null) {
             lastRouteBuildFailureReason = "no-physical-support-cell";
             log(state.worldTick, "[MonsterMazeAI/1.8] FIRST_PAD_SPEEDRUN NO_ROUTE"
@@ -913,12 +1086,6 @@ public final class FirstPadSpeedrunController {
             goal = expandDynamicNeighbour(state, node, r, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
             goal = expandDynamicNeighbour(state, node, r, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
 
-            // Permit diagonal traversal where two floor cells touch at a corner.
-            goal = expandDynamicNeighbour(state, node, r - 1, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r - 1, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r + 1, c - 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-            goal = expandDynamicNeighbour(state, node, r + 1, c + 1, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
-
             // Permit a two-cell orthogonal edge only when exactly one missing
             // floor cell lies between the two supported endpoint cells.
             goal = expandDynamicNeighbour(state, node, r - 2, c, r, c, targetRow, targetColumn, bestArrivalTicks, parent, open, goal);
@@ -973,14 +1140,6 @@ public final class FirstPadSpeedrunController {
                         bestArrivalTicks, parent, open, goal);
                 goal = expandStaticNeighbour(state, node, r, c + 1, r, c, targetRow, targetColumn,
                         bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r - 1, c - 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r - 1, c + 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r + 1, c - 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
-                goal = expandStaticNeighbour(state, node, r + 1, c + 1, r, c, targetRow, targetColumn,
-                        bestArrivalTicks, parent, open, goal);
                 goal = expandStaticNeighbour(state, node, r - 2, c, r, c, targetRow, targetColumn,
                         bestArrivalTicks, parent, open, goal);
                 goal = expandStaticNeighbour(state, node, r + 2, c, r, c, targetRow, targetColumn,
@@ -1022,8 +1181,17 @@ public final class FirstPadSpeedrunController {
             p = parent[p];
         }
 
-        boolean transitioningFromReachedPad = targetReached
-                && !routeStartsOnPreviousPad;
+        /*
+         * activePadTransitionPending is the authoritative transition flag.
+         * next() clears targetReached before rebuilding the new route, so using
+         * targetReached alone here loses the stationary pre-alignment phase
+         * exactly when the server activates the next pad.
+         */
+        boolean transitioningFromReachedPad = activePadTransitionPending
+                || (targetReached && !routeStartsOnPreviousPad);
+        boolean initialRouteAlignment = firstRoute
+                && state.player.grounded
+                && !targetReached;
         boolean mobReplan = routeLength > 0
                 && goalRow == targetRow
                 && goalColumn == targetColumn
@@ -1037,9 +1205,30 @@ public final class FirstPadSpeedrunController {
         previousPadSeedRow = routeStartsOnPreviousPad ? startRow : -1;
         previousPadSeedColumn = routeStartsOnPreviousPad ? startColumn : -1;
 
-        routeRows = newRouteRows;
-        routeColumns = newRouteColumns;
-        routeLength = count;
+        /*
+         * The A* graph is intentionally conservative and may return a
+         * one-cell stair-step around an open corner. At speedrun velocity that
+         * creates a physically unnecessary 45 -> 0 -> 90 degree steering
+         * sequence while airborne. Collapse only those kinks for which the
+         * direct diagonal is independently proven traversable by the same
+         * physical-floor rules as the planner. Gaps are never collapsed.
+         */
+        /*
+         * Keep the planner's authoritative cardinal graph intact. Corner
+         * smoothing can create diagonal/shortcut edges that are geometrically
+         * plausible for a point but do not correspond to a one-cell Monster
+         * Maze movement corridor. The simulator gate is specifically intended
+         * to validate physical traversal of every underlying edge.
+         */
+        int smoothedCount = count;
+        int[] smoothedRows = new int[smoothedCount];
+        int[] smoothedColumns = new int[smoothedCount];
+        System.arraycopy(newRouteRows, 0, smoothedRows, 0, smoothedCount);
+        System.arraycopy(newRouteColumns, 0, smoothedColumns, 0, smoothedCount);
+
+        routeRows = smoothedRows;
+        routeColumns = smoothedColumns;
+        routeLength = smoothedCount;
         routeIndex = 0;
 
         /*
@@ -1080,7 +1269,28 @@ public final class FirstPadSpeedrunController {
          * Mob replans start from the player's current heading and therefore
          * must not introduce a competing alignment state.
          */
-        aligningForStage = transitioningFromReachedPad;
+        aligningForStage = transitioningFromReachedPad || initialRouteAlignment;
+        aligningForReplan = false;
+        if (!transitioningFromReachedPad
+                && state.player.grounded
+                && routeLength > 1) {
+            double speed = Math.hypot(state.player.vx, state.player.vz);
+            if (speed >= 0.12D) {
+                double edgeX = routeRows[1] - routeRows[0];
+                double edgeZ = routeColumns[1] - routeColumns[0];
+                double edgeLength = Math.hypot(edgeX, edgeZ);
+                if (edgeLength > 1.0E-9D) {
+                    edgeX /= edgeLength;
+                    edgeZ /= edgeLength;
+                    double velocityX = state.player.vx / speed;
+                    double velocityZ = state.player.vz / speed;
+                    double headingDot = velocityX * edgeX + velocityZ * edgeZ;
+                    if (headingDot < 0.65D) {
+                        aligningForReplan = true;
+                    }
+                }
+            }
+        }
 
         if (startedAtTick == Long.MIN_VALUE) {
             startedAtTick = state.worldTick;
@@ -1101,6 +1311,50 @@ public final class FirstPadSpeedrunController {
         return true;
     }
 
+    private int smoothRouteCorners(
+            LegacyWorldObservation state, int[] rows, int[] columns, int count) {
+        if (count <= 2) return count;
+
+        int write = 0;
+        for (int read = 0; read < count; read++) {
+            rows[write] = rows[read];
+            columns[write] = columns[read];
+            write++;
+
+            while (write >= 3) {
+                int a = write - 3;
+                int b = write - 2;
+                int c = write - 1;
+                int dr = Math.abs(rows[c] - rows[a]);
+                int dc = Math.abs(columns[c] - columns[a]);
+
+                if (dr == 1 && dc == 1
+                        && edgeTypeForCells(rows[a], columns[a], rows[b], columns[b])
+                        != EdgeType.ONE_BLOCK_GAP
+                        && edgeTypeForCells(rows[b], columns[b], rows[c], columns[c])
+                        != EdgeType.ONE_BLOCK_GAP
+                        && canTraverseEdge(state,
+                                rows[a], columns[a], rows[c], columns[c])) {
+                    rows[a + 1] = rows[c];
+                    rows[b + 1] = rows[c];
+                    write--;
+                } else {
+                    break;
+                }
+            }
+        }
+        return write;
+    }
+
+    private EdgeType edgeTypeForCells(int fromRow, int fromColumn,
+                                      int toRow, int toColumn) {
+        int dr = Math.abs(toRow - fromRow);
+        int dc = Math.abs(toColumn - fromColumn);
+        if (dr == 2 || dc == 2) return EdgeType.ONE_BLOCK_GAP;
+        if (dr == 1 && dc == 1) return EdgeType.DIAGONAL;
+        return EdgeType.ORTHOGONAL;
+    }
+
     private int expandStaticNeighbour(LegacyWorldObservation state,
                                        RouteNode node, int r, int c,
                                        int fromRow, int fromColumn,
@@ -1111,6 +1365,33 @@ public final class FirstPadSpeedrunController {
         int next = index(r, c);
         double edgeDistance = Math.hypot(r - fromRow, c - fromColumn);
         double arrivalTicks = node.gTicks + edgeDistance * ESTIMATED_TICKS_PER_CELL;
+
+        /*
+         * Only the first edge of a replan is heading-sensitive. Once the
+         * player has entered the new route, normal A* geometry takes over.
+         * Penalize, rather than absolutely forbid, a first edge that points
+         * against current velocity so a genuinely forced turn still remains
+         * possible when the graph offers no compatible alternative.
+         */
+        if (node.gTicks <= 1.0E-9D) {
+            double speed = Math.hypot(state.player.vx, state.player.vz);
+            if (speed >= REPLAN_HEADING_SPEED_THRESHOLD) {
+                double edgeX = (r - fromRow);
+                double edgeZ = (c - fromColumn);
+                double edgeLength = Math.hypot(edgeX, edgeZ);
+                if (edgeLength > 1.0E-9D) {
+                    edgeX /= edgeLength;
+                    edgeZ /= edgeLength;
+                    double velocityX = state.player.vx / speed;
+                    double velocityZ = state.player.vz / speed;
+                    double headingDot = velocityX * edgeX + velocityZ * edgeZ;
+                    if (headingDot < 0.50D) {
+                        arrivalTicks += (0.50D - headingDot)
+                                * REPLAN_HEADING_PENALTY_TICKS;
+                    }
+                }
+            }
+        }
         if (arrivalTicks + 1.0E-6D >= bestArrivalTicks[next]) return currentGoal;
         bestArrivalTicks[next] = arrivalTicks;
         parent[next] = node.index;
@@ -1409,11 +1690,29 @@ public final class FirstPadSpeedrunController {
                 || (acceleration >= KNOCKBACK_ACCELERATION && horizontalSpeed >= 0.40D)
                 || (tickDisplacement >= KNOCKBACK_TICK_DISPLACEMENT
                     && horizontalSpeed >= 0.40D)
-                || (directionDot < -0.35D && acceleration >= 0.18D);
+                || (directionDot < -0.35D
+                    && acceleration >= 0.18D
+                    && previousSpeed >= 0.30D
+                    && horizontalSpeed >= 0.30D);
     }
 
     private boolean routePositionNeedsRecovery(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) {
+            return false;
+        }
+
+        /*
+         * Route-position recovery is a grounded re-anchoring operation. An
+         * airborne player can legitimately be ahead of the discrete route
+         * index and temporarily outside the footprint of the current logical
+         * cell; re-anchoring at that instant sends the recovery motor back
+         * toward a cell centre and destroys the jump trajectory.
+         *
+         * Let airborne control finish the current flight. If the player
+         * actually leaves the route, the next grounded observation will
+         * perform the physical recovery/replan from a valid position.
+         */
+        if (!state.player.grounded) {
             return false;
         }
 
@@ -1426,21 +1725,54 @@ public final class FirstPadSpeedrunController {
             return false;
         }
 
-        if (routeSupportsFootprint(state, state.player.x, state.player.z,
-                Math.min(routeIndex + 2, routeLength - 1))) {
+        /*
+         * The player can enter the gap while already airborne because the
+         * speed-boost technique chains jumps. In that case the gap need not
+         * have been "committed" on a prior grounded tick; the current edge
+         * geometry is sufficient to keep the jump transaction alive.
+         */
+        if (!state.player.grounded && isCurrentEdgeGap(state)) {
             return false;
         }
 
         /*
-         * The player may be physically ahead of routeIndex after a fast
-         * diagonal/orthogonal crossing. Keep executing the committed route
-         * while the current position is still close to one of its next edges.
+         * A route is still valid only when the player's continuous footprint
+         * overlaps the currently committed edge. Do not use generic floor
+         * support or several future route edges as proof: doing so masks a
+         * missed turn/gap and can leave the safety controller holding forever.
          */
-        if (routePositionOnCommittedEnvelope(state)) {
-            return false;
+        return !routePositionOnCommittedEnvelope(state);
+    }
+
+    private boolean groundedPositionNearCommittedRoute(LegacyWorldObservation state) {
+        if (routeRows == null || routeLength <= 1) return false;
+
+        int last = Math.min(routeLength - 2, routeIndex + 4);
+        final double maximumLateralDistance = 1.20D;
+
+        for (int i = routeIndex; i <= last; i++) {
+            double ax = worldX(routeRows[i], state.center.x);
+            double az = worldZ(routeColumns[i], state.center.z);
+            double bx = worldX(routeRows[i + 1], state.center.x);
+            double bz = worldZ(routeColumns[i + 1], state.center.z);
+            double ex = bx - ax;
+            double ez = bz - az;
+            double lengthSquared = ex * ex + ez * ez;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double px = state.player.x - ax;
+            double pz = state.player.z - az;
+            double progress = (px * ex + pz * ez) / lengthSquared;
+            if (progress < -0.50D || progress > 1.50D) continue;
+
+            double lateralX = px - ex * progress;
+            double lateralZ = pz - ez * progress;
+            if (Math.hypot(lateralX, lateralZ) <= maximumLateralDistance) {
+                return true;
+            }
         }
 
-        return true;
+        return false;
     }
 
     private boolean beginRecovery(LegacyWorldObservation state) {
@@ -1577,25 +1909,17 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
-         * Diagonal movement is only physically valid when the player has
-         * continuous support through the corner. The source Monster Maze
-         * layouts are one-cell-wide orthogonal corridors; two diagonal path
-         * cells touching only at a corner are not a traversable player route.
-         * Requiring both orthogonal side cells prevents A* from cutting a
-         * corner across the void while still allowing genuine diagonals on a
-         * 5x5 SafePad where all four cells are physically present.
+         * The authoritative Monster Maze movement graph is cardinal: Maze's
+         * movement waypoints are traversed north/south/east/west and the
+         * original getTarget() logic never creates diagonal waypoint edges.
+         *
+         * Do not manufacture diagonal A* edges merely because two adjacent
+         * floor cells touch at a corner. A continuous player can visually cut
+         * that corner, but the one-cell corridor geometry does not guarantee
+         * the 0.60m player footprint remains supported throughout the turn.
+         * Keeping the planner cardinal also makes routeIndex, gap ownership,
+         * and physical support agree on the same graph.
          */
-        if (adr == 1 && adc == 1) {
-            int sideRowA = fromRow;
-            int sideColumnA = toColumn;
-            int sideRowB = toRow;
-            int sideColumnB = fromColumn;
-            boolean sideA = inBounds(sideRowA, sideColumnA)
-                    && state.physicalFloor[sideRowA][sideColumnA];
-            boolean sideB = inBounds(sideRowB, sideColumnB)
-                    && state.physicalFloor[sideRowB][sideColumnB];
-            return sideA && sideB;
-        }
 
         // One-block gap: supported endpoint, unsupported middle cell.
         if ((adr == 2 && dc == 0) || (adc == 2 && dr == 0)) {
@@ -1747,15 +2071,13 @@ public final class FirstPadSpeedrunController {
     }
 
     private boolean isGapJumpWindow(LegacyWorldObservation state) {
-        if (!isCurrentEdgeGap(state)) return false;
-        double progress = currentEdgeProgress(state);
-        double distanceToTakeoff = 0.50D - progress;
-        // Allow the controller to approach the missing cell without the normal
-        // floor sweep rejecting the intentionally unsupported middle block.
-        return gapExecutionActive && gapExecutionRouteIndex == routeIndex
-                || (state.player.grounded
-                && distanceToTakeoff <= GAP_JUMP_TRIGGER_DISTANCE
-                && distanceToTakeoff >= -GAP_JUMP_LATE_TOLERANCE);
+        /*
+         * A genuine one-block gap is a deliberate airborne route edge. The
+         * normal movement motor continuously holds W+sprint+Space; the safety
+         * layer must therefore never reject the unsupported middle cell.
+         * Landing is confirmed separately by advanceRouteIndex().
+         */
+        return isCurrentEdgeGap(state);
     }
 
     private boolean isGapTraversalActive(LegacyWorldObservation state) {
@@ -1784,98 +2106,50 @@ public final class FirstPadSpeedrunController {
                 && physicalFloorCell(state, toRow, toColumn);
     }
 
+    private boolean gapSprint(LegacyWorldObservation state) {
+        /*
+         * Non-Jumpers rely on the legacy sprint-jump speed technique. Jumper's
+         * charged vanilla jump is already a large horizontal event; keep its
+         * gap crossing unsprinted so the 0.42 jump does not combine with the
+         * extra sprint impulse and overshoot the landing corridor.
+         */
+        return state.kit != me.monstermazeai.kit.Kit.JUMPER;
+    }
+
     private LegacyAction prepareOrStartGap(LegacyWorldObservation state,
                                             float desiredYaw, float yawError) {
-        if (gapExecutionActive && gapExecutionRouteIndex == routeIndex) return executeCommittedGap(state);
-        if (!state.player.grounded) return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
-
-        if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
+        /*
+         * Gap traversal uses the same continuous jump policy as the normal
+         * speedrun. There is no runway/momentum gate and no edge-timed IDLE
+         * phase. The route edge itself proves that the missing middle cell is
+         * intentional.
+         */
+        if (Math.abs(yawError) > GAP_HEADING_TOLERANCE && state.player.grounded) {
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
-            if (state.worldTick % 2L == 0L) log(state.worldTick, "[MonsterMazeAI/1.8] GAP ALIGN"
-                    + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " yawError=" + format(yawError));
             return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
         }
 
-        double rad = Math.toRadians(state.player.yaw);
-        double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
-        double lateralVelocity = Math.abs(state.player.vx * forwardZ - state.player.vz * forwardX);
-        if (lateralVelocity > GAP_LATERAL_SPEED_LIMIT) {
-            return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
-        }
-
-        double progress = currentEdgeProgress(state);
-        double distanceToTakeoff = 0.50D - progress;
-
         /*
-         * Never recover-commit a gap simply because the player happens to be
-         * inside its source-cell envelope. That was the exact failure mode
-         * where a preceding turn destroyed the useful forward momentum and the
-         * controller immediately treated the restored heading as jump-ready.
-         *
-         * A gap may still be discovered late by a dynamic replan, but the
-         * baseline controller now requires the same physical momentum gate as
-         * an ordinary gap approach.
+         * Keep the gap policy continuous and gate-free. The route edge itself
+         * identifies the intentional missing middle cell; ordinary route
+         * control already supplies W+sprint+jump continuously across it.
+         * A separate committed transaction is deliberately not entered here
+         * until the controller has a physically validated takeoff state.
          */
-        if (progress >= 0.15D && progress <= 1.65D && hasQualifiedGapMomentum()) {
+        /*
+         * A two-cell route edge is an explicit one-block gap. Once the launch
+         * heading is aligned, own the edge immediately; there is no arbitrary
+         * runway/momentum threshold. The edge itself is the qualification.
+         */
+        if (!gapExecutionActive || gapExecutionRouteIndex != routeIndex) {
             gapExecutionActive = true;
-            gapTakeoffStarted = progress >= 0.15D;
             gapExecutionRouteIndex = routeIndex;
-            gapLandingConfirmTicks = 0;
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP RECOVER COMMIT"
-                    + " tick=" + state.worldTick
-                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " progress=" + format(progress)
-                    + " takeoff=" + gapTakeoffStarted
-                    + " momentum=" + format(gapQualifiedMomentumDistance));
-            return executeCommittedGap(state);
-        }
-
-        if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
-            return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
-        }
-
-        /*
-         * The jump window has arrived. Do not press Space merely because the
-         * heading is now correct: if the preceding run was interrupted, the
-         * player no longer has the physical momentum needed for the baseline
-         * speedrun jump. Hold before the takeoff boundary rather than issuing
-         * an unqualified jump and recreating the observed failure.
-         *
-         * If there is not enough runway left to rebuild the qualification,
-         * abandon this edge and let the normal route builder choose a fresh
-         * route on the next observation. This is preferable to knowingly
-         * committing the player to unsupported space.
-         */
-        if (!hasQualifiedGapMomentum()) {
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MOMENTUM INSUFFICIENT"
-                    + " tick=" + state.worldTick
-                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " progress=" + format(progress)
-                    + " momentum=" + format(gapQualifiedMomentumDistance)
-                    + "/" + format(GAP_MOMENTUM_DISTANCE_REQUIRED)
-                    + " action=ABORT_ROUTE");
-            gapExecutionActive = false;
             gapTakeoffStarted = false;
-            gapExecutionRouteIndex = -1;
             gapLandingConfirmTicks = 0;
-            routeLength = 0;
-            routeIndex = 0;
-            return LegacyAction.IDLE;
         }
 
-        gapExecutionActive = true;
-        gapTakeoffStarted = false;
-        gapExecutionRouteIndex = routeIndex;
-        gapLandingConfirmTicks = 0;
-        log(state.worldTick, "[MonsterMazeAI/1.8] GAP COMMIT"
-                + " tick=" + state.worldTick + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                + " progress=" + format(progress) + " headingAligned=true lateralSpeed=" + format(lateralVelocity));
-        return executeCommittedGap(state);
+        float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+        return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), yawDelta, false);
     }
 
     private LegacyAction executeCommittedGap(LegacyWorldObservation state) {
@@ -1885,7 +2159,12 @@ public final class FirstPadSpeedrunController {
         }
         int fromRow = routeRows[routeIndex], fromColumn = routeColumns[routeIndex];
         int toRow = routeRows[routeIndex + 1], toColumn = routeColumns[routeIndex + 1];
-        if (!isGapRouteEdge(fromRow, fromColumn, toRow, toColumn, state)) {
+        int dr = toRow - fromRow;
+        int dc = toColumn - fromColumn;
+        boolean committedGapGeometry =
+                (Math.abs(dr) == 2 && dc == 0)
+                || (Math.abs(dc) == 2 && dr == 0);
+        if (!committedGapGeometry) {
             gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
             return null;
         }
@@ -1896,6 +2175,40 @@ public final class FirstPadSpeedrunController {
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
                     + " progress=" + format(progress));
+        }
+
+        /*
+         * At sprint-jump speed the player may land one physical corridor cell
+         * beyond the graph's compressed gap endpoint. This is still a legal
+         * traversal when that downstream cell is on the same committed heading
+         * span and the player's actual footprint captures it. Advance only to
+         * an explicitly captured route cell; never accept arbitrary distance
+         * beyond the gap.
+         */
+        if (gapTakeoffStarted && state.player.grounded && progress > 0.90D) {
+            int downstreamLimit = Math.min(routeLength - 1, routeIndex + 3);
+            for (int candidate = routeIndex + 1;
+                 candidate <= downstreamLimit; candidate++) {
+                if (!sameCommittedHeadingSpan(routeIndex, candidate)) break;
+                if (routeEdgeHasPhysicalCapture(state, candidate)) {
+                    log(state.worldTick,
+                            "[MonsterMazeAI/1.8] GAP DOWNSTREAM CAPTURE"
+                                    + " tick=" + state.worldTick
+                                    + " oldIndex=" + routeIndex
+                                    + " newIndex=" + candidate
+                                    + " progress=" + format(progress));
+                    routeIndex = candidate;
+                    gapExecutionActive = false;
+                    gapTakeoffStarted = false;
+                    gapExecutionRouteIndex = -1;
+                    gapLandingConfirmTicks = 0;
+                    resetGapMomentum();
+                    if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                        routeStartsOnPreviousPad = false;
+                    }
+                    return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
+                }
+            }
         }
 
         if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
@@ -1909,7 +2222,7 @@ public final class FirstPadSpeedrunController {
                 resetGapMomentum();
                 routeIndex++;
                 if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
             }
         } else {
             gapLandingConfirmTicks = 0;
@@ -1921,11 +2234,63 @@ public final class FirstPadSpeedrunController {
          * succeeds or the edge is irrecoverably missed.
          */
         if (progress > 1.65D) {
+            /*
+             * Crossing the geometric endpoint while airborne is not a failed
+             * gap. The player can still be descending toward the destination
+             * block, and rebuilding A* in mid-flight destroys the very jump
+             * trajectory that just crossed the gap.
+             */
+            if (!state.player.grounded) {
+                return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
+            }
+
+            /*
+             * Once grounded, accept the crossing if the player's footprint is
+             * physically supported near the destination. Otherwise this is a
+             * genuine miss and the normal grounded recovery/replan path may
+             * take over.
+             */
+            double destinationX = worldX(toRow, state.center.x);
+            double destinationZ = worldZ(toColumn, state.center.z);
+            double destinationDistance = Math.hypot(
+                    state.player.x - destinationX,
+                    state.player.z - destinationZ);
+            /*
+             * Once grounded beyond the gap endpoint, the jump has completed.
+             * At sprint speed the player can be more than one block past the
+             * endpoint centre by the first grounded observation. Rejecting
+             * that observation leaves the controller owning the old edge and
+             * causes repeated "takeoff" attempts while the player walks away.
+             */
+            boolean landedNearEndpoint = playerFootprintOverlapsCell(
+                    state, toRow, toColumn, 0.01D)
+                    || destinationDistance <= 1.10D;
+            if (landedNearEndpoint) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
+                        + " tick=" + state.worldTick
+                        + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
+                        + " progress=" + format(progress)
+                        + " endpointDistance=" + format(destinationDistance));
+                gapExecutionActive = false;
+                gapTakeoffStarted = false;
+                gapExecutionRouteIndex = -1;
+                gapLandingConfirmTicks = 0;
+                resetGapMomentum();
+                routeIndex++;
+                if (routeIndex > 0 && routeStartsOnPreviousPad) {
+                    routeStartsOnPreviousPad = false;
+                }
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
+            }
+
             log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING FAILED"
                     + " tick=" + state.worldTick + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn
-                    + " progress=" + format(progress) + " grounded=" + state.player.grounded);
-            gapExecutionActive = false; gapTakeoffStarted = false; gapExecutionRouteIndex = -1; gapLandingConfirmTicks = 0;
-            routeLength = 0; routeIndex = 0;
+                    + " progress=" + format(progress) + " grounded=" + state.player.grounded
+                    + " endpointDistance=" + format(destinationDistance));
+            gapExecutionActive = false;
+            gapTakeoffStarted = false;
+            gapExecutionRouteIndex = -1;
+            gapLandingConfirmTicks = 0;
             return null;
         }
 
@@ -1938,8 +2303,7 @@ public final class FirstPadSpeedrunController {
         // every grounded observation. At sprint speed a single tick is enough
         // to cross the source block edge, so waiting for exactly +0.50 progress
         // can miss the only grounded jump-input window.
-        boolean jumpInput = state.player.grounded && gapTakeoffStarted;
-        return new LegacyAction(1.0f, 0.0f, jumpInput, true, 0.0f, false);
+        return new LegacyAction(1.0f, 0.0f, true, gapSprint(state), 0.0f, false);
     }
 
     private boolean shouldTriggerGapJump(LegacyWorldObservation state) {
@@ -1960,6 +2324,7 @@ public final class FirstPadSpeedrunController {
         if (Math.abs(state.player.y - state.center.y) > 3.50D) return "vertical";
         if (!state.player.grounded
                 && state.player.y < state.center.y - 0.25D
+                && !isGapJumpWindow(state)
                 && !isGapTraversalActive(state)
                 && !routePositionOnCommittedEnvelope(state)) {
             return "vertical";
@@ -2000,7 +2365,67 @@ public final class FirstPadSpeedrunController {
          */
         double rad = Math.toRadians(commandedYaw);
         double forwardX = -Math.sin(rad), forwardZ = Math.cos(rad);
-        if (forwardX * edgeX + forwardZ * edgeZ < EDGE_FORWARD_DOT_MIN) return "forward-vector";
+        double forwardDot = forwardX * edgeX + forwardZ * edgeZ;
+        if (forwardDot < EDGE_FORWARD_DOT_MIN) {
+            /*
+             * A 90-degree cardinal corner is physically traversable without
+             * stopping: during the final block the player can safely rotate
+             * through a diagonal heading provided the next edge is itself a
+             * valid physical edge. Allow that bounded transition band instead
+             * of dropping W/Space and destroying the speed-boost jump cycle.
+             */
+            boolean validCornerTurn = routeIndex + 2 < routeLength
+                    && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                    && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                    && Math.hypot(
+                    state.player.x - worldX(nextRow, state.center.x),
+                    state.player.z - worldZ(nextColumn, state.center.z))
+                    <= 1.00D
+                    && canTraverseEdge(state,
+                    nextRow, nextColumn,
+                    routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+            if (!validCornerTurn || forwardDot < 0.00D) {
+                return "forward-vector";
+            }
+        }
+
+        /*
+         * Corner lead is allowed to bias the cursor toward the next edge, but
+         * it must never redefine the current edge's safety direction. Validate
+         * the post-turn heading against the raw immediate edge as well. This
+         * prevents a lookahead turn from making an 80-120 degree heading error
+         * appear "safe" merely because the desired yaw was smoothed toward the
+         * following edge.
+         */
+        float rawEdgeYaw = desiredYawForEdge(
+                routeRows[routeIndex], routeColumns[routeIndex],
+                routeRows[nextIndex], routeColumns[nextIndex]);
+        /*
+         * The first speedrun launch is particularly sensitive to a yaw error:
+         * Minecraft preserves the initial lateral component through the entire
+         * sprint-jump. The old 35-degree allowance let a launch begin at
+         * -60/-120 degrees for a cardinal edge, producing a lateral velocity
+         * large enough to leave a one-cell corridor before the first corner.
+         *
+         * Keep the physical corner transition exception above, but make the
+         * actual current-edge heading tight enough that the player never starts
+         * a straight run materially sideways.
+         */
+        float rawHeadingError = Math.abs(normalise(rawEdgeYaw - commandedYaw));
+        boolean nearValidatedCorner = routeIndex + 2 < routeLength
+                && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                && Math.hypot(
+                state.player.x - worldX(nextRow, state.center.x),
+                state.player.z - worldZ(nextColumn, state.center.z))
+                <= 1.25D
+                && canTraverseEdge(
+                state, nextRow, nextColumn,
+                routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+        float allowedRawHeadingError = nearValidatedCorner ? 35.0F : 12.0F;
+        if (rawHeadingError > allowedRawHeadingError) {
+            return "forward-vector";
+        }
 
         /*
          * Safety is evaluated against the route surface, not against an
@@ -2015,16 +2440,45 @@ public final class FirstPadSpeedrunController {
          * the next cell is the first normal maze cell.
          */
         /*
-         * Do not use a predictive footprint sweep here. The route graph already
-         * guarantees that the immediate destination is physical floor, and the
-         * forward-vector guard guarantees that W is issued along that edge.
-         * A 0.48-block geometric sweep is too conservative at high-speed
-         * diagonal/corner traversal because the player's continuous position
-         * can legitimately straddle the logical cells while still being safely
-         * supported. The old sweep was responsible for the observed
-         * "predicted-floor" holds immediately after successful speed-boost
-         * movement.
+         * The immediate route cell being physical is not sufficient at sprint
+         * speed: the player's centre can be near a cell boundary while the
+         * current footprint is supported, yet the next physics step can move
+         * the complete 0.6m body beyond the corridor. Use a one-tick physical
+         * prediction rather than a fixed 0.48m sweep.
+         *
+         * The probe distance is derived from the observed horizontal velocity
+         * plus a small acceleration allowance and is capped just above the
+         * simulator's measured 0.28 blocks/tick envelope. This makes the check
+         * about the actual next body position, not an arbitrary future point.
+         * Intentional one-block gaps have already returned above.
          */
+        /*
+         * Predict the actual next horizontal body position, not merely a point
+         * on the commanded forward ray. Real Minecraft integrates the existing
+         * vx/vz first and then adds this tick's moveFlying acceleration. The
+         * empirical Minecraft traces show persistent lateral velocity through
+         * high-speed corners; the old ray probe could therefore say "safe"
+         * while the 0.60m body was already drifting off the one-block corridor.
+         */
+        if (state.player.grounded) {
+            double inputDamping = 0.98D;
+            double groundFriction = 0.60D * 0.91D;
+            double moveFactor = 0.10D * 1.30D
+                    * (0.16277136D / Math.pow(groundFriction, 3.0D));
+            double predictedVx = state.player.vx
+                    + forwardX * moveFactor * inputDamping;
+            double predictedVz = state.player.vz
+                    + forwardZ * moveFactor * inputDamping;
+            double predictedX = state.player.x + predictedVx;
+            double predictedZ = state.player.z + predictedVz;
+
+            if (!physicalFloorSupportsFootprint(state, predictedX, predictedZ)
+                    && !routeSupportsFootprint(state, predictedX, predictedZ,
+                    Math.min(routeIndex + 2, routeLength - 1))) {
+                return "predicted-floor";
+            }
+        }
+
         return null;
     }
 
@@ -2063,7 +2517,7 @@ public final class FirstPadSpeedrunController {
         double minZ = z - PLAYER_HALF_WIDTH, maxZ = z + PLAYER_HALF_WIDTH;
         double overlapX = Math.min(maxX, padCenterX + 2.5D) - Math.max(minX, padCenterX - 2.5D);
         double overlapZ = Math.min(maxZ, padCenterZ + 2.5D) - Math.max(minZ, padCenterZ - 2.5D);
-        return overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D;
+        return overlapX > 0.0D && overlapZ > 0.0D;
     }
 
     private boolean activeSafePadSupportsFootprint(LegacyWorldObservation state,
@@ -2149,8 +2603,6 @@ public final class FirstPadSpeedrunController {
         int minColumn = row(minZ, state.center.z);
         int maxColumn = row(maxZ - 1.0E-9D, state.center.z);
 
-        final double minimumSupportArea = 0.05D;
-
         for (int r = minRow; r <= maxRow; r++) {
             for (int c = minColumn; c <= maxColumn; c++) {
                 if (!physicalFloorCell(state, r, c)) continue;
@@ -2162,10 +2614,7 @@ public final class FirstPadSpeedrunController {
 
                 double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
                 double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
-                if (overlapX > 0.0D && overlapZ > 0.0D
-                        && overlapX * overlapZ >= minimumSupportArea) {
-                    return true;
-                }
+                if (overlapX > 0.0D && overlapZ > 0.0D) return true;
             }
         }
 
@@ -2211,6 +2660,31 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * A genuine one-block gap owns its edge before commitment as well.
+         * Generic waypoint/overshoot capture must not advance across the
+         * unsupported middle block, otherwise the gap controller never gets a
+         * chance to arm the jump and the route is re-indexed onto the landing
+         * side while the player is still airborne.
+         */
+        if (edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP) {
+            /*
+             * Once A* commits a two-cell edge, that transaction remains
+             * authoritative until the jump lands. A transient physical-floor
+             * overlay must not invalidate the committed edge.
+             * While airborne, never advance the route index onto the landing
+             * cell early; that would let ordinary route capture/replanning
+             * outrun the physical jump.
+             */
+            if (state.player.grounded
+                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1)) {
+                routeIndex++;
+                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                resetGapMomentum();
+            }
+            return;
+        }
+
+        /*
          * The speedrun can move roughly half a block per client tick. A
          * one-cell waypoint can therefore be crossed between observations.
          * Route progress is edge-based: once the player has clearly passed a
@@ -2249,13 +2723,26 @@ public final class FirstPadSpeedrunController {
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
-                    && (playerFootprintOverlapsCell(
+                    && playerFootprintOverlapsCell(
                     state, routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     edgeType(routeIndex) == EdgeType.DIAGONAL
-                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D)
-                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z));
+                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D);
 
             if (normalCapture || overshootCapture) {
+                /*
+                 * During a sprint jump the player's footprint can cross more
+                 * than one one-cell waypoint in a single tick. Do not promote
+                 * the route cursor across an actual heading change while still
+                 * airborne: the body is still physically carrying momentum from
+                 * the previous edge. Grounded capture will commit the turn once
+                 * the player has actually reached the corner surface.
+                 */
+                if (!state.player.grounded
+                        && routeIndex + 2 < routeLength
+                        && turnsAfterEdge(routeIndex)) {
+                    break;
+                }
+
                 routeIndex++;
                 if (overshootCapture && !normalCapture) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] EDGE OVERSHOOT CAPTURE"
@@ -2271,6 +2758,99 @@ public final class FirstPadSpeedrunController {
                 break;
             }
         }
+
+        /*
+         * Fast corner crossings can leave the player materially closer to a
+         * later route waypoint than to the current one without ever producing
+         * the exact edge projection required by the normal capture predicate.
+         * Re-index forward in that case. This is deliberately bounded and
+         * never skips a committed one-block gap; it only prevents the motor
+         * from fighting a corner that the player has already physically passed.
+         */
+        if (!gapExecutionActive && routeIndex < routeLength - 1) {
+            double currentDistance = Math.hypot(
+                    state.player.x - worldX(routeRows[routeIndex], state.center.x),
+                    state.player.z - worldZ(routeColumns[routeIndex], state.center.z));
+            int bestIndex = routeIndex;
+            double bestDistance = currentDistance;
+
+            int end = Math.min(routeLength - 1,
+                    routeIndex + ROUTE_NEAREST_CAPTURE_LOOKAHEAD);
+            for (int candidate = routeIndex + 1; candidate <= end; candidate++) {
+                boolean crossesGap = false;
+                for (int edge = routeIndex; edge < candidate; edge++) {
+                    if (edgeType(edge) == EdgeType.ONE_BLOCK_GAP) {
+                        crossesGap = true;
+                        break;
+                    }
+                }
+                /*
+                 * Never use nearest-cell reindex to jump across a corner. The
+                 * real traces showed exactly why: a fast airborne crossing can
+                 * make a cell several positions ahead look closer than the
+                 * current waypoint, but if the skipped span contains a turn,
+                 * immediately commanding the new cardinal edge can inject a
+                 * large lateral velocity while the body is still in flight.
+                 * Normal edge capture handles the corner on the next ticks.
+                 */
+                if (crossesGap || !routeCellSupported(state, candidate)
+                        || !sameCommittedHeadingSpan(routeIndex, candidate)) continue;
+
+                double distance = Math.hypot(
+                        state.player.x - worldX(routeRows[candidate], state.center.x),
+                        state.player.z - worldZ(routeColumns[candidate], state.center.z));
+                if (distance <= ROUTE_NEAREST_CAPTURE_RADIUS
+                        && distance + 0.05D < bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = candidate;
+                }
+            }
+
+            /*
+             * A nearest-cell match is not sufficient at sprint speed, but the
+             * converse matters too: routeSupportsFootprint() intentionally
+             * accepts ANY currently committed route cell, so using it here can
+             * advance onto a future waypoint while the player's body is still
+             * supported only by the previous cell. Require actual footprint
+             * capture of the selected candidate itself.
+             */
+            if (bestIndex > routeIndex
+                    && bestDistance + 0.05D < currentDistance
+                    && routeEdgeHasPhysicalCapture(state, bestIndex)) {
+                int oldIndex = routeIndex;
+                routeIndex = bestIndex;
+                if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
+                log(state.worldTick, "[MonsterMazeAI/1.8] FORWARD ROUTE REINDEX"
+                        + " tick=" + state.worldTick
+                        + " oldIndex=" + oldIndex
+                        + " newIndex=" + routeIndex
+                        + " distance=" + format(bestDistance)
+                        + " player=" + format(state.player.x) + "," + format(state.player.z));
+            }
+        }
+    }
+
+    private boolean turnsAfterEdge(int index) {
+        if (index < 0 || index + 2 >= routeLength) return false;
+        int firstDr = Integer.signum(routeRows[index + 1] - routeRows[index]);
+        int firstDc = Integer.signum(routeColumns[index + 1] - routeColumns[index]);
+        int nextDr = Integer.signum(routeRows[index + 2] - routeRows[index + 1]);
+        int nextDc = Integer.signum(routeColumns[index + 2] - routeColumns[index + 1]);
+        return firstDr != nextDr || firstDc != nextDc;
+    }
+
+    private boolean sameCommittedHeadingSpan(int fromIndex, int candidateIndex) {
+        if (fromIndex < 0 || candidateIndex <= fromIndex || candidateIndex >= routeLength) {
+            return false;
+        }
+        int baseDr = Integer.signum(routeRows[fromIndex + 1] - routeRows[fromIndex]);
+        int baseDc = Integer.signum(routeColumns[fromIndex + 1] - routeColumns[fromIndex]);
+        for (int i = fromIndex + 1; i < candidateIndex; i++) {
+            int dr = Integer.signum(routeRows[i + 1] - routeRows[i]);
+            int dc = Integer.signum(routeColumns[i + 1] - routeColumns[i]);
+            if (dr != baseDr || dc != baseDc) return false;
+        }
+        return true;
     }
 
     private boolean routeEdgeHasPhysicalCapture(LegacyWorldObservation state, int nextIndex) {
@@ -2294,7 +2874,127 @@ public final class FirstPadSpeedrunController {
         }
 
         return playerFootprintOverlapsCell(
-                state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
+                state, routeRows[nextIndex], routeColumns[nextIndex], 1.0E-6D);
+    }
+
+    private float routeTrackingYaw(LegacyWorldObservation state, float edgeYaw) {
+        /*
+         * The immediate route edge is the sole grounded steering authority.
+         *
+         * Earlier versions blended toward the following corner before the
+         * route cursor had physically captured that waypoint. At sprint speed
+         * that created a commanded yaw which could be safe for the next edge
+         * but unsafe for the CURRENT edge. The safety gate then correctly
+         * rejected it, leaving the controller permanently holding because the
+         * same blended heading was recomputed every tick.
+         *
+         * Deliberately sacrifice a small amount of corner speed here. A
+         * cardinal edge is deterministic, agrees with the A* route and the
+         * physical safety gate, and lets the cursor commit the next edge from
+         * an actually captured position. The airborne controller remains free
+         * to steer through a corner after a sprint jump.
+         */
+        return edgeYaw;
+    }
+
+    private float airborneCornerYaw(LegacyWorldObservation state, float currentEdgeYaw) {
+        if (routeRows == null || routeColumns == null
+                || routeIndex < 0 || routeIndex >= routeLength - 1
+                || gapExecutionActive) {
+            return currentEdgeYaw;
+        }
+
+        double ax = worldX(routeRows[routeIndex], state.center.x);
+        double az = worldZ(routeColumns[routeIndex], state.center.z);
+        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+        double ex = bx - ax;
+        double ez = bz - az;
+        double lengthSquared = ex * ex + ez * ez;
+        if (lengthSquared <= 1.0E-9D) return currentEdgeYaw;
+
+        double px = state.player.x - ax;
+        double pz = state.player.z - az;
+        double progress = (px * ex + pz * ez) / lengthSquared;
+        double lateralX = px - ex * progress;
+        double lateralZ = pz - ez * progress;
+        double lateralDistance = Math.hypot(lateralX, lateralZ);
+        double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
+
+        /*
+         * When sprint-jump momentum carries the player laterally around a
+         * corner, continuing to face the old discrete edge can make the motor
+         * fly past the next corridor and then trigger recovery. During flight
+         * the safest correction is the next waypoint itself: steer toward the
+         * physical destination while preserving forward input.
+         */
+        /*
+         * The real-client traces show the dangerous case that this method is
+         * intended to catch: after a sprint jump/turn the player can be only
+         * ~0.3-0.5 blocks laterally off the corridor centre while still airborne.
+         * Waiting until 0.55m lets the 0.60m body cross completely beyond a
+         * one-block corridor before the correction begins. Start a small
+         * centreline correction at 0.25m, but only when the next waypoint is
+         * already close enough that the correction cannot become a long-range
+         * diagonal cut.
+         */
+        if (lateralDistance <= 0.25D || distanceToNext > 3.00D) {
+            return currentEdgeYaw;
+        }
+
+        float targetYaw = (float) Math.toDegrees(
+                Math.atan2(-(bx - state.player.x), bz - state.player.z));
+        float turn = normalise(targetYaw - currentEdgeYaw);
+        if (Math.abs(turn) <= 3.0F) return currentEdgeYaw;
+
+        return normalise(currentEdgeYaw
+                + clamp(turn, -20.0F, 20.0F));
+    }
+
+    private float cornerLeadYaw(LegacyWorldObservation state, float currentEdgeYaw) {
+        if (routeRows == null || routeColumns == null
+                || routeIndex < 0 || routeIndex + 2 >= routeLength) {
+            return currentEdgeYaw;
+        }
+        if (edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP) {
+            return currentEdgeYaw;
+        }
+
+        double ax = worldX(routeRows[routeIndex], state.center.x);
+        double az = worldZ(routeColumns[routeIndex], state.center.z);
+        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+        double ex = bx - ax;
+        double ez = bz - az;
+        double lengthSquared = ex * ex + ez * ez;
+        if (lengthSquared <= 1.0E-9D) return currentEdgeYaw;
+
+        double px = state.player.x - ax;
+        double pz = state.player.z - az;
+        double progress = (px * ex + pz * ez) / lengthSquared;
+        double distanceToWaypoint = Math.hypot(state.player.x - bx, state.player.z - bz);
+
+        /*
+         * Only begin the lead once the player is genuinely near the waypoint.
+         * Starting at 45% edge progress let the 30-degree cursor budget fight
+         * the current edge for several ticks at sprint speed. The resulting
+         * +/-30-degree oscillation could push the continuous player body off a
+         * one-cell corridor even though both discrete route edges were valid.
+         * A near-waypoint lead preserves the speed advantage without making the
+         * current edge compete with the following edge too early.
+         */
+        if (progress < 0.65D && distanceToWaypoint > 0.80D) {
+            return currentEdgeYaw;
+        }
+
+        float nextYaw = desiredYawForEdge(
+                routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+        float turn = normalise(nextYaw - currentEdgeYaw);
+        if (Math.abs(turn) < 5.0F) return currentEdgeYaw;
+
+        float lead = clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP);
+        return normalise(currentEdgeYaw + lead);
     }
 
     private EdgeType edgeType(int index) {
@@ -2308,7 +3008,17 @@ public final class FirstPadSpeedrunController {
 
     private boolean routePositionOnCommittedEnvelope(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1) return false;
-        int last = Math.min(routeLength - 2, routeIndex + 2);
+        /*
+         * The current edge is the only route state that is guaranteed to match
+         * the player's committed heading. Do not treat a future edge as proof
+         * that the current route is still valid: crossing a gap or a 90-degree
+         * turn without advancing the cursor is exactly how the old envelope
+         * masked route loss and produced permanent safety holds.
+         *
+         * Straight sprint lag is handled by advanceRouteIndex(), which performs
+         * explicit physical waypoint capture before moving the cursor.
+         */
+        int last = Math.min(routeLength - 2, routeIndex);
         for (int i = routeIndex; i <= last; i++) {
             double ax = worldX(routeRows[i], state.center.x);
             double az = worldZ(routeColumns[i], state.center.z);
@@ -2319,7 +3029,7 @@ public final class FirstPadSpeedrunController {
             if (lengthSquared <= 1.0E-9D) continue;
             double px = state.player.x - ax, pz = state.player.z - az;
             double progress = (px * ex + pz * ez) / lengthSquared;
-            if (progress < -0.20D || progress > 1.35D) continue;
+            if (progress < -0.35D || progress > 1.75D) continue;
             double lateralX = px - ex * progress;
             double lateralZ = pz - ez * progress;
             if (Math.hypot(lateralX, lateralZ) > ROUTE_EDGE_LATERAL_TOLERANCE) continue;
@@ -2329,8 +3039,7 @@ public final class FirstPadSpeedrunController {
             if (playerFootprintOverlapsCell(
                     state, routeRows[i], routeColumns[i], minimumArea)
                     || playerFootprintOverlapsCell(
-                    state, routeRows[i + 1], routeColumns[i + 1], minimumArea)
-                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z)) {
+                    state, routeRows[i + 1], routeColumns[i + 1], minimumArea)) {
                 return true;
             }
         }
@@ -2473,6 +3182,10 @@ public final class FirstPadSpeedrunController {
         while (angle > 180.0F) angle -= 360.0F;
         while (angle < -180.0F) angle += 360.0F;
         return angle;
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static float clamp(float value, float min, float max) {

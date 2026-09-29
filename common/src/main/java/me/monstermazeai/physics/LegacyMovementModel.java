@@ -13,6 +13,7 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
+    private static final double LOCKED_JUMP_VELOCITY = -0.48D;
     private static final double SPRINT_JUMP_IMPULSE = 0.2D;
 
     @Override
@@ -33,8 +34,16 @@ public final class LegacyMovementModel implements PhysicsModel {
         boolean groundedAtStart = p.grounded;
         float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
+        if (p.jumpTicks > 0) p.jumpTicks--;
+        if (!action.jump()) p.jumpTicks = 0;
+
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
-            p.vy = JUMP_VELOCITY;
+            boolean jumpAllowed = p.jumpCharges > 0;
+            p.vy = jumpAllowed ? JUMP_VELOCITY : LOCKED_JUMP_VELOCITY;
+            // MonsterMaze applies Jump amplifier -10 to non-Jumpers/exhausted
+            // Jumpers. Vanilla 1.8 therefore receives a negative jump velocity:
+            // the player never rises, but sprint-jump's horizontal 0.2 impulse
+            // still occurs. This is the legacy "speeding" mechanic.
             p.grounded = false;
             if (action.sprint()) {
                 float yaw = p.yaw * 0.017453292F;
@@ -42,10 +51,6 @@ public final class LegacyMovementModel implements PhysicsModel {
                 p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
             }
             p.jumpTicks = 10;
-        } else if (!action.jump()) {
-            p.jumpTicks = 0;
-        } else if (p.jumpTicks > 0) {
-            p.jumpTicks--;
         }
 
         float movementFactor;
@@ -58,7 +63,10 @@ public final class LegacyMovementModel implements PhysicsModel {
                     * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F);
         }
 
-        moveFlying(p, action.strafe(), action.forward(), movementFactor);
+        // EntityLivingBase.onLivingUpdate() damps both movement inputs before
+        // moveEntityWithHeading(). This is part of the authoritative 1.8.9
+        // movement path, not a controller-side tuning factor.
+        moveFlying(p, action.strafe() * 0.98, action.forward() * 0.98, movementFactor);
 
         // The source client resolves movement before the post-move gravity/
         // drag update. The common maze has no side walls, so Y is the only
@@ -102,14 +110,32 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static boolean hasPhysicalFloor(me.monstermazeai.maze.MazeModel maze, double x, double z) {
         if (maze == null) return true;
 
-        // Minecraft's player has width, so keep support while any of the
-        // central hitbox samples still overlap a physical floor cell.
+        // Match Minecraft's AxisAlignedBB/block collision semantics: the
+        // player's 0.6-block footprint is supported when it has any positive
+        // X/Z overlap with a physical floor block. Do not substitute corner
+        // samples or an arbitrary minimum overlap area.
         final double halfWidth = 0.30;
-        double[] xs = {x - halfWidth, x + halfWidth};
-        double[] zs = {z - halfWidth, z + halfWidth};
-        for (double sampleX : xs) {
-            for (double sampleZ : zs) {
-                if (maze.isPhysicalFloor((int)Math.floor(sampleX), (int)Math.floor(sampleZ))) return true;
+        final double minX = x - halfWidth;
+        final double maxX = x + halfWidth;
+        final double minZ = z - halfWidth;
+        final double maxZ = z + halfWidth;
+
+        int minRow = (int) Math.floor(minX);
+        int maxRow = (int) Math.floor(maxX - 1.0E-12);
+        int minColumn = (int) Math.floor(minZ);
+        int maxColumn = (int) Math.floor(maxZ - 1.0E-12);
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (!maze.isPhysicalFloor(row, column)) continue;
+
+                double cellMinX = row;
+                double cellMaxX = row + 1.0;
+                double cellMinZ = column;
+                double cellMaxZ = column + 1.0;
+                double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
+                double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
+                if (overlapX > 0.0 && overlapZ > 0.0) return true;
             }
         }
         return false;

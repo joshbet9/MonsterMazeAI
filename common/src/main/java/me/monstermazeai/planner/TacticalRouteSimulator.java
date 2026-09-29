@@ -179,10 +179,65 @@ public final class TacticalRouteSimulator {
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
+
+        /*
+         * Route progress remains the primary objective, but source-faithful
+         * Monster Maze runs are not won by reaching a waypoint while accepting
+         * a preventable four-health bump. Rank imminent contact ahead of raw
+         * damage history, so the beam can choose a Repulsor/Cryo/Body Rush pulse
+         * or a safe steering line before the collision actually happens.
+         */
+        long contactRisk = imminentContactRisk(state);
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+
+        return contactRisk * 10_000_000_000_000_000L
+                + remaining * 1_000_000_000_000L
+                + distance * 1_000_000L
+                + damage;
+    }
+
+    private long imminentContactRisk(GameState state) {
+        long risk = 0L;
+        double playerSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double reach = MonsterMazeBumpModel.CONTACT_DISTANCE
+                + 0.45 + playerSpeed * TACTICAL_HORIZON;
+
+        for (var monster : state.monsters) {
+            if (monster.removed || monster.launched(state.tick)
+                    || monster.frozen(state.tick)) continue;
+
+            double dx = monster.x - state.player.x;
+            double dy = monster.y - state.player.y;
+            double dz = monster.z - state.player.z;
+            double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (distance > reach) continue;
+
+            /*
+             * Ability-covered threats are still considered, but with the
+             * corresponding source protection discounted. This gives the beam
+             * a positive reason to activate the ability without making ability
+             * use free or universally optimal.
+             */
+            double protection = abilityProtection(state, distance);
+            double effective = Math.max(0.0, reach - distance - protection);
+            risk += Math.min(1_000_000L, Math.round((effective + 0.25) * 1000.0));
+        }
+        return risk;
+    }
+
+    private double abilityProtection(GameState state, double distance) {
+        return switch (state.kit) {
+            case REPULSOR -> state.ability.charges > 0 && distance <= 6.0 ? 1.25 : 0.0;
+            case SLOWBALLER -> state.mode != me.monstermazeai.game.Mode.ORIGINAL
+                    && state.tick >= state.ability.cooldownUntilTick
+                    && distance <= 6.0 ? 1.0 : 0.0;
+            case BODY_BUILDER -> state.mode != me.monstermazeai.game.Mode.ORIGINAL
+                    && (state.ability.activeUntilTick > state.tick || state.ability.activations > 0)
+                    && distance <= 2.75 ? 1.5 : 0.0;
+            default -> 0.0;
+        };
     }
 
     private boolean needsTacticalSearch(GameState state) {
@@ -227,7 +282,22 @@ public final class TacticalRouteSimulator {
         addMovement(out, 1, 0, false, 30);
         addMovement(out, 1, 0, true, -30);
         addMovement(out, 1, 0, true, 30);
-        out.add(new Action(0, 0, false, false, 0, true));
+        /*
+         * Ability activation is a real one-tick input, not an abstract planner
+         * flag. Only add it when the source kit can actually use it and a local
+         * monster makes that use meaningful. This prevents the beam from wasting
+         * branches on empty ability presses while allowing the AI to deliberately
+         * clear/freeze/deflect a threat before contact.
+         */
+        if (abilityActionUseful(state)) {
+            out.add(new Action(0, 0, false, false, 0, true));
+            /*
+             * Preserve forward momentum when the source ability can be activated
+             * concurrently with movement. The Minecraft bridge executes the
+             * ability pulse and movement input on the same tick.
+             */
+            out.add(new Action(1, 0, false, true, 0, true));
+        }
         out.add(new Action(1, 0, true, true, 0, true));
         return out;
     }
@@ -236,6 +306,42 @@ public final class TacticalRouteSimulator {
                                     boolean jump, float turn) {
         boolean moving = Math.abs(forward) > 1.0E-9 || Math.abs(strafe) > 1.0E-9;
         out.add(new Action(forward, strafe, jump, moving, turn, false));
+    }
+
+    private boolean abilityActionUseful(GameState state) {
+        if (state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                || state.kit == me.monstermazeai.kit.Kit.JUMPER) return false;
+
+        if (state.kit == me.monstermazeai.kit.Kit.BODY_BUILDER) {
+            return state.mode != me.monstermazeai.game.Mode.ORIGINAL
+                    && state.ability.activations > 0
+                    && state.ability.activeUntilTick <= state.tick
+                    && hasMonsterWithin(state, 2.75);
+        }
+
+        if (state.kit == me.monstermazeai.kit.Kit.REPULSOR) {
+            return state.ability.charges > 0 && hasMonsterWithin(state, 6.0);
+        }
+
+        if (state.kit == me.monstermazeai.kit.Kit.SLOWBALLER) {
+            return state.mode != me.monstermazeai.game.Mode.ORIGINAL
+                    && state.tick >= state.ability.cooldownUntilTick
+                    && hasMonsterWithin(state, 6.0);
+        }
+
+        return false;
+    }
+
+    private boolean hasMonsterWithin(GameState state, double radius) {
+        double radiusSq = radius * radius;
+        for (var monster : state.monsters) {
+            if (monster.removed || monster.launched(state.tick)) continue;
+            double dx = monster.x - state.player.x;
+            double dy = monster.y - state.player.y;
+            double dz = monster.z - state.player.z;
+            if (dx * dx + dy * dy + dz * dz <= radiusSq) return true;
+        }
+        return false;
     }
 
     private Action routeFollowerAction(GameState state, PlayerRoute route, int waypoint) {

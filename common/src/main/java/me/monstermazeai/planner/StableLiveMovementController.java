@@ -661,14 +661,40 @@ public final class StableLiveMovementController {
         GameState snapshot = liveState.copyForSimulation();
         long requestedTick = liveState.tick;
         long topology = snapshot.maze.dynamicSignature();
+
+        int preservedRowDirection = 0;
+        int preservedColumnDirection = 0;
+        boolean evaluatedCurrentHeading = false;
+        if (route != null && route.size() >= 2) {
+            int currentTargetIndex = Math.max(1, Math.min(waypointIndex, route.size() - 1));
+            Cell currentFrom = route.cells().get(currentTargetIndex - 1);
+            Cell currentTo = route.cells().get(currentTargetIndex);
+            preservedRowDirection = Integer.signum(currentTo.row() - currentFrom.row());
+            preservedColumnDirection = Integer.signum(currentTo.column() - currentFrom.column());
+            evaluatedCurrentHeading = Math.abs(preservedRowDirection)
+                    + Math.abs(preservedColumnDirection) == 1;
+        }
+
+        final int headingRow = preservedRowDirection;
+        final int headingColumn = preservedColumnDirection;
+        final boolean evaluateHeading = evaluatedCurrentHeading;
+
         pendingRoutePlan = routePlanningExecutor.submit(() -> {
             try {
                 PlayerRoute planned = regionRadius > 0
                         ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
                         : backgroundRoutePlanner.route(snapshot, start, goal);
+
+                boolean currentHeadingViable = false;
+                if (evaluateHeading) {
+                    currentHeadingViable = backgroundRoutePlanner.hasViableInitialHeading(
+                            snapshot, start, goal, regionRadius, headingRow, headingColumn);
+                }
+
                 completedRoutePlan = new PlannedRoute(
                         planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
-                        requestedTick, topology, threatSignature(snapshot));
+                        requestedTick, topology, threatSignature(snapshot),
+                        evaluateHeading, currentHeadingViable, headingRow, headingColumn);
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] background strategic route failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
@@ -697,13 +723,14 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * A background tactical route may improve the long-term path, but it
-         * must not reverse the motor's immediate cardinal segment while that
-         * segment is still physically valid. Monster updates were otherwise
-         * producing alternating first headings and left/right oscillation.
+         * Prefer continuity, but do not make the current heading an absolute
+         * veto. If the tactical planner has established that no viable route
+         * to the objective remains in the current direction (for example a mob
+         * has occupied a one-way corridor), the new route is allowed to reverse
+         * the motor and escape.
          */
-        if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)) {
+        if (route != null && !strategicRouteMayReplaceCurrentHeading(
+                state, planned, startRow, startColumn)) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -733,10 +760,16 @@ public final class StableLiveMovementController {
         final long requestedTick;
         final long topologySignature;
         final long threatSignature;
+        final boolean evaluatedCurrentHeading;
+        final boolean currentHeadingViable;
+        final int currentHeadingRow;
+        final int currentHeadingColumn;
 
         PlannedRoute(PlayerRoute route, int startRow, int startColumn,
                      int goalRow, int goalColumn, int regionRadius,
-                     long requestedTick, long topologySignature, long threatSignature) {
+                     long requestedTick, long topologySignature, long threatSignature,
+                     boolean evaluatedCurrentHeading, boolean currentHeadingViable,
+                     int currentHeadingRow, int currentHeadingColumn) {
             this.route = route;
             this.startRow = startRow;
             this.startColumn = startColumn;
@@ -746,6 +779,10 @@ public final class StableLiveMovementController {
             this.requestedTick = requestedTick;
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
+            this.evaluatedCurrentHeading = evaluatedCurrentHeading;
+            this.currentHeadingViable = currentHeadingViable;
+            this.currentHeadingRow = currentHeadingRow;
+            this.currentHeadingColumn = currentHeadingColumn;
         }
     }
 
@@ -836,9 +873,10 @@ public final class StableLiveMovementController {
         padTransitionPreviousColumn = -1;
     }
 
-    private boolean strategicRoutePreservesCurrentHeading(
-            GameState state, PlayerRoute planned, int startRow, int startColumn) {
-        if (planned == null || planned.size() < 2 || route == null || route.size() < 2) {
+    private boolean strategicRouteMayReplaceCurrentHeading(
+            GameState state, PlannedRoute planned, int startRow, int startColumn) {
+        if (planned == null || planned.route == null || planned.route.size() < 2
+                || route == null || route.size() < 2) {
             return true;
         }
 
@@ -848,8 +886,8 @@ public final class StableLiveMovementController {
         int currentRowDirection = Integer.signum(currentTo.row() - currentFrom.row());
         int currentColumnDirection = Integer.signum(currentTo.column() - currentFrom.column());
 
-        Cell plannedFrom = planned.cells().get(0);
-        Cell plannedTo = planned.cells().get(1);
+        Cell plannedFrom = planned.route.cells().get(0);
+        Cell plannedTo = planned.route.cells().get(1);
         if (plannedFrom.row() != startRow || plannedFrom.column() != startColumn) {
             return false;
         }
@@ -857,8 +895,19 @@ public final class StableLiveMovementController {
         int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
         int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());
 
-        return currentRowDirection == plannedRowDirection
-                && currentColumnDirection == plannedColumnDirection;
+        if (currentRowDirection == plannedRowDirection
+                && currentColumnDirection == plannedColumnDirection) {
+            return true;
+        }
+
+        /*
+         * The background plan has already simulated the current-direction
+         * alternatives against the same snapshot. If one can still reach the
+         * objective, keep the current heading and avoid needless oscillation.
+         * If none can, the reverse is intentional and must be accepted.
+         */
+        return !planned.evaluatedCurrentHeading
+                || !planned.currentHeadingViable;
     }
 
     private static float cardinalYaw(int rowDirection, int columnDirection) {

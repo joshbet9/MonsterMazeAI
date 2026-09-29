@@ -367,13 +367,22 @@ public final class MazePatternStage10SimulationTest {
             p.vy *= 0.9800000190734863D;
         }
 
-        if (p.y <= 0.0D && p.vy <= 0.0D
-                && footprintSupported(p.x, p.z, physical)) {
+        boolean supported = footprintSupported(p.x, p.z, physical);
+        if (p.y <= 0.0D && p.vy <= 0.0D && supported) {
             p.y = 0.0D;
             p.vy = 0.0D;
             p.grounded = true;
-        } else if (!footprintSupported(p.x, p.z, physical)) {
+        } else if (!supported) {
+            /*
+             * LegacyMovementModel drops the player immediately when a grounded
+             * body leaves physical support; it does not grant one extra
+             * zero-gravity tick. This matters at gap takeoff and maze edges.
+             */
             p.grounded = false;
+            if (groundedAtStart && p.vy >= 0.0D) {
+                p.vy -= 0.08D;
+                p.vy *= 0.9800000190734863D;
+            }
         }
 
         p.vx *= friction;

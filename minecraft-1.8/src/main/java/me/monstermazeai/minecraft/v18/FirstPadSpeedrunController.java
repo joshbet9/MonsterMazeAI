@@ -629,7 +629,7 @@ public final class FirstPadSpeedrunController {
                         + " pos=" + format(state.player.x) + "," + format(state.player.y)
                         + "," + format(state.player.z));
             }
-            return new LegacyAction(1.0f, 0.0f, true, false, airYawDelta, false);
+            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
         }
 
         /*
@@ -835,7 +835,7 @@ public final class FirstPadSpeedrunController {
                 float airborneYawDelta = clamp(
                         airborneYawError, -MAX_YAW_STEP, MAX_YAW_STEP);
                 return new LegacyAction(
-                        1.0f, 0.0f, true, false, airborneYawDelta, false);
+                        1.0f, 0.0f, true, true, airborneYawDelta, false);
             }
             if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);

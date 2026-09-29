@@ -42,6 +42,7 @@ public final class MazePatternStage10SimulationTest {
     private static final int HALF = 49;
     private static final int TARGET_STAGE = 10;
     private static final int SEEDS_PER_PATTERN = 4;
+    private static final Kit[] TEST_KITS = Kit.values();
     private static final int MAX_TICKS_PER_STAGE = 1200;
     // MonsterMaze SafePad starts with decayCount=11 and decays once per
     // second after the active-pad transition. 20 client ticks/second.
@@ -57,20 +58,26 @@ public final class MazePatternStage10SimulationTest {
         int total = 0;
 
         for (int pattern = 0; pattern < 3; pattern++) {
-            int minStage = Integer.MAX_VALUE;
-            int maxStage = 0;
-            int passed = 0;
+            int patternPassed = 0;
+            int patternTotal = 0;
 
-            for (int seed = 0; seed < SEEDS_PER_PATTERN; seed++) {
-                total++;
-                Result result = simulate(pattern, seed);
+            for (Kit kit : TEST_KITS) {
+                int minStage = Integer.MAX_VALUE;
+                int maxStage = 0;
+                int passed = 0;
+
+                for (int seed = 0; seed < SEEDS_PER_PATTERN; seed++) {
+                    total++;
+                    patternTotal++;
+                    Result result = simulate(pattern, seed, kit);
                 minStage = Math.min(minStage, result.stage);
                 maxStage = Math.max(maxStage, result.stage);
                 if (result.stage >= TARGET_STAGE) {
                     passed++;
                 }
 
-                report.append("Maze ").append(pattern + 1)
+                    report.append("Maze ").append(pattern + 1)
+                        .append(" kit=").append(kit)
                         .append(" seed=").append(seed)
                         .append(" stage=").append(result.stage)
                         .append(" pads=").append(result.padsReached)
@@ -121,7 +128,7 @@ public final class MazePatternStage10SimulationTest {
         }
     }
 
-    private static Result simulate(int pattern, int seed) {
+    private static Result simulate(int pattern, int seed, Kit kit) {
         int[][] raw = copy(MazeLayouts.ALL_MAZES[pattern]);
         List<Cell> pads = buildPadSequence(raw, seed);
 
@@ -129,6 +136,8 @@ public final class MazePatternStage10SimulationTest {
         result.failure = "MAX_STAGE_NOT_REACHED";
 
         SimPlayer player = new SimPlayer();
+        player.kit = kit;
+        player.jumpCharges = kit == Kit.JUMPER ? 3 : 0;
         player.x = worldX(50);
         player.z = worldZ(49);
         player.y = 0.0D;
@@ -290,8 +299,8 @@ public final class MazePatternStage10SimulationTest {
                         p.vx, p.vy, p.vz,
                         p.yaw, 0.0F, p.grounded,
                         20.0D, 20.0D),
-                Kit.REPULSOR,
-                2,
+                kit,
+                kit == Kit.JUMPER ? 3 : 0,
                 0,
                 new LegacyWorldObservation.BlockPoint(0, 0, 0),
                 new LegacyWorldObservation.Pad(
@@ -328,7 +337,9 @@ public final class MazePatternStage10SimulationTest {
 
         double radians = Math.toRadians(p.yaw);
         if (action.jump && groundedAtStart && p.jumpTicks == 0) {
-            p.vy = -0.48D;
+            boolean jumper = p.kit == Kit.JUMPER && p.jumpCharges > 0;
+            p.vy = jumper ? 0.42D : -0.48D;
+            if (jumper) p.jumpCharges--;
             // MonsterMaze non-Jumpers carry Jump amplifier -10. The vanilla
             // jump therefore cannot produce positive Y movement, but the
             // sprint-jump horizontal impulse remains and is the legacy
@@ -679,6 +690,8 @@ public final class MazePatternStage10SimulationTest {
         boolean grounded;
         boolean alive = true;
         int jumpTicks;
+        Kit kit;
+        int jumpCharges;
     }
 
     private static final class Result {

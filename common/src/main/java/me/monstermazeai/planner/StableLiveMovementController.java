@@ -564,8 +564,19 @@ public final class StableLiveMovementController {
                                                int previousGoalRow, int previousGoalColumn) {
         int currentRow = (int) Math.floor(state.player.x);
         int currentColumn = (int) Math.floor(state.player.z);
-        if (state.maze.isPhysicalFloor(currentRow, currentColumn)) return state;
 
+        /*
+         * Do not short-circuit merely because the player's current logical
+         * cell is still marked physical floor. On the real SafePad transition
+         * tick the observer can retain the exact cell under the player while
+         * the rest of the previous 5x5 pad has already been removed from the
+         * canonical maze. The route planner then sees an apparently valid
+         * starting cell surrounded by disconnected topology.
+         *
+         * The previous objective is the authoritative transition bridge. If
+         * the player is still on that old SafePad, always overlay the complete
+         * source-accurate 5x5 surface for this routing decision.
+         */
         Cell oldPad = null;
         double bestDistance = Double.POSITIVE_INFINITY;
 

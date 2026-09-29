@@ -153,41 +153,6 @@ public final class MonsterAwareRoutePlanner {
         return cachedCandidates;
     }
 
-    /**
-     * Determines whether a source-faithful tactical route can still reach the
-     * objective while taking the requested initial cardinal direction.
-     *
-     * This is intentionally stricter than checking physical connectivity:
-     * a monster can make a physically connected corridor tactically unusable.
-     * It is used only when a new tactical route wants to reverse the live motor,
-     * so normal movement never pays this simulation cost.
-     */
-    public boolean hasViableInitialHeading(
-            GameState state, Cell start, Cell goal, int regionRadius,
-            int rowDirection, int columnDirection) {
-        if (Math.abs(rowDirection) + Math.abs(columnDirection) != 1) {
-            return false;
-        }
-
-        List<PlayerRoute> candidates = regionRadius > 0
-                ? cachedCandidatesFor(state, start, goal, regionRadius, MAX_REGION_CANDIDATES, true)
-                : cachedCandidatesFor(state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
-
-        for (PlayerRoute candidate : candidates) {
-            if (candidate.size() < 2) continue;
-            Cell first = candidate.cells().get(0);
-            Cell second = candidate.cells().get(1);
-            int dr = Integer.signum(second.row() - first.row());
-            int dc = Integer.signum(second.column() - first.column());
-            if (dr != rowDirection || dc != columnDirection) continue;
-
-            TacticalRouteSimulator.Result result = simulator.simulate(
-                    state, candidate, goal, regionRadius > 0, regionRadius);
-            if (result.reached()) return true;
-        }
-        return false;
-    }
-
     public Action tacticalAction(GameState state, PlayerRoute route, Cell goal, int regionRadius) {
         return simulator.nextAction(state, route, goal, regionRadius > 0, regionRadius);
     }

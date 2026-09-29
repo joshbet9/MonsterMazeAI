@@ -107,7 +107,7 @@ public final class MazePatternStage10SimulationTest {
         }
 
         System.err.println(report.toString());
-        writeReport(report.toString());
+        writeReport(report.toString(), kit.name().toLowerCase());
 
         if (passed != total) {
             throw new RuntimeException(
@@ -116,9 +116,9 @@ public final class MazePatternStage10SimulationTest {
         }
     }
 
-    private static void writeReport(String report) {
+    private static void writeReport(String report, String suffix) {
         try {
-            File file = new File("build/maze-simulator-report.txt");
+            File file = new File("build/maze-simulator-report-" + suffix + ".txt");
             File parent = file.getParentFile();
             if (parent != null) parent.mkdirs();
             FileWriter writer = new FileWriter(file, false);

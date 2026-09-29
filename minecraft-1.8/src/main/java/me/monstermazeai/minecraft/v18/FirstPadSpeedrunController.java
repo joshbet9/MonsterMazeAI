@@ -148,7 +148,7 @@ public final class FirstPadSpeedrunController {
      * geometric support envelope and caused false POSITION REPLAN events on
      * otherwise valid grounded crossings.
      */
-    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 0.95D;
+    private static final double ROUTE_EDGE_LATERAL_TOLERANCE = 1.35D;
     /*
      * At the simulator's capped sprint speed the player can cross a corner
      * before a single-cell waypoint capture is observed. Allow a bounded
@@ -2873,7 +2873,7 @@ public final class FirstPadSpeedrunController {
 
     private boolean routePositionOnCommittedEnvelope(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1) return false;
-        int last = Math.min(routeLength - 2, routeIndex + 2);
+        int last = Math.min(routeLength - 2, routeIndex + 5);
         for (int i = routeIndex; i <= last; i++) {
             double ax = worldX(routeRows[i], state.center.x);
             double az = worldZ(routeColumns[i], state.center.z);
@@ -2884,7 +2884,7 @@ public final class FirstPadSpeedrunController {
             if (lengthSquared <= 1.0E-9D) continue;
             double px = state.player.x - ax, pz = state.player.z - az;
             double progress = (px * ex + pz * ez) / lengthSquared;
-            if (progress < -0.20D || progress > 1.35D) continue;
+            if (progress < -0.35D || progress > 1.75D) continue;
             double lateralX = px - ex * progress;
             double lateralZ = pz - ez * progress;
             if (Math.hypot(lateralX, lateralZ) > ROUTE_EDGE_LATERAL_TOLERANCE) continue;

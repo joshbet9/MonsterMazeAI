@@ -531,6 +531,7 @@ public final class FirstPadSpeedrunController {
         float desiredYaw = desiredYawForEdge(
                 routeRows[routeIndex], routeColumns[routeIndex],
                 routeRows[nextIndex], routeColumns[nextIndex]);
+        desiredYaw = cornerLeadYaw(state, desiredYaw);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
@@ -2287,6 +2288,49 @@ public final class FirstPadSpeedrunController {
 
         return playerFootprintOverlapsCell(
                 state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
+    }
+
+    private float cornerLeadYaw(LegacyWorldObservation state, float currentEdgeYaw) {
+        if (routeRows == null || routeColumns == null
+                || routeIndex < 0 || routeIndex + 2 >= routeLength) {
+            return currentEdgeYaw;
+        }
+        if (edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP) {
+            return currentEdgeYaw;
+        }
+
+        double ax = worldX(routeRows[routeIndex], state.center.x);
+        double az = worldZ(routeColumns[routeIndex], state.center.z);
+        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
+        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
+        double ex = bx - ax;
+        double ez = bz - az;
+        double lengthSquared = ex * ex + ez * ez;
+        if (lengthSquared <= 1.0E-9D) return currentEdgeYaw;
+
+        double px = state.player.x - ax;
+        double pz = state.player.z - az;
+        double progress = (px * ex + pz * ez) / lengthSquared;
+        double distanceToWaypoint = Math.hypot(state.player.x - bx, state.player.z - bz);
+
+        /*
+         * Begin the cursor turn while the player still has runway. A single
+         * 30-degree pulse is safe against the current edge's forward-vector
+         * constraint (cos(30) ~= 0.866 > 0.85), while the next observation
+         * can either capture the waypoint or continue the same lead.
+         */
+        if (progress < 0.45D && distanceToWaypoint > 1.0D) {
+            return currentEdgeYaw;
+        }
+
+        float nextYaw = desiredYawForEdge(
+                routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+        float turn = normalise(nextYaw - currentEdgeYaw);
+        if (Math.abs(turn) < 5.0F) return currentEdgeYaw;
+
+        float lead = clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP);
+        return normalise(currentEdgeYaw + lead);
     }
 
     private EdgeType edgeType(int index) {

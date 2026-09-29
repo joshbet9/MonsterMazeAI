@@ -541,6 +541,35 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * Airborne route continuity is a physics-critical state. A sprint jump
+         * carries substantial horizontal momentum, so stopping to satisfy the
+         * grounded corner/heading safety rules can turn a valid route corner
+         * into a fall. While the player is airborne and still inside the
+         * committed route envelope, keep W+sprint+Space active and steer toward
+         * the current edge. Do not replan or recover in mid-flight; the next
+         * grounded observation can safely validate the new edge.
+         *
+         * This is intentionally narrower than "always move while airborne":
+         * sudden knockback and a genuinely lost route envelope are handled by
+         * the recovery logic above.
+         */
+        if (!state.player.grounded
+                && routePositionOnCommittedEnvelope(state)
+                && !gapExecutionActive) {
+            float airYawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+            if (state.worldTick % 10L == 0L) {
+                log(state.worldTick, "[MonsterMazeAI/1.8] AIRBORNE ROUTE CONTINUE"
+                        + " tick=" + state.worldTick
+                        + " routeIndex=" + routeIndex
+                        + " yawError=" + format(yawError)
+                        + " yawDelta=" + format(airYawDelta)
+                        + " pos=" + format(state.player.x) + "," + format(state.player.y)
+                        + "," + format(state.player.z));
+            }
+            return new LegacyAction(1.0f, 0.0f, true, true, airYawDelta, false);
+        }
+
+        /*
          * Mobs are part of route planning, never a movement override.
          *
          * If the selected route has become unsafe since it was planned, build
@@ -717,6 +746,18 @@ public final class FirstPadSpeedrunController {
              * floor/vertical/vector constraint failed, rotate in place rather
              * than advancing into the unsafe direction.
              */
+            /*
+             * If we are airborne but the route envelope has already been
+             * invalidated, do not freeze the player in the air. Continue the
+             * current heading for one control tick while the route/recovery
+             * machinery catches up. A stationary airborne action has no useful
+             * physical analogue and was a direct source of simulated falls.
+             */
+            if (!state.player.grounded
+                    && routePositionOnCommittedEnvelope(state)) {
+                return new LegacyAction(
+                        1.0f, 0.0f, true, true, yawDelta, false);
+            }
             if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
@@ -1900,16 +1941,15 @@ public final class FirstPadSpeedrunController {
         double distanceToTakeoff = 0.50D - progress;
 
         /*
-         * Never recover-commit a gap simply because the player happens to be
-         * inside its source-cell envelope. That was the exact failure mode
-         * where a preceding turn destroyed the useful forward momentum and the
-         * controller immediately treated the restored heading as jump-ready.
+         * A committed gap is an edge transaction. The route geometry and
+         * current heading are the qualification; do not impose an arbitrary
+         * accumulated-runway requirement. Source mazes can place a genuine
+         * one-block gap before three full blocks of straight runway.
          *
-         * A gap may still be discovered late by a dynamic replan, but the
-         * baseline controller now requires the same physical momentum gate as
-         * an ordinary gap approach.
+         * Momentum remains telemetry only. It is never a prerequisite for
+         * committing the jump.
          */
-        if (progress >= 0.15D && progress <= 1.65D && hasQualifiedGapMomentum()) {
+        if (progress >= 0.15D && progress <= 1.65D) {
             gapExecutionActive = true;
             gapTakeoffStarted = progress >= 0.15D;
             gapExecutionRouteIndex = routeIndex;

@@ -35,12 +35,25 @@ repositories {
     mavenCentral()
 }
 
+def gitRevision = "unknown"
+try {
+    def proc = ["git", "rev-parse", "--short", "HEAD"].execute(null, rootDir)
+    proc.waitFor()
+    def detected = proc.in.text.trim()
+    if (detected) gitRevision = detected
+} catch (Exception ignored) {
+}
+
 def commonApiJar = file("../common-api/target/common-api-0.1.0-SNAPSHOT.jar")
 def commonRuntimeJar = file("../common/target/common-0.1.0-SNAPSHOT-runtime.jar")
 
 dependencies {
     compile files(commonApiJar)
     testCompile "junit:junit:4.13.2"
+}
+
+runClient {
+    systemProperty "monstermazeai.version", gitRevision
 }
 
 task verifyCommonRuntime {

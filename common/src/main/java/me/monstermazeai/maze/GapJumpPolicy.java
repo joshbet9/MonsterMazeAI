@@ -1,0 +1,42 @@
+package me.monstermazeai.maze;
+
+/**
+ * Configurable gap-jump risk model for player route selection.
+ *
+ * The value is an expected-time-equivalent penalty applied once per
+ * one-block gap. It is deliberately separated from route generation so future
+ * CPU/player personalities can change risk tolerance without changing the
+ * physical movement model.
+ *
+ * A positive penalty means an equal-length floor route is preferred over a
+ * route containing a gap. A gap is only selected when its physical shortcut
+ * is valuable enough to overcome the configured risk cost.
+ */
+public final class GapJumpPolicy {
+    /**
+     * Conservative baseline: one gap must save more than one normal route step
+     * before it is preferred. This makes equal-length routes deterministic in
+     * favour of the no-gap route.
+     */
+    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(1.0);
+
+    private final double riskCostPerGap;
+
+    public GapJumpPolicy(double riskCostPerGap) {
+        if (!Double.isFinite(riskCostPerGap) || riskCostPerGap < 0.0) {
+            throw new IllegalArgumentException("riskCostPerGap must be finite and non-negative");
+        }
+        this.riskCostPerGap = riskCostPerGap;
+    }
+
+    public double riskCostPerGap() {
+        return riskCostPerGap;
+    }
+
+    public double routeCost(int routeSize, int gapCount) {
+        if (routeSize < 1 || gapCount < 0) {
+            throw new IllegalArgumentException("invalid route metrics");
+        }
+        return routeSize + (gapCount * riskCostPerGap);
+    }
+}

@@ -1152,10 +1152,11 @@ public final class FirstPadSpeedrunController {
          */
         boolean transitioningFromReachedPad = activePadTransitionPending
                 || (targetReached && !routeStartsOnPreviousPad);
-        boolean initialRouteAlignment = routeLength == 0
+        boolean initialRouteAlignment = firstRoute
+                || (routeLength == 0
                 && initialStartPadAvailable
                 && state.player.grounded
-                && !targetReached;
+                && !targetReached);
         boolean mobReplan = routeLength > 0
                 && goalRow == targetRow
                 && goalColumn == targetColumn

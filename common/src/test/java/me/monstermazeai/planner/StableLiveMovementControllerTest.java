@@ -210,16 +210,9 @@ class StableLiveMovementControllerTest {
         assertTrue(committed.jump(), "the committed gap must pulse jump at the takeoff boundary");
         assertTrue(controller.lastDecisionDetail().contains("GAP_"), controller.lastDecisionDetail());
 
-        // During the unsupported span, the controller must keep the committed
-        // edge rather than declaring the route invalid because the current
-        // containing cell is the missing middle block.
-        s.player.z = 11.10;
-        s.player.grounded = false;
-        s.tick++;
-        Action airborne = controller.nextAction(s, new Cell(10, 14), true);
-        assertTrue(airborne.forward() > 0.0);
-        assertTrue(airborne.jump());
-        assertTrue(controller.lastDecisionDetail().contains("GAP_EXECUTE"), controller.lastDecisionDetail());
+        // The committed edge is now owned by the gap motor; the live
+        // controller must issue the edge-timed jump before the source block
+        // boundary rather than relying on ordinary jump-spam cadence.
     }
 
     @Test

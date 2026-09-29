@@ -18,6 +18,10 @@ public final class AbilityUseGate {
         return allow(state, AbilityDecision.shouldUse(state));
     }
 
+    public boolean allow(GameState state, String objectiveReason, String objectiveDetail) {
+        return allow(state, AbilityDecision.shouldUse(state, objectiveReason, objectiveDetail));
+    }
+
     public boolean allow(GameState state, boolean decision) {
         if (state == null || state.kit == null || !decision) return false;
         if (state.kit != lastKit) return true;

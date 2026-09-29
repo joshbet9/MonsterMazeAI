@@ -188,7 +188,7 @@ class StableLiveMovementControllerTest {
         s.alive = true;
         s.maze = maze;
         s.activePadRow = 10;
-        s.activePadColumn = 12;
+        s.activePadColumn = 14;
         s.player.x = 10.5;
         s.player.z = 10.15;
         s.player.yaw = 0.0F;

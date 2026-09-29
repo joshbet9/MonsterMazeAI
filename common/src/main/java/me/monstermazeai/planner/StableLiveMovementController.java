@@ -166,6 +166,7 @@ public final class StableLiveMovementController {
             if (committed != null) return committed;
         }
 
+        GameState routingState = transitionRoutingState(state);
         int startRow = (int) Math.floor(state.player.x);
         int startColumn = (int) Math.floor(state.player.z);
         if (!inBounds(startRow, startColumn) || !inBounds(goal.row(), goal.column())) {
@@ -196,8 +197,8 @@ public final class StableLiveMovementController {
              * constructed, never placed on the live-control critical path.
              */
             route = regionRadius > 0
-                    ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
-                    : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
+                    ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
+                    : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
             waypointIndex = firstTurnWaypoint(route);
             lastRouteTick = state.tick;
             routePlanCount++;
@@ -210,7 +211,7 @@ public final class StableLiveMovementController {
             bootstrapRoutePending = false;
             fullRouteEvaluationPending = true;
             lastTacticalSignature = Long.MIN_VALUE;
-            scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+            scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
             boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
@@ -483,6 +484,46 @@ public final class StableLiveMovementController {
         pendingRoutePlan = null;
         completedRoutePlan = null;
         lastDecisionDetail = "RESET";
+    }
+
+    /**
+     * Safe Pad replacement can remove the previous pad's canonical maze floor
+     * from the physical-floor model on the exact tick a new pad becomes active.
+     * The player is still physically standing on that old pad, so treating the
+     * current block as air makes a valid next-pad route look disconnected.
+     *
+     * Preserve only the old pad surface containing the player as a temporary
+     * routing bridge. This is a transition bootstrap, not a permanent floor
+     * mutation; subsequent observations remain authoritative.
+     */
+    private GameState transitionRoutingState(GameState state) {
+        int currentRow = (int) Math.floor(state.player.x);
+        int currentColumn = (int) Math.floor(state.player.z);
+        if (state.maze.isPhysicalFloor(currentRow, currentColumn)) return state;
+
+        Cell oldPad = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (Cell candidate : state.oldPads) {
+            if (!PadModel.isOn(state.player, candidate.row() + 0.5,
+                    GameState.PAD_SURFACE_Y, candidate.column() + 0.5)) continue;
+            double dx = state.player.x - (candidate.row() + 0.5);
+            double dz = state.player.z - (candidate.column() + 0.5);
+            double distance = dx * dx + dz * dz;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                oldPad = candidate;
+            }
+        }
+        if (oldPad == null) return state;
+
+        GameState routingState = state.copyForSimulation();
+        routingState.maze = state.maze.copy();
+        for (int row = oldPad.row() - 2; row <= oldPad.row() + 2; row++) {
+            for (int column = oldPad.column() - 2; column <= oldPad.column() + 2; column++) {
+                routingState.maze.setPhysicalFloor(row, column, true);
+            }
+        }
+        return routingState;
     }
 
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {

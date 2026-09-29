@@ -713,6 +713,7 @@ public final class FirstPadSpeedrunController {
             desiredYaw = desiredYawForEdge(
                     routeRows[routeIndex], routeColumns[routeIndex],
                     routeRows[nextIndex], routeColumns[nextIndex]);
+            desiredYaw = routeTrackingYaw(state, desiredYaw);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
         }

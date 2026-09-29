@@ -2870,11 +2870,16 @@ public final class FirstPadSpeedrunController {
                 state.player.x - bx, state.player.z - bz);
 
         /*
-         * The planner remains cardinal, but the continuous player can begin a
-         * turn near the waypoint. Start inside the final 1.75 blocks and blend
-         * only half-way toward the following cardinal edge. This gives the
-         * player a diagonal transition without the 3-block/85% lead that was
-         * injecting large lateral velocity well before the corner.
+         * Turn monotonically toward the following cardinal edge as the player
+         * approaches a genuine waypoint. The previous pure-pursuit correction
+         * recomputed a target from the current continuous position every tick;
+         * at sprint speed that could alternate left/right around a corner and
+         * create the +/-30 degree yaw oscillation seen in the real and simulated
+         * traces.
+         *
+         * Blend over roughly 1.3 blocks: enough distance for a 90 degree turn
+         * using the client's 30 degree/tick yaw budget, while still keeping the
+         * first straight segment fully aligned.
          */
         if (routeIndex + 2 < routeLength
                 && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
@@ -2884,9 +2889,17 @@ public final class FirstPadSpeedrunController {
                     routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
             float turn = normalise(nextEdgeYaw - edgeYaw);
-            double blend = clampDouble((1.75D - distanceToWaypoint) / 1.25D, 0.0D, 1.0D);
-            trackedEdgeYaw = normalise(edgeYaw
-                    + clamp((float) (turn * 0.50D * blend), -30.0F, 30.0F));
+            double blend = clampDouble(
+                    (1.75D - distanceToWaypoint) / 1.30D, 0.0D, 1.0D);
+            trackedEdgeYaw = normalise(
+                    edgeYaw + (float) (turn * blend));
+
+            /*
+             * Once the corner turn owns the desired heading, do not apply the
+             * position-derived lateral correction on top of it. That correction
+             * was the source of the steering oscillation this block replaces.
+             */
+            return trackedEdgeYaw;
         }
 
         if (lateralDistance < 0.30D) return trackedEdgeYaw;

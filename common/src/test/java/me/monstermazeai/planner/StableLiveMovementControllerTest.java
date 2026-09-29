@@ -282,4 +282,22 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void activePadTransitionCanRouteFromAnOldPadWhoseCanonicalCellWasRemoved() {
+        GameState s = state(10.5, 10.5, 0.0F);
+        s.maze.setPhysicalFloor(10, 10, false);
+        s.oldPads.add(new Cell(10, 10));
+        s.activePadRow = 20;
+        s.activePadColumn = 20;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+        Action action = controller.nextAction(s, new Cell(20, 20), false);
+
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "the previous SafePad must be usable as a temporary routing bridge after pad activation");
+        assertFalse(controller.lastDecisionDetail().contains("No physical route"));
+        assertFalse(controller.lastDecisionDetail().contains("INVALID_INPUT"));
+    }
+
 }

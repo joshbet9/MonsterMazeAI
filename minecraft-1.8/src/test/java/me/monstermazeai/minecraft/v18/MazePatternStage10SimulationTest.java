@@ -440,8 +440,28 @@ public final class MazePatternStage10SimulationTest {
         return dx * dx + dz * dz;
     }
 
-    private static boolean footprintSupported(double x, double z, boolean[][] physical) {\n        double minX = x - PLAYER_HALF_WIDTH;\n        double maxX = x + PLAYER_HALF_WIDTH;\n        double minZ = z - PLAYER_HALF_WIDTH;\n        double maxZ = z + PLAYER_HALF_WIDTH;\n        int minRow = floorRow(minX);\n        int maxRow = floorRow(maxX - 1.0E-9D);\n        int minCol = floorColumn(minZ);\n        int maxCol = floorColumn(maxZ - 1.0E-9D);\n        for (int r = minRow; r <= maxRow; r++) {\n            for (int c = minCol; c <= maxCol; c++) {\n                if (!inBounds(r, c) || !physical[r][c]) continue;\n                double cellMinX = r - HALF;\n                double cellMaxX = cellMinX + 1.0D;\n                double cellMinZ = c - HALF;\n                double cellMaxZ = cellMinZ + 1.0D;\n                double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);\n                double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);\n                if (overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D) return true;\n            }\n        }\n        return false;\n    }\n\n    private static boolean inBounds(int r, int c) {
-        return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
+    private static boolean footprintSupported(double x, double z, boolean[][] physical) {
+        double minX = x - PLAYER_HALF_WIDTH;
+        double maxX = x + PLAYER_HALF_WIDTH;
+        double minZ = z - PLAYER_HALF_WIDTH;
+        double maxZ = z + PLAYER_HALF_WIDTH;
+        int minRow = floorRow(minX);
+        int maxRow = floorRow(maxX - 1.0E-9D);
+        int minCol = floorColumn(minZ);
+        int maxCol = floorColumn(maxZ - 1.0E-9D);
+        for (int r = minRow; r <= maxRow; r++) {
+            for (int c = minCol; c <= maxCol; c++) {
+                if (!inBounds(r, c) || !physical[r][c]) continue;
+                double cellMinX = r - HALF;
+                double cellMaxX = cellMinX + 1.0D;
+                double cellMinZ = c - HALF;
+                double cellMaxZ = cellMinZ + 1.0D;
+                double overlapX = Math.min(maxX, cellMaxX) - Math.max(minX, cellMinX);
+                double overlapZ = Math.min(maxZ, cellMaxZ) - Math.max(minZ, cellMinZ);
+                if (overlapX > 0.0D && overlapZ > 0.0D && overlapX * overlapZ >= 0.05D) return true;
+            }
+        }
+        return false;
     }
 
     private static int floorRow(double x) {

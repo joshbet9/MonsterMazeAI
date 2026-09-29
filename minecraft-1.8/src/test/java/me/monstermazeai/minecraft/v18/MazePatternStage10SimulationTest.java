@@ -3,6 +3,10 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.kit.Kit;
+import me.monstermazeai.physics.LegacyMovementModel;
+import me.monstermazeai.player.Action;
+import me.monstermazeai.player.PlayerState;
+import me.monstermazeai.maze.MazeModel;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -31,9 +35,11 @@ import static org.junit.Assert.*;
  * - requires every individual simulation to reach stage 10.
  *
  * No Minecraft client is launched. The harness uses the same MazeLayouts and
- * the same FirstPadSpeedrunController used by the 1.8 adapter. The physics
- * model is a deterministic 1.8-style sprint/jump model; its purpose is to
- * expose controller/state-machine failures before Forge is tested.
+ * FirstPadSpeedrunController as the 1.8 adapter, and delegates movement to
+ * common.LegacyMovementModel. The model is calibrated against the tick-level
+ * v18 Minecraft observer traces collected during real runs; those traces are
+ * empirical regression evidence for displacement, velocity, yaw and jump timing.
+ * External packet descriptions are not used as a substitute for those traces.
  */
 public final class MazePatternStage10SimulationTest {
     private static final int SIZE = 99;
@@ -43,22 +49,7 @@ public final class MazePatternStage10SimulationTest {
     private static final int MAX_TICKS_PER_STAGE = 900;
     private static final int TRANSITION_HOLD_TICKS = 6;
 
-    private static final double PLAYER_HALF_WIDTH = 0.30D;
-    // Vanilla 1.8.9 EntityLivingBase movement constants for the normal
-    // overworld path used by MonsterMazeAI. The player action executor drives
-    // the sprint key, so landMovementFactor is the sprinted 0.10 * 1.30.
-    private static final double BASE_MOVE_SPEED = 0.10D;
-    private static final double SPRINT_MOVE_MULTIPLIER = 1.30D;
-    private static final double GROUND_FRICTION = 0.60D * 0.91D;
-    private static final double GROUND_ACCEL = BASE_MOVE_SPEED * SPRINT_MOVE_MULTIPLIER;
-    private static final double AIR_ACCEL = 0.02D;
-    private static final double GROUND_DRAG = GROUND_FRICTION;
-    private static final double AIR_DRAG = 0.91D;
-    private static final double INPUT_DAMPING = 0.98D;
-    private static final double JUMP_VELOCITY = 0.41999998688697815D;
-    private static final double GRAVITY = 0.08D;
-    private static final double VERTICAL_DRAG = 0.98D;
-    private static final double SPRINT_JUMP_BOOST = 0.20D;
+    // Movement is delegated to common.LegacyMovementModel, the same 1.8.9 model used by the AI runtime.
 
     @Test(timeout = 180000)
     public void everyMazePatternReachesStageTenOnEverySimulation() {
@@ -137,7 +128,7 @@ public final class MazePatternStage10SimulationTest {
         Result result = new Result();
         result.failure = "MAX_STAGE_NOT_REACHED";
 
-        SimPlayer player = new SimPlayer();
+        PlayerState player = new PlayerState();
         // Real game starts on the central SafePad. The first route benchmark
         // historically used this same centre-side spawn coordinate.
         player.x = worldX(50);
@@ -147,6 +138,7 @@ public final class MazePatternStage10SimulationTest {
         player.yaw = 0.0F;
 
         FirstPadSpeedrunController controller = new FirstPadSpeedrunController();
+        LegacyMovementModel physics = new LegacyMovementModel();
 
         Cell activePad = pads.get(0);
         Cell oldPad = new Cell(50, 49);
@@ -196,7 +188,7 @@ public final class MazePatternStage10SimulationTest {
             result.trace.append("t=").append(ticks).append(" p=").append(format(player.x)).append(",").append(format(player.y)).append(",").append(format(player.z)).append(" v=").append(format(player.vx)).append(",").append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
             if (action.forward > 0.01D) result.movementTicks++;
 
-            step(player, action, physical, result);
+            step(player, action, physical, result, physics);
 
             if (!player.alive) {
                 result.stage = stage;
@@ -264,81 +256,28 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static void step(
-            SimPlayer p, LegacyAction action, boolean[][] physical, Result result) {
-        p.yaw = wrap(p.yaw + action.yawDelta);
+            PlayerState p, LegacyAction legacyAction, boolean[][] physical,
+            Result result, LegacyMovementModel physics) {
+        Action action = new Action(
+                legacyAction.forward,
+                legacyAction.strafe,
+                legacyAction.jump,
+                legacyAction.sprint,
+                legacyAction.yawDelta,
+                false);
+        physics.tick(p, action, toMazeModel(physical));
+        result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
+        if (p.y < -2.0D) p.alive = false;
+    }
 
-        double radians = Math.toRadians(p.yaw);
-        double forwardX = -Math.sin(radians);
-        double forwardZ = Math.cos(radians);
-        double strafeX = Math.cos(radians);
-        double strafeZ = Math.sin(radians);
-
-        double inputForward = action.forward;
-        double inputStrafe = action.strafe;
-        double inputLength = Math.hypot(inputForward, inputStrafe);
-        if (inputLength > 1.0D) {
-            inputForward /= inputLength;
-            inputStrafe /= inputLength;
-        }
-
-        boolean wasGrounded = p.grounded;
-        // EntityLivingBase decrements jumpTicks once per living tick before
-        // processing jump input. A jump then sets it back to 10.
-        if (p.jumpCooldown > 0) p.jumpCooldown--;
-        if (wasGrounded && action.jump && p.jumpCooldown == 0) {
-            p.vy = JUMP_VELOCITY;
-            p.jumpCooldown = 10;
-            if (action.sprint) {
-                p.vx -= Math.sin(radians) * SPRINT_JUMP_BOOST;
-                p.vz += Math.cos(radians) * SPRINT_JUMP_BOOST;
+    private static MazeModel toMazeModel(boolean[][] physical) {
+        int[][] raw = new int[SIZE][SIZE];
+        for (int r = 0; r < SIZE; r++) {
+            for (int c = 0; c < SIZE; c++) {
+                if (physical[r][c]) raw[r][c] = 1;
             }
         }
-        // EntityLivingBase damps moveForward/moveStrafing immediately before
-        // moveEntityWithHeading(). Sprint does not increase jumpMovementFactor.
-        inputForward *= INPUT_DAMPING;
-        inputStrafe *= INPUT_DAMPING;
-
-        // EntityPlayer 1.8.9 raises jumpMovementFactor by 30% while sprinting.
-        // The simulator must model the player, not the base EntityLiving value.
-        double accel = wasGrounded
-                ? GROUND_ACCEL
-                : AIR_ACCEL * (action.sprint ? SPRINT_MOVE_MULTIPLIER : 1.0D);
-
-        p.vx += (forwardX * inputForward + strafeX * inputStrafe) * accel;
-        p.vz += (forwardZ * inputForward + strafeZ * inputStrafe) * accel;
-
-        // Vanilla EntityLivingBase.moveEntityWithHeading() moves using the
-        // current motion, then applies horizontal friction after collision.
-        // There is deliberately NO artificial horizontal speed cap here: the
-        // real movement path has no hard cap.
-        double drag = wasGrounded ? GROUND_DRAG : AIR_DRAG;
-        double nextX = p.x + p.vx;
-        double nextZ = p.z + p.vz;
-
-        p.vy -= GRAVITY;
-        p.vy *= VERTICAL_DRAG;
-        double nextY = p.y + p.vy;
-
-        boolean supported = footprintSupported(nextX, nextZ, physical);
-        if (supported && nextY <= 0.0D && p.vy <= 0.0D) {
-            p.x = nextX;
-            p.z = nextZ;
-            p.y = 0.0D;
-            p.vy = 0.0D;
-            p.grounded = true;
-        } else {
-            p.x = nextX;
-            p.z = nextZ;
-            p.y = nextY;
-            p.grounded = false;
-        }
-
-        p.vx *= drag;
-        p.vz *= drag;
-        double horizontalSpeed = Math.hypot(p.vx, p.vz);
-        result.maxSpeed = Math.max(result.maxSpeed, horizontalSpeed);
-
-        if (!p.grounded && p.y < -2.0D) p.alive = false;
+        return new MazeModel(raw);
     }
 
     private static boolean[][] physicalFloor(
@@ -374,7 +313,8 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static List<Cell> buildPadSequence(int[][] raw, int seed) {
-        List<Cell> candidates = new ArrayList<Cell>();
+        // Exact 1.8 MonsterMaze MazeGenerator candidate construction.
+        List<Cell> pathPoints = new ArrayList<Cell>();
         List<Cell> spawns = new ArrayList<Cell>();
         List<Cell> barriers = new ArrayList<Cell>();
 
@@ -383,55 +323,94 @@ public final class MazePatternStage10SimulationTest {
                 int v = raw[r][c];
                 if (v == 2) spawns.add(new Cell(r, c));
                 if (v == 4 || v == 6) barriers.add(new Cell(r, c));
+                if (v == 1 || v == 2 || v == 5 || v == 6) pathPoints.add(new Cell(r, c));
             }
         }
 
-        for (int r = 0; r < SIZE; r++) {
-            for (int c = 0; c < SIZE; c++) {
-                if (raw[r][c] == 0 || raw[r][c] == 3 || raw[r][c] == 4
-                        || raw[r][c] == 5 || raw[r][c] == 6) continue;
-
-                Cell candidate = new Cell(r, c);
-                if (distance(candidate, new Cell(49, 49)) < 12.0D) continue;
-                if (nearAny(candidate, spawns, 10.0D)) continue;
-                if (nearAny(candidate, barriers, 7.0D)) continue;
-                candidates.add(candidate);
-            }
+        List<Cell> filtered = new ArrayList<Cell>();
+        for (Cell p : pathPoints) {
+            if (nearAny(p, spawns, 10.0D)) continue;
+            if (nearAny(p, barriers, 7.0D)) continue;
+            filtered.add(p);
         }
 
-        Collections.shuffle(candidates, new Random(0x4D4D0000L + seed * 1009L));
+        List<Cell> candidates = new ArrayList<Cell>(filtered);
+        List<Cell> safeZones = new ArrayList<Cell>();
+        Cell center = new Cell(HALF, HALF);
+        for (int i = 0; i < 8 && !candidates.isEmpty(); i++) {
+            List<Cell> away = new ArrayList<Cell>(safeZones);
+            away.add(center);
+            Cell zone = furthestFromAll(candidates, away);
+            safeZones.add(zone);
+            List<Cell> remove = new ArrayList<Cell>();
+            for (Cell c : candidates) {
+                if (distanceSq(zone, c) <= 36.0D) remove.add(c);
+            }
+            candidates.removeAll(remove);
+        }
 
+        List<Cell> valid = new ArrayList<Cell>();
+        for (Cell p : filtered) {
+            if (!nearAny(p, safeZones, 7.0D)) valid.add(p);
+        }
+        if (valid.isEmpty()) throw new AssertionError("No source-compatible SafePad candidates");
+
+        Random random = new Random(0x4D4D0000L + seed * 1009L);
         List<Cell> pads = new ArrayList<Cell>();
-        Cell previous = new Cell(50, 49);
-        while (pads.size() < TARGET_STAGE && !candidates.isEmpty()) {
-            Cell chosen = null;
-            double best = -1.0D;
 
-            for (Cell candidate : candidates) {
-                double distance = distance(candidate, previous);
-                if (distance < 20.0D) continue;
-                if (nearAny(candidate, pads, 15.0D)) continue;
-                if (distance > best) {
-                    best = distance;
-                    chosen = candidate;
+        // Source first spawnSafePad(): no avoid list, therefore furthest from centre.
+        pads.add(furthestFromCenterTiedRandom(valid, center, random));
+
+        while (pads.size() < TARGET_STAGE) {
+            List<Cell> best = new ArrayList<Cell>();
+            for (Cell candidate : valid) {
+                boolean allowed = true;
+                for (Cell avoid : pads) {
+                    if (distanceSq(candidate, avoid) < 40.0D * 40.0D) {
+                        allowed = false;
+                        break;
+                    }
                 }
+                if (allowed) best.add(candidate);
             }
 
-            if (chosen == null) {
-                chosen = candidates.get(0);
+            if (best.isEmpty()) {
+                pads.add(furthestFromCenterTiedRandom(valid, center, random));
+            } else {
+                pads.add(best.get(random.nextInt(best.size())));
             }
-
-            pads.add(chosen);
-            previous = chosen;
-            candidates.remove(chosen);
         }
-
-        if (pads.size() < TARGET_STAGE) {
-            throw new AssertionError("Could not construct 10 source-compatible pads; got "
-                    + pads.size());
-        }
-
         return pads;
+    }
+
+    private static Cell furthestFromAll(List<Cell> locations, List<Cell> awayFrom) {
+        Cell best = null;
+        double bestDistance = -1.0D;
+        for (Cell location : locations) {
+            double closest = Double.POSITIVE_INFINITY;
+            for (Cell away : awayFrom) closest = Math.min(closest, distanceSq(location, away));
+            if (best == null || closest > bestDistance) {
+                best = location;
+                bestDistance = closest;
+            }
+        }
+        return best;
+    }
+
+    private static Cell furthestFromCenterTiedRandom(List<Cell> locations, Cell center, Random random) {
+        double bestDistance = -1.0D;
+        List<Cell> best = new ArrayList<Cell>();
+        for (Cell location : locations) {
+            double d = distanceSq(location, center);
+            if (d > bestDistance) {
+                bestDistance = d;
+                best.clear();
+                best.add(location);
+            } else if (d == bestDistance) {
+                best.add(location);
+            }
+        }
+        return best.get(random.nextInt(best.size()));
     }
 
     private static boolean nearAny(Cell candidate, List<Cell> cells, double radius) {
@@ -457,14 +436,14 @@ public final class MazePatternStage10SimulationTest {
         return dr * dr + dc * dc;
     }
 
-    private static boolean isOnPad(SimPlayer p, Cell pad) {
+    private static boolean isOnPad(PlayerState p, Cell pad) {
         return Math.abs(p.x - worldX(pad.row)) < 2.5D
                 && Math.abs(p.z - worldZ(pad.column)) < 2.5D
                 && p.y > -1.0D
                 && p.y < 4.0D;
     }
 
-    private static double distanceSqToPad(SimPlayer p, Cell pad) {
+    private static double distanceSqToPad(PlayerState p, Cell pad) {
         double dx = p.x - worldX(pad.row);
         double dz = p.z - worldZ(pad.column);
         return dx * dx + dz * dz;
@@ -570,19 +549,6 @@ public final class MazePatternStage10SimulationTest {
         public int hashCode() {
             return row * 131 + column;
         }
-    }
-
-    private static final class SimPlayer {
-        double x;
-        double y;
-        double z;
-        double vx;
-        double vy;
-        double vz;
-        float yaw;
-        boolean grounded;
-        boolean alive = true;
-        int jumpCooldown;
     }
 
     private static final class Result {

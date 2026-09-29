@@ -3033,13 +3033,16 @@ public final class FirstPadSpeedrunController {
     private boolean routePositionOnCommittedEnvelope(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1) return false;
         /*
-         * Looking five edges ahead made a crossed turn appear "on route" even
-         * when the cursor was still committed to the previous heading. Keep a
-         * two-edge envelope: current edge plus the immediate next edge. Straight
-         * speedrun lag is still captured by advanceRouteIndex(); a missed turn
-         * becomes a genuine route-loss/replan event once grounded.
+         * The current edge is the only route state that is guaranteed to match
+         * the player's committed heading. Do not treat a future edge as proof
+         * that the current route is still valid: crossing a gap or a 90-degree
+         * turn without advancing the cursor is exactly how the old envelope
+         * masked route loss and produced permanent safety holds.
+         *
+         * Straight sprint lag is handled by advanceRouteIndex(), which performs
+         * explicit physical waypoint capture before moving the cursor.
          */
-        int last = Math.min(routeLength - 2, routeIndex + 1);
+        int last = Math.min(routeLength - 2, routeIndex);
         for (int i = routeIndex; i <= last; i++) {
             double ax = worldX(routeRows[i], state.center.x);
             double az = worldZ(routeColumns[i], state.center.z);

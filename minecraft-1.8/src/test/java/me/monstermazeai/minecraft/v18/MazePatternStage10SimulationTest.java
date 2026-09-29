@@ -529,6 +529,7 @@ public final class MazePatternStage10SimulationTest {
     }
 
     private static String format(double value) {
+        return String.format(java.util.Locale.ROOT, "%.2f", value);
     }
 
     private static final class Cell {

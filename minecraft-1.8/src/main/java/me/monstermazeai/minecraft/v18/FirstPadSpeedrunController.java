@@ -819,6 +819,31 @@ public final class FirstPadSpeedrunController {
                 return new LegacyAction(
                         1.0f, 0.0f, true, true, airborneYawDelta, false);
             }
+            /*
+             * A predicted-floor failure is specifically a forward-corner
+             * problem. If the following route edge is physically valid, use
+             * the same 30-degree cursor budget to steer into that edge instead
+             * of sitting still with an unchanged heading. This preserves the
+             * continuous W+Space speedrun policy and gives the player a chance
+             * to land on the validated corridor.
+             */
+            if ("predicted-floor".equals(safetyReason)
+                    && routeIndex + 2 < routeLength
+                    && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
+                    && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
+                    && canTraverseEdge(state,
+                    routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                    routeRows[routeIndex + 2], routeColumns[routeIndex + 2])) {
+                float nextYaw = desiredYawForEdge(
+                        routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
+                        routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
+                float correctiveDelta = clamp(
+                        normalise(nextYaw - state.player.yaw),
+                        -MAX_YAW_STEP, MAX_YAW_STEP);
+                return new LegacyAction(
+                        1.0f, 0.0f, true, true, correctiveDelta, false);
+            }
+
             if (Math.abs(yawDelta) > 0.01F) {
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }

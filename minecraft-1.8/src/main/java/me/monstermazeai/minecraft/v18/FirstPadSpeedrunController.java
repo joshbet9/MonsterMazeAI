@@ -2750,23 +2750,22 @@ public final class FirstPadSpeedrunController {
 
         /*
          * The planner remains cardinal, but the continuous player can begin a
-         * turn before the exact waypoint centre. Blend toward the NEXT cardinal
-         * edge over the final ~1.75 blocks instead of issuing a discrete
-         * +/-30-degree corner pulse. At the waypoint the blend reaches 50%
-         * rather than demanding an instantaneous 90-degree turn; route capture
-         * then completes the turn on the following observations.
+         * turn near the waypoint. Start inside the final 1.75 blocks and blend
+         * only half-way toward the following cardinal edge. This gives the
+         * player a diagonal transition without the 3-block/85% lead that was
+         * injecting large lateral velocity well before the corner.
          */
         if (routeIndex + 2 < routeLength
                 && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
                 && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
-                && distanceToWaypoint < 3.00D) {
+                && distanceToWaypoint < 1.75D) {
             float nextEdgeYaw = desiredYawForEdge(
                     routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
             float turn = normalise(nextEdgeYaw - edgeYaw);
-            double blend = clampDouble((3.00D - distanceToWaypoint) / 1.50D, 0.0D, 1.0D);
+            double blend = clampDouble((1.75D - distanceToWaypoint) / 1.25D, 0.0D, 1.0D);
             trackedEdgeYaw = normalise(edgeYaw
-                    + clamp((float) (turn * 0.85D * blend), -45.0F, 45.0F));
+                    + clamp((float) (turn * 0.50D * blend), -30.0F, 30.0F));
         }
 
         if (lateralDistance < 0.30D) return trackedEdgeYaw;

@@ -792,7 +792,6 @@ public final class FirstPadSpeedrunController {
              * physical analogue and was a direct source of simulated falls.
              */
             if (!state.player.grounded
-                    && state.player.y > state.center.y - 1.50D
                     && !suddenHorizontalImpulse) {
                 float airborneDesiredYaw = airborneCornerYaw(state, desiredYaw);
                 float airborneYawError = normalise(

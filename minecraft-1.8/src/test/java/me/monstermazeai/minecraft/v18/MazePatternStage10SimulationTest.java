@@ -226,16 +226,6 @@ public final class MazePatternStage10SimulationTest {
                 }
             }
 
-            /*
-             * GameManager.checkPlayersOnSafePad() runs every tick. In this
-             * single-player simulator, once the player is physically on the
-             * active pad, all alive players are on it, so the source reduces
-             * the phase timer to four seconds.
-             */
-            if (targetCaptured && isOnPad(player, activePad)) {
-                stageTicksRemaining = Math.min(stageTicksRemaining, 4 * 20);
-            }
-
             if (stageTicksRemaining <= 0) {
                 if (!targetCaptured) {
                     result.stage = stage;
@@ -402,10 +392,11 @@ public final class MazePatternStage10SimulationTest {
         boolean[][] floor = new boolean[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             for (int c = 0; c < SIZE; c++) {
-                // MonsterMaze MazeGenerator.isPath(): only 1,2,5,6 are
-                // traversable path blocks. Values 3/4 are not walkable floor.
-                int value = raw[r][c];
-                floor[r][c] = value == 1 || value == 2 || value == 5 || value == 6;
+                // Physical player floor follows MazeModel's physicalFloor
+                // layer, which is intentionally distinct from isRawPath():
+                // barrier/center surfaces are physical blocks even when they
+                // are not part of the monster waypoint graph.
+                floor[r][c] = raw[r][c] != 0;
             }
         }
 

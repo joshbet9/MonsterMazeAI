@@ -126,7 +126,7 @@ class MonsterAwareRoutePlannerTest {
         raw[10][11] = 0;
         state.maze = new MazeModel(raw);
 
-        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(1.0))
+        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(3.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
         assertEquals(5, route.size());
@@ -144,6 +144,7 @@ class MonsterAwareRoutePlannerTest {
         for (int r = 0; r < MazeModel.SIZE; r++)
             for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
         raw[10][11] = 0;
+        raw[10][13] = 0;
         state.maze = new MazeModel(raw);
 
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))

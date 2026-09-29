@@ -2130,6 +2130,23 @@ public final class FirstPadSpeedrunController {
         }
 
         float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+        double progress = currentEdgeProgress(state);
+        if (!gapTakeoffStarted) {
+            if (state.player.grounded && progress >= GAP_JUMP_TRIGGER_PROGRESS) {
+                gapTakeoffStarted = true;
+                log(state.worldTick, "[MonsterMazeAI/1.8] GAP TAKEOFF"
+                        + " tick=" + state.worldTick
+                        + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
+                        + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
+                        + " progress=" + format(progress));
+            } else {
+                // Do not create a new jump while approaching the gap. If we are
+                // airborne, keep W only so the current jump arc is preserved.
+                return new LegacyAction(
+                        1.0f, 0.0f, false, state.player.grounded, yawDelta, false);
+            }
+        }
+
         boolean launchTick = state.player.grounded && gapTakeoffStarted;
         return new LegacyAction(1.0f, 0.0f, true, !launchTick, yawDelta, false);
     }

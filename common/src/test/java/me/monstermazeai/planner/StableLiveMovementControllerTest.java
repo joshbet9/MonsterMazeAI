@@ -301,6 +301,41 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void facesNewPadBeforeDrivingOffPreviouslyReachedPad() {
+        GameState s = state(0.5, 8.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        Action reached = controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(Action.IDLE, reached);
+
+        // The next SafePad has spawned while the player is still standing on
+        // the old pad. The first route segment is +X, so the controller should
+        // turn in place rather than immediately drive with the old heading.
+        s.activePadRow = 8;
+        s.activePadColumn = 8;
+        s.tick = 2;
+
+        Action turn = controller.nextAction(s, new Cell(8, 8), false);
+        assertEquals(0.0, turn.forward(), 1.0e-6);
+        assertEquals(0.0, turn.strafe(), 1.0e-6);
+        assertEquals(-12.0F, turn.yawDelta(), 1.0e-6F);
+        assertTrue(controller.lastDecisionDetail().contains("PAD_TRANSITION_FACE"),
+                controller.lastDecisionDetail());
+
+        // Finish the deliberate turn. Once aligned, normal route driving is
+        // released immediately rather than adding an artificial pause.
+        s.player.yaw = -90.0F;
+        s.tick = 3;
+        Action drive = controller.nextAction(s, new Cell(8, 8), false);
+        assertTrue(drive.forward() > 0.0,
+                "aligned pad transition must immediately release into forward movement");
+        assertEquals(0.0, drive.strafe(), 1.0e-6);
+        assertFalse(controller.lastDecisionDetail().contains("PAD_TRANSITION_FACE"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void activePadChangeImmediatelyUsesTheNewOrdinaryRoute() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

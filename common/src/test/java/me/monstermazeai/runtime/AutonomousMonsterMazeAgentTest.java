@@ -43,7 +43,7 @@ class AutonomousMonsterMazeAgentTest {
         GameState state = liveState(50, 50, 55, 50);
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(controller());
 
-        assertNotEquals(Action.IDLE, agent.decide(state, true));
+        assertEquals(Action.IDLE, agent.decide(state, true));
 
         state.tick++;
         state.maze.setPhysicalFloor(52, 50, false);

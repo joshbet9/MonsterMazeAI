@@ -185,7 +185,8 @@ public final class MazePatternStage10SimulationTest {
             }
             result.controllerLog.append(controllerLog.toString());
             if (action == null) action = LegacyAction.IDLE;
-            if (action.jump) result.jumpTicks++;\n            result.trace.append("t=").append(ticks).append(" p=").append(format(player.x)).append(",").append(format(player.z)).append(" v=").append(format(player.vx)).append(",").append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
+            if (action.jump) result.jumpTicks++;
+            result.trace.append("t=").append(ticks).append(" p=").append(format(player.x)).append(",").append(format(player.z)).append(" v=").append(format(player.vx)).append(",").append(format(player.vz)).append(" a=").append(actionText(action)).append("\n");
             if (action.forward > 0.01D) result.movementTicks++;
 
             step(player, action, physical, result);

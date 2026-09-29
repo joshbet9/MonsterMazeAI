@@ -44,15 +44,21 @@ public final class MazePatternStage10SimulationTest {
     private static final int TRANSITION_HOLD_TICKS = 6;
 
     private static final double PLAYER_HALF_WIDTH = 0.30D;
-    private static final double GROUND_ACCEL = 0.13D;
+    // Vanilla 1.8.9 EntityLivingBase movement constants for the normal
+    // overworld path used by MonsterMazeAI. The player action executor drives
+    // the sprint key, so landMovementFactor is the sprinted 0.10 * 1.30.
+    private static final double BASE_MOVE_SPEED = 0.10D;
+    private static final double SPRINT_MOVE_MULTIPLIER = 1.30D;
+    private static final double GROUND_FRICTION = 0.60D * 0.91D;
+    private static final double GROUND_ACCEL = BASE_MOVE_SPEED * SPRINT_MOVE_MULTIPLIER;
     private static final double AIR_ACCEL = 0.02D;
-    private static final double GROUND_DRAG = 0.546D;
+    private static final double GROUND_DRAG = GROUND_FRICTION;
     private static final double AIR_DRAG = 0.91D;
-    private static final double JUMP_VELOCITY = 0.42D;
+    private static final double INPUT_DAMPING = 0.98D;
+    private static final double JUMP_VELOCITY = 0.41999998688697815D;
     private static final double GRAVITY = 0.08D;
     private static final double VERTICAL_DRAG = 0.98D;
     private static final double SPRINT_JUMP_BOOST = 0.20D;
-    private static final double MAX_SIM_HORIZONTAL_SPEED = 0.28D;
 
     @Test(timeout = 180000)
     public void everyMazePatternReachesStageTenOnEverySimulation() {
@@ -276,7 +282,9 @@ public final class MazePatternStage10SimulationTest {
         }
 
         boolean wasGrounded = p.grounded;
-        // EntityLivingBase jumpTicks prevents a second jump for 10 ticks.
+        // EntityLivingBase decrements jumpTicks once per living tick before
+        // processing jump input. A jump then sets it back to 10.
+        if (p.jumpCooldown > 0) p.jumpCooldown--;
         if (wasGrounded && action.jump && p.jumpCooldown == 0) {
             p.vy = JUMP_VELOCITY;
             p.jumpCooldown = 10;
@@ -285,18 +293,20 @@ public final class MazePatternStage10SimulationTest {
                 p.vz += Math.cos(radians) * SPRINT_JUMP_BOOST;
             }
         }
-        if (p.jumpCooldown > 0) p.jumpCooldown--;
+        // EntityLivingBase damps moveForward/moveStrafing immediately before
+        // moveEntityWithHeading(). Sprint does not increase jumpMovementFactor.
+        inputForward *= INPUT_DAMPING;
+        inputStrafe *= INPUT_DAMPING;
 
-        // getAIMoveSpeed already includes sprint; sprint modifies the air
-        // movement factor by +speedInAir*0.3 (0.006 in vanilla 1.8.9).
         double accel = wasGrounded ? GROUND_ACCEL : AIR_ACCEL;
-        if (!wasGrounded && action.sprint) accel += 0.006D;
 
         p.vx += (forwardX * inputForward + strafeX * inputStrafe) * accel;
         p.vz += (forwardZ * inputForward + strafeZ * inputStrafe) * accel;
 
-        // Vanilla moves using the current motion, then applies horizontal
-        // friction after the move.
+        // Vanilla EntityLivingBase.moveEntityWithHeading() moves using the
+        // current motion, then applies horizontal friction after collision.
+        // There is deliberately NO artificial horizontal speed cap here: the
+        // real movement path has no hard cap.
         double drag = wasGrounded ? GROUND_DRAG : AIR_DRAG;
         double nextX = p.x + p.vx;
         double nextZ = p.z + p.vz;
@@ -322,12 +332,6 @@ public final class MazePatternStage10SimulationTest {
         p.vx *= drag;
         p.vz *= drag;
         double horizontalSpeed = Math.hypot(p.vx, p.vz);
-        if (horizontalSpeed > MAX_SIM_HORIZONTAL_SPEED) {
-            double scale = MAX_SIM_HORIZONTAL_SPEED / horizontalSpeed;
-            p.vx *= scale;
-            p.vz *= scale;
-            horizontalSpeed = MAX_SIM_HORIZONTAL_SPEED;
-        }
         result.maxSpeed = Math.max(result.maxSpeed, horizontalSpeed);
 
         if (!p.grounded && p.y < -2.0D) p.alive = false;

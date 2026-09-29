@@ -2665,11 +2665,10 @@ public final class FirstPadSpeedrunController {
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
-                    && (playerFootprintOverlapsCell(
+                    && playerFootprintOverlapsCell(
                     state, routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     edgeType(routeIndex) == EdgeType.DIAGONAL
-                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D)
-                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z));
+                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D);
 
             if (normalCapture || overshootCapture) {
                 routeIndex++;
@@ -2786,7 +2785,23 @@ public final class FirstPadSpeedrunController {
             double distance = Math.hypot(
                     state.player.x - closestX, state.player.z - closestZ);
 
-            if (distance <= maxSegmentDistance && distance < bestDistance) {
+            /*
+             * Catch-up may only skip cells on the same committed heading span.
+             * The player can be physically ahead of the discrete route index,
+             * but jumping across a turn would command the new heading before
+             * the body has actually reached that corner.
+             *
+             * Require the player to be materially along the candidate segment;
+             * merely being close to an earlier/later segment at a corner is not
+             * enough to advance the route cursor.
+             */
+            if (candidate > routeIndex
+                    && !sameCommittedHeadingSpan(routeIndex, candidate)) {
+                continue;
+            }
+            if (distance <= maxSegmentDistance
+                    && t >= 0.55D
+                    && distance < bestDistance) {
                 best = candidate;
                 bestDistance = distance;
             }

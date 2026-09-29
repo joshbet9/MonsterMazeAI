@@ -156,7 +156,6 @@ public final class FirstPadSpeedrunController {
     private static final double GAP_MOMENTUM_LATERAL_SPEED_LIMIT = 0.12D;
     private static final float GAP_MOMENTUM_DIRECTION_TOLERANCE = 15.0F;
     private static final int GAP_MOMENTUM_LOG_INTERVAL_TICKS = 10;
-    private static final int GAP_MOMENTUM_MAX_ROUTE_LOOKBACK = 2;
 
     private static final int GAP_LANDING_CONFIRM_TICKS = 2;
     private int gapJumpTriggeredRouteIndex = -1;
@@ -1801,7 +1800,7 @@ public final class FirstPadSpeedrunController {
             gapLandingConfirmTicks = 0;
             routeLength = 0;
             routeIndex = 0;
-            return null;
+            return LegacyAction.IDLE;
         }
 
         gapExecutionActive = true;

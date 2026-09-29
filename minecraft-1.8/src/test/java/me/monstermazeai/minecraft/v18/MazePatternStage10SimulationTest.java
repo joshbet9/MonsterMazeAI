@@ -196,8 +196,9 @@ public final class MazePatternStage10SimulationTest {
                 result.failure = "FALL stage=" + stage
                         + " pos=" + format(player.x) + "," + format(player.y)
                         + "," + format(player.z)
-                        + " action=" + actionText(action);
-                return result;
+                        + " action=" + actionText(action)
+                        + " targets=" + padSequenceText(pads)
+                        + " controllerLog=" + result.controllerLog.toString();
             }
 
             if (transitionTicks > 0) transitionTicks--;
@@ -503,6 +504,15 @@ public final class MazePatternStage10SimulationTest {
         while (yaw >= 180.0F) yaw -= 360.0F;
         while (yaw < -180.0F) yaw += 360.0F;
         return yaw;
+    }
+
+    private static String padSequenceText(List<Cell> pads) {
+        StringBuilder out = new StringBuilder();
+        for (Cell pad : pads) {
+            if (out.length() > 0) out.append(";");
+            out.append(pad.row).append(",").append(pad.column);
+        }
+        return out.toString();
     }
 
     private static String actionText(LegacyAction action) {

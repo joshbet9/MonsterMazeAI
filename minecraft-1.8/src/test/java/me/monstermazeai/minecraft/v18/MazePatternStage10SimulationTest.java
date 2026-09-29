@@ -75,6 +75,11 @@ public final class MazePatternStage10SimulationTest {
                     maxStage = Math.max(maxStage, result.stage);
                     if (result.stage >= TARGET_STAGE) passed++;
 
+                    System.err.println("SIM Maze " + (pattern + 1)
+                            + " kit=" + kit + " seed=" + seed
+                            + " stage=" + result.stage + " pads=" + result.padsReached
+                            + " ticks=" + result.ticks + " maxSpeed=" + format(result.maxSpeed)
+                            + " failure=" + result.failure);
                     report.append("Maze ").append(pattern + 1)
                             .append(" kit=").append(kit)
                             .append(" seed=").append(seed)

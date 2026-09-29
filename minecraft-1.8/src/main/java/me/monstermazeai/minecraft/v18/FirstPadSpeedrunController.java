@@ -2853,107 +2853,23 @@ public final class FirstPadSpeedrunController {
     }
 
     private float routeTrackingYaw(LegacyWorldObservation state, float edgeYaw) {
-        if (routeRows == null || routeColumns == null
-                || routeIndex < 0 || routeIndex >= routeLength - 1
-                || edgeType(routeIndex) == EdgeType.ONE_BLOCK_GAP) {
-            return edgeYaw;
-        }
-
-        double ax = worldX(routeRows[routeIndex], state.center.x);
-        double az = worldZ(routeColumns[routeIndex], state.center.z);
-        double bx = worldX(routeRows[routeIndex + 1], state.center.x);
-        double bz = worldZ(routeColumns[routeIndex + 1], state.center.z);
-        double ex = bx - ax;
-        double ez = bz - az;
-        double length = Math.hypot(ex, ez);
-        if (length <= 1.0E-9D) return edgeYaw;
-        ex /= length;
-        ez /= length;
-
-        double px = state.player.x - ax;
-        double pz = state.player.z - az;
-        double progress = px * ex + pz * ez;
-        double clampedProgress = clampDouble(progress, 0.0D, length);
-        double closestX = ax + ex * clampedProgress;
-        double closestZ = az + ez * clampedProgress;
-        double lateralX = closestX - state.player.x;
-        double lateralZ = closestZ - state.player.z;
-        double lateralDistance = Math.hypot(lateralX, lateralZ);
-
         /*
-         * Pure-pursuit style correction: keep a small forward lookahead while
-         * biasing toward the route centreline. Limit the lateral correction so
-         * it cannot turn a straight corridor into a diagonal cut.
-         */
-        float trackedEdgeYaw = edgeYaw;
-        double distanceToWaypoint = Math.hypot(
-                state.player.x - bx, state.player.z - bz);
-
-        /*
-         * Turn monotonically toward the following cardinal edge as the player
-         * approaches a genuine waypoint. The previous pure-pursuit correction
-         * recomputed a target from the current continuous position every tick;
-         * at sprint speed that could alternate left/right around a corner and
-         * create the +/-30 degree yaw oscillation seen in the real and simulated
-         * traces.
+         * The immediate route edge is the sole grounded steering authority.
          *
-         * Blend over roughly 1.3 blocks: enough distance for a 90 degree turn
-         * using the client's 30 degree/tick yaw budget, while still keeping the
-         * first straight segment fully aligned.
+         * Earlier versions blended toward the following corner before the
+         * route cursor had physically captured that waypoint. At sprint speed
+         * that created a commanded yaw which could be safe for the next edge
+         * but unsafe for the CURRENT edge. The safety gate then correctly
+         * rejected it, leaving the controller permanently holding because the
+         * same blended heading was recomputed every tick.
+         *
+         * Deliberately sacrifice a small amount of corner speed here. A
+         * cardinal edge is deterministic, agrees with the A* route and the
+         * physical safety gate, and lets the cursor commit the next edge from
+         * an actually captured position. The airborne controller remains free
+         * to steer through a corner after a sprint jump.
          */
-        if (routeIndex + 2 < routeLength
-                && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
-                && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
-                && distanceToWaypoint < 1.75D
-                && lateralDistance <= CORNER_ANTICIPATION_LATERAL_TOLERANCE) {
-            int nextDr = routeRows[routeIndex + 2] - routeRows[routeIndex + 1];
-            int nextDc = routeColumns[routeIndex + 2] - routeColumns[routeIndex + 1];
-            if (nextDr == 0 && nextDc == 0) {
-                return edgeYaw;
-            }
-
-            float nextEdgeYaw = desiredYawForEdge(
-                    routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
-                    routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
-            float turn = normalise(nextEdgeYaw - edgeYaw);
-
-            /*
-             * A shortest-path maze route has no reason to make an immediate
-             * 180-degree reversal at a corner. Treat such a turn as stale route
-             * geometry instead of injecting reverse lateral velocity.
-             */
-            if (Math.abs(turn) > 120.0F) {
-                return edgeYaw;
-            }
-
-            double blend = clampDouble(
-                    (1.75D - distanceToWaypoint) / 1.30D, 0.0D, 1.0D);
-            trackedEdgeYaw = normalise(
-                    edgeYaw + (float) (turn * blend));
-
-            /*
-             * Once the corner turn owns the desired heading, do not apply the
-             * position-derived lateral correction on top of it. That correction
-             * was the source of the steering oscillation this block replaces.
-             */
-            return trackedEdgeYaw;
-        }
-
-        if (lateralDistance < 0.30D) return trackedEdgeYaw;
-
-        double lookahead = Math.min(1.15D, Math.max(0.45D, length * 0.75D));
-        double targetX = closestX + ex * lookahead;
-        double targetZ = closestZ + ez * lookahead;
-        double correctionWeight = Math.min(1.0D, lateralDistance / 0.85D);
-        targetX += lateralX * correctionWeight;
-        targetZ += lateralZ * correctionWeight;
-
-        float targetYaw = (float) Math.toDegrees(
-                Math.atan2(-(targetX - state.player.x),
-                        targetZ - state.player.z));
-        float correction = normalise(targetYaw - trackedEdgeYaw);
-        correction = clamp(correction, -25.0F, 25.0F);
-        return normalise(trackedEdgeYaw + correction);
+        return edgeYaw;
     }
 
     private float airborneCornerYaw(LegacyWorldObservation state, float currentEdgeYaw) {

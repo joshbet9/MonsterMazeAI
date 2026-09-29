@@ -242,13 +242,11 @@ public final class MazePatternStage10SimulationTest {
 
     private static void step(
             SimPlayer p, LegacyAction action, boolean[][] physical, Result result) {
-        float nextYaw = wrap(p.yaw + action.yawDelta);
-        p.yaw = nextYaw;
+        p.yaw = wrap(p.yaw + action.yawDelta);
 
         double radians = Math.toRadians(p.yaw);
         double forwardX = -Math.sin(radians);
         double forwardZ = Math.cos(radians);
-
         double strafeX = Math.cos(radians);
         double strafeZ = Math.sin(radians);
 
@@ -261,24 +259,28 @@ public final class MazePatternStage10SimulationTest {
         }
 
         boolean wasGrounded = p.grounded;
-        if (wasGrounded && action.jump) {
+        // EntityLivingBase jumpTicks prevents a second jump for 10 ticks.
+        if (wasGrounded && action.jump && p.jumpCooldown == 0) {
             p.vy = JUMP_VELOCITY;
+            p.jumpCooldown = 10;
             if (action.sprint) {
-                p.vx += forwardX * SPRINT_JUMP_BOOST;
-                p.vz += forwardZ * SPRINT_JUMP_BOOST;
+                p.vx -= Math.sin(radians) * SPRINT_JUMP_BOOST;
+                p.vz += Math.cos(radians) * SPRINT_JUMP_BOOST;
             }
         }
+        if (p.jumpCooldown > 0) p.jumpCooldown--;
 
+        // getAIMoveSpeed already includes sprint; sprint modifies the air
+        // movement factor by +speedInAir*0.3 (0.006 in vanilla 1.8.9).
         double accel = wasGrounded ? GROUND_ACCEL : AIR_ACCEL;
-        if (action.sprint) accel *= 1.30D;
+        if (!wasGrounded && action.sprint) accel += 0.006D;
 
         p.vx += (forwardX * inputForward + strafeX * inputStrafe) * accel;
         p.vz += (forwardZ * inputForward + strafeZ * inputStrafe) * accel;
 
+        // Vanilla moves using the current motion, then applies horizontal
+        // friction after the move.
         double drag = wasGrounded ? GROUND_DRAG : AIR_DRAG;
-        p.vx *= drag;
-        p.vz *= drag;
-
         double nextX = p.x + p.vx;
         double nextZ = p.z + p.vz;
 
@@ -286,10 +288,7 @@ public final class MazePatternStage10SimulationTest {
         p.vy *= VERTICAL_DRAG;
         double nextY = p.y + p.vy;
 
-        int row = floorRow(nextX);
-        int col = floorColumn(nextZ);
-        boolean supported = inBounds(row, col) && physical[row][col];
-
+        boolean supported = footprintSupported(nextX, nextZ, physical);
         if (supported && nextY <= 0.0D && p.vy <= 0.0D) {
             p.x = nextX;
             p.z = nextZ;
@@ -303,12 +302,11 @@ public final class MazePatternStage10SimulationTest {
             p.grounded = false;
         }
 
-        double speed = Math.hypot(p.vx, p.vz);
-        result.maxSpeed = Math.max(result.maxSpeed, speed);
+        p.vx *= drag;
+        p.vz *= drag;
+        result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
 
-        if (!p.grounded && p.y < -2.0D) {
-            p.alive = false;
-        }
+        if (!p.grounded && p.y < -2.0D) p.alive = false;
     }
 
     private static boolean[][] physicalFloor(

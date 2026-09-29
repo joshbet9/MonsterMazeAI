@@ -2847,7 +2847,7 @@ public final class FirstPadSpeedrunController {
         }
 
         return playerFootprintOverlapsCell(
-                state, routeRows[nextIndex], routeColumns[nextIndex], 0.05D);
+                state, routeRows[nextIndex], routeColumns[nextIndex], 1.0E-6D);
     }
 
     private float routeTrackingYaw(LegacyWorldObservation state, float edgeYaw) {

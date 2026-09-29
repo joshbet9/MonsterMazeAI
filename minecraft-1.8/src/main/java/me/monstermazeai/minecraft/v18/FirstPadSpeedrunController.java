@@ -2759,14 +2759,14 @@ public final class FirstPadSpeedrunController {
         if (routeIndex + 2 < routeLength
                 && edgeType(routeIndex) != EdgeType.ONE_BLOCK_GAP
                 && edgeType(routeIndex + 1) != EdgeType.ONE_BLOCK_GAP
-                && distanceToWaypoint < 1.75D) {
+                && distanceToWaypoint < 3.00D) {
             float nextEdgeYaw = desiredYawForEdge(
                     routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     routeRows[routeIndex + 2], routeColumns[routeIndex + 2]);
             float turn = normalise(nextEdgeYaw - edgeYaw);
-            double blend = clampDouble((1.75D - distanceToWaypoint) / 1.25D, 0.0D, 1.0D);
+            double blend = clampDouble((3.00D - distanceToWaypoint) / 1.50D, 0.0D, 1.0D);
             trackedEdgeYaw = normalise(edgeYaw
-                    + clamp((float) (turn * 0.50D * blend), -30.0F, 30.0F));
+                    + clamp((float) (turn * 0.85D * blend), -45.0F, 45.0F));
         }
 
         if (lateralDistance < 0.30D) return trackedEdgeYaw;

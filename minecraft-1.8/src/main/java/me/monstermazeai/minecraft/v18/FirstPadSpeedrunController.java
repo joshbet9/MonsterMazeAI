@@ -2207,8 +2207,8 @@ public final class FirstPadSpeedrunController {
             double lateralDistance = Math.hypot(lateralX, lateralZ);
             double distanceToNext = Math.hypot(state.player.x - bx, state.player.z - bz);
 
-            boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
-                    || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
+            boolean normalCapture = shouldCaptureRouteWaypoint(
+                    progress, distanceToNext)
                     && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
 
             boolean overshootCapture = progress >= 1.0D
@@ -2235,6 +2235,26 @@ public final class FirstPadSpeedrunController {
                 break;
             }
         }
+    }
+
+    /*
+     * Waypoint capture must be based on forward progress, not proximity alone.
+     * At speed the player's 0.6-block footprint can overlap the next cell
+     * before the player has actually traversed the current edge. Advancing the
+     * route index from that overlap makes the next edge become authoritative
+     * too early; at a corner this can make the safety controller rotate toward
+     * the following edge while the player is still on the previous one.
+     *
+     * The observed first-pad failure matched this exact signature: the player
+     * moved normally for a few ticks, then stopped at roughly the same
+     * coordinates while the commanded yaw alternated. Requiring meaningful
+     * edge progress for proximity capture keeps routeIndex monotonic with
+     * physical travel while retaining the existing high-speed progress path.
+     */
+    static boolean shouldCaptureRouteWaypoint(double progress, double distanceToNext) {
+        return progress >= ROUTE_ADVANCE_PROGRESS
+                || (distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS
+                && progress >= 0.55D);
     }
 
     private boolean routeEdgeHasPhysicalCapture(LegacyWorldObservation state, int nextIndex) {

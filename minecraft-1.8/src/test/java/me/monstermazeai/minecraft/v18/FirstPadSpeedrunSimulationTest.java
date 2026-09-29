@@ -54,9 +54,10 @@ public final class FirstPadSpeedrunSimulationTest {
         System.out.println(result.report());
         System.err.println(result.report());
 
-        assertTrue(
-                "simulation did not reach the required 10-pad average: " + result.report(),
-                result.roundsReached >= 10);
+        assertEquals(
+                "simulation rounds reached",
+                10,
+                result.roundsReached);
 
         assertEquals(
                 "rounds reached must equal successful pad count",

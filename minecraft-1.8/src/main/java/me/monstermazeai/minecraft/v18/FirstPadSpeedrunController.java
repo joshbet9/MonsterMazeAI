@@ -2159,7 +2159,7 @@ public final class FirstPadSpeedrunController {
                 resetGapMomentum();
                 routeIndex++;
                 if (routeIndex > 0 && routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
             }
         } else {
             gapLandingConfirmTicks = 0;
@@ -2178,7 +2178,7 @@ public final class FirstPadSpeedrunController {
              * trajectory that just crossed the gap.
              */
             if (!state.player.grounded) {
-                return new LegacyAction(1.0f, 0.0f, true, true, 0.0f, false);
+                return new LegacyAction(1.0f, 0.0f, false, true, 0.0f, false);
             }
 
             /*

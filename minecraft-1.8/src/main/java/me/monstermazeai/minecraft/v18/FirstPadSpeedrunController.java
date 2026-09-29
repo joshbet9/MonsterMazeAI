@@ -592,6 +592,17 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
+         * Arm the gap transaction before the airborne continuity fast-path.
+         * A route cursor can enter a gap edge while the player is still in the
+         * final portion of the previous jump. Waiting for a later grounded tick
+         * delays Space until the player has already traversed the missing cell.
+         */
+        if (!gapExecutionActive && isCurrentEdgeGap(state)) {
+            LegacyAction gapAction = prepareOrStartGap(state, desiredYaw, yawError);
+            if (gapAction != null) return gapAction;
+        }
+
+        /*
          * Airborne route continuity is a physics-critical state. A sprint jump
          * carries substantial horizontal momentum, so stopping to satisfy the
          * grounded corner/heading safety rules can turn a valid route corner
@@ -2631,17 +2642,14 @@ public final class FirstPadSpeedrunController {
 
             boolean normalCapture = (progress >= ROUTE_ADVANCE_PROGRESS
                     || distanceToNext <= ROUTE_WAYPOINT_CAPTURE_RADIUS)
-                    && (routeEdgeHasPhysicalCapture(state, routeIndex + 1)
-                    || physicalFloorSupportsFootprint(
-                    state, state.player.x, state.player.z));
+                    && routeEdgeHasPhysicalCapture(state, routeIndex + 1);
 
             boolean overshootCapture = progress >= 1.0D
                     && lateralDistance <= ROUTE_EDGE_LATERAL_TOLERANCE
-                    && (playerFootprintOverlapsCell(
+                    && playerFootprintOverlapsCell(
                     state, routeRows[routeIndex + 1], routeColumns[routeIndex + 1],
                     edgeType(routeIndex) == EdgeType.DIAGONAL
-                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D)
-                    || physicalFloorSupportsFootprint(state, state.player.x, state.player.z));
+                            ? DIAGONAL_SUPPORT_MIN_AREA : 0.01D);
 
             if (normalCapture || overshootCapture) {
                 routeIndex++;
@@ -2716,7 +2724,8 @@ public final class FirstPadSpeedrunController {
              * capture of the selected candidate itself.
              */
             if (bestIndex > routeIndex
-                    && bestDistance + 0.05D < currentDistance) {
+                    && bestDistance + 0.05D < currentDistance
+                    && routeEdgeHasPhysicalCapture(state, bestIndex)) {
                 int oldIndex = routeIndex;
                 routeIndex = bestIndex;
                 if (routeStartsOnPreviousPad) routeStartsOnPreviousPad = false;

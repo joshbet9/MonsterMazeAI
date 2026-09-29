@@ -2174,7 +2174,7 @@ public final class FirstPadSpeedrunController {
         }
 
         if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
-                && playerFootprintOverlapsCell(state, toRow, toColumn, 0.05D)) {
+                && playerFootprintOverlapsCell(state, toRow, toColumn, 0.0D)) {
             gapLandingConfirmTicks++;
             if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"

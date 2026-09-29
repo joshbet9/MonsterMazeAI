@@ -2629,7 +2629,18 @@ public final class FirstPadSpeedrunController {
          * constraint (cos(30) ~= 0.866 > 0.85), while the next observation
          * can either capture the waypoint or continue the same lead.
          */
-        if (progress < 0.45D && distanceToWaypoint > 1.0D) {
+        boolean orthogonalCorner = edgeType(routeIndex) == EdgeType.ORTHOGONAL;
+        if (orthogonalCorner) {
+            /*
+             * On a one-cell straight corridor, a 30-degree pre-turn creates
+             * measurable lateral drift before the actual corner. Keep the
+             * existing aggressive lead for diagonal geometry, but delay and
+             * soften orthogonal-corridor turns.
+             */
+            if (progress < 0.65D && distanceToWaypoint > 1.25D) {
+                return currentEdgeYaw;
+            }
+        } else if (progress < 0.45D && distanceToWaypoint > 1.0D) {
             return currentEdgeYaw;
         }
 
@@ -2639,7 +2650,9 @@ public final class FirstPadSpeedrunController {
         float turn = normalise(nextYaw - currentEdgeYaw);
         if (Math.abs(turn) < 5.0F) return currentEdgeYaw;
 
-        float lead = clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP);
+        float lead = orthogonalCorner
+                ? clamp(turn, -15.0F, 15.0F)
+                : clamp(turn, -MAX_YAW_STEP, MAX_YAW_STEP);
         return normalise(currentEdgeYaw + lead);
     }
 

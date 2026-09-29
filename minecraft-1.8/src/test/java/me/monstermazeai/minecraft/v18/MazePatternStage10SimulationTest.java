@@ -43,7 +43,9 @@ public final class MazePatternStage10SimulationTest {
     private static final int TARGET_STAGE = 10;
     private static final int SEEDS_PER_PATTERN = 4;
     private static final int MAX_TICKS_PER_STAGE = 900;
-    private static final int TRANSITION_HOLD_TICKS = 6;
+    // MonsterMaze SafePad starts with decayCount=11 and decays once per
+    // second after the active-pad transition. 20 client ticks/second.
+    private static final int OLD_PAD_LIFETIME_TICKS = 11 * 20;
 
     // Centered-world AABB footprint used by the real 1.8.9 player.
     private static final double PLAYER_HALF_WIDTH = 0.30D;
@@ -162,7 +164,7 @@ public final class MazePatternStage10SimulationTest {
                 padIndex++;
                 activePad = pads.get(padIndex);
                 stage++;
-                transitionTicks = TRANSITION_HOLD_TICKS;
+                transitionTicks = OLD_PAD_LIFETIME_TICKS;
             }
 
             boolean[][] physical = physicalFloor(raw, activePad, oldPad, transitionTicks);
@@ -346,8 +348,8 @@ public final class MazePatternStage10SimulationTest {
         fillPad(floor, activePad);
 
         // Old SafePads remain physical while their decay timer is running.
-        // During the forced transition window we retain that physical support,
-        // exactly matching the source's oldSafePads lifecycle.
+        // The source keeps old SafePads physical for the full 11 decay ticks,
+        // not merely for a few controller-transition ticks.
         if (transitionTicks > 0) {
             fillPad(floor, oldPad);
         }

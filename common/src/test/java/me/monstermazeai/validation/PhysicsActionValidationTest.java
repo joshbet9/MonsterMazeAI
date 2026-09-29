@@ -110,6 +110,23 @@ class PhysicsActionValidationTest {
     }
 
     @Test
+    void legacyMinusTenJumpSpamAddsMomentumWithoutVerticalJump() {
+        GameState s = state(Kit.REPULSOR);
+        Simulator simulator = simulator(s);
+        double normalStart = s.player.z;
+
+        for (int i = 0; i < 20; i++) {
+            simulator.tick(s, Action.forward(true));
+            assertEquals(GameState.PATH_Y, s.player.y, 1e-9);
+            assertTrue(s.player.grounded);
+        }
+
+        double speedingDisplacement = s.player.z - normalStart;
+        assertTrue(speedingDisplacement > 2.5,
+                "-10 jump spam did not retain horizontal speeding momentum: " + speedingDisplacement);
+    }
+
+    @Test
     void yawDeltaChangesMovementDirectionBeforePhysicsStep() {
         GameState s = state(Kit.JUMPER);
         Simulator simulator = simulator(s);

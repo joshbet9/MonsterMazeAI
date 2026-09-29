@@ -2355,7 +2355,19 @@ public final class FirstPadSpeedrunController {
         float rawEdgeYaw = desiredYawForEdge(
                 routeRows[routeIndex], routeColumns[routeIndex],
                 routeRows[nextIndex], routeColumns[nextIndex]);
-        if (Math.abs(normalise(rawEdgeYaw - commandedYaw)) > 35.0F) {
+        /*
+         * The first speedrun launch is particularly sensitive to a yaw error:
+         * Minecraft preserves the initial lateral component through the entire
+         * sprint-jump. The old 35-degree allowance let a launch begin at
+         * -60/-120 degrees for a cardinal edge, producing a lateral velocity
+         * large enough to leave a one-cell corridor before the first corner.
+         *
+         * Keep the physical corner transition exception above, but make the
+         * actual current-edge heading tight enough that the player never starts
+         * a straight run materially sideways.
+         */
+        float rawHeadingError = Math.abs(normalise(rawEdgeYaw - commandedYaw));
+        if (rawHeadingError > 12.0F) {
             return "forward-vector";
         }
 

@@ -1810,25 +1810,17 @@ public final class FirstPadSpeedrunController {
         }
 
         /*
-         * Diagonal movement is only physically valid when the player has
-         * continuous support through the corner. The source Monster Maze
-         * layouts are one-cell-wide orthogonal corridors; two diagonal path
-         * cells touching only at a corner are not a traversable player route.
-         * Requiring both orthogonal side cells prevents A* from cutting a
-         * corner across the void while still allowing genuine diagonals on a
-         * 5x5 SafePad where all four cells are physically present.
+         * The authoritative Monster Maze movement graph is cardinal: Maze's
+         * movement waypoints are traversed north/south/east/west and the
+         * original getTarget() logic never creates diagonal waypoint edges.
+         *
+         * Do not manufacture diagonal A* edges merely because two adjacent
+         * floor cells touch at a corner. A continuous player can visually cut
+         * that corner, but the one-cell corridor geometry does not guarantee
+         * the 0.60m player footprint remains supported throughout the turn.
+         * Keeping the planner cardinal also makes routeIndex, gap ownership,
+         * and physical support agree on the same graph.
          */
-        if (adr == 1 && adc == 1) {
-            int sideRowA = fromRow;
-            int sideColumnA = toColumn;
-            int sideRowB = toRow;
-            int sideColumnB = fromColumn;
-            boolean sideA = inBounds(sideRowA, sideColumnA)
-                    && state.physicalFloor[sideRowA][sideColumnA];
-            boolean sideB = inBounds(sideRowB, sideColumnB)
-                    && state.physicalFloor[sideRowB][sideColumnB];
-            return sideA && sideB;
-        }
 
         // One-block gap: supported endpoint, unsupported middle cell.
         if ((adr == 2 && dc == 0) || (adc == 2 && dr == 0)) {

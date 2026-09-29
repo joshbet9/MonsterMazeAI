@@ -82,8 +82,10 @@ public final class AiSidecarMain {
                 }
 
                 if (decisionReady) {
-                    boolean allowJump = state.kit == me.monstermazeai.kit.Kit.JUMPER
-                            && state.player.jumpCharges > 0;
+                    // Non-Jumper players deliberately hold jump for the source's
+                    // "speeding" mechanic. Jumpers may jump only while a charge remains.
+                    boolean allowJump = state.kit != me.monstermazeai.kit.Kit.JUMPER
+                            || state.player.jumpCharges > 0;
                     Action action = fullRoutingAgent.decide(state, allowJump);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());

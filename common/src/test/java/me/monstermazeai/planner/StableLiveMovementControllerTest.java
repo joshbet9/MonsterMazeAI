@@ -130,6 +130,53 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void commitsSafePadEdgeCrossingInsteadOfTreatingPadSurfaceAsOrdinaryMazeFloor() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[0][1] = 1;
+        // The live observer exposes the source SafePad's 5x5 replacement as
+        // physical floor even where the canonical maze layout was air.
+        for (int row = 0; row < 5; row++) {
+            for (int col = 2; col <= 4; col++) {
+                raw[row][col] = 0;
+            }
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        for (int row = 0; row < 5; row++) {
+            for (int col = 2; col <= 4; col++) s.maze.setPhysicalFloor(row, col, true);
+        }
+        s.activePadRow = 0;
+        s.activePadColumn = 4;
+        s.player.x = 0.5;
+        s.player.z = 1.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 100;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(0, 4), true);
+
+        assertEquals(1.0, action.forward(), 0.0);
+        assertTrue(action.sprint());
+        assertTrue(action.jump(), "the committed pad-edge transition must use the permitted jump input");
+        assertEquals(0.0, action.strafe(), 0.0);
+        assertTrue(controller.lastDecisionDetail().contains("PAD_ENTRY_CROSS"),
+                controller.lastDecisionDetail());
+
+        // A changed threat must not replace the committed edge transition with
+        // an unrelated route command on the next observation.
+        s.tick++;
+        Action second = controller.nextAction(s, new Cell(0, 4), true);
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0);
+        assertTrue(controller.lastDecisionDetail().contains("PAD_ENTRY_CROSS"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

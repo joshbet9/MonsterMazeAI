@@ -27,7 +27,7 @@ import static org.junit.Assert.*;
  * - the active pad changes while the player is still physically standing on
  *   the previous pad, exercising the exact transition that previously latched
  *   the controller into IDLE;
- * - exercises the controller's one-block gap edges and continuous jump policy;
+ * - exercises the controller's one-block gap edges and legacy -10 speeding policy;
  * - requires every individual simulation to reach stage 10.
  *
  * No Minecraft client is launched. The harness uses the same MazeLayouts and
@@ -328,7 +328,11 @@ public final class MazePatternStage10SimulationTest {
 
         double radians = Math.toRadians(p.yaw);
         if (action.jump && groundedAtStart && p.jumpTicks == 0) {
-            p.vy = 0.42D;
+            p.vy = -0.48D;
+            // MonsterMaze non-Jumpers carry Jump amplifier -10. The vanilla
+            // jump therefore cannot produce positive Y movement, but the
+            // sprint-jump horizontal impulse remains and is the legacy
+            // speeding mechanic. Keep this tick-level interaction intact.
             p.grounded = false;
             if (action.sprint) {
                 p.vx -= Math.sin(radians) * 0.20D;

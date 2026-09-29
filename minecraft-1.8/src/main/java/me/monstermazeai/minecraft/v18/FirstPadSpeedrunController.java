@@ -2192,9 +2192,14 @@ public final class FirstPadSpeedrunController {
             double destinationDistance = Math.hypot(
                     state.player.x - destinationX,
                     state.player.z - destinationZ);
-            if (destinationDistance <= 1.25D
-                    && physicalFloorSupportsFootprint(
-                    state, state.player.x, state.player.z)) {
+            /*
+             * Once grounded beyond the gap endpoint, the jump has completed.
+             * At sprint speed the player can be more than one block past the
+             * endpoint centre by the first grounded observation. Rejecting
+             * that observation leaves the controller owning the old edge and
+             * causes repeated "takeoff" attempts while the player walks away.
+             */
+            if (state.player.grounded) {
                 log(state.worldTick, "[MonsterMazeAI/1.8] GAP LANDING CONFIRMED"
                         + " tick=" + state.worldTick
                         + " edge=" + fromRow + "," + fromColumn + "->" + toRow + "," + toColumn

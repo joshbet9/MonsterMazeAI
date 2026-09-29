@@ -1108,8 +1108,14 @@ public final class FirstPadSpeedrunController {
             p = parent[p];
         }
 
-        boolean transitioningFromReachedPad = targetReached
-                && !routeStartsOnPreviousPad;
+        /*
+         * activePadTransitionPending is the authoritative transition flag.
+         * next() clears targetReached before rebuilding the new route, so using
+         * targetReached alone here loses the stationary pre-alignment phase
+         * exactly when the server activates the next pad.
+         */
+        boolean transitioningFromReachedPad = activePadTransitionPending
+                || (targetReached && !routeStartsOnPreviousPad);
         boolean mobReplan = routeLength > 0
                 && goalRow == targetRow
                 && goalColumn == targetColumn

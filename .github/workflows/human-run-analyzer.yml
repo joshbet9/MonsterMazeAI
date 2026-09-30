@@ -19,3 +19,40 @@ jobs:
       - name: Run human-run analyzer tests
         working-directory: tools
         run: python -m unittest -v test_human_run_analyzer.py
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fetch recorded Pattern 3 fixture
+        run: |
+          git fetch --depth=1 origin data/human-run-pattern3
+          git archive FETCH_HEAD human-runs | tar -x
+      - name: Analyze recorded run
+        run: python tools/human_run_analyzer.py human-runs --output-dir /tmp/human-run-analysis
+      - name: Verify resolved run identity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path("/tmp/human-run-analysis/analysis/summary.json").read_text())
+          anomalies = json.loads(Path("/tmp/human-run-analysis/analysis/anomalies.json").read_text())
+
+          assert summary["run"]["stageReached"] == 49, summary["run"]
+          assert summary["conditions"]["mode"] == "speed", summary["conditions"]
+          assert summary["conditions"]["kit"] == "MAVERICK", summary["conditions"]
+          assert summary["conditions"]["pattern"] == 3, summary["conditions"]
+          assert any(a["type"] == "KIT_CONFLICT" for a in anomalies), anomalies
+          assert any(a["type"] == "WORLD_STAGE_CONFLICT" for a in anomalies), anomalies
+          print(json.dumps({
+              "stageReached": summary["run"]["stageReached"],
+              "mode": summary["conditions"]["mode"],
+              "kit": summary["conditions"]["kit"],
+              "pattern": summary["conditions"]["pattern"],
+              "anomalyTypes": sorted({a["type"] for a in anomalies}),
+          }, indent=2))
+          PY

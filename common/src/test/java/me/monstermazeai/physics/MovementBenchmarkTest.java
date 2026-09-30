@@ -103,6 +103,26 @@ class MovementBenchmarkTest {
         assertTrue(s.player.grounded);
     }
 
+    @Test
+    void speedModeStationaryJumperDoesNotUseSprintImpulse(){
+        GameState s = player();
+        s.kit = Kit.JUMPER;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+        physics.tick(
+                s.player,
+                new Action(0, 0, true, true, 0, false),
+                s.maze,
+                0,
+                true);
+
+        assertEquals(0.0D, s.player.vx, 1.0e-12);
+        assertEquals(0.0D, s.player.vz, 1.0e-12);
+        assertTrue(s.player.y > GameState.PATH_Y);
+    }
+
     @Test void movementIsTickDeterministic(){
         assertEquals(run(60,6),run(60,6),1e-12);
         assertEquals(run(60,8),run(60,8),1e-12);

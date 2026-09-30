@@ -105,11 +105,11 @@ class HumanTracePhysicsCalibrationTest {
                 }
 
                 PlayerState player = toLocalPlayer(current, currentWorld.center);
-                // Jump cooldown is hidden client state. On a grounded sample,
-                // Minecraft can respond to the held jump input immediately;
-                // carrying an inferred timer across isolated one-step samples
-                // would create a false 0.20-block residual.
-                player.jumpTicks = current.grounded ? 0 : jumpTicks;
+                // Jump cooldown is hidden client state. Preserve the inferred
+                // cooldown for non-Jumper Speed jump-spam, but keep Jumper
+                // samples immediately jump-ready because the recorded takeoffs
+                // repeatedly occur on the first grounded tick after landing.
+                player.jumpTicks = spec.kit == Kit.JUMPER ? 0 : jumpTicks;
 
                 Action action = new Action(
                         actionInput.forward,

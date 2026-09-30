@@ -2,7 +2,6 @@ package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
-import me.monstermazeai.ability.AbilityDecision;
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.Mode;
@@ -15,6 +14,10 @@ import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMovementModel;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.PlayerState;
+import me.monstermazeai.runtime.AutonomousMonsterMazeAgent;
+import me.monstermazeai.planner.LiveObjectiveController;
+import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
+import me.monstermazeai.planner.RobustLiveController;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -199,7 +202,10 @@ public final class MazePatternStage10SimulationTest {
         player.grounded = true;
         player.yaw = 0.0F;
 
-        FirstPadSpeedrunController controller = new FirstPadSpeedrunController();
+        AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
+                new RobustLiveController(
+                        new LiveObjectiveController(
+                                new MazeAwareRecedingHorizonController(1))));
 
         /*
          * Keep a real GameState alongside the adapter-facing centered-world
@@ -273,17 +279,23 @@ public final class MazePatternStage10SimulationTest {
                     ticks, stage, pattern + 1, kit, player, activePad, raw, physical, tacticalState, abilities);
 
             LegacyAction action;
-            ByteArrayOutputStream controllerLog = new ByteArrayOutputStream();
-            PrintStream originalOut = System.out;
-            System.setOut(new PrintStream(controllerLog));
             try {
-                action = controller.next(observation);
-            } finally {
-                System.out.flush();
-                System.setOut(originalOut);
+                boolean allowJump = kit != Kit.JUMPER || tacticalState.player.jumpCharges > 0;
+                Action commonAction = agent.decide(tacticalState, allowJump);
+                action = new LegacyAction(
+                        commonAction.forward(),
+                        commonAction.strafe(),
+                        commonAction.jump(),
+                        commonAction.sprint(),
+                        commonAction.yawDelta(),
+                        commonAction.useAbility());
+                result.controllerLog.append(agent.lastDecisionDetail()).append('\\n');
+            } catch (RuntimeException failure) {
+                result.controllerLog.append("PRODUCTION_AGENT_EXCEPTION ")
+                        .append(failure.getClass().getSimpleName())
+                        .append(": ").append(failure.getMessage()).append('\\n');
+                action = LegacyAction.IDLE;
             }
-            result.controllerLog.append(controllerLog.toString());
-            if (action == null) action = LegacyAction.IDLE;
 
             /*
              * Ability use is now a real source-model operation. The adapter

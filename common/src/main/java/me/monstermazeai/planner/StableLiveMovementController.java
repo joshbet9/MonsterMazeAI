@@ -1864,7 +1864,8 @@ public final class StableLiveMovementController {
             gapExecutionActive = true;
             // Commit early enough that a single-tick physics/replan boundary
             // cannot make us miss the jump input at the block edge.
-            gapTakeoffStarted = progress >= GAP_JUMP_PROGRESS;
+            // Commitment starts before takeoff; the execute step owns the one-shot jump pulse.
+            gapTakeoffStarted = false;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
             return executeCommittedGap(state, allowJump);
@@ -1898,11 +1899,14 @@ public final class StableLiveMovementController {
             return null;
         }
         double progress = currentGapProgress(state, gapExecutionRouteIndex);
-        if (!gapTakeoffStarted && progress >= GAP_JUMP_PROGRESS) {
+        boolean jumpThisTick = false;
+        if (!gapTakeoffStarted && state.player.grounded && progress >= GAP_JUMP_PROGRESS) {
+            jumpThisTick = true;
             gapTakeoffStarted = true;
-            lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText() + " progress=" + format(progress);
+            lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText()
+                    + " progress=" + format(progress);
         }
-        if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
+        if (gapTakeoffStarted && state.player.grounded && !jumpThisTick && progress > 0.90D
                 && playerAabbOverlapsCell(state, toRow, toColumn)) {
             gapLandingConfirmTicks++;
             if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
@@ -1912,7 +1916,8 @@ public final class StableLiveMovementController {
                 anchoredSegmentIndex = -1;
                 lastDecisionDetail = "GAP_LANDING_CONFIRMED edge=" + fromRow + "," + fromColumn + "->"
                         + toRow + "," + toColumn + " progress=" + format(progress);
-                return new Action(1.0, 0.0, allowJump, true, 0.0F, false);
+                // Landing confirmation is not another jump opportunity.
+                return new Action(1.0, 0.0, false, true, 0.0F, false);
             }
         } else {
             gapLandingConfirmTicks = 0;
@@ -1939,9 +1944,7 @@ public final class StableLiveMovementController {
          * intentionally requested for the committed gap regardless of that
          * permission; the server-side jump lock suppresses the actual jump.
          */
-        boolean jumpInput = state.player.grounded
-                && !gapTakeoffStarted
-                && progress >= GAP_JUMP_PROGRESS;
+        boolean jumpInput = jumpThisTick;
         boolean sprintInput = !jumpInput || state.kit != me.monstermazeai.kit.Kit.JUMPER;
         lastDecisionDetail = "GAP_EXECUTE edge=" + gapEdgeText() + " progress=" + format(progress)
                 + " takeoff=" + gapTakeoffStarted + " jumpInput=" + jumpInput

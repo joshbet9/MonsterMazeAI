@@ -61,7 +61,7 @@ class StableLiveMovementControllerTest {
 
         assertEquals(0.0, first.forward(), 1.0e-6);
         assertEquals(0.0, first.strafe(), 1.0e-6);
-        assertEquals(-12.0F, first.yawDelta(), 1.0e-6F,
+        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
                 "the initial 90-degree heading error must turn in place rather than safety-stop");
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
     }

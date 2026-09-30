@@ -289,7 +289,7 @@ public final class MazePatternStage10SimulationTest {
                         commonAction.sprint(),
                         commonAction.yawDelta(),
                         commonAction.useAbility());
-                result.controllerLog.append(agent.lastDecisionDetail()).append('\\n');
+                result.controllerLog.append(agent.lastDecisionDetail()).append('\n');
             } catch (RuntimeException failure) {
                 result.controllerLog.append("PRODUCTION_AGENT_EXCEPTION ")
                         .append(failure.getClass().getSimpleName())

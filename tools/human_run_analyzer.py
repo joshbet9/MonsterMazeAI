@@ -199,6 +199,17 @@ def pad_key(record: Optional[Dict[str, Any]]) -> Optional[Tuple[int, int]]:
     return None
 
 
+def event_pad_key(event: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    row, col = event.get("row"), event.get("column")
+    if isinstance(row, int) and isinstance(col, int) and row >= 0 and col >= 0:
+        return row, col
+    detail = clean_text(event.get("detail"))
+    match = re.search(r"row=(-?\d+),column=(-?\d+)", detail)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return None
+
+
 def reconstruct_stages(
     ticks: Sequence[int],
     worlds: Dict[int, Dict[str, Any]],
@@ -700,13 +711,13 @@ def normalize_run(
         }
         new_segment = (
             segment is None or segment["intent"] != intent
-            or segment["stage"] != row["stage"] or segment["endTick"] + 1 != row["tick"]
+            or segment["stage"] != row["analysisStage"] or segment["endTick"] + 1 != row["tick"]
         )
         if new_segment:
             if segment is not None:
                 decisions.append(segment)
             segment = {
-                "startTick": row["tick"], "endTick": row["tick"], "stage": row["stage"],
+                "startTick": row["tick"], "endTick": row["tick"], "stage": row["analysisStage"],
                 "intent": intent, "sampleCount": 1,
                 "contextAtStart": context, "actionAtStart": action,
             }
@@ -728,6 +739,23 @@ def normalize_run(
         if isinstance(row.get("analysisStage"), int)
     }
 
+    analysis_stage_by_tick = {
+        row["tick"]: row["analysisStage"]
+        for row in normalized_ticks
+        if isinstance(row.get("analysisStage"), int)
+    }
+    recorded_pad_reaches: Dict[Tuple[int, int], List[int]] = defaultdict(list)
+    for event in raw_events:
+        event_type = event.get("event", event.get("type"))
+        if event_type != "PAD_REACHED":
+            continue
+        tick_value = event.get("tick")
+        pad = event_pad_key(event)
+        if isinstance(tick_value, (int, float)) and pad is not None:
+            recorded_pad_reaches[pad].append(int(tick_value))
+    for ticks_for_pad in recorded_pad_reaches.values():
+        ticks_for_pad.sort()
+
     stages: List[Dict[str, Any]] = []
     for stage_number in sorted(by_stage):
         rows = by_stage[stage_number]
@@ -735,18 +763,51 @@ def normalize_run(
         duration = last["tick"] - first["tick"] + 1
         actual_distance = sum(float(r["displacement"] or 0.0) for r in rows)
         direct_distance = next((float(r["targetDistance"]) for r in rows if isinstance(r.get("targetDistance"), (int, float))), None)
+
+        target_pad = event_pad_key({"row": (first.get("targetPad") or {}).get("row"),
+                                    "column": (first.get("targetPad") or {}).get("column")})
+        reach_tick = None
+        if target_pad is not None:
+            for candidate in recorded_pad_reaches.get(target_pad, []):
+                if first["tick"] <= candidate:
+                    reach_tick = candidate
+                    break
+
+        travel_rows = [
+            r for r in rows
+            if reach_tick is not None and first["tick"] <= r["tick"] <= reach_tick
+        ]
+        travel_actual_distance = (
+            sum(float(r["displacement"] or 0.0) for r in travel_rows)
+            if travel_rows else None
+        )
+        travel_ticks = (
+            reach_tick - first["tick"] + 1
+            if reach_tick is not None else None
+        )
+        travel_direct_excess = (
+            travel_actual_distance / max(direct_distance, 1e-9)
+            if travel_actual_distance is not None and direct_distance else None
+        )
+
         stages.append({
             "stage": stage_number,
             "startTick": first["tick"],
             "endTick": last["tick"],
             "durationTicks": duration,
-            "completed": stage_number < max(by_stage),
+            "completed": reach_tick is not None,
             "targetPad": first.get("targetPad"),
             "directDistance": direct_distance,
             "actualDistance": actual_distance,
             "directExcessRatio": actual_distance / max(direct_distance, 1e-9) if direct_distance else None,
-            "stationaryTicks": sum(1 for r in rows if float(r["displacement"] or 0.0) < 0.01),
-            "sprintTicks": sum(1 for r in rows if r["inputs"]["sprint"]),
+            "travelStartTick": first["tick"],
+            "travelEndTick": reach_tick,
+            "travelTicks": travel_ticks,
+            "travelTimeSeconds": travel_ticks / 20.0 if travel_ticks is not None else None,
+            "travelActualDistance": travel_actual_distance,
+            "travelDirectExcessRatio": travel_direct_excess,
+            "stationaryTicks": sum(1 for r in (travel_rows or rows) if float(r["displacement"] or 0.0) < 0.01),
+            "sprintTicks": sum(1 for r in (travel_rows or rows) if r["inputs"]["sprint"]),
             "jumpPresses": sum(
                 1 for e in all_events
                 if analysis_stage_by_tick.get(int(e.get("tick", -1))) == stage_number
@@ -933,6 +994,15 @@ def normalize_run(
         "metrics": {
             "meanStageTimeSeconds": statistics.mean(durations) if durations else None,
             "medianStageTimeSeconds": statistics.median(durations) if durations else None,
+            "meanPadTravelTimeSeconds": statistics.mean(
+                [s["travelTimeSeconds"] for s in stages if s["travelTimeSeconds"] is not None]
+            ) if any(s["travelTimeSeconds"] is not None for s in stages) else None,
+            "medianPadTravelTimeSeconds": statistics.median(
+                [s["travelTimeSeconds"] for s in stages if s["travelTimeSeconds"] is not None]
+            ) if any(s["travelTimeSeconds"] is not None for s in stages) else None,
+            "padTravelDirectExcessRatioMean": statistics.mean(
+                [s["travelDirectExcessRatio"] for s in stages if s["travelDirectExcessRatio"] is not None]
+            ) if any(s["travelDirectExcessRatio"] is not None for s in stages) else None,
             "directExcessRatioMean": statistics.mean([s["directExcessRatio"] for s in stages if s["directExcessRatio"] is not None])
             if any(s["directExcessRatio"] is not None for s in stages) else None,
             "stationaryFraction": sum(1 for r in normal_rows if float(r["displacement"] or 0.0) < 0.01) / len(normal_rows) if normal_rows else None,

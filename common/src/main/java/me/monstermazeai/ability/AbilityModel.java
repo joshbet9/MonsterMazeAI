@@ -31,7 +31,7 @@ public final class AbilityModel {
     public void initialiseForMode(GameState game) {
         initialise(game.ability, game.kit);
         if (game.kit == Kit.JUMPER && game.mode == Mode.ORIGINAL) game.ability.charges = 5;
-        game.player.jumpCharges = game.ability.charges;
+        game.player.jumpCharges = game.kit == Kit.JUMPER ? game.ability.charges : 0;
     }
 
     public boolean qolEnabled(GameState game) {

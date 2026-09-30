@@ -2,6 +2,7 @@ package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;

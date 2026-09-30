@@ -1971,12 +1971,15 @@ public final class StableLiveMovementController {
          * Non-Jumper speeding is a deliberate repeated jump input while
          * remaining grounded. The source Jump -10 removes the vertical impulse,
          * but the sprint-jump routine still writes the horizontal 0.2 impulse.
-         * Let Max Speed control this pre-gap cadence while the gap motor owns
-         * the timing window, so tactical replanning cannot steal the inputs.
+         * Let the configured Max Speed cadence continue for the whole committed
+         * crossing until the destination AABB is physically overlapped. The
+         * source jump lock turns these inputs into horizontal sprint-jump
+         * impulses for non-Jumpers without adding vertical lift.
          */
+        boolean destinationOverlapping = playerAabbOverlapsCell(state, toRow, toColumn);
         boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
-                && progress < GAP_JUMP_PROGRESS
+                && !destinationOverlapping
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
         if (nonJumperSpeedPulse) {

@@ -1,6 +1,10 @@
 package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.adapter.LegacyAction;
+import me.monstermazeai.ability.AbilityDecision;
+import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 
 import java.util.Arrays;
@@ -214,6 +218,51 @@ public final class FirstPadSpeedrunController {
         return targetReached;
     }
 
+    private LegacyAction tacticalAbilityAction(LegacyWorldObservation observation) {
+        if (observation == null || observation.kit == null || observation.abilityCharges <= 0) return null;
+        GameState game = new GameState();
+        game.mode = Mode.MODERN;
+        game.tick = observation.worldTick;
+        game.stage = observation.stage;
+        game.kit = observation.kit;
+        game.phaseTicksRemaining = observation.safePadSeconds > 0 ? observation.safePadSeconds * 20 : 0;
+        game.activePadRow = observation.pad == null ? -1 : observation.pad.row;
+        game.activePadColumn = observation.pad == null ? -1 : observation.pad.column;
+        game.player.x = observation.player.x;
+        game.player.y = observation.player.y;
+        game.player.z = observation.player.z;
+        game.player.vx = observation.player.vx;
+        game.player.vy = observation.player.vy;
+        game.player.vz = observation.player.vz;
+        game.player.yaw = observation.player.yaw;
+        game.player.grounded = observation.player.grounded;
+        game.player.health = observation.player.health;
+        game.player.maxHealth = observation.player.maxHealth;
+        if (observation.kit == me.monstermazeai.kit.Kit.BODY_BUILDER) {
+            game.ability.activations = observation.abilityCharges;
+        } else {
+            game.ability.charges = observation.abilityCharges;
+        }
+        for (LegacyWorldObservation.Monster source : observation.monsters) {
+            MonsterState monster = new MonsterState(source.id, source.x, source.y, source.z);
+            monster.vx = source.vx;
+            monster.vy = source.vy;
+            monster.vz = source.vz;
+            monster.removed = source.removed;
+            game.monsters.add(monster);
+        }
+        String reason = "dynamic-mob-block".equals(lastRouteBuildFailureReason)
+                ? "ROUTE_OPENING" : "MOVEMENT_PLANNER";
+        if (AbilityDecision.shouldUse(game, reason, lastRouteBuildFailureReason)) {
+            log(observation.worldTick, "[MonsterMazeAI/1.8] ABILITY USE"
+                    + " kit=" + observation.kit
+                    + " reason=" + reason
+                    + " detail=" + lastRouteBuildFailureReason);
+            return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, true);
+        }
+        return null;
+    }
+
     private void log(long tick, String message) {
         System.out.println(message);
         if (telemetry != null) {
@@ -239,6 +288,12 @@ public final class FirstPadSpeedrunController {
          */
         boolean atTarget = isInsidePad(state);
         boolean suddenHorizontalImpulse = detectSuddenHorizontalImpulse(state);
+
+        // Tactical ability use is evaluated from the same live observation used
+        // by routing.  It is deliberately a side-band action: movement remains
+        // authoritative, while the policy can pulse an ability on the same tick.
+        LegacyAction tacticalAbility = tacticalAbilityAction(state);
+        if (tacticalAbility != null) return tacticalAbility;
 
         /*
          * Active-pad identity is the authoritative phase-transition signal.

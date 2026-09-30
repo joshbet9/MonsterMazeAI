@@ -4,6 +4,8 @@ public final class MonsterState {
     public final int id;
     public double x, y, z;
     public double vx, vy, vz;
+    /** 1.8 entity yaw used by ControllerMove, in degrees. */
+    public float yaw;
     public int waypointRow = -1, waypointColumn = -1;
     public CardinalDirection direction = CardinalDirection.NONE;
     public long frozenUntilTick;
@@ -24,6 +26,7 @@ public final class MonsterState {
     public MonsterState copy() {
         MonsterState m = new MonsterState(id, x, y, z);
         m.vx=vx; m.vy=vy; m.vz=vz;
+        m.yaw=yaw;
         m.waypointRow=waypointRow; m.waypointColumn=waypointColumn;
         m.direction=direction;
         m.frozenUntilTick=frozenUntilTick;

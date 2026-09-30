@@ -261,6 +261,10 @@ public final class MazePatternStage10SimulationTest {
             boolean[][] physical = physicalFloor(
                     raw, activePad, oldPad, oldPadTicksRemaining, previewPad);
             syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
+            tacticalState.oldPads.clear();
+            if (oldPad != null && oldPadTicksRemaining > 0) {
+                tacticalState.oldPads.add(new me.monstermazeai.maze.Cell(oldPad.row, oldPad.column));
+            }
             tacticalState.previewPadRow = previewPad == null ? -1 : previewPad.row;
             tacticalState.previewPadColumn = previewPad == null ? -1 : previewPad.column;
             tacticalState.tick = ticks;
@@ -393,8 +397,6 @@ public final class MazePatternStage10SimulationTest {
                     return result;
                 }
 
-                oldPadTicksRemaining = OLD_PAD_LIFETIME_TICKS;
-                setPadDisabled(monsterMaze, oldPad, true);
                 activePad = previewPad != null ? previewPad : pads.get(padIndex);
                 setPadDisabled(monsterMaze, activePad, true);
                 previewPad = null;

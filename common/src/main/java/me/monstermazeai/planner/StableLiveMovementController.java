@@ -1410,6 +1410,43 @@ public final class StableLiveMovementController {
             return guarded;
         }
 
+        /*
+         * No side floor exists, so the only source-valid escape is to retreat
+         * along the already-traversed route segment. Backward input is relative
+         * to the camera, not the maze, so first align the camera to the exact
+         * reverse cardinal direction. Never retreat through a gap edge.
+         */
+        if (route != null && waypointIndex > 0 && waypointIndex < route.size()) {
+            Cell current = route.cells().get(waypointIndex - 1);
+            Cell previous = waypointIndex >= 2
+                    ? route.cells().get(waypointIndex - 2) : null;
+
+            if (previous != null && isGapEdge(state,
+                    previous.row(), previous.column(),
+                    current.row(), current.column())) {
+                float desiredYaw = cardinalYaw(
+                        -routeDirRow, -routeDirColumn);
+                float yawError = normalise(desiredYaw - state.player.yaw);
+                float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                lastDecisionDetail = "MOB_YIELD_GAP_HOLD"
+                        + " monster=" + threat.id
+                        + " distance=" + format(bestDistance)
+                        + " yawError=" + format(yawError);
+                return new Action(0.0, 0.0, false, false, yawDelta, false);
+            }
+
+            float desiredYaw = cardinalYaw(-routeDirRow, -routeDirColumn);
+            float yawError = normalise(desiredYaw - state.player.yaw);
+            if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
+                float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                lastDecisionDetail = "MOB_YIELD_ALIGN"
+                        + " monster=" + threat.id
+                        + " distance=" + format(bestDistance)
+                        + " yawError=" + format(yawError);
+                return new Action(0.0, 0.0, false, false, yawDelta, false);
+            }
+        }
+
         Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
         Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
         lastDecisionDetail = "MOB_YIELD"

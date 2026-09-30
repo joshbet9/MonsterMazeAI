@@ -628,7 +628,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -1230,7 +1230,7 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
@@ -1255,7 +1255,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks(state))) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks())) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1276,21 +1276,7 @@ public final class StableLiveMovementController {
         return 0.25D + profile.attributes.agility * 0.50D;
     }
 
-    private int supportLookaheadTicks(GameState state) {
-        /*
-         * Speed mode is evaluated every server tick and intentionally relies on
-         * continuous closed-loop correction. A three-tick forecast can veto a
-         * legal high-speed input because momentum carries the player toward the
-         * edge before the next decision can correct it. Keep the physical
-         * support test immediate in Speed; the next tick will re-evaluate it.
-         *
-         * Modern retains the profile-driven conservative horizon because this
-         * is a controller policy choice, not a physics change.
-         */
-        if (state != null && state.mode == me.monstermazeai.game.Mode.SPEED) {
-            return MIN_SUPPORT_LOOKAHEAD_TICKS;
-        }
-
+    private int supportLookaheadTicks() {
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
         return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
                 Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));

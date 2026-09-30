@@ -62,11 +62,11 @@ class HumanTracePhysicsCalibrationTest {
         Aggregate aggregate = new Aggregate();
 
         for (RunSpec spec : RUNS) {
-            Path base = humanRuns.resolve("human-speed-run-20260930-" + spec.id);
-            TreeMap<Long, Motion> motion = loadMotion(base.resolve("-movement.jsonl"));
-            TreeMap<Long, Input> input = loadInput(base.resolve("-input.jsonl"));
-            TreeMap<Long, World> world = loadWorld(base.resolve("-world.jsonl"));
-            Set<Long> knockbackTicks = loadKnockbackTicks(base.resolve("-events.jsonl"));
+            String prefix = "human-speed-run-20260930-" + spec.id;
+            TreeMap<Long, Motion> motion = loadMotion(humanRuns.resolve(prefix + "-movement.jsonl"));
+            TreeMap<Long, Input> input = loadInput(humanRuns.resolve(prefix + "-input.jsonl"));
+            TreeMap<Long, World> world = loadWorld(humanRuns.resolve(prefix + "-world.jsonl"));
+            Set<Long> knockbackTicks = loadKnockbackTicks(humanRuns.resolve(prefix + "-events.jsonl"));
 
             assertTrue(motion.size() > 100, spec.id + " movement trace unexpectedly small");
             assertTrue(input.size() > 100, spec.id + " input trace unexpectedly small");

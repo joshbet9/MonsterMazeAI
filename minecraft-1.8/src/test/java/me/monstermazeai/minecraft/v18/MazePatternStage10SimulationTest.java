@@ -550,8 +550,6 @@ public final class MazePatternStage10SimulationTest {
         p.jumpTicks = commonPlayer.jumpTicks;
         p.health = commonPlayer.health;
         if (jumpStarted) p.jumpCharges--;
-        if (action.forward > 0.01D) result.movementTicks++;
-
         result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
         if (p.y < -2.0D) p.alive = false;
     }

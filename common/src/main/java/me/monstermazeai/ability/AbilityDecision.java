@@ -4,7 +4,6 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
-import me.monstermazeai.player.AiTendencies;
 
 /**
  * Strategic ability-use policy.
@@ -44,23 +43,17 @@ public final class AbilityDecision {
     }
 
     public static boolean shouldUse(GameState state, String objectiveReason, String objectiveDetail) {
-        return shouldUse(state, objectiveReason, objectiveDetail, AiTendencies.BASELINE);
-    }
-
-    public static boolean shouldUse(GameState state, String objectiveReason,
-                                    String objectiveDetail, AiTendencies tendencies) {
         if (state == null || !state.alive || state.completed
                 || state.kit == Kit.JUMPER || state.kit == Kit.MAVERICK) {
             return false;
         }
-        if (tendencies == null) throw new IllegalArgumentException("tendencies");
 
         if (state.kit == Kit.REPULSOR) {
             return state.ability.charges > 0
                     && !isOnActivePad(state)
                     && (repulsorDeadlineEmergency(state, objectiveReason)
-                    || repulsorLethalEmergency(state, tendencies)
-                    || repulsorImmediateThreat(state, tendencies));
+                    || repulsorLethalEmergency(state)
+                    || repulsorImmediateThreat(state));
         }
 
         if (state.kit == Kit.BODY_BUILDER) {
@@ -170,23 +163,18 @@ public final class AbilityDecision {
         return false;
     }
 
-    private static boolean repulsorImmediateThreat(GameState state, AiTendencies tendencies) {
+    private static boolean repulsorImmediateThreat(GameState state) {
         int nearby = 0;
-        int hitTicks = repulsorHitPredictionTicks(tendencies);
         for (MonsterState monster : state.monsters) {
             if (!activeMonster(state, monster)) continue;
             double distance = Math.sqrt(distanceSq(state, monster));
             if (distance > 6.0) continue;
             nearby++;
-            if (imminentCollision(state, monster, hitTicks)) return true;
+            if (imminentCollision(state, monster)) return true;
         }
         // Preserve charges, but clear a genuine local cluster before it becomes
         // a chain of four-damage bumps.
         return nearby >= 3;
-    }
-
-    private static int repulsorHitPredictionTicks(AiTendencies tendencies) {
-        return 4 + (int) Math.round(tendencies.repulsorIq * 4.0D);
     }
 
     private static boolean bodyRushImmediateThreat(GameState state) {
@@ -248,14 +236,13 @@ public final class AbilityDecision {
                 && !monster.launched(state.tick) && !monster.frozen(state.tick);
     }
 
-    private static boolean repulsorLethalEmergency(GameState state, AiTendencies tendencies) {
+    private static boolean repulsorLethalEmergency(GameState state) {
         if (state.player.health > LETHAL_HEALTH) return false;
-        int hitTicks = repulsorHitPredictionTicks(tendencies);
 
         for (MonsterState monster : state.monsters) {
             if (monster.removed || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
             if (distanceSq(state, monster) > REPULSOR_RANGE_SQ) continue;
-            if (imminentCollision(state, monster, hitTicks)) return true;
+            if (imminentCollision(state, monster)) return true;
         }
         return false;
     }
@@ -277,10 +264,6 @@ public final class AbilityDecision {
     }
 
     private static boolean imminentCollision(GameState state, MonsterState monster) {
-        return imminentCollision(state, monster, IMMINENT_HIT_TICKS);
-    }
-
-    private static boolean imminentCollision(GameState state, MonsterState monster, int hitTicks) {
         double dx = monster.x - state.player.x;
         double dz = monster.z - state.player.z;
         double horizontalDistance = Math.hypot(dx, dz);
@@ -294,7 +277,7 @@ public final class AbilityDecision {
         if (closingSpeed <= 0.0) return false;
 
         double timeToContact = horizontalDistance / closingSpeed;
-        if (timeToContact > hitTicks) return false;
+        if (timeToContact > IMMINENT_HIT_TICKS) return false;
 
         double predictedX = monster.x + monster.vx * timeToContact;
         double predictedZ = monster.z + monster.vz * timeToContact;

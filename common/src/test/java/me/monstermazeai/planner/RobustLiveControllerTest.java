@@ -20,7 +20,7 @@ class RobustLiveControllerTest {
         s.player.x = 50.5;
         s.player.z = 50.5;
         s.player.grounded = true;
-        s.kit = Kit.JUMPER;
+        s.kit = Kit.REPULSOR;
         return s;
     }
 

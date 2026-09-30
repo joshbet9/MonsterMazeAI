@@ -43,8 +43,13 @@ public final class MonsterAwareRoutePlanner {
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
+        List<Cell> normalPath = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
+        if (!gapsAllowed(state)) {
+            if (normalPath.isEmpty()) throw new IllegalArgumentException("No physical route from start to goal without a jump-capable kit");
+            return new PlayerRoute(normalPath);
+        }
         PlayerRoute chosen = chooseByGapRisk(
-                pathfinder.shortestPathWithoutGaps(state.maze, start, goal),
+                normalPath,
                 pathfinder.shortestPath(state.maze, start, goal));
         if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
         return chosen;
@@ -61,8 +66,13 @@ public final class MonsterAwareRoutePlanner {
         }
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
+        List<Cell> normalPath = pathfinder.shortestPathToRegionWithoutGaps(state.maze, start, regionCenter, radius);
+        if (!gapsAllowed(state)) {
+            if (normalPath.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region without a jump-capable kit");
+            return new PlayerRoute(normalPath);
+        }
         PlayerRoute chosen = chooseByGapRisk(
-                pathfinder.shortestPathToRegionWithoutGaps(state.maze, start, regionCenter, radius),
+                normalPath,
                 pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius));
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
@@ -107,9 +117,12 @@ public final class MonsterAwareRoutePlanner {
         List<PlayerRoute> candidates;
         if (!regionGoal) {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
-            List<Cell> normal = new PlayerPathfinder().shortestPathWithoutGaps(state.maze, start, goal);
+            PlayerPathfinder pathfinder = new PlayerPathfinder();
+            List<Cell> normal = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
             if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
-            generated.addAll(alternatives.generate(state.maze, start, goal, limit));
+            if (gapsAllowed(state)) {
+                generated.addAll(alternatives.generate(state.maze, start, goal, limit));
+            }
             candidates = distinct(generated, limit * 3);
         } else {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
@@ -125,11 +138,13 @@ public final class MonsterAwareRoutePlanner {
                     List<Cell> normalPath = pathfinder.shortestPathWithoutGaps(state.maze, start, target);
                     if (!normalPath.isEmpty()) addCandidate(generated, seen, new PlayerRoute(normalPath));
 
-                    List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
-                    if (!path.isEmpty()) addCandidate(generated, seen, new PlayerRoute(path));
+                    if (gapsAllowed(state)) {
+                        List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
+                        if (!path.isEmpty()) addCandidate(generated, seen, new PlayerRoute(path));
 
-                    for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {
-                        addCandidate(generated, seen, alt);
+                        for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {
+                            addCandidate(generated, seen, alt);
+                        }
                     }
                 }
             }
@@ -235,6 +250,10 @@ public final class MonsterAwareRoutePlanner {
 
     private double routeCost(PlayerRoute route) {
         return gapJumpPolicy.routeCost(route.size(), gapCount(route));
+    }
+
+    private static boolean gapsAllowed(GameState state) {
+        return state.kit == me.monstermazeai.kit.Kit.JUMPER;
     }
 
     private static int gapCount(PlayerRoute route) {

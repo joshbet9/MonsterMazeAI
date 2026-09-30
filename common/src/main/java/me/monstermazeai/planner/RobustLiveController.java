@@ -84,7 +84,9 @@ public final class RobustLiveController {
             return Action.IDLE;
         }
 
-        if (stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
+        if (stuckTicks >= STUCK_TICKS && allowJump
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded) {
             stuckTicks = 0;
             Action jump = new Action(action.forward(), action.strafe(), true,
                     action.sprint(), action.yawDelta(), action.useAbility());

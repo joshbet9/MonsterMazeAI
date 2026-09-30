@@ -57,8 +57,18 @@ public final class StableLiveMovementController {
     private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
-    /** Do not attempt lane recovery once the player is already near the cell edge. */
+    /** Normal lane tracking tolerance before the motor begins controlled recovery. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
+    /**
+     * Maximum recoverable cross-track displacement while the current physical
+     * cell still supports the player. The observed 0.383-block drift is a
+     * legitimate supported state in 1.8.9; hard-stopping it prevents the
+     * controller from ever correcting back to the route centreline.
+     *
+     * This does not change physics or floor collision rules. It only determines
+     * when the controller may enter its existing slow perpendicular recovery.
+     */
+    private static final double MAX_RECOVERABLE_LANE_ERROR = 0.48;
     /*
      * Monster Maze SafePads are centred on integer block coordinates, while
      * PlayerRoute cells use half-block cell centres. The live player can
@@ -248,11 +258,47 @@ public final class StableLiveMovementController {
 
         GameState routingState = transitionRoutingState(
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
-        int startRow = (int) Math.floor(state.player.x);
-        int startColumn = (int) Math.floor(state.player.z);
-        if (!inBounds(startRow, startColumn) || !inBounds(goal.row(), goal.column())) {
-            lastDecisionDetail = "OUT_OF_BOUNDS start=" + startRow + "," + startColumn
-                    + " goal=" + goal.row() + "," + goal.column();
+
+        /*
+         * A grounded observation must have a physically supported graph seed.
+         * An airborne observation is different: the existing route/gap
+         * commitment is already authoritative for the flight and must reach the
+         * airborne-continuation branch below without being rejected merely
+         * because the player's current AABB no longer overlaps a standable cell.
+         */
+        Cell supportedStart = route == null
+                ? resolveSupportedStartCell(routingState)
+                : resolveSupportedRouteCell(routingState, route);
+        if (supportedStart == null && route != null) {
+            // Preserve a committed route through sub-cell boundary states. The
+            // observed AABB may overlap an adjacent physical block whose graph
+            // cell is not the route we are currently executing; selecting that
+            // neighbour can invent a new heading and cut a corner.
+            supportedStart = resolveSupportedStartCell(routingState);
+        }
+        int startRow;
+        int startColumn;
+        if (supportedStart != null) {
+            startRow = supportedStart.row();
+            startColumn = supportedStart.column();
+        } else if (!state.player.grounded && route != null && !route.cells().isEmpty()) {
+            int safeIndex = Math.max(0, Math.min(waypointIndex, route.size() - 1));
+            Cell airborneSeed = route.cells().get(safeIndex);
+            startRow = airborneSeed.row();
+            startColumn = airborneSeed.column();
+        } else if (!inBounds(goal.row(), goal.column())) {
+            lastDecisionDetail = "OUT_OF_BOUNDS goal=" + goal.row() + "," + goal.column();
+            return Action.IDLE;
+        } else {
+            int observedRow = (int) Math.floor(state.player.x);
+            int observedColumn = (int) Math.floor(state.player.z);
+            lastDecisionDetail = "NO_SUPPORTED_START start=" + observedRow + "," + observedColumn
+                    + " goal=" + goal.row() + "," + goal.column()
+                    + " grounded=" + state.player.grounded;
+            return Action.IDLE;
+        }
+        if (!inBounds(goal.row(), goal.column())) {
+            lastDecisionDetail = "OUT_OF_BOUNDS goal=" + goal.row() + "," + goal.column();
             return Action.IDLE;
         }
 
@@ -295,18 +341,24 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
-            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
+            Cell routeSupportedStart = resolveSupportedRouteCell(state, route);
+            boolean routeInvalid = (!gapExecutionActive && routeSupportedStart == null)
                     || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
 
             if (routeInvalid) {
+                Cell recoveryStart = routeSupportedStart != null
+                        ? routeSupportedStart
+                        : resolveSupportedStartCell(state);
                 /*
                  * Recover immediately with a cheap physical route, then let the
                  * background planner decide whether a different risk-aware route
                  * is preferable. Never block the motor waiting for that result.
                  */
+                int recoveryRow = recoveryStart == null ? startRow : recoveryStart.row();
+                int recoveryColumn = recoveryStart == null ? startColumn : recoveryStart.column();
                 route = regionRadius > 0
-                        ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
-                        : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
+                        ? routePlanner.routeToRegionFast(state, new Cell(recoveryRow, recoveryColumn), goal, regionRadius)
+                        : routePlanner.routeFast(state, new Cell(recoveryRow, recoveryColumn), goal);
                 waypointIndex = firstTurnWaypoint(route);
                 anchoredSegmentIndex = -1;
                 lastRouteTick = state.tick;
@@ -345,7 +397,8 @@ public final class StableLiveMovementController {
         // A route waypoint is a turn cell. Once its centre is reached, switch
         // to the next segment. Never skip over a corner and then turn back.
         while (waypointIndex < route.size() - 1
-                && distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL) {
+                && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
+                || hasPassedOrdinaryWaypoint(state, waypointIndex))) {
             int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
@@ -361,25 +414,24 @@ public final class StableLiveMovementController {
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
         if (padEntry != null) return padEntry;
 
-        // When a source interaction is close enough to matter this tick, hand
-        // control to the same tactical simulator used during route selection.
-        // This is what makes deliberate contact and ability use real live actions,
-        // rather than merely simulated route preferences.
+        /*
+         * Tactical search may decide that an ability pulse or a legacy jump is
+         * useful against a local threat, but it is not allowed to become a
+         * second movement controller. In particular, tactical strafe/reverse
+         * choices must never bypass the cardinal corridor safety checks below.
+         */
+        boolean tacticalAbilityPulse = false;
+        boolean tacticalJumpHint = false;
         long currentThreatSignature = threatSignature(state);
         if (routePlanner.shouldUseTacticalAction(state)
                 && currentThreatSignature != lastTacticalSignature) {
-            /*
-             * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
-             */
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
             if (tactical != null) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
+                tacticalAbilityPulse = tactical.useAbility();
+                tacticalJumpHint = tactical.jump();
+                lastDecisionDetail += " TACTICAL_HINT=" + tactical;
             }
         }
 
@@ -456,14 +508,32 @@ public final class StableLiveMovementController {
 
         Action action;
 
-        if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+        if (Math.abs(crossTrack) > MAX_RECOVERABLE_LANE_ERROR
+                || !currentCellSupportsPlayer(state)) {
             action = new Action(0.0, 0.0, false, false, 0.0F, false);
             lastDecisionDetail += " SAFETY_STOP crossTrack=" + format(crossTrack);
+        } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+            /*
+             * Controlled recovery remains cardinal/executable: first rotate in
+             * place toward the lane centre, then walk across the current
+             * supported cell without sprinting. No strafe or diagonal shortcut
+             * is introduced.
+             */
+            float correctionYaw = laneCorrectionYaw(crossTrack, dirRow, dirColumn);
+            float correctionError = normalise(correctionYaw - state.player.yaw);
+            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
+                action = new Action(
+                        0.0, 0.0, false, false,
+                        speed <= MAX_TURNING_SPEED
+                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                                : 0.0F,
+                        false);
+            } else {
+                action = new Action(0.20, 0.0, false, false, 0.0F, false);
+            }
+            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack);
         } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
+            float correctionYaw = laneCorrectionYaw(crossTrack, dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
 
             if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
@@ -510,6 +580,7 @@ public final class StableLiveMovementController {
                 double forward = brake ? 0.0 : steeringForward;
                 boolean sprint = forward >= 0.95 && absError <= 15.0;
                 boolean jump = allowJump
+                        && state.kit != me.monstermazeai.kit.Kit.JUMPER
                         && state.player.grounded
                         && forward > 0.0
                         && distance > WAYPOINT_ARRIVAL
@@ -527,10 +598,32 @@ public final class StableLiveMovementController {
                     && closingSpeed(state, dx, dz) > 0.04;
             double forward = brake ? 0.0 : 1.0;
             boolean jump = allowJump
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER
                     && state.player.grounded
                     && forward > 0.0
                     && distance > WAYPOINT_ARRIVAL;
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
+        }
+
+        /*
+         * Merge only source-valid side-band inputs into the authoritative motor
+         * result. Strafe/reverse/yaw from tactical search are intentionally
+         * ignored; the returned action always preserves the cardinal route.
+         */
+        if (tacticalAbilityPulse || (tacticalJumpHint && allowJump
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded && action.forward() > 0.0)) {
+            boolean jump = action.jump()
+                    || (tacticalJumpHint && allowJump
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                    && state.player.grounded && action.forward() > 0.0);
+            action = new Action(
+                    action.forward(),
+                    0.0,
+                    jump,
+                    action.sprint(),
+                    action.yawDelta(),
+                    action.useAbility() || tacticalAbilityPulse);
         }
 
         lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)
@@ -869,6 +962,113 @@ public final class StableLiveMovementController {
         return 180.0F; // -Z / north
     }
 
+    /**
+     * Resolve a physically supported route cell under the same 0.6-block AABB
+     * rule as LegacyMovementModel, preferring cells already present in the
+     * committed cardinal corridor. This prevents a boundary overlap with an
+     * adjacent block from silently switching the route heading.
+     */
+    private static Cell resolveSupportedRouteCell(GameState state, PlayerRoute route) {
+        if (state == null || state.maze == null || route == null || route.cells().isEmpty()) return null;
+
+        final double halfWidth = 0.30D;
+        final double minX = state.player.x - halfWidth;
+        final double maxX = state.player.x + halfWidth;
+        final double minZ = state.player.z - halfWidth;
+        final double maxZ = state.player.z + halfWidth;
+
+        Cell best = null;
+        double bestOverlap = -1.0D;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (Cell cell : route.cells()) {
+            int row = cell.row();
+            int column = cell.column();
+            if (!state.maze.isPhysicalFloor(row, column)) continue;
+
+            double overlapX = Math.min(maxX, row + 1.0D) - Math.max(minX, row);
+            double overlapZ = Math.min(maxZ, column + 1.0D) - Math.max(minZ, column);
+            if (overlapX <= 0.0D || overlapZ <= 0.0D) continue;
+
+            double overlap = overlapX * overlapZ;
+            double distance = sq(state.player.x - (row + 0.5D))
+                    + sq(state.player.z - (column + 0.5D));
+            if (overlap > bestOverlap
+                    || (Double.compare(overlap, bestOverlap) == 0 && distance < bestDistance)) {
+                best = cell;
+                bestOverlap = overlap;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Resolve the route seed from the same 0.6-block player AABB support rule
+     * used by LegacyMovementModel. The player's floor-cell index can legitimately
+     * be air at a block boundary while the footprint still overlaps a physical
+     * block by a positive amount. Returning that supported block as the graph
+     * seed keeps the controller and physics model in the same coordinate state.
+     */
+    private static Cell resolveSupportedStartCell(GameState state) {
+        final double halfWidth = 0.30D;
+        final double minX = state.player.x - halfWidth;
+        final double maxX = state.player.x + halfWidth;
+        final double minZ = state.player.z - halfWidth;
+        final double maxZ = state.player.z + halfWidth;
+
+        int minRow = Math.max(0, (int) Math.floor(minX));
+        int maxRow = Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1,
+                (int) Math.floor(maxX - 1.0E-12D));
+        int minColumn = Math.max(0, (int) Math.floor(minZ));
+        int maxColumn = Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1,
+                (int) Math.floor(maxZ - 1.0E-12D));
+
+        Cell best = null;
+        double bestOverlap = -1.0D;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (!state.maze.isPhysicalFloor(row, column)) continue;
+
+                double overlapX = Math.min(maxX, row + 1.0D) - Math.max(minX, row);
+                double overlapZ = Math.min(maxZ, column + 1.0D) - Math.max(minZ, column);
+                if (overlapX <= 0.0D || overlapZ <= 0.0D) continue;
+
+                double overlap = overlapX * overlapZ;
+                double distance = sq(state.player.x - (row + 0.5D))
+                        + sq(state.player.z - (column + 0.5D));
+                if (overlap > bestOverlap
+                        || (Double.compare(overlap, bestOverlap) == 0 && distance < bestDistance)) {
+                    bestOverlap = overlap;
+                    bestDistance = distance;
+                    best = new Cell(row, column);
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Perpendicular recovery heading used to pull the player's actual supported
+     * position back toward the route centreline. This is not the route heading:
+     * lane recovery must correct the cross-axis error before resuming forward
+     * travel on the cardinal segment.
+     */
+    private static float laneCorrectionYaw(double crossTrack, int rowDirection, int columnDirection) {
+        if (rowDirection != 0) {
+            // Segment runs along X; correct Z.
+            return crossTrack > 0.0 ? 180.0F : 0.0F;
+        }
+        // Segment runs along Z; correct X.
+        return crossTrack > 0.0 ? 90.0F : -90.0F;
+    }
+
+    private static boolean currentCellSupportsPlayer(GameState state) {
+        return resolveSupportedStartCell(state) != null;
+    }
+
     private static double crossTrackError(
             double x, double z, double laneX, double laneZ,
             int rowDirection, int columnDirection) {
@@ -885,6 +1085,51 @@ public final class StableLiveMovementController {
         return Math.hypot(
                 state.player.x - route.targetX(index),
                 state.player.z - route.targetZ(index));
+    }
+
+    /**
+     * High-speed 1.8 movement can cross a one-block turn cell between two
+     * observations. Requiring the player to return inside a 0.18-block circle
+     * around that cell makes the controller chase a waypoint that is physically
+     * behind it, producing the late-run safety/replan oscillation seen in the
+     * endurance traces.
+     *
+     * Capture only ordinary one-block cardinal edges. Gap edges deliberately
+     * remain under the gap commitment logic because skipping their boundary
+     * would change when the source-faithful jump is armed.
+     */
+    private boolean hasPassedOrdinaryWaypoint(GameState state, int index) {
+        if (route == null || index <= 0 || index >= route.size() - 1) return false;
+
+        Cell previous = route.cells().get(index - 1);
+        Cell waypoint = route.cells().get(index);
+        int dr = waypoint.row() - previous.row();
+        int dc = waypoint.column() - previous.column();
+
+        if (Math.abs(dr) + Math.abs(dc) != 1) return false;
+
+        double waypointX = waypoint.row() + 0.5;
+        double waypointZ = waypoint.column() + 0.5;
+        double segmentLength = 1.0;
+
+        double along;
+        double lateral;
+        if (dr != 0) {
+            along = (state.player.x - (previous.row() + 0.5)) * Integer.signum(dr);
+            lateral = Math.abs(state.player.z - waypointZ);
+        } else {
+            along = (state.player.z - (previous.column() + 0.5)) * Integer.signum(dc);
+            lateral = Math.abs(state.player.x - waypointX);
+        }
+
+        /*
+         * The player must have crossed the waypoint centreline in the route
+         * direction while remaining inside the physical corridor. The small
+         * 0.12 margin avoids advancing merely because floating-point motion is
+         * touching the centre plane from the wrong side.
+         */
+        return along > segmentLength + 0.12D
+                && lateral <= ROUTE_DEVIATION;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {

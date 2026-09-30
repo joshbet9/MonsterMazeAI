@@ -2,6 +2,7 @@ package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
@@ -86,6 +87,26 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void tacticalActionSpacePreservesCardinalMotorContract() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 1.5;
+        state.player.grounded = true;
+        state.monsters.add(new MonsterState(7, 1.5, 0.0, 1.5));
+
+        PlayerRoute route = new PlayerRoute(
+                List.of(new Cell(0, 1), new Cell(1, 1), new Cell(2, 1)));
+
+        Action tactical = new MonsterAwareRoutePlanner()
+                .tacticalAction(state, route, new Cell(2, 1), 0);
+
+        assertNotNull(tactical);
+        assertEquals(0.0, tactical.strafe(), 1e-9);
+        assertTrue(tactical.forward() >= 0.0);
+    }
+
+    @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();
@@ -106,6 +127,27 @@ class MonsterAwareRoutePlannerTest {
         PlayerRoute route = new MonsterAwareRoutePlanner().route(state, new Cell(2, 3), new Cell(2, 5));
         assertEquals(new Cell(2, 3), route.cells().get(0));
         assertEquals(new Cell(2, 5), route.cells().get(route.size() - 1));
+    }
+
+    @Test
+    void nonJumperNeverSelectsGapShortcutWhenGroundRouteExists() {
+        GameState state = new GameState();
+        state.kit = me.monstermazeai.kit.Kit.REPULSOR;
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int col = 0; col < MazeModel.SIZE; col++) raw[r][col] = 1;
+        raw[10][11] = 0;
+        state.maze = new MazeModel(raw);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
+                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
+
+        for (int i = 0; i + 1 < route.size(); i++) {
+            int dr = Math.abs(route.cells().get(i + 1).row() - route.cells().get(i).row());
+            int dc = Math.abs(route.cells().get(i + 1).column() - route.cells().get(i).column());
+            assertFalse((dr == 2 && dc == 0) || (dc == 2 && dr == 0),
+                    "non-Jumper route must not contain a jump edge: " + route.cells());
+        }
     }
 
     @Test

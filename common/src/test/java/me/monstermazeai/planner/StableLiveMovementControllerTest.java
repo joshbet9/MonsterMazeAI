@@ -32,6 +32,40 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void seedsRouteFromAdjacentPhysicalBlockWhenFloorCellIsAir() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[42][49] = 1;
+        raw[42][50] = 1;
+        raw[42][51] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = maze;
+        s.activePadRow = 42;
+        s.activePadColumn = 51;
+        // Integer cell is (42,48), but the 0.6-block AABB overlaps the
+        // physical (42,49) block exactly like LegacyMovementModel support.
+        s.player.x = 42.70;
+        s.player.z = 48.99;
+        s.player.y = 0.0;
+        s.player.grounded = true;
+        s.player.yaw = 0.0F;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(42, 51), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("NO_ROUTE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("NO_SUPPORTED_START"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "supported boundary position must remain routable");
+    }
+
+    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -50,6 +84,53 @@ class StableLiveMovementControllerTest {
 
         assertTrue(reachedTick > 0, "stable controller did not reach the objective");
         assertTrue(s.player.z > 7.9, "player did not physically travel toward the pad");
+    }
+
+    @Test
+    void preservesCommittedRouteWhenAabbOverlapsAdjacentPhysicalCell() {
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[59][49] = 1;
+        raw[60][49] = 1;
+        raw[61][49] = 1;
+        raw[61][50] = 1;
+        raw[62][50] = 1;
+        for (int row = 78; row <= 82; row++) {
+            for (int col = 72; col <= 74; col++) raw[row][col] = 1;
+        }
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 82;
+        s.activePadColumn = 74;
+        s.player.x = 59.30;
+        s.player.z = 49.05;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action first = controller.nextAction(s, new Cell(82, 74), false);
+        assertNotNull(first);
+        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0,
+                controller.lastDecisionDetail());
+
+        // The AABB overlaps route cell (59,49) and adjacent physical cell
+        // (60,49). The committed route must continue from (59,49), not rebuild
+        // from whichever physical block has the greater overlap.
+        s.tick = 2;
+        s.player.x = 59.08;
+        s.player.z = 49.15;
+
+        Action second = controller.nextAction(s, new Cell(82, 74), false);
+        assertFalse(controller.lastDecisionDetail().contains("FAST_RECOVERY_ROUTE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("NO_SUPPORTED_START"),
+                controller.lastDecisionDetail());
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
+                controller.lastDecisionDetail());
     }
 
     @Test
@@ -102,6 +183,40 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void recoversObservedSupportedLaneDriftInsteadOfDeadlocking() {
+        GameState s = state(0.5, 0.5, 90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        // Establish the segment/lane anchor at the route centreline and
+        // allow the asynchronous initial route to be applied deterministically.
+        s.tick = 1;
+        Action first = controller.nextAction(s, new Cell(8, 0), false);
+        assertTrue(Math.abs(first.yawDelta()) > 0.0 || first.forward() > 0.0);
+
+        s.tick = 2;
+        controller.nextAction(s, new Cell(8, 0), false);
+        s.tick = 3;
+        controller.nextAction(s, new Cell(8, 0), false);
+
+        // Reproduce the observed ~0.383 block supported lateral drift after
+        // the route/lane anchor is already established.
+        s.tick = 4;
+        s.player.z = 0.883;
+        s.player.yaw = 90.0F;
+
+        Action recovery = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"),
+                controller.lastDecisionDetail());
+        assertEquals(12.0F, recovery.yawDelta(), 1.0e-6F,
+                "positive Z cross-track error while traveling +X must steer toward -Z (yaw 180)");
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+        assertEquals(0.0, recovery.strafe(), 1.0e-9);
+        assertTrue(recovery.forward() == 0.0 || recovery.forward() <= 0.20 + 1.0e-9);
+    }
+
+    @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
         GameState s = state(0.5, 0.5, -20.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -127,6 +242,20 @@ class StableLiveMovementControllerTest {
                 "a 90-degree corner acquisition must not cut across the corridor");
         assertEquals(0.0, action.strafe(), 1.0e-6);
         assertEquals(-12.0F, action.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
+    void JumperDoesNotSpendChargesOnOrdinaryGroundTravel() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.player.jumpCharges = 3;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(0, 8), true);
+
+        assertTrue(action.forward() > 0.0);
+        assertFalse(action.jump(),
+                "modern Jumper charges must be reserved for committed aerial traversal");
     }
 
     @Test

@@ -50,6 +50,11 @@ def commonRuntimeJar = file("../common/target/common-0.1.0-SNAPSHOT-runtime.jar"
 dependencies {
     compile files(commonApiJar)
     testCompile "junit:junit:4.13.2"
+    // The deterministic simulator tests exercise the Java-17 common mechanics,
+    // but remain test-only so the Forge production adapter stays Java-8/API-only.
+    testCompile files(commonRuntimeJar)
+
+// Keep the deterministic maze progression simulator visible in CI logs.\ntestLogging {\n    showStandardStreams = true\n    exceptionFormat = "full"\n}
 }
 
 runClient {
@@ -97,3 +102,38 @@ processResources {
         exclude "mcmod.info"
     }
 }
+
+
+// Simulator tests consume the Java-17 common runtime. Keep this dependency
+// completely out of the Forge production classpath and run/compile those tests
+// with the same Java level as the common module.
+compileTestJava {
+    options.fork = true
+    def java17Home = System.getenv("JAVA_HOME_17_X64")
+    if (java17Home != null) {
+        options.forkOptions.executable = new File(java17Home, "bin/javac").absolutePath
+    }
+}
+
+// Gradle 2.14.1 cannot determine a modern Java runtime version reliably.
+// Keep the normal Forge/JUnit suite on Java 8 and execute the simulator gate
+// explicitly with Java 17 after testClasses so Java-17 common classes can run.
+test {
+    exclude "**/MazePatternStage10SimulationTest.class"
+}
+
+task simulatorGate(type: Exec) {
+    dependsOn testClasses
+    doFirst {
+        def java17Home = System.getenv("JAVA_HOME_17_X64")
+        if (java17Home == null) {
+            throw new GradleException("JAVA_HOME_17_X64 is required for the Java-17 simulator gate")
+        }
+        commandLine new File(java17Home, "bin/java").absolutePath,
+                "-cp", sourceSets.test.runtimeClasspath.asPath,
+                "org.junit.runner.JUnitCore",
+                "me.monstermazeai.minecraft.v18.MazePatternStage10SimulationTest"
+    }
+}
+
+check.dependsOn simulatorGate

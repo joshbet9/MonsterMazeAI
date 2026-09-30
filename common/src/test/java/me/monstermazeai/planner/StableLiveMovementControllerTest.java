@@ -447,4 +447,21 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+
+    @Test
+    void modernNonJumperDoesNotEmitSpeedJumpSpam() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.mode = me.monstermazeai.game.Mode.MODERN;
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        for (int tick = 1; tick <= 120; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(0, 8), true);
+            assertFalse(action.jump(),
+                    "Modern non-Jumpers must not receive the Speed-mode Jump -10 acceleration pulse");
+        }
+    }
+
+
 }

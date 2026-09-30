@@ -509,6 +509,8 @@ def normalize_run(
     )
     annotation = load_annotation(run_dir, manifest, resolved_manifest_path)
     streams = load_streams(run_dir, manifest_files, errors)
+    for stream_name in ("movement", "input", "world", "navigation", "monsters", "inventory"):
+        validate_stream_ticks(streams[stream_name], stream_name, errors)
 
     world = by_tick(streams["world"])
     movement = by_tick(streams["movement"])

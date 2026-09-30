@@ -345,7 +345,8 @@ public final class StableLiveMovementController {
         // A route waypoint is a turn cell. Once its centre is reached, switch
         // to the next segment. Never skip over a corner and then turn back.
         while (waypointIndex < route.size() - 1
-                && distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL) {
+                && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
+                || hasPassedOrdinaryWaypoint(state, waypointIndex))) {
             int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
@@ -885,6 +886,51 @@ public final class StableLiveMovementController {
         return Math.hypot(
                 state.player.x - route.targetX(index),
                 state.player.z - route.targetZ(index));
+    }
+
+    /**
+     * High-speed 1.8 movement can cross a one-block turn cell between two
+     * observations. Requiring the player to return inside a 0.18-block circle
+     * around that cell makes the controller chase a waypoint that is physically
+     * behind it, producing the late-run safety/replan oscillation seen in the
+     * endurance traces.
+     *
+     * Capture only ordinary one-block cardinal edges. Gap edges deliberately
+     * remain under the gap commitment logic because skipping their boundary
+     * would change when the source-faithful jump is armed.
+     */
+    private boolean hasPassedOrdinaryWaypoint(GameState state, int index) {
+        if (route == null || index <= 0 || index >= route.size() - 1) return false;
+
+        Cell previous = route.cells().get(index - 1);
+        Cell waypoint = route.cells().get(index);
+        int dr = waypoint.row() - previous.row();
+        int dc = waypoint.column() - previous.column();
+
+        if (Math.abs(dr) + Math.abs(dc) != 1) return false;
+
+        double waypointX = waypoint.row() + 0.5;
+        double waypointZ = waypoint.column() + 0.5;
+        double segmentLength = 1.0;
+
+        double along;
+        double lateral;
+        if (dr != 0) {
+            along = (state.player.x - (previous.row() + 0.5)) * Integer.signum(dr);
+            lateral = Math.abs(state.player.z - waypointZ);
+        } else {
+            along = (state.player.z - (previous.column() + 0.5)) * Integer.signum(dc);
+            lateral = Math.abs(state.player.x - waypointX);
+        }
+
+        /*
+         * The player must have crossed the waypoint centreline in the route
+         * direction while remaining inside the physical corridor. The small
+         * 0.12 margin avoids advancing merely because floating-point motion is
+         * touching the centre plane from the wrong side.
+         */
+        return along > segmentLength + 0.12D
+                && lateral <= ROUTE_DEVIATION;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {

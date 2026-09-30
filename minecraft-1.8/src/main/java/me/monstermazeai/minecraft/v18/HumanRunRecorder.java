@@ -160,9 +160,9 @@ public final class HumanRunRecorder implements Closeable {
     }
 
     private void writeHeader(LegacyWorldObservation state) throws IOException {
-        writer.write("{\"recordType\":\"header\",\"jsonVersion\":" + JSON_VERSION
+        writer.write("{\"recordType\":\"manifest\",\"jsonVersion\":" + JSON_VERSION
                 + ",\"minecraftVersion\":\"1.8.9\",\"mode\":\"human\",\"startedWorldTick\":"
-                + state.worldTick + ",\"note\":\"No player identity or chat data is recorded.\"}");
+                + state.worldTick + ",\"files\":[\"movement.jsonl\",\"world.jsonl\",\"monsters.jsonl\",\"input.jsonl\",\"events.jsonl\"],\"note\":\"No player identity or chat data is recorded.\"}");
         writer.newLine();
     }
 

@@ -751,43 +751,134 @@ def normalize_run(
             scoreboard_kits[info["kit"]] += 1
         if info.get("mode"):
             scoreboard_modes[info["mode"]] += 1
-    observer_kits = Counter(clean_text(w.get("kit")).upper() for w in world.values() if w.get("kit"))
-    declared_kit = clean_text(manifest.get("declaredKit")).upper()
-    if declared_kit not in KNOWN_KITS:
-        declared_kit = None
-    if scoreboard_kits and observer_kits and scoreboard_kits.most_common(1)[0][0] != observer_kits.most_common(1)[0][0]:
+
+    observer_kits = Counter(
+        clean_text(w.get("observerKit", w.get("kit"))).upper()
+        for w in world.values()
+        if clean_text(w.get("observerKit", w.get("kit"))).upper() in KNOWN_KITS
+    )
+    resolved_kit = metadata.get("kit")
+    annotation_kit = clean_text(annotation.get("kit")).upper()
+    if annotation_kit not in KNOWN_KITS:
+        annotation_kit = None
+    scoreboard_kit = scoreboard_kits.most_common(1)[0][0] if scoreboard_kits else None
+    observer_kit = observer_kits.most_common(1)[0][0] if observer_kits else None
+
+    if resolved_kit is None:
+        anomalies.append({"type": "MISSING_KIT_METADATA"})
+    if observer_kit and resolved_kit and observer_kit != resolved_kit:
         anomalies.append({
             "type": "KIT_CONFLICT",
-            "scoreboard": scoreboard_kits.most_common(1)[0][0],
-            "observer": observer_kits.most_common(1)[0][0],
+            "resolved": resolved_kit,
+            "observer": observer_kit,
         })
-    if declared_kit and observer_kits and declared_kit != observer_kits.most_common(1)[0][0]:
+    if scoreboard_kit and resolved_kit and scoreboard_kit != resolved_kit:
+        anomalies.append({
+            "type": "KIT_SCOREBOARD_CANDIDATE_CONFLICT",
+            "resolved": resolved_kit,
+            "scoreboard": scoreboard_kit,
+        })
+    if annotation_kit and declared_kit and annotation_kit != declared_kit:
+        anomalies.append({
+            "type": "KIT_ANNOTATION_CONFLICT",
+            "manifest": declared_kit,
+            "annotation": annotation_kit,
+        })
+    if declared_kit and observer_kit and declared_kit != observer_kit:
         anomalies.append({
             "type": "DECLARED_KIT_CONFLICT",
             "declared": declared_kit,
-            "observer": observer_kits.most_common(1)[0][0],
-        })
-    if declared_kit and scoreboard_kits and declared_kit != scoreboard_kits.most_common(1)[0][0]:
-        anomalies.append({
-            "type": "DECLARED_KIT_SCOREBOARD_CONFLICT",
-            "declared": declared_kit,
-            "scoreboard": scoreboard_kits.most_common(1)[0][0],
+            "observer": observer_kit,
         })
     for tick, w in world.items():
         info = scoreboard_info(w.get("scoreboardLines", [])) if isinstance(w.get("scoreboardLines"), list) else {}
         if isinstance(info.get("stage"), int) and isinstance(w.get("stage"), int) and info["stage"] != w["stage"]:
             anomalies.append({
                 "type": "WORLD_STAGE_CONFLICT",
-                "tick": tick, "scoreboard": info["stage"], "observer": w["stage"],
+                "tick": tick,
+                "scoreboard": info["stage"],
+                "observer": w["stage"],
             })
             break
+
+    reconstructed_final = reconstructed.get(max(reconstructed)) if reconstructed else None
+    raw_final = max((int(v.get("stage")) for v in world.values() if isinstance(v.get("stage"), (int, float))), default=None)
+    if reconstructed_final is not None and raw_final is not None and reconstructed_final != raw_final:
+        anomalies.append({
+            "type": "RECONSTRUCTED_STAGE_CONFLICT",
+            "observerFinalStage": raw_final,
+            "reconstructedFinalStage": reconstructed_final,
+        })
+
+    footer_stage = None
+    if end_reason:
+        footer_match = re.search(r"reached stage\s+(\d+)", end_reason, re.IGNORECASE)
+        if footer_match:
+            footer_stage = int(footer_match.group(1))
+    observed_stage_reached = max(by_stage) if by_stage else None
+    stage_reached = footer_stage if footer_stage is not None else observed_stage_reached
+    if footer_stage is not None and observed_stage_reached is not None and footer_stage != observed_stage_reached:
+        anomalies.append({
+            "type": "TERMINAL_STAGE_CONFLICT",
+            "terminalStage": footer_stage,
+            "observedFinalStage": observed_stage_reached,
+        })
+
     if not streams["events"]:
         anomalies.append({"type": "MISSING_EVENT_STREAM"})
     if not normalized_ticks:
         anomalies.append({"type": "NO_TICK_DATA"})
 
-    normal_speeds = [r["horizontalSpeed"] for r in normalized_ticks if not r["externalImpulse"]]
+    normal_rows = [r for r in normalized_ticks if not r["externalImpulse"]]
+    normal_speeds = [r["horizontalSpeed"] for r in normal_rows]
     durations = [s["durationTicks"] / 20.0 for s in stages if s["durationTicks"] > 0]
+    yaw_rates = [abs(float(r["yawDelta"] or 0.0)) for r in normal_rows if r.get("yawDelta") is not None]
+    heading_errors = [
+        angular_delta(float(r["yaw"]), float(r["targetBearing"]))
+        for r in normal_rows
+        if r.get("yaw") is not None and r.get("targetBearing") is not None
+    ]
+    forward_fraction = (
+        sum(1 for r in normal_rows if r["inputs"]["forward"] > 0.01) / len(normal_rows)
+        if normal_rows else None
+    )
+    reverse_fraction = (
+        sum(1 for r in normal_rows if r["inputs"]["forward"] < -0.01) / len(normal_rows)
+        if normal_rows else None
+    )
+    strafe_fraction = (
+        sum(1 for r in normal_rows if abs(r["inputs"]["strafe"]) > 0.01) / len(normal_rows)
+        if normal_rows else None
+    )
+    large_turn_fraction = (
+        sum(1 for r in normal_rows if abs(float(r["yawDelta"] or 0.0)) >= 15.0) / len(normal_rows)
+        if normal_rows else None
+    )
+    over30_turn_fraction = (
+        sum(1 for r in normal_rows if abs(float(r["yawDelta"] or 0.0)) > 30.0) / len(normal_rows)
+        if normal_rows else None
+    )
+    heading_correction_fraction = (
+        sum(
+            1 for r in normal_rows
+            if r.get("targetBearing") is not None
+            and angular_delta(float(r["yaw"]), float(r["targetBearing"])) > 15.0
+            and abs(float(r["yawDelta"] or 0.0)) > 0.5
+        ) / len(normal_rows)
+        if normal_rows else None
+    )
+    forward_runs = consecutive_run_lengths([
+        r["inputs"]["forward"] > 0.01 for r in normal_rows
+    ])
+    sprint_fraction = (
+        sum(1 for r in normal_rows if r["inputs"]["sprint"]) / len(normal_rows)
+        if normal_rows else None
+    )
+    input_changes = 0
+    for previous_row, row in zip(normalized_ticks, normalized_ticks[1:]):
+        p, c = previous_row["inputs"], row["inputs"]
+        if any(p[k] != c[k] for k in ("rawForward", "rawBack", "rawLeft", "rawRight", "rawJump", "rawSprint")):
+            input_changes += 1
     start_tick = normalized_ticks[0]["tick"] if normalized_ticks else None
     end_tick = normalized_ticks[-1]["tick"] if normalized_ticks else None
     damage_count = sum(1 for e in all_events if e.get("type") == "DAMAGE")
@@ -807,10 +898,27 @@ def normalize_run(
             "medianStageTimeSeconds": statistics.median(durations) if durations else None,
             "directExcessRatioMean": statistics.mean([s["directExcessRatio"] for s in stages if s["directExcessRatio"] is not None])
             if any(s["directExcessRatio"] is not None for s in stages) else None,
-            "stationaryFraction": sum(1 for r in normalized_ticks if float(r["displacement"] or 0.0) < 0.01) / len(normalized_ticks) if normalized_ticks else None,
-            "sprintFraction": sum(1 for r in normalized_ticks if r["inputs"]["sprint"]) / len(normalized_ticks) if normalized_ticks else None,
+            "stationaryFraction": sum(1 for r in normal_rows if float(r["displacement"] or 0.0) < 0.01) / len(normal_rows) if normal_rows else None,
+            "forwardFraction": forward_fraction,
+            "reverseFraction": reverse_fraction,
+            "strafeFraction": strafe_fraction,
+            "sprintFraction": sprint_fraction,
             "jumpPresses": sum(1 for e in all_events if e.get("type") == "JUMP_PRESS"),
-            "yawRotationDegrees": sum(abs(float(r["yawDelta"] or 0.0)) for r in normalized_ticks),
+            "jumpPressRatePer100Ticks": (
+                sum(1 for e in all_events if e.get("type") == "JUMP_PRESS") * 100.0 / len(normal_rows)
+                if normal_rows else None
+            ),
+            "yawRotationDegrees": sum(abs(float(r["yawDelta"] or 0.0)) for r in normal_rows),
+            "yawRateP50": quantile(yaw_rates, 0.50),
+            "yawRateP95": quantile(yaw_rates, 0.95),
+            "largeTurnFraction": large_turn_fraction,
+            "over30TurnFraction": over30_turn_fraction,
+            "targetHeadingErrorP50": quantile(heading_errors, 0.50),
+            "targetHeadingErrorP95": quantile(heading_errors, 0.95),
+            "headingCorrectionFraction": heading_correction_fraction,
+            "continuousForwardRunP50Ticks": quantile([float(x) for x in forward_runs], 0.50),
+            "continuousForwardRunP95Ticks": quantile([float(x) for x in forward_runs], 0.95),
+            "inputChangeCount": input_changes,
             "damageEvents": damage_count,
             "damagePerStage": damage_count / max(stage_reached or 1, 1),
             "knockbackCandidates": knockback_count,

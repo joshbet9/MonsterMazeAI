@@ -573,19 +573,16 @@ public final class StableLiveMovementController {
                 boolean brake = distance < WAYPOINT_BRAKE
                         && closingSpeed(state, dx, dz) > 0.04;
                 /*
-                 * Keep forward input concurrent with cursor movement, but do not
-                 * carry full sprint acceleration through a sharp heading change.
-                 * The player is on a floating one-cell corridor: preserving the
-                 * route centreline is more important than squeezing maximum
-                 * horizontal speed out of the first few steering ticks.
+                 * A one-block Monster Maze corridor cannot safely absorb a
+                 * large simultaneous heading change. At errors above 15 degrees
+                 * acquire the cardinal heading in place; only the final small
+                 * correction is allowed to carry forward momentum. This removes
+                 * the diagonal corner-cut that produced ~0.68-block cross-track
+                 * drift in the source-aligned simulator.
                  */
-                double steeringForward;
                 double absError = Math.abs(yawError);
-                if (absError <= 20.0) steeringForward = 1.0;
-                else if (absError <= 35.0) steeringForward = 0.80;
-                else steeringForward = 0.50;
-                double forward = brake ? 0.0 : steeringForward;
-                boolean sprint = forward >= 0.95 && absError <= 15.0;
+                double forward = (brake || absError > 15.0) ? 0.0 : 1.0;
+                boolean sprint = forward > 0.0;
                 boolean jump = allowJump
                         && state.kit != me.monstermazeai.kit.Kit.JUMPER
                         && state.player.grounded
@@ -593,7 +590,9 @@ public final class StableLiveMovementController {
                         && distance > WAYPOINT_ARRIVAL
                         && absError <= 20.0;
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
-                lastDecisionDetail += " STEER_DRIVE";
+                lastDecisionDetail += forward == 0.0
+                        ? " STEER_TURN"
+                        : " STEER_DRIVE";
             } else {
                 action = new Action(
                         0.0, 0.0, false, false,

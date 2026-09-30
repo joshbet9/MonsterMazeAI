@@ -291,6 +291,19 @@ public final class MonsterAwareRoutePlanner {
 
         if (normal == null) return gapAware;
         if (gapAware == null) return normal;
+
+        /*
+         * routeFast receives one candidate that forbids gaps and one that
+         * explicitly permits source-valid gap edges. When gap cost is zero,
+         * the physical shortcut must win whenever it has fewer route steps.
+         * Keep the general policy comparator for positive risk, but make the
+         * zero-risk boundary explicit so the two candidate searches cannot
+         * accidentally lose the gap route to deterministic tie ordering.
+         */
+        if (gapJumpPolicy.riskCostPerGap() == 0.0D
+                && gapAware.size() < normal.size()) {
+            return gapAware;
+        }
         return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
     }
 

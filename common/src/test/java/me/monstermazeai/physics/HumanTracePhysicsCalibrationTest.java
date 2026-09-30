@@ -123,7 +123,9 @@ class HumanTracePhysicsCalibrationTest {
                         || next.horizontalCollision || next.verticalCollision;
 
                 LegacyMazePhysics physics = new LegacyMazePhysics();
-                physics.tick(player, action, maze, spec.kit == Kit.JUMPER ? 0 : -10);
+                physics.tick(player, action, maze,
+                        spec.kit == Kit.JUMPER ? 0 : -10,
+                        true);
                 jumpTicks = player.jumpTicks;
 
                 Residual residual = residual(player, next, currentWorld.center);

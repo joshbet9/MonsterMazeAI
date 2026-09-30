@@ -13,6 +13,7 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
+    private static final double SPRINT_JUMP_IMPULSE = 0.20D;
     /**
      * Minecraft 1.8.9 retains the small downward motion value while the player
      * is standing on a solid block. Human-run telemetry repeatedly records

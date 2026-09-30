@@ -145,8 +145,13 @@ public final class StableLiveMovementController {
      */
     private static final long MOB_HIT_RECOVERY_TICKS = 40L;
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
-    /** Keep a non-Jumper grounded long enough to enter a source gap cleanly. */
-    private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 1.80D;
+    /*
+     * Non-Jumper Jump -10 leaves a ten-tick jump lock even though the vertical
+     * impulse is suppressed. Reserve more than that travel distance before a
+     * gap so a normal speed-jump cannot consume the only usable horizontal
+     * impulse immediately before the source-timed gap takeoff.
+     */
+    private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 3.20D;
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 

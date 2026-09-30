@@ -1,6 +1,7 @@
 package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.adapter.LegacyWorldObservation;
+import me.monstermazeai.kit.Kit;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -58,7 +59,8 @@ import java.util.Locale;
 public final class HumanRunRecorder implements Closeable {
     private static final String DIRECTORY = "human-runs";
     private static final String OUTPUT_PROPERTY = "monstermazeai.humanRunsDir";
-    private static final int JSON_VERSION = 2;
+    private static final String DECLARED_KIT_PROPERTY = "monstermazeai.humanKit";
+    private static final int JSON_VERSION = 3;
     private static final double MONSTER_LOCAL_RADIUS = 20.0D;
     private static final double MONSTER_EVENT_RADIUS = 32.0D;
     private static final int COLLISION_RADIUS = 2;
@@ -85,6 +87,9 @@ public final class HumanRunRecorder implements Closeable {
     private boolean enabled;
     private boolean inRun;
     private String pendingEndReason;
+    private Kit declaredKit;
+    private String declaredKitSource;
+    private Kit inventoryKitEvidence;
 
     private float inputForward;
     private float inputStrafe;
@@ -133,6 +138,8 @@ public final class HumanRunRecorder implements Closeable {
         if (observer == null) throw new IllegalArgumentException("observer");
         this.minecraft = minecraft;
         this.observer = observer;
+        this.declaredKit = parseKit(System.getProperty(DECLARED_KIT_PROPERTY));
+        this.declaredKitSource = this.declaredKit == null ? null : "system_property";
         MinecraftForge.EVENT_BUS.register(this);
     }
 

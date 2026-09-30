@@ -1,6 +1,7 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
@@ -147,6 +148,31 @@ class MonsterAwareRoutePlannerTest {
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
         assertEquals(List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void modernNonJumperCannotSelectAnUnexecutableGap() {
+        GameState state = new GameState();
+        state.mode = Mode.MODERN;
+        state.kit = Kit.MAVERICK;
+
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        raw[10][11] = 0;
+        state.maze = new MazeModel(raw);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
+                .route(state, new Cell(10, 10), new Cell(10, 14));
+
+        assertNotNull(route);
+        assertEquals(new Cell(10, 10), route.cells().get(0));
+        assertEquals(new Cell(10, 14), route.cells().get(route.size() - 1));
+        for (int i = 0; i + 1 < route.size(); i++) {
+            int dr = Math.abs(route.cells().get(i + 1).row() - route.cells().get(i).row());
+            int dc = Math.abs(route.cells().get(i + 1).column() - route.cells().get(i).column());
+            assertFalse((dr == 2 && dc == 0) || (dc == 2 && dr == 0));
+        }
     }
 
     @Test

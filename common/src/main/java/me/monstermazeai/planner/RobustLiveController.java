@@ -58,7 +58,7 @@ public final class RobustLiveController {
 
         Action action = objective.nextAction(state, allowJump);
         boolean useAbility = AbilityDecision.shouldUse(
-                state, objective.lastDecisionReason(), objective.lastDecisionDetail());
+                state, objective.lastDecisionReason(), objective.lastDecisionDetail(), objective.tendencies());
 
         /*
          * An ability is allowed to rescue a failed movement objective. In

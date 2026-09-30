@@ -57,6 +57,9 @@ class AuthenticStage10SimulationTest {
                             + " tick=" + result.ticks
                             + " health=" + result.health
                             + " pos=(" + result.x + "," + result.z + ")"
+                            + " firstFallTick=" + result.firstFallTick
+                            + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
+                            + " firstFallDecision=" + result.firstFallDecision
                             + " decision=" + result.decision);
                 }
             }
@@ -113,6 +116,9 @@ class AuthenticStage10SimulationTest {
 
         int maxStage = 1;
         int lastStage = 1;
+        long firstFallTick = -1L;
+        double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
+        String firstFallDecision = "NONE";
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
             ActionInput action = decide(agent, state);
@@ -146,11 +152,20 @@ class AuthenticStage10SimulationTest {
 
             maxStage = Math.max(maxStage, state.stage);
 
+            if (firstFallTick < 0L && state.player.y < GameState.PATH_Y - 0.05D) {
+                firstFallTick = state.tick;
+                firstFallX = state.player.x;
+                firstFallY = state.player.y;
+                firstFallZ = state.player.z;
+                firstFallDecision = agent.lastDecisionDetail();
+            }
+
             if (maxStage >= REQUIRED_STAGE) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
-                state.player.x, state.player.z, agent.lastDecisionDetail());
+                state.player.x, state.player.z, firstFallTick, firstFallX, firstFallY, firstFallZ,
+                firstFallDecision, agent.lastDecisionDetail());
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -256,5 +271,10 @@ class AuthenticStage10SimulationTest {
             double health,
             double x,
             double z,
+            long firstFallTick,
+            double firstFallX,
+            double firstFallY,
+            double firstFallZ,
+            String firstFallDecision,
             String decision) {}
 }

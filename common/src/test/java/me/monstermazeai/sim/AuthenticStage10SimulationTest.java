@@ -181,6 +181,12 @@ class AuthenticStage10SimulationTest {
         String firstFallDecision = "NONE";
         double firstFallPreX = Double.NaN, firstFallPreY = Double.NaN, firstFallPreZ = Double.NaN;
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
+        long terminalTick = -1L;
+        int terminalStage = -1;
+        int terminalPhaseTicksRemaining = -1;
+        int terminalPadRow = -1, terminalPadColumn = -1;
+        boolean terminalOnPad = false;
+        String terminalDecision = "NONE";
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
@@ -212,6 +218,20 @@ class AuthenticStage10SimulationTest {
             while (trace.size() > 30) trace.removeFirst();
 
             simulator.tick(state, action.action);
+
+            if (!state.alive && terminalTick < 0L) {
+                terminalTick = state.tick;
+                terminalStage = state.stage;
+                terminalPhaseTicksRemaining = state.phaseTicksRemaining;
+                terminalPadRow = state.activePadRow;
+                terminalPadColumn = state.activePadColumn;
+                terminalOnPad = state.activePadRow >= 0 && state.activePadColumn >= 0
+                        && PadModel.isOn(state.player,
+                        state.activePadRow + 0.5, GameState.PAD_SURFACE_Y, state.activePadColumn + 0.5);
+                terminalDecision = decisionBeforeTick
+                        + " ACTION=" + currentAction
+                        + " TRACE=" + String.join(" || ", trace);
+            }
 
             if (state.previewPadRequested && state.previewPadRow < 0) {
                 List<Cell> avoid = currentPadAvoidance(state);
@@ -265,7 +285,9 @@ class AuthenticStage10SimulationTest {
                 firstFallPreX, firstFallPreY, firstFallPreZ,
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
-                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
+                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail(),
+                terminalTick, terminalStage, terminalPhaseTicksRemaining,
+                terminalPadRow, terminalPadColumn, terminalOnPad, terminalDecision);
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -400,5 +422,12 @@ class AuthenticStage10SimulationTest {
             double firstFallVx,
             double firstFallVz,
             String firstFallDecision,
-            String decision) {}
+            String decision,
+            long terminalTick,
+            int terminalStage,
+            int terminalPhaseTicksRemaining,
+            int terminalPadRow,
+            int terminalPadColumn,
+            boolean terminalOnPad,
+            String terminalDecision) {}
 }

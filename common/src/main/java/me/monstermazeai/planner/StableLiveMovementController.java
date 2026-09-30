@@ -1447,7 +1447,7 @@ public final class StableLiveMovementController {
      * which is physically supported. This keeps the behaviour source-valid and
      * leaves genuine unavoidable contacts to MonsterManager.bump().
      */
-    private Action avoidIncomingMonster(GameState state) {
+    private Action avoidIncomingMonster(GameState state, boolean allowJump) {
         if (!state.player.grounded || state.maze == null) return null;
 
         Cell supported = resolveSupportedStartCell(state);
@@ -1504,6 +1504,37 @@ public final class StableLiveMovementController {
 
         double monsterLateral = (threat.x - state.player.x) * routeDirColumn
                 - (threat.z - state.player.z) * routeDirRow;
+
+        /*
+         * Jumper's real three-charge jump is the emergency "go over the mob"
+         * option. Preserve a charge whenever ordinary A/D has a supported
+         * escape, but spend one when the mob is already inside the final
+         * contact window and the lane cannot safely be cleared laterally.
+         */
+        double closingSpeed = 0.0D;
+        double threatDx = threat.x - state.player.x;
+        double threatDz = threat.z - state.player.z;
+        double threatDistance = Math.max(bestDistance, 1.0E-6D);
+        closingSpeed = -(threat.vx * threatDx + threat.vz * threatDz) / threatDistance;
+        boolean urgentJumperJump = allowJump
+                && state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0
+                && !gapExecutionActive
+                && bestDistance <= 1.25D
+                && (closingSpeed > 0.03D || !(leftFloor || rightFloor));
+        if (urgentJumperJump) {
+            float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
+            float yawError = normalise(desiredYaw - state.player.yaw);
+            float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            Action jumpOver = new Action(
+                    0.85, 0.0, true, true, yawDelta, false);
+            lastDecisionDetail = "MOB_JUMP_OVER"
+                    + " monster=" + threat.id
+                    + " distance=" + format(bestDistance)
+                    + " closing=" + format(closingSpeed)
+                    + " yawDelta=" + format(yawDelta);
+            return jumpOver;
+        }
 
         if (leftFloor || rightFloor) {
             double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;

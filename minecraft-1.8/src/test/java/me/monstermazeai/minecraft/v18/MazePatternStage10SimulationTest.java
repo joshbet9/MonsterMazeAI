@@ -296,7 +296,7 @@ public final class MazePatternStage10SimulationTest {
             } catch (RuntimeException failure) {
                 result.controllerLog.append("PRODUCTION_AGENT_EXCEPTION ")
                         .append(failure.getClass().getSimpleName())
-                        .append(": ").append(failure.getMessage()).append('\\n');
+                        .append(": ").append(failure.getMessage()).append('\n');
                 action = LegacyAction.IDLE;
             }
 

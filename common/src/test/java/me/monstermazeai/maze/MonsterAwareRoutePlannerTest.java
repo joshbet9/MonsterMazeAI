@@ -132,11 +132,9 @@ class MonsterAwareRoutePlannerTest {
     @Test
     void zeroGapRiskAllowsThePhysicalShortcutWhenItIsActuallyShorter() {
         GameState state = new GameState();
-        // This test exercises only the configurable gap-cost policy. A real
-        // Jumper charge is still required because non-Jumpers cannot clear void
-        // cells under the source Jump -10 lock.
-        state.kit = Kit.JUMPER;
-        state.ability.charges = 3;
+        // This test exercises only the configurable gap-cost policy.
+        // Non-Jumper kits can still use the source-faithful horizontal
+        // sprint-jump ("speeding") technique across a one-block void.
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r < MazeModel.SIZE; r++)
             for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;

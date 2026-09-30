@@ -556,15 +556,17 @@ public final class StableLiveMovementController {
                 lastDecisionDetail += " STEER_DRIVE";
             } else if (distance <= 1.25 && Math.abs(yawError) < 135.0F) {
                 /*
-                 * The maze is one block wide. A diagonal W+A/D input during a
-                 * 90-degree corner can cut across the inside void before the
-                 * camera is aligned. Turn in place instead. The source game
-                 * accepts the full 30-degree camera correction per tick, so a
-                 * 90-degree corner takes only three ticks to acquire safely.
+                 * At a tight corner, keep a bounded W+A/D vector active while
+                 * the camera turns. The vector is derived from the actual
+                 * heading error, so it rotates smoothly toward the next
+                 * cardinal segment instead of strafing blindly.
                  */
-                action = new Action(0.0, 0.0, false, false, turn, false);
-                lastDecisionDetail += " CORNER_ALIGN";
-
+                double errorRad = Math.toRadians(yawError);
+                double forward = Math.cos(errorRad) * 0.65D;
+                double strafe = -Math.sin(errorRad) * 0.65D;
+                boolean jump = shouldSpeedJump(state, allowJump);
+                action = new Action(forward, strafe, jump, false, turn, false);
+                lastDecisionDetail += " CORNER_VECTOR";
             } else {
                 action = new Action(
                         0.0, 0.0, false, false,

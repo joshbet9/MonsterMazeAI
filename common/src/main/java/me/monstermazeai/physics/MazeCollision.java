@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Legacy block-grid collision utility retained for future experiments.
- * It is deliberately not used by LegacyMazePhysics: Monster Maze player
- * movement is modeled as flat open movement with no walls or step-up logic.
+ * Minecraft 1.8-style AABB collision against the source maze's physical
+ * floor blocks. The maze blocks occupy y=-1..0 relative to the observed
+ * player feet coordinate (PATH_Y=0). Air/void cells are not colliders.
  */
 public final class MazeCollision {
     public static final double PLAYER_WIDTH = 0.6;
@@ -93,7 +93,7 @@ public final class MazeCollision {
         int minZ=(int)Math.floor(swept.minZ())-1,maxZ=(int)Math.floor(swept.maxZ())+1;
         for(int r=minX;r<=maxX;r++)for(int c=minZ;c<=maxZ;c++){
             if(r<0||c<0||r>=MazeModel.SIZE||c>=MazeModel.SIZE)continue;
-            if(!maze.isTraversable(r,c))out.add(new Aabb(r,0,c,r+1,3,c+1));
+            if(maze.isPhysicalFloor(r,c)) out.add(new Aabb(r,-1,c,r+1,0,c+1));
         }
         return out;
     }

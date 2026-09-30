@@ -258,13 +258,17 @@ public final class StableLiveMovementController {
 
         GameState routingState = transitionRoutingState(
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
-        int startRow = (int) Math.floor(state.player.x);
-        int startColumn = (int) Math.floor(state.player.z);
-        if (!inBounds(startRow, startColumn) || !inBounds(goal.row(), goal.column())) {
-            lastDecisionDetail = "OUT_OF_BOUNDS start=" + startRow + "," + startColumn
-                    + " goal=" + goal.row() + "," + goal.column();
+        Cell supportedStart = resolveSupportedStartCell(routingState);
+        if (supportedStart == null || !inBounds(goal.row(), goal.column())) {
+            int startRow = (int) Math.floor(state.player.x);
+            int startColumn = (int) Math.floor(state.player.z);
+            lastDecisionDetail = "NO_SUPPORTED_START start=" + startRow + "," + startColumn
+                    + " goal=" + goal.row() + "," + goal.column()
+                    + " grounded=" + state.player.grounded;
             return Action.IDLE;
         }
+        int startRow = supportedStart.row();
+        int startColumn = supportedStart.column();
 
         // Entering any physical cell of the Safe Pad completes the movement
         // objective. Do not continue toward the beacon centre or re-route back
@@ -926,12 +930,55 @@ public final class StableLiveMovementController {
         return 180.0F; // -Z / north
     }
 
+    /**
+     * Resolve the route seed from the same 0.6-block player AABB support rule
+     * used by LegacyMovementModel. The player's floor-cell index can legitimately
+     * be air at a block boundary while the footprint still overlaps a physical
+     * block by a positive amount. Returning that supported block as the graph
+     * seed keeps the controller and physics model in the same coordinate state.
+     */
+    private static Cell resolveSupportedStartCell(GameState state) {
+        final double halfWidth = 0.30D;
+        final double minX = state.player.x - halfWidth;
+        final double maxX = state.player.x + halfWidth;
+        final double minZ = state.player.z - halfWidth;
+        final double maxZ = state.player.z + halfWidth;
+
+        int minRow = Math.max(0, (int) Math.floor(minX));
+        int maxRow = Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1,
+                (int) Math.floor(maxX - 1.0E-12D));
+        int minColumn = Math.max(0, (int) Math.floor(minZ));
+        int maxColumn = Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1,
+                (int) Math.floor(maxZ - 1.0E-12D));
+
+        Cell best = null;
+        double bestOverlap = -1.0D;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (!state.maze.isPhysicalFloor(row, column)) continue;
+
+                double overlapX = Math.min(maxX, row + 1.0D) - Math.max(minX, row);
+                double overlapZ = Math.min(maxZ, column + 1.0D) - Math.max(minZ, column);
+                if (overlapX <= 0.0D || overlapZ <= 0.0D) continue;
+
+                double overlap = overlapX * overlapZ;
+                double distance = sq(state.player.x - (row + 0.5D))
+                        + sq(state.player.z - (column + 0.5D));
+                if (overlap > bestOverlap
+                        || (Double.compare(overlap, bestOverlap) == 0 && distance < bestDistance)) {
+                    bestOverlap = overlap;
+                    bestDistance = distance;
+                    best = new Cell(row, column);
+                }
+            }
+        }
+        return best;
+    }
+
     private static boolean currentCellSupportsPlayer(GameState state) {
-        int row = (int) Math.floor(state.player.x);
-        int column = (int) Math.floor(state.player.z);
-        return row >= 0 && row < me.monstermazeai.maze.MazeModel.SIZE
-                && column >= 0 && column < me.monstermazeai.maze.MazeModel.SIZE
-                && state.maze.isPhysicalFloor(row, column);
+        return resolveSupportedStartCell(state) != null;
     }
 
     private static double crossTrackError(

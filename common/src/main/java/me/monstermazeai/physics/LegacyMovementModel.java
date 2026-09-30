@@ -17,7 +17,7 @@ public final class LegacyMovementModel implements PhysicsModel {
 
     @Override
     public void tick(PlayerState p, Action action) {
-        tick(p, action, null);
+        tick(p, action, null, 0);
     }
 
     /**
@@ -26,6 +26,17 @@ public final class LegacyMovementModel implements PhysicsModel {
      * while still allowing recovery before the player actually falls.
      */
     public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze) {
+        tick(p, action, maze, 0);
+    }
+
+    /**
+     * Same movement with the source MonsterMaze jump effect amplifier. An
+     * amplifier of -10 is the kit jump lock: it prevents vertical jumping but
+     * deliberately preserves the sprint jump's horizontal impulse used by the
+     * non-Jumper jump-spam speed technique.
+     */
+    public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
+                     int jumpAmplifier) {
         p.yaw += action.yawDelta();
         while (p.yaw >= 180.0F) p.yaw -= 360.0F;
         while (p.yaw < -180.0F) p.yaw += 360.0F;
@@ -34,9 +45,21 @@ public final class LegacyMovementModel implements PhysicsModel {
         float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
-            p.vy = JUMP_VELOCITY;
-            p.grounded = false;
-            if (action.sprint()) {
+            if (jumpAmplifier <= -2) {
+                // EntityLivingBase applies the -10 Jump effect, then collision
+                // resolves the negative vertical motion back onto the floor.
+                // Keep the grounded state while retaining the sprint impulse.
+                p.vy = 0.0D;
+                if (action.sprint()) {
+                    float yaw = p.yaw * 0.017453292F;
+                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                }
+                p.jumpTicks = 0;
+            } else {
+                p.vy = JUMP_VELOCITY + ((jumpAmplifier + 1) * 0.1D);
+                p.grounded = false;
+                if (action.sprint()) {
                 float yaw = p.yaw * 0.017453292F;
                 p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                 p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;

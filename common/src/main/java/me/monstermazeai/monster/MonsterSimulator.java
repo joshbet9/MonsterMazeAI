@@ -109,6 +109,12 @@ public final class MonsterSimulator {
     }
 
     private void chooseNextWaypoint(MonsterState m, Cell current) {
+        // Exact MonsterManager selection:
+        // 1) collect all cardinal waypoint blocks;
+        // 2) when there is more than one choice, remove the immediate reverse;
+        // 3) choose one with the manager RNG;
+        // 4) walk that direction until getTarget() reaches a branch where more
+        //    than one non-forward waypoint exists.
         List<Cell> choices = new ArrayList<>(maze.cardinalNeighbours(current));
         if (choices.size() > 1 && m.direction != CardinalDirection.NONE) {
             choices.removeIf(c -> CardinalDirection.between(
@@ -126,33 +132,29 @@ public final class MonsterSimulator {
         CardinalDirection direction = CardinalDirection.between(
                 chosen.row() - current.row(), chosen.column() - current.column());
 
-        Cell terminal = chosen;
-        Cell cursor = chosen;
+        Cell target = chosen;
+        Cell cursor = current;
         while (true) {
-            Cell cursorCell = cursor;
-            List<Cell> forward = new ArrayList<>(maze.cardinalNeighbours(cursorCell));
-            forward.removeIf(c -> CardinalDirection.between(
-                    c.row() - cursorCell.row(), c.column() - cursorCell.column()) != direction);
-            if (forward.isEmpty()) break;
+            Cell next = new Cell(
+                    cursor.row() + direction.rowDelta(),
+                    cursor.column() + direction.columnDelta());
+            if (!maze.isTraversable(next.row(), next.column())) break;
 
-            Cell next = forward.get(0);
-            List<Cell> atNext = maze.cardinalNeighbours(next);
+            target = next;
+
             int alternatives = 0;
-            for (Cell n : atNext) {
-                CardinalDirection d = CardinalDirection.between(
-                        n.row() - next.row(), n.column() - next.column());
-                if (d != direction) alternatives++;
+            for (Cell neighbour : maze.cardinalNeighbours(next)) {
+                CardinalDirection candidateDirection = CardinalDirection.between(
+                        neighbour.row() - next.row(), neighbour.column() - next.column());
+                if (candidateDirection != direction) alternatives++;
             }
-            if (alternatives > 1) {
-                terminal = next;
-                break;
-            }
-            terminal = next;
+            if (alternatives > 1) break;
+
             cursor = next;
         }
 
-        m.waypointRow = terminal.row();
-        m.waypointColumn = terminal.column();
+        m.waypointRow = target.row();
+        m.waypointColumn = target.column();
         m.direction = direction;
     }
 

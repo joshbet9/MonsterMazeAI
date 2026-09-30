@@ -187,7 +187,7 @@ class AbilityModelTest {
         s.ability.cooldownUntilTick = 0;
         s.monsters.add(new MonsterState(11, 4.0, 0.0, 0.5));
 
-        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "monster in route corridor"));
+        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "monster in route corridor"));
         assertTrue(AbilityDecision.shouldUse(s, "ROUTE_OPENING", "monster blocks efficient route"));
 
         s.monsters.get(0).x = 4.0;

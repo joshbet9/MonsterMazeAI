@@ -50,8 +50,8 @@ jobs:
       - name: Run focused Speed diagnostics
         run: mvn -B -ntp -pl common -am -Dtest=SpeedFailureDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false test
 
-  speed-ceiling:
-    name: Speed Stage-15 ceiling
+  speed-full-run:
+    name: Speed full-run diagnostics
     runs-on: ubuntu-latest
 
     steps:
@@ -65,5 +65,5 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Run Speed Stage-15 ceiling diagnostic
-        run: mvn -B -ntp -pl common -am -Dtest=SpeedCeilingDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false test
+      - name: Run every Speed case to natural termination
+        run: mvn -B -ntp -pl common -am -Dtest=SpeedFullRunDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false test

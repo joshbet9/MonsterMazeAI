@@ -102,6 +102,31 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void recoversObservedSupportedLaneDriftInsteadOfDeadlocking() {
+        GameState s = state(0.5, 0.5, 90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        // Establish the segment/lane anchor at the route centreline.
+        s.tick = 1;
+        Action first = controller.nextAction(s, new Cell(8, 0), false);
+        assertTrue(Math.abs(first.yawDelta()) > 0.0 || first.forward() > 0.0);
+
+        // Reproduce the observed ~0.383 block supported lateral drift.
+        s.tick = 2;
+        s.player.z = 0.883;
+        s.player.yaw = 90.0F;
+
+        Action recovery = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"),
+                controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+        assertEquals(0.0, recovery.strafe(), 1.0e-9);
+        assertTrue(recovery.forward() == 0.0 || recovery.forward() <= 0.20 + 1.0e-9);
+    }
+
+    @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
         GameState s = state(0.5, 0.5, -20.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

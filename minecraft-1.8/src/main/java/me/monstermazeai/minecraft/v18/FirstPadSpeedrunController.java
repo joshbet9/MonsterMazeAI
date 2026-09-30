@@ -156,8 +156,8 @@ public final class FirstPadSpeedrunController {
      * and is intentionally exposed as a policy constant for future player/
      * difficulty tendencies.
      */
-    private static final double GAP_MOMENTUM_DISTANCE_REQUIRED = 3.0D;
-    private static final double GAP_MOMENTUM_MIN_FORWARD_SPEED = 0.22D;
+    private static final double GAP_MOMENTUM_DISTANCE_REQUIRED = 2.5D;
+    private static final double GAP_MOMENTUM_MIN_FORWARD_SPEED = 0.10D;
     private static final float GAP_MOMENTUM_HEADING_TOLERANCE = 15.0F;
     private static final double GAP_MOMENTUM_LATERAL_SPEED_LIMIT = 0.12D;
     private static final float GAP_MOMENTUM_DIRECTION_TOLERANCE = 15.0F;
@@ -256,7 +256,9 @@ public final class FirstPadSpeedrunController {
             targetReached = false;
             routeLength = 0;
             routeIndex = 0;
-            aligningForStage = false;
+            // A newly active SafePad can require a large heading change. Keep
+            // the transition stationary until the first route edge is faced.
+            aligningForStage = true;
 
             log(state.worldTick, "[MonsterMazeAI/1.8] PAD TRANSITION"
                     + " tick=" + state.worldTick
@@ -362,14 +364,18 @@ public final class FirstPadSpeedrunController {
             float yawError = normalise(desiredYaw - state.player.yaw);
             float yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
 
-            if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE) {
+            double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+            if (Math.abs(yawError) <= ALIGNMENT_TOLERANCE
+                    && state.player.grounded
+                    && horizontalSpeed <= 0.02D) {
                 aligningForStage = false;
                 log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGNED"
                         + " stage=" + state.stage
                         + " tick=" + state.worldTick
                         + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
                         + " yaw=" + format(state.player.yaw)
-                        + " desiredYaw=" + format(desiredYaw));
+                        + " desiredYaw=" + format(desiredYaw)
+                        + " speed=" + format(horizontalSpeed));
             } else {
                 if (state.worldTick % 2L == 0L) {
                     log(state.worldTick, "[MonsterMazeAI/1.8] PAD ALIGN"
@@ -378,7 +384,9 @@ public final class FirstPadSpeedrunController {
                             + " heading=" + routeRows[headingIndex] + "," + routeColumns[headingIndex]
                             + " yaw=" + format(state.player.yaw)
                             + " desiredYaw=" + format(desiredYaw)
-                            + " yawDelta=" + format(yawDelta));
+                            + " yawDelta=" + format(yawDelta)
+                            + " grounded=" + state.player.grounded
+                            + " speed=" + format(horizontalSpeed));
                 }
                 return new LegacyAction(0.0f, 0.0f, false, false, yawDelta, false);
             }
@@ -1080,7 +1088,7 @@ public final class FirstPadSpeedrunController {
          * Mob replans start from the player's current heading and therefore
          * must not introduce a competing alignment state.
          */
-        aligningForStage = transitioningFromReachedPad;
+        aligningForStage = transitioningFromReachedPad || activePadTransitionPending;
 
         if (startedAtTick == Long.MIN_VALUE) {
             startedAtTick = state.worldTick;
@@ -1672,8 +1680,7 @@ public final class FirstPadSpeedrunController {
         double lateralVelocity = Math.abs(state.player.vx * dz - state.player.vz * dx);
         double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
 
-        boolean qualified = state.player.grounded
-                && Math.abs(yawError) <= GAP_MOMENTUM_HEADING_TOLERANCE
+        boolean qualified = Math.abs(yawError) <= GAP_MOMENTUM_HEADING_TOLERANCE
                 && forwardVelocity >= GAP_MOMENTUM_MIN_FORWARD_SPEED
                 && lateralVelocity <= GAP_MOMENTUM_LATERAL_SPEED_LIMIT;
 

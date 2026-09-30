@@ -237,6 +237,22 @@ public final class StableLiveMovementController {
         }
 
         /*
+         * Commitments are motor-level ownership boundaries. Once a SafePad edge
+         * entry or a one-block gap crossing has started, tactical monster
+         * avoidance must not replace the source-timed movement command. A mob
+         * hit still wins because detectLiveMobHit() above clears the commitment
+         * and transfers control to authoritative recovery.
+         */
+        if (padEntryCommitment) {
+            Action committed = executePadEntryCommitment(state, goal, allowJump);
+            if (committed != null) return committed;
+        }
+        if (gapExecutionActive) {
+            Action committed = executeCommittedGap(state, allowJump);
+            if (committed != null) return committed;
+        }
+
+        /*
          * Emergency contact is deliberately separate from ordinary tactical
          * avoidance. If the deadline is already unattainable by normal travel,
          * a nearby monster can be used as a source-faithful bump toward the
@@ -272,18 +288,6 @@ public final class StableLiveMovementController {
             goalRow = goal.row();
             goalColumn = goal.column();
             goalRadius = regionRadius;
-        }
-
-        // Once a pad-edge crossing is committed, a newer strategic route is
-        // not allowed to replace it. The only authoritative exits are landing
-        // on the pad, losing the edge, or a bounded timeout/recovery condition.
-        if (padEntryCommitment) {
-            Action committed = executePadEntryCommitment(state, goal, allowJump);
-            if (committed != null) return committed;
-        }
-        if (gapExecutionActive) {
-            Action committed = executeCommittedGap(state, allowJump);
-            if (committed != null) return committed;
         }
 
         GameState routingState = transitionRoutingState(
@@ -1227,7 +1231,23 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
+        /*
+         * Preserve forward intent before falling all the way back to IDLE.
+         * The human traces overwhelmingly retain W during mob avoidance, while
+         * the previous guard could turn a valid A/D dodge into a stationary
+         * command when the one-tick diagonal projection crossed a fractional
+         * edge. A forward-only projection keeps the source-safe action moving
+         * whenever the route lane itself remains supported.
+         */
+        Action forwardPreserving = new Action(
+                action.forward(), 0.0, action.jump(), action.sprint(),
+                action.yawDelta(), false);
+        Action softenedDodge = new Action(
+                action.forward(), action.strafe() * 0.5D, action.jump(), action.sprint(),
+                action.yawDelta(), false);
         Action[] alternatives = {
+                forwardPreserving,
+                softenedDodge,
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),
@@ -1584,12 +1604,27 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            /*
+             * Human-run calibration shows that mob avoidance remains
+             * overwhelmingly forward-driven (~83-94% forward across the six
+             * recordings), with jump presses common and lateral input sparse.
+             * Prefer full forward sprint, using A/D as a correction rather than
+             * replacing W with a mostly-lateral dodge.
+             *
+             * For non-Jumpers, Jump -10 is source-valid horizontal speeding and
+             * is already cadence-limited by Max Speed. This gives the controller
+             * the same forward + occasional jump response seen repeatedly in the
+             * recorded runs without inventing a new physics mechanic.
+             */
+            boolean speedJump = state.kit != me.monstermazeai.kit.Kit.JUMPER
+                    && shouldSpeedJump(state, allowJump);
+            Action dodge = new Action(1.0, strafe, speedJump, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
                     + " strafe=" + format(strafe)
+                    + " jump=" + speedJump
                     + (guarded == dodge ? "" : " EDGE_GUARD");
             return guarded;
         }

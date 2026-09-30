@@ -189,8 +189,10 @@ class StableLiveMovementControllerTest {
         s.inMonsterMaze = true;
         s.alive = true;
         s.maze = maze;
-        s.kit = me.monstermazeai.kit.Kit.JUMPER;
-        s.ability.charges = 3;
+        // Regression uses a non-Jumper because this is specifically the
+        // source "speeding" gap-crossing technique: Jump -10 blocks vertical
+        // lift but the sprint-jump routine still supplies horizontal impulse.
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
         s.activePadRow = 10;
         s.activePadColumn = 30;
         s.player.x = 10.5;

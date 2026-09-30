@@ -81,6 +81,7 @@ human-speed-run-<timestamp>-manifest.json
 human-speed-run-<timestamp>-movement.jsonl
 human-speed-run-<timestamp>-input.jsonl
 human-speed-run-<timestamp>-world.jsonl
+human-speed-run-<timestamp>-objectives.jsonl
 human-speed-run-<timestamp>-navigation.jsonl
 human-speed-run-<timestamp>-monsters.jsonl
 human-speed-run-<timestamp>-maze.jsonl
@@ -132,6 +133,12 @@ Per-tick game state needed for stage/timer/ability decisions:
 - scoreboard title and lines
 - maze centre
 - active pad
+
+### objectives.jsonl
+
+Near the SafePad preview/transition window, this records every beacon detected in the 99x99 arena surface and identifies the current active pad plus other beacon locations as preview candidates. The scan is deliberately limited to the short timer window so the recorder does not add a full-arena block scan to every tick.
+
+This is important because the live AI observer intentionally keeps the current objective stable while a future SafePad may temporarily exist at the same time. The human dataset therefore preserves the information available to a player about the next objective without changing the AI observer's semantics.
 
 ### navigation.jsonl
 

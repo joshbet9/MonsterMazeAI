@@ -140,8 +140,19 @@ public final class MonsterAwareRoutePlanner {
     }
 
     private static int jumperGapBudget(GameState state) {
-        if (state == null || state.kit != me.monstermazeai.kit.Kit.JUMPER) return -1;
-        return Math.max(0, state.ability.charges);
+        if (state == null || state.kit == null) return -1;
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER) {
+            return Math.max(0, state.ability.charges);
+        }
+
+        // In Modern mode the non-Jumper kits do not have the source Speed-mode
+        // horizontal sprint-jump mechanic. A two-cell route transition therefore
+        // cannot be executed by the live motor and must not be selected.
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) return 0;
+
+        // Speed mode preserves the source-faithful Jump -10 + sprint-jump
+        // horizontal impulse for non-Jumpers, so their gap budget is unlimited.
+        return -1;
     }
 
     private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,

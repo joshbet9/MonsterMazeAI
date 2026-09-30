@@ -26,7 +26,9 @@ import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 
 /**
@@ -56,7 +58,8 @@ import java.util.Locale;
 public final class HumanRunRecorder implements Closeable {
     private static final String DIRECTORY = "human-runs";
     private static final int JSON_VERSION = 2;
-    private static final double MONSTER_LOCAL_RADIUS = 32.0D;
+    private static final double MONSTER_LOCAL_RADIUS = 20.0D;
+    private static final double MONSTER_EVENT_RADIUS = 32.0D;
     private static final int COLLISION_RADIUS = 2;
     private static final int COLLISION_Y_BELOW = 1;
     private static final int COLLISION_Y_ABOVE = 2;
@@ -118,6 +121,7 @@ public final class HumanRunRecorder implements Closeable {
     private int previousMazeHash;
     private int previousPhysicalFloorHash;
     private int previousMonsterIdsHash;
+    private final Set<Integer> knownMonsterIds = new HashSet<Integer>();
     private boolean previousAlive = true;
     private String previousObjectiveSignature = "";
 
@@ -281,6 +285,7 @@ public final class HumanRunRecorder implements Closeable {
         previousMazeHash = 0;
         previousPhysicalFloorHash = 0;
         previousMonsterIdsHash = 0;
+        knownMonsterIds.clear();
         previousAlive = true;
         previousObjectiveSignature = "";
         pendingEndReason = null;
@@ -589,43 +594,68 @@ public final class HumanRunRecorder implements Closeable {
     }
 
     private void writeMonsters(LegacyWorldObservation state) throws IOException {
+        /*
+         * This is intentionally a compact numeric stream. Repeating JSON field
+         * names and monster type strings for every entity on every tick made a
+         * long Stage-60+ run hundreds of MB. The AI's tactical monster horizon
+         * is ~20 blocks, so keep exact per-tick kinematics inside that horizon.
+         *
+         * Type metadata and wider 32-block encounter information are emitted
+         * sparsely through events, so information needed to interpret a monster
+         * is retained without multiplying the payload on every tick.
+         */
         StringBuilder b = new StringBuilder();
         b.append("{\"tick\":").append(state.worldTick)
                 .append(",\"stage\":").append(state.stage)
                 .append(",\"recordIndex\":").append(records)
-                .append(",\"localRadius\":").append(MONSTER_LOCAL_RADIUS)
+                .append(",\"radius\":").append(MONSTER_LOCAL_RADIUS)
                 .append(",\"monsters\":[");
         int localCount = 0;
         int idsHash = 1;
         double radiusSquared = MONSTER_LOCAL_RADIUS * MONSTER_LOCAL_RADIUS;
+        double eventRadiusSquared = MONSTER_EVENT_RADIUS * MONSTER_EVENT_RADIUS;
+
         for (LegacyWorldObservation.Monster m : state.monsters) {
             if (m.removed) continue;
             double dx = m.x - state.player.x;
             double dy = m.y - state.player.y;
             double dz = m.z - state.player.z;
-            if (dx * dx + dy * dy + dz * dz > radiusSquared) continue;
+            double distanceSquared = dx * dx + dy * dy + dz * dz;
+
+            if (distanceSquared <= eventRadiusSquared && !knownMonsterIds.contains(m.id)) {
+                writeEvent(state.worldTick, records, "MONSTER_SEEN",
+                        "id=" + m.id
+                                + ",gameplayType=" + safeEventValue(m.gameplayType)
+                                + ",visualType=" + safeEventValue(m.visualType));
+                knownMonsterIds.add(m.id);
+            }
+
+            if (distanceSquared > radiusSquared) continue;
+
             if (localCount > 0) b.append(",");
-            b.append("{\"id\":").append(m.id)
-                    .append(",\"gameplayType\":\"").append(escape(m.gameplayType))
-                    .append("\",\"visualType\":\"").append(escape(m.visualType))
-                    .append("\",\"x\":").append(m.x)
-                    .append(",\"y\":").append(m.y)
-                    .append(",\"z\":").append(m.z)
-                    .append(",\"vx\":").append(m.vx)
-                    .append(",\"vy\":").append(m.vy)
-                    .append(",\"vz\":").append(m.vz)
-                    .append("}");
+            b.append("[")
+                    .append(m.id).append(",")
+                    .append(formatNumber(m.x)).append(",")
+                    .append(formatNumber(m.y)).append(",")
+                    .append(formatNumber(m.z)).append(",")
+                    .append(formatNumber(m.vx)).append(",")
+                    .append(formatNumber(m.vy)).append(",")
+                    .append(formatNumber(m.vz))
+                    .append("]");
             idsHash = 31 * idsHash + m.id;
             localCount++;
         }
-        b.append("],\"localCount\":").append(localCount)
-                .append(",\"observedMonsterCount\":").append(state.monsters.size())
+
+        b.append("],\"count\":").append(localCount)
+                .append(",\"observerCount\":").append(state.monsters.size())
                 .append("}");
         writeLine(monsterWriter, b.toString());
 
         if (idsHash != previousMonsterIdsHash && previousMonsterIdsHash != 0) {
             writeEvent(state.worldTick, records, "MONSTER_SET_CHANGED",
-                    "localCount=" + localCount + ",previousHash=" + previousMonsterIdsHash + ",hash=" + idsHash);
+                    "localCount=" + localCount
+                            + ",previousHash=" + previousMonsterIdsHash
+                            + ",hash=" + idsHash);
         }
         previousMonsterIdsHash = idsHash;
     }
@@ -877,6 +907,14 @@ public final class HumanRunRecorder implements Closeable {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
+    }
+
+    private static String safeEventValue(String value) {
+        return value == null ? "" : value.replace(",", ";").replace("\n", " ").replace("\r", " ");
+    }
+
+    private static String formatNumber(double value) {
+        return String.format(Locale.ROOT, "%.4f", value);
     }
 
     private static String sanitizeTerminalChat(String value) {

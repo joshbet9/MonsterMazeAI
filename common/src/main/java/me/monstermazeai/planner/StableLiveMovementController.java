@@ -214,6 +214,8 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
+        // Decision detail is telemetry for this exact observation only.
+        lastDecisionDetail = "DECISION";
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(

@@ -1,6 +1,7 @@
 package me.monstermazeai.game;
 
 import me.monstermazeai.ability.AbilityModel;
+import me.monstermazeai.maze.Cell;
 
 /**
  * Source-grounded round/phase progression for the single-player AI simulator.

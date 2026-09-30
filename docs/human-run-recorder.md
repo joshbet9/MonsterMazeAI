@@ -156,14 +156,15 @@ This makes route efficiency measurable without asserting that a particular route
 
 ### monsters.jsonl
 
-Per-tick Monster Maze monsters within 32 blocks of the player, including:
+Per-tick Monster Maze monsters within 20 blocks of the player, matching the AI's current tactical monster horizon. Each monster is stored as a compact numeric array:
 
-- stable entity ID
-- gameplay and visual type
-- position
-- velocity
+`[entityId,x,y,z,vx,vy,vz]`
 
-The line also contains the total monsters observed by the authoritative observer. Local monster telemetry is used because that is the range most directly relevant to movement decisions while keeping the file manageable.
+The stream also records the total monsters observed by the authoritative observer.
+
+Monster type metadata is not repeated on every tick. The first time a monster appears within a wider 32-block encounter radius, `events.jsonl` receives a `MONSTER_SEEN` event containing its stable entity ID, gameplay type and visual type.
+
+This preserves the per-tick kinematics needed to calibrate movement and monster avoidance while avoiding hundreds of megabytes of repeated JSON field names and type strings on long Stage-60+ runs.
 
 ### maze.jsonl
 

@@ -46,9 +46,9 @@ public final class LegacyMovementModel implements PhysicsModel {
 
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
-                // EntityLivingBase applies the -10 Jump effect, then collision
-                // resolves the negative vertical motion back onto the floor.
-                // Keep the grounded state while retaining the sprint impulse.
+                // Monster Maze applies Jump -10 to non-Jumpers. That blocks the
+                // vertical impulse but the sprint-jump's horizontal impulse is
+                // still applied by the source jump routine.
                 p.vy = 0.0D;
                 if (action.sprint()) {
                     float yaw = p.yaw * 0.017453292F;
@@ -60,11 +60,12 @@ public final class LegacyMovementModel implements PhysicsModel {
                 p.vy = JUMP_VELOCITY + ((jumpAmplifier + 1) * 0.1D);
                 p.grounded = false;
                 if (action.sprint()) {
-                float yaw = p.yaw * 0.017453292F;
-                p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-                p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                    float yaw = p.yaw * 0.017453292F;
+                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                }
+                p.jumpTicks = 10;
             }
-            p.jumpTicks = 10;
         } else if (!action.jump()) {
             p.jumpTicks = 0;
         } else if (p.jumpTicks > 0) {
@@ -83,9 +84,7 @@ public final class LegacyMovementModel implements PhysicsModel {
 
         moveFlying(p, action.strafe(), action.forward(), movementFactor);
 
-        // The source client resolves movement before the post-move gravity/
-        // drag update. The common maze has no side walls, so Y is the only
-        // continuous collision axis here.
+        // Minecraft resolves the entity movement before post-move gravity/drag.
         p.x += p.vx;
         p.y += p.vy;
         p.z += p.vz;
@@ -105,9 +104,8 @@ public final class LegacyMovementModel implements PhysicsModel {
             p.vy = 0.0;
             p.grounded = true;
         } else {
-            // The player walked/slid off the physical maze while still at
-            // floor height. Let gravity take over instead of inventing a
-            // floor underneath the void.
+            // The player walked/was pushed off the physical maze at floor
+            // height. Do not invent support beneath the void.
             p.grounded = false;
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;

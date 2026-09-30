@@ -45,4 +45,11 @@ class HumanRunSimulatorExportTest {
                 + " ticks=" + result.ticks()
                 + " maxSpeed=" + result.maxHorizontalSpeed());
     }
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", " ")
+                .replace("\r", " ");
+    }
 }

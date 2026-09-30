@@ -582,7 +582,7 @@ public final class StableLiveMovementController {
                 else if (absError <= 35.0) steeringForward = 0.80;
                 else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
-                boolean sprint = forward >= 0.95 && absError <= 15.0;
+                boolean sprint = forward > 0.05;
                 // Non-Jumpers use the source Jump -10 + sprint-jump interaction
                 // as their normal speed mechanic. Jumper vertical jumps remain
                 // reserved for explicit terrain decisions.
@@ -600,7 +600,8 @@ public final class StableLiveMovementController {
                 double forward = Math.cos(errorRad) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
-                action = new Action(forward, strafe, jump, false, turn, false);
+                boolean sprint = forward > 0.05;
+                action = new Action(forward, strafe, jump, sprint, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
                 action = new Action(
@@ -964,12 +965,9 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        if (state.mode != me.monstermazeai.game.Mode.SPEED && isApproachingGap(state)) {
-            // In Modern mode preserve the conservative pre-gap cadence. Speed
-            // mode uses the source repeated Jump -10 + sprint-jump interaction
-            // and must be allowed to prime the horizontal impulse window.
-            return false;
-        }
+        // The repeated Jump -10 + sprint-jump acceleration is a Speed-mode
+        // mechanic. Modern non-Jumpers must stay on ordinary source movement.
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) return false;
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < cadenceTicks) {
@@ -1251,22 +1249,19 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
-        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? new Action[] {
-                    new Action(action.forward() * (0.20D + (0.50D * profile.attributes.handling)),
-                            action.strafe() * (0.20D + (0.50D * profile.attributes.handling)),
-                            false, action.sprint(), action.yawDelta(), false),
-                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                    new Action(0.0, counter, false, false, action.yawDelta(), false),
-                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
-                }
-                : new Action[] {
-                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                    new Action(0.0, counter, false, false, action.yawDelta(), false),
-                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
-                };
+        double supportScale = 0.20D + (0.50D * profile.attributes.handling);
+        Action[] alternatives = {
+                new Action(action.forward() * supportScale,
+                        action.strafe() * supportScale,
+                        action.jump(),
+                        action.sprint(),
+                        action.yawDelta(),
+                        false),
+                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                new Action(0.0, counter, false, false, action.yawDelta(), false),
+                new Action(0.0, -counter, false, false, action.yawDelta(), false)
+        };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
@@ -1547,11 +1542,13 @@ public final class StableLiveMovementController {
             strafe /= inputLength;
         }
 
+        double correctionForward = forward * magnitude;
+        double correctionStrafe = strafe * magnitude;
         Action correction = new Action(
-                forward * magnitude,
-                strafe * magnitude,
+                correctionForward,
+                correctionStrafe,
                 false,
-                false,
+                correctionForward > 0.05,
                 yawDelta,
                 false);
         return guardLaneCorrectionSupport(state, correction);
@@ -1709,7 +1706,19 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            double dodgeForward = state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? 0.90D
+                    : 0.65D;
+            double dodgeStrafe = state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? 0.55D
+                    : 1.0D;
+            Action dodge = new Action(
+                    dodgeForward,
+                    strafe * dodgeStrafe,
+                    shouldSpeedJump(state, allowJump),
+                    true,
+                    0.0F,
+                    false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id

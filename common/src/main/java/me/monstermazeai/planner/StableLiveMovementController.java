@@ -554,19 +554,19 @@ public final class StableLiveMovementController {
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
-            } else if (distance <= 1.05 && Math.abs(yawError) < 135.0F) {
+            } else if (distance <= 1.25 && Math.abs(yawError) < 135.0F) {
                 /*
-                 * At a tight 90-degree corner a real player can keep moving
-                 * through the turn with A/D while rotating the camera. Pure
-                 * yaw acquisition here unnecessarily leaves the player
-                 * stationary in a mob-filled maze. Use one cardinal strafe
-                 * toward the new segment while the camera continues to turn.
+                 * At a tight corner, keep a bounded W+A/D vector active while
+                 * the camera turns. The vector is derived from the actual
+                 * heading error, so it rotates smoothly toward the next
+                 * cardinal segment instead of strafing blindly.
                  */
-                double strafe = yawError > 0.0F ? -1.0 : 1.0;
-                action = new Action(
-                        0.0, strafe, false, false,
-                        turn, false);
-                lastDecisionDetail += " CORNER_STRAFE";
+                double errorRad = Math.toRadians(yawError);
+                double forward = Math.cos(errorRad) * 0.65D;
+                double strafe = -Math.sin(errorRad) * 0.65D;
+                boolean jump = shouldSpeedJump(state, allowJump);
+                action = new Action(forward, strafe, jump, false, turn, false);
+                lastDecisionDetail += " CORNER_VECTOR";
             } else {
                 action = new Action(
                         0.0, 0.0, false, false,
@@ -581,7 +581,8 @@ public final class StableLiveMovementController {
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 
-        if (!gapExecutionActive) {
+        if (!gapExecutionActive
+                && (distance <= 1.20D || Math.abs(crossTrack) > 0.20D)) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"

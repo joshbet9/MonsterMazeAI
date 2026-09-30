@@ -642,6 +642,8 @@ def normalize_run(run_dir: Path, output_dir: Path) -> Dict[str, Any]:
             "normalSpeedP50": quantile(normal_speeds, 0.50),
             "normalSpeedP95": quantile(normal_speeds, 0.95),
             "normalSpeedMax": max(normal_speeds) if normal_speeds else None,
+            "maxHorizontalSpeed": max((float(r["horizontalSpeed"] or 0.0) for r in normalized_ticks), default=0.0),
+            "maxTickDisplacement": max((float(r["displacement"] or 0.0) for r in normalized_ticks), default=0.0),
         },
         "death": {"cause": classify_death(all_events, end_reason), "causalChain": death_chain(all_events)},
     }
@@ -682,6 +684,7 @@ def compare_with_simulator(human_summary: Dict[str, Any], sim_payload: Dict[str,
     sim = find_sim_metrics(sim_payload)
     aliases = {
         "stageReached": ("stageReached", "stage_reached"),
+        "durationSeconds": ("durationSeconds", "duration_seconds"),
         "meanStageTimeSeconds": ("meanStageTimeSeconds", "mean_stage_time_seconds", "meanStageTime"),
         "directExcessRatioMean": ("directExcessRatioMean", "routeExcessRatio"),
         "stationaryFraction": ("stationaryFraction",),
@@ -692,6 +695,8 @@ def compare_with_simulator(human_summary: Dict[str, Any], sim_payload: Dict[str,
         "knockbackRecoveryRate": ("knockbackRecoveryRate",),
         "normalSpeedP50": ("normalSpeedP50",),
         "normalSpeedP95": ("normalSpeedP95",),
+        "maxHorizontalSpeed": ("maxHorizontalSpeed", "max_speed"),
+        "maxTickDisplacement": ("maxTickDisplacement", "max_tick_displacement"),
     }
     direction = {
         "stageReached": "higher",

@@ -7,6 +7,7 @@ import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.settings.MovementInput;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.init.Blocks;
 import net.minecraft.util.BlockPos;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.client.event.InputEvent;
@@ -68,6 +69,7 @@ public final class HumanRunRecorder implements Closeable {
     private BufferedWriter movementWriter;
     private BufferedWriter inputWriter;
     private BufferedWriter worldWriter;
+    private BufferedWriter objectiveWriter;
     private BufferedWriter navigationWriter;
     private BufferedWriter monsterWriter;
     private BufferedWriter mazeWriter;
@@ -116,6 +118,7 @@ public final class HumanRunRecorder implements Closeable {
     private int previousPhysicalFloorHash;
     private int previousMonsterIdsHash;
     private boolean previousAlive = true;
+    private String previousObjectiveSignature = "";
 
     private long records;
 
@@ -181,6 +184,13 @@ public final class HumanRunRecorder implements Closeable {
         String text = event.message.getUnformattedText();
         if (!Minecraft18RunBoundary.isTerminalChat(text)) return;
         pendingEndReason = "CHAT:" + sanitizeTerminalChat(text);
+        if (eventWriter != null && minecraft.theWorld != null) {
+            try {
+                writeEvent(minecraft.theWorld.getTotalWorldTime(), records, "TERMINAL_CHAT", sanitizeTerminalChat(text));
+            } catch (IOException e) {
+                System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER chat event write failed: " + e);
+            }
+        }
     }
 
     @SubscribeEvent
@@ -242,6 +252,7 @@ public final class HumanRunRecorder implements Closeable {
         movementWriter = open(new File(directory, "human-speed-run-" + runStamp + "-movement.jsonl").toPath());
         inputWriter = open(new File(directory, "human-speed-run-" + runStamp + "-input.jsonl").toPath());
         worldWriter = open(new File(directory, "human-speed-run-" + runStamp + "-world.jsonl").toPath());
+        objectiveWriter = open(new File(directory, "human-speed-run-" + runStamp + "-objectives.jsonl").toPath());
         navigationWriter = open(new File(directory, "human-speed-run-" + runStamp + "-navigation.jsonl").toPath());
         monsterWriter = open(new File(directory, "human-speed-run-" + runStamp + "-monsters.jsonl").toPath());
         mazeWriter = open(new File(directory, "human-speed-run-" + runStamp + "-maze.jsonl").toPath());
@@ -270,12 +281,14 @@ public final class HumanRunRecorder implements Closeable {
         previousPhysicalFloorHash = 0;
         previousMonsterIdsHash = 0;
         previousAlive = true;
+        previousObjectiveSignature = "";
         pendingEndReason = null;
 
         writeManifest(state, directory);
         writeHeader(movementWriter, "movement");
         writeHeader(inputWriter, "input");
         writeHeader(worldWriter, "world");
+        writeHeader(objectiveWriter, "objectives");
         writeHeader(navigationWriter, "navigation");
         writeHeader(monsterWriter, "monsters");
         writeHeader(mazeWriter, "maze");
@@ -294,6 +307,7 @@ public final class HumanRunRecorder implements Closeable {
             movementWriter = null;
             inputWriter = null;
             worldWriter = null;
+            objectiveWriter = null;
             navigationWriter = null;
             monsterWriter = null;
             mazeWriter = null;
@@ -321,6 +335,7 @@ public final class HumanRunRecorder implements Closeable {
                 + "human-speed-run-" + runStamp + "-movement.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-input.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-world.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-objectives.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-navigation.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-monsters.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-maze.jsonl\",\""
@@ -403,6 +418,7 @@ public final class HumanRunRecorder implements Closeable {
                 + "}");
 
         writeWorld(state, prefix, dt, healthDelta);
+        writeObjectivesIfRelevant(state);
         writeNavigation(state, prefix, dx, dz, displacement, horizontalSpeed);
         writeMonsters(state);
         writeMazeIfChanged(state);
@@ -470,6 +486,63 @@ public final class HumanRunRecorder implements Closeable {
         b.append(",\"activePad\":").append(padJson(state))
                 .append("}");
         writeLine(worldWriter, b.toString());
+    }
+
+    private void writeObjectivesIfRelevant(LegacyWorldObservation state) throws IOException {
+        if (state.center == null || state.safePadSeconds < 0) return;
+        if (state.safePadSeconds > 3
+                && state.pad != null
+                && state.pad.row == previousPadRow
+                && state.pad.column == previousPadColumn) {
+            return;
+        }
+
+        StringBuilder beacons = new StringBuilder("[");
+        StringBuilder signature = new StringBuilder();
+        boolean first = true;
+        int surfaceY = state.center.y - 1;
+        int minX = state.center.x - 49;
+        int maxX = state.center.x + 49;
+        int minZ = state.center.z - 49;
+        int maxZ = state.center.z + 49;
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                if (minecraft.theWorld.getBlockState(new BlockPos(x, surfaceY, z)).getBlock() != Blocks.beacon) {
+                    continue;
+                }
+                int row = x - minX;
+                int column = z - minZ;
+                boolean active = state.pad != null
+                        && state.pad.row == row
+                        && state.pad.column == column;
+                boolean preview = !active;
+                if (!first) beacons.append(",");
+                first = false;
+                beacons.append("{\"row\":").append(row)
+                        .append(",\"column\":").append(column)
+                        .append(",\"x\":").append(x)
+                        .append(",\"y\":").append(surfaceY)
+                        .append(",\"z\":").append(z)
+                        .append(",\"active\":").append(active)
+                        .append(",\"previewCandidate\":").append(preview)
+                        .append("}");
+                signature.append(row).append(":").append(column).append(":").append(active).append("|");
+            }
+        }
+        beacons.append("]");
+
+        String next = state.safePadSeconds + "|" + signature.toString()
+                + "|" + (state.pad == null ? "none" : state.pad.row + "," + state.pad.column);
+        if (next.equals(previousObjectiveSignature)) return;
+
+        writeLine(objectiveWriter, "{\"tick\":" + state.worldTick
+                + ",\"stage\":" + state.stage
+                + ",\"safePadSeconds\":" + state.safePadSeconds
+                + ",\"activePad\":" + padJson(state)
+                + ",\"beacons\":" + beacons
+                + ",\"note\":\"Beacon scan is performed only near the preview/transition window.\"}");
+        previousObjectiveSignature = next;
     }
 
     private void writeNavigation(LegacyWorldObservation state, String prefix,
@@ -731,6 +804,7 @@ public final class HumanRunRecorder implements Closeable {
         if (movementWriter != null) movementWriter.flush();
         if (inputWriter != null) inputWriter.flush();
         if (worldWriter != null) worldWriter.flush();
+        if (objectiveWriter != null) objectiveWriter.flush();
         if (navigationWriter != null) navigationWriter.flush();
         if (monsterWriter != null) monsterWriter.flush();
         if (mazeWriter != null) mazeWriter.flush();
@@ -863,6 +937,7 @@ public final class HumanRunRecorder implements Closeable {
             closeWriter(movementWriter);
             closeWriter(inputWriter);
             closeWriter(worldWriter);
+            closeWriter(objectiveWriter);
             closeWriter(navigationWriter);
             closeWriter(monsterWriter);
             closeWriter(mazeWriter);

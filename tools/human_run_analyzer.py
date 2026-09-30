@@ -61,8 +61,14 @@ def iter_jsonl(path: Optional[Path], errors: List[Dict[str, Any]]) -> Iterator[D
                 yield value
 
 
-def load_manifest(run_dir: Path) -> Tuple[Dict[str, Any], List[str], Optional[str]]:
-    candidates = [run_dir / "manifest.json"]
+def load_manifest(
+    run_dir: Path,
+    manifest_path: Optional[Path] = None,
+) -> Tuple[Dict[str, Any], List[str], Optional[str], Optional[Path]]:
+    candidates: List[Path] = []
+    if manifest_path is not None:
+        candidates.append(manifest_path)
+    candidates.extend([run_dir / "manifest.json"])
     candidates.extend(sorted(run_dir.glob("*-manifest.json")))
     candidates.extend(sorted((run_dir / "raw").glob("*-manifest.json")))
     manifest: Dict[str, Any] = {}
@@ -90,7 +96,7 @@ def load_manifest(run_dir: Path) -> Tuple[Dict[str, Any], List[str], Optional[st
                     continue
                 if obj.get("recordType") == "footer":
                     end_reason = obj.get("reason")
-    return manifest, [str(x) for x in manifest.get("files", [])], end_reason
+    return manifest, [str(x) for x in manifest.get("files", [])], end_reason, manifest_path
 
 
 def resolve_stream(run_dir: Path, stream: str, manifest_files: Sequence[str]) -> Optional[Path]:

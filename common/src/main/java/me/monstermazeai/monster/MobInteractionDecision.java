@@ -21,6 +21,20 @@ public final class MobInteractionDecision {
     private MobInteractionDecision() {}
 
     public static MonsterState chooseIntentionalBump(GameState state) {
+        return chooseIntentionalBump(state, 0.25);
+    }
+
+    /**
+     * Behavioural tuning only: stronger positive-knockback preference permits a
+     * slightly wider set of source-valid bump angles when a deadline makes
+     * contact an intentional route tool. It never changes the bump physics.
+     */
+    public static MonsterState chooseIntentionalBump(
+            GameState state, double positiveMobKnockback) {
+        if (!Double.isFinite(positiveMobKnockback)
+                || positiveMobKnockback < 0.0 || positiveMobKnockback > 1.0) {
+            throw new IllegalArgumentException("positiveMobKnockback must be in [0,1]");
+        }
         if (state == null || !state.alive || state.completed
                 || state.player.health <= MIN_SAFE_HEALTH
                 || state.activePadRow < 0 || state.activePadColumn < 0
@@ -62,7 +76,9 @@ public final class MobInteractionDecision {
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
             double towardPad = bumpUx * padUx + bumpUz * padUz;
-            if (towardPad < 0.70) continue;
+            double minimumTowardPad =
+                    0.70 - 0.30 * positiveMobKnockback;
+            if (towardPad < minimumTowardPad) continue;
 
             double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
             if (score < bestScore) {

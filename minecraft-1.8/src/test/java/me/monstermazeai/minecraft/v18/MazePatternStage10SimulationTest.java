@@ -416,7 +416,7 @@ public final class MazePatternStage10SimulationTest {
                         p.x, p.y, p.z,
                         p.vx, p.vy, p.vz,
                         p.yaw, 0.0F, p.grounded,
-                        20.0D, 20.0D),
+                        p.health, p.maxHealth),
                 kit,
                 tacticalState.ability.charges,
                 kit == Kit.BODY_BUILDER
@@ -838,6 +838,7 @@ public final class MazePatternStage10SimulationTest {
         Kit kit;
         int jumpCharges;
         double health = 20.0D;
+        double maxHealth = 20.0D;
     }
 
     private static final class Result {

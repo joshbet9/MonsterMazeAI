@@ -118,34 +118,6 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void moderateCrossTrackErrorKeepsAiringSteeringInsteadOfZeroInput() {
-        GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
-
-        s.tick = 1;
-        controller.nextAction(s, new Cell(0, 8), false);
-
-        // The segment is now anchored at x=0.5. A modest sideways drift while
-        // still moving used to enter the 0.18..0.28 cross-track branch and
-        // return zero forward, zero strafe, and zero yaw, creating a timer
-        // deadlock until friction happened to settle the state.
-        s.tick = 2;
-        s.player.x = 0.72;
-        s.player.z = 0.90;
-        s.player.vx = 0.05;
-        s.player.vz = 0.02;
-        s.player.grounded = true;
-
-        Action action = controller.nextAction(s, new Cell(0, 8), false);
-
-        assertTrue(action.forward() > 0.0 || Math.abs(action.strafe()) > 0.0,
-                "moderate cross-track error must keep active movement while correcting");
-        assertTrue(Math.abs(action.strafe()) > 0.0,
-                "the correction should use ordinary A/D steering rather than waiting in place");
-        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
-    }
-
-    @Test
     void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

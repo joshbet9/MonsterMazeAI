@@ -1275,53 +1275,46 @@ public final class StableLiveMovementController {
     }
 
     private double[] findAirRecoveryTarget(GameState state, Cell goal) {
-        double vx = state.player.vx;
-        double vz = state.player.vz;
-        double predictedX = state.player.x;
-        double predictedZ = state.player.z;
-        double vy = state.player.vy;
-        double predictedY = state.player.y;
-        int landingTicks = 0;
-
-        for (int i = 1; i <= 40; i++) {
-            predictedX += vx;
-            predictedY += vy;
-            predictedZ += vz;
-            vy = (vy - 0.08D) * 0.98D;
-            if (predictedY <= 0.0D && vy <= 0.0D) {
-                landingTicks = i;
-                break;
-            }
-        }
-
-        double padX = goal.row() + 0.5D;
-        double padZ = goal.column() + 0.5D;
-        double bestX = padX;
-        double bestZ = padZ;
+        /*
+         * The recovery controller actively cancels the measured knockback, so
+         * predicting a landing point from the uncorrected velocity is internally
+         * inconsistent. Instead, land on the nearest real physical floor under
+         * or around the player, with only a small bias toward the current goal.
+         * Once grounded, normal route planning resumes.
+         */
+        double bestX = state.player.x;
+        double bestZ = state.player.z;
         double bestScore = Double.POSITIVE_INFINITY;
 
-        if (landingTicks > 0) {
-            int centreRow = (int) Math.floor(predictedX);
-            int centreCol = (int) Math.floor(predictedZ);
-            for (int row = Math.max(0, centreRow - 5); row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 5); row++) {
-                for (int col = Math.max(0, centreCol - 5); col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 5); col++) {
-                    if (!state.maze.isPhysicalFloor(row, col)) continue;
-                    double x = row + 0.5D;
-                    double z = col + 0.5D;
-                    double landing = sq(x - predictedX) + sq(z - predictedZ);
-                    double pad = sq(x - padX) + sq(z - padZ);
-                    double score = landing + 0.10D * pad;
-                    if (score < bestScore) {
-                        bestScore = score;
-                        bestX = x;
-                        bestZ = z;
-                    }
+        int centreRow = (int) Math.floor(state.player.x);
+        int centreCol = (int) Math.floor(state.player.z);
+        double goalX = goal.row() + 0.5D;
+        double goalZ = goal.column() + 0.5D;
+
+        for (int row = Math.max(0, centreRow - 5);
+             row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 5); row++) {
+            for (int col = Math.max(0, centreCol - 5);
+                 col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 5); col++) {
+                if (!state.maze.isPhysicalFloor(row, col)) continue;
+
+                double x = row + 0.5D;
+                double z = col + 0.5D;
+                double currentDistance = sq(x - state.player.x) + sq(z - state.player.z);
+                double goalDistance = sq(x - goalX) + sq(z - goalZ);
+
+                // Safety dominates route progress during an airborne recovery.
+                double score = currentDistance + 0.03D * goalDistance;
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestX = x;
+                    bestZ = z;
                 }
             }
         }
 
         return new double[]{bestX, bestZ};
     }
+
 
     private static double sq(double value) {
         return value * value;

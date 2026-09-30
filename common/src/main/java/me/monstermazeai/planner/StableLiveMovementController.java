@@ -982,10 +982,20 @@ public final class StableLiveMovementController {
             return false;
         }
         if (isApproachingGap(state)) {
-            // The source speed mechanic can request frequent jump inputs, but a
-            // jump already in progress cannot be retimed when the player reaches
-            // a one-block void. Preserve the grounded takeoff state instead.
-            return false;
+            /*
+             * Do not suppress the source Jump -10 input in the final approach.
+             * The ten-tick server-side jump lock is the source timing mechanism:
+             * keeping jump active lets the next real horizontal impulse occur as
+             * soon as the lock expires, rather than creating an artificial
+             * no-jump window immediately before the gap.
+             *
+             * Human recordings repeatedly retain forward movement and show
+             * jump activity around monster/gap-heavy sections. The controller
+             * should therefore preserve the input and let LegacyMovementModel
+             * decide when the source impulse is actually legal.
+             */
+            lastSpeedJumpInputTick = state.tick;
+            return true;
         }
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE

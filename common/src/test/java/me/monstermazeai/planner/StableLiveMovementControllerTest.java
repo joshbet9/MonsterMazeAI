@@ -320,22 +320,41 @@ class StableLiveMovementControllerTest {
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         boolean crossed = false;
+        java.util.ArrayDeque<String> trace = new java.util.ArrayDeque<>();
         for (int tick = 1; tick <= 120; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(10, 30), true);
+            String detail = controller.lastDecisionDetail();
+            double preZ = s.player.z;
+            double preY = s.player.y;
+            double preVz = s.player.vz;
+            boolean preGrounded = s.player.grounded;
             physics.tick(s.player, action, s.maze, -10, true);
+            trace.addLast("tick=" + tick
+                    + " preZ=" + String.format(java.util.Locale.ROOT, "%.3f", preZ)
+                    + " preY=" + String.format(java.util.Locale.ROOT, "%.3f", preY)
+                    + " preVz=" + String.format(java.util.Locale.ROOT, "%.3f", preVz)
+                    + " grounded=" + preGrounded
+                    + " action=" + action
+                    + " postZ=" + String.format(java.util.Locale.ROOT, "%.3f", s.player.z)
+                    + " postY=" + String.format(java.util.Locale.ROOT, "%.3f", s.player.y)
+                    + " postVz=" + String.format(java.util.Locale.ROOT, "%.3f", s.player.vz)
+                    + " detail=" + detail);
+            while (trace.size() > 20) trace.removeFirst();
+
             if (s.player.z > 11.70) {
                 crossed = true;
                 break;
             }
-            assertTrue(s.player.y > -2.5,
-                    "non-Jumper fell through the one-block gap at tick " + tick
-                            + " detail=" + controller.lastDecisionDetail());
+            if (s.player.y <= -2.5) {
+                fail("non-Jumper fell through the one-block gap at tick " + tick
+                        + System.lineSeparator() + String.join(System.lineSeparator(), trace));
+            }
         }
 
         assertTrue(crossed,
-                "source-valid non-Jumper Speed movement did not clear the one-block gap; "
-                        + controller.lastDecisionDetail());
+                "source-valid non-Jumper Speed movement did not clear the one-block gap"
+                        + System.lineSeparator() + String.join(System.lineSeparator(), trace));
     }
 
     @Test

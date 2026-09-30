@@ -43,22 +43,22 @@ class SpeedProfileSweepTest {
             int minStage = Integer.MAX_VALUE;
             int maxStage = Integer.MIN_VALUE;
 
-            for (int pattern = 0; pattern < CASES.length; pattern++) {
-                for (Kit kit : CASES[pattern]) {
-                    AuthenticStage10SimulationTest.RunResult result =
-                            AuthenticStage10SimulationTest.runDiagnostic(
-                                    pattern, kit, profile, Mode.SPEED, 20);
-                    totalStage += result.maxStage();
-                    if (result.maxStage() >= 10) stage10++;
-                    if (result.maxStage() >= 15) stage15++;
-                    minStage = Math.min(minStage, result.maxStage());
-                    maxStage = Math.max(maxStage, result.maxStage());
+            for (int[] testCase : CASES) {
+                int pattern = testCase[0];
+                Kit kit = Kit.values()[testCase[1]];
+                AuthenticStage10SimulationTest.RunResult result =
+                        AuthenticStage10SimulationTest.runDiagnostic(
+                                pattern, kit, profile, Mode.SPEED, 20);
+                totalStage += result.maxStage();
+                if (result.maxStage() >= 10) stage10++;
+                if (result.maxStage() >= 15) stage15++;
+                minStage = Math.min(minStage, result.maxStage());
+                maxStage = Math.max(maxStage, result.maxStage());
 
-                    System.out.printf(
-                            "SPEED_PROFILE handling=%.2f pattern=%d kit=%s stage=%d ticks=%d hp=%s fallTick=%d%n",
-                            handling, pattern + 1, kit, result.maxStage(), result.ticks(),
-                            Double.toString(result.health()), result.firstFallTick());
-                }
+                System.out.printf(
+                        "SPEED_PROFILE handling=%.2f pattern=%d kit=%s stage=%d ticks=%d hp=%s fallTick=%d%n",
+                        handling, pattern + 1, kit, result.maxStage(), result.ticks(),
+                        Double.toString(result.health()), result.firstFallTick());
             }
 
             double average = totalStage / (double) CASES.length;

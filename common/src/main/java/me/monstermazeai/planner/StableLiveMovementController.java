@@ -53,6 +53,7 @@ public final class StableLiveMovementController {
     public AiProfile profile() {
         return profile;
     }
+
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
     private static final double ROUTE_DEVIATION = 0.55;
@@ -61,8 +62,14 @@ public final class StableLiveMovementController {
     private static final double PHYSICS_WALK_SPEED = 0.10D;
     private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
     private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
-    /** One-tick safety horizon matches the live observe -> decide -> move cadence. */
-    private static final int SUPPORT_LOOKAHEAD_TICKS = 1;
+    /**
+     * Minimum physical-support horizon. High reaction skill extends this
+     * lookahead so a fast player can brake/correct before the AABB reaches a
+     * one-block lane edge. The projection never changes physics; it only chooses
+     * an earlier source-valid input.
+     */
+    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -242,7 +249,8 @@ public final class StableLiveMovementController {
          * a nearby monster can be used as a source-faithful bump toward the
          * active pad. MobInteractionDecision refuses this at <= 2 hearts.
          */
-        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
+        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(
+                state, profile.tendencies.positiveMobKnockback);
         if (intentionalBump != null) {
             Action bumpAction = steerIntoMonster(state, intentionalBump);
             if (bumpAction != null) return bumpAction;
@@ -527,7 +535,11 @@ public final class StableLiveMovementController {
                     : crossSign * Math.signum(dirRow);
             float correctionYaw = cardinalYaw(dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
+            // A moderate residual velocity is still compatible with rotating
+            // the camera while applying A/D correction. Waiting for the player
+            // to become almost stationary turns a lateral recovery into a
+            // multi-tick slide toward the edge.
+            float yawDelta = speed <= 0.25D
                     ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
                     : 0.0F;
             action = new Action(0.0, strafe, false, false, yawDelta, false);
@@ -564,7 +576,8 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            float turn = clamp((float) (yawError * turnResponseGain()),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < waypointBrakeDistance()
@@ -603,10 +616,26 @@ public final class StableLiveMovementController {
                 action = new Action(forward, strafe, jump, false, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
+                /*
+                 * Large corner acquisition used to stop all translation while
+                 * the camera turned. On a one-cell floating corridor, vanilla
+                 * momentum continues during that turn, so the player can drift
+                 * beyond the supported AABB before the next observation. Use a
+                 * bounded backward input to bleed that momentum while preserving
+                 * the required 30-degree/tick camera limit. At near-zero speed we
+                 * retain the original pure in-place turn.
+                 */
+                boolean aggressiveCornerBrake = state.mode == me.monstermazeai.game.Mode.SPEED
+                        && state.kit == me.monstermazeai.kit.Kit.BODY_BUILDER;
+                double brakingForward = aggressiveCornerBrake && speed > MAX_TURNING_SPEED
+                        ? -Math.min(0.65D, speed * 2.5D)
+                        : 0.0D;
                 action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED ? turn : 0.0F,
-                        false);
+                        brakingForward, 0.0, false, false,
+                        turn, false);
+                lastDecisionDetail += brakingForward < 0.0
+                        ? " CORNER_BRAKE=" + format(brakingForward)
+                        : "";
             }
         } else {
             boolean brake = distance < waypointBrakeDistance()
@@ -619,7 +648,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -964,12 +993,11 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        if (isApproachingGap(state)) {
-            // The source speed mechanic can request frequent jump inputs, but a
-            // jump already in progress cannot be retimed when the player reaches
-            // a one-block void. Preserve the grounded takeoff state instead.
-            return false;
-        }
+        // For non-Jumpers, Jump -10 suppresses vertical lift while the source
+        // sprint-jump routine still supplies its horizontal impulse. Therefore
+        // the speeding cadence remains useful during the approach to a gap.
+        // Once the waypoint becomes an actual gap edge, executeCommittedGap()
+        // takes ownership of the timing and inputs.
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < cadenceTicks) {
@@ -1222,12 +1250,22 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
+        /*
+         * Do not turn an unsupported full-speed command directly into a hard
+         * stop. A source-valid reduced forward input can preserve lane progress
+         * while bleeding momentum, which is preferable to idling at a corner
+         * and exposing the player to monsters. Handling controls how much of the
+         * original command we are willing to retain.
+         */
+        double retain = 0.20D + (0.50D * profile.attributes.handling);
         Action[] alternatives = {
+                new Action(action.forward() * retain, action.strafe() * retain,
+                        false, action.sprint(), action.yawDelta(), false),
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),
@@ -1237,7 +1275,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks())) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1250,6 +1288,18 @@ public final class StableLiveMovementController {
         float correction = clamp(normalise(desired - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         return new Action(0.0, 0.0, false, false, correction, false);
+    }
+
+    private double turnResponseGain() {
+        // Agility changes only the controller's camera-input response. The
+        // source still caps the physical yaw change at 30 degrees/tick.
+        return 0.25D + profile.attributes.agility * 0.50D;
+    }
+
+    private int supportLookaheadTicks() {
+        int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
+        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
+                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {
@@ -1585,7 +1635,17 @@ public final class StableLiveMovementController {
             }
 
             Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
-            Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
+            /*
+             * This is an immediate contact-avoidance manoeuvre, not ordinary
+             * route steering. A long support forecast can turn a valid lateral
+             * escape into IDLE and leave the mob in the lane for the next tick.
+             * Commit only the immediate source-valid dodge here; subsequent
+             * observations can correct the lane again.
+             */
+            Action guarded = state.mode == me.monstermazeai.game.Mode.SPEED
+                    && hasPredictedPhysicalSupport(state, dodge, 1)
+                    ? dodge
+                    : guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
@@ -1934,6 +1994,12 @@ public final class StableLiveMovementController {
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
+            if (state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+                // Each source speeding edge begins with a fresh cadence window.
+                // Do not inherit a regular-route pulse that happened a few
+                // ticks earlier and accidentally suppress the pre-gap pulse.
+                lastSpeedJumpInputTick = Long.MIN_VALUE;
+            }
             return executeCommittedGap(state, allowJump);
         }
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
@@ -2006,6 +2072,29 @@ public final class StableLiveMovementController {
             }
         } else {
             gapLandingConfirmTicks = 0;
+        }
+
+        /*
+         * Non-Jumper speeding has no vertical landing event: the Jump -10 lock
+         * leaves the player grounded throughout the horizontal crossing. A fast
+         * player can therefore pass the destination-side AABB before the exact
+         * overlap check above gets sampled. Once grounded, supported, and beyond
+         * the gap boundary, the edge is physically complete and the motor must
+         * release it rather than continuing indefinitely along the old edge.
+         * This is controller state only; the vanilla physics/collision model is
+         * unchanged.
+         */
+        if (gapExecutionActive
+                && state.player.grounded
+                && progress > GAP_LANDING_PROGRESS
+                && hasPhysicalFloorFootprint(state.maze, state.player.x, state.player.z)) {
+            int completedIndex = waypointIndex;
+            clearGapCommitment();
+            waypointIndex = nextTurnWaypoint(route, completedIndex);
+            anchoredSegmentIndex = -1;
+            lastDecisionDetail = "GAP_CROSSED_CONFIRMED edge=" + fromRow + "," + fromColumn + "->"
+                    + toRow + "," + toColumn + " progress=" + format(progress);
+            return new Action(1.0, 0.0, false, true, 0.0F, false);
         }
         // Never fail a committed jump solely because its centre passed the
         // endpoint: the player's 0.6-wide AABB can still overlap the destination

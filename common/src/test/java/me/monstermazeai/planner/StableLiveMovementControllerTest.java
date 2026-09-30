@@ -118,6 +118,35 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void laneRecoveryRotatesTowardRouteWhileKeepingLateralCorrection() {
+        GameState s = state(0.5, 0.5, -90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        // Preserve the segment anchor but place the player modestly outside its
+        // corridor while already moving. The recovery must stay lateral for
+        // edge safety and also rotate the camera back toward the route.
+        s.tick = 2;
+        s.player.x = 0.90;
+        s.player.z = 1.50;
+        s.player.vx = 0.12;
+        s.player.vz = 0.00;
+        s.player.grounded = true;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertEquals(0.0, action.forward(), 1.0e-6);
+        assertNotEquals(0.0, action.strafe(), 1.0e-6);
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F,
+                "lane recovery should rotate toward the route while recovering laterally");
+        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -205,6 +234,11 @@ class StableLiveMovementControllerTest {
         StableLiveMovementController controller = new StableLiveMovementController();
         Action approach = controller.nextAction(s, new Cell(10, 30), true);
         assertEquals(1.0, approach.forward(), 0.0);
+        assertTrue(approach.jump(),
+                "non-Jumper speeding should keep its source jump cadence during the pre-gap approach");
+        assertFalse(controller.lastDecisionDetail().contains("GAP_PRECOMMIT"),
+                "the controller must not bypass normal gap heading acquisition");
+
         // Normal live movement may already be jump-spamming for a Jumper;
         // the important invariant is that the committed edge still emits a
         // jump input at the takeoff boundary.
@@ -219,6 +253,52 @@ class StableLiveMovementControllerTest {
         // The committed edge is now owned by the gap motor; the live
         // controller must issue the edge-timed jump before the source block
         // boundary rather than relying on ordinary jump-spam cadence.
+    }
+
+    @Test
+    void releasesCommittedNonJumperGapAfterSupportedDestinationCrossing() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        for (int column = 13; column <= 18; column++) raw[10][column] = 1;
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.activePadRow = 10;
+        s.activePadColumn = 18;
+        s.player.x = 10.5;
+        s.player.z = 9.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(10, 18), true);
+
+        s.player.z = 10.99;
+        s.tick = 2;
+        Action takeoff = controller.nextAction(s, new Cell(10, 18), true);
+        assertTrue(takeoff.jump(), controller.lastDecisionDetail());
+
+        // Model the grounded destination-side state after the horizontal
+        // Jump -10 speeding crossing. The controller should release the old
+        // gap rather than continuing to own the edge indefinitely.
+        s.player.z = 12.35;
+        s.player.vz = 0.12;
+        s.player.grounded = true;
+        s.tick = 3;
+        Action after = controller.nextAction(s, new Cell(10, 18), true);
+
+        assertFalse(controller.lastDecisionDetail().contains("GAP_EXECUTE"),
+                controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("GAP_CROSSED_CONFIRMED")
+                        || controller.lastDecisionDetail().contains("waypoint="),
+                controller.lastDecisionDetail());
+        assertTrue(after.forward() >= 0.0);
     }
 
     @Test
@@ -300,6 +380,26 @@ class StableLiveMovementControllerTest {
         assertTrue(Math.abs(action.yawDelta()) < 3.0F,
                 "small heading errors must not receive a full 12-degree correction");
         assertEquals(0.0, action.strafe(), 1.0e-6);
+    }
+
+    @Test
+    void highReactionProfileExtendsSupportLookaheadWithoutChangingPhysics() {
+        GameState s = state(0.5, 0.5, -90.0F);
+        StableLiveMovementController low = new StableLiveMovementController(
+                new me.monstermazeai.player.AiProfile(
+                        new me.monstermazeai.player.AiAttributes(0.6, 0.5, 0.5, 0.0),
+                        me.monstermazeai.player.AiTendencies.BASELINE));
+        StableLiveMovementController high = new StableLiveMovementController(
+                me.monstermazeai.player.AiProfile.HIGH_SKILL);
+
+        s.tick = 1;
+        Action lowAction = low.nextAction(s, new Cell(8, 0), false);
+        Action highAction = high.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(lowAction.forward() >= 0.0);
+        assertTrue(highAction.forward() >= 0.0);
+        assertTrue(high.lastDecisionDetail().contains("waypoint="),
+                high.lastDecisionDetail());
     }
 
     @Test

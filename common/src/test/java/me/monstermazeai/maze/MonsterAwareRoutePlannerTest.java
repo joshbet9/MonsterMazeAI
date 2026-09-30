@@ -141,10 +141,17 @@ class MonsterAwareRoutePlannerTest {
         raw[10][11] = 0;
         raw[10][13] = 0;
         state.maze = new MazeModel(raw);
+        // This policy test is about the gap-cost selector, so use a non-Jumper
+        // kit whose route is not constrained by charged-jump budget.
+        state.kit = Kit.MAVERICK;
 
+        Cell start = new Cell(10, 10);
+        Cell goal = new Cell(10, 14);
+        List<Cell> direct = new PlayerPathfinder().shortestPath(state.maze, start, goal);
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
-                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
+                .routeFast(state, start, goal);
 
+        System.out.println("GAP_POLICY direct=" + direct + " chosen=" + route.cells());
         assertEquals(List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)), route.cells());
     }
 

@@ -42,19 +42,28 @@ class MovementBenchmarkTest {
         GameState s = player();
         s.kit = Kit.MAVERICK;
         s.player.x = 10.5;
-        s.player.z = 10.95;
+        // Start at the block centre: source speeding must be established before
+        // the final edge tick, not invented as a single-tick teleport.
+        s.player.z = 10.50;
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
         s.player.vz = 0.39;
 
         LegacyMovementModel physics = new LegacyMovementModel();
-        physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
 
+        // First pulse builds/retains source-compatible horizontal momentum while
+        // the player is still physically supported by the source block.
+        physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
         assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
                 "Jump -10 must suppress vertical lift for non-Jumper speeding");
+        assertTrue(s.player.grounded, "the pre-edge speeding pulse must remain supported");
+
+        // The next source jump input supplies the horizontal 0.2 impulse again,
+        // allowing the AABB to cross onto the destination side.
+        physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
         assertTrue(s.player.z > 11.70,
-                "the source sprint-jump horizontal impulse must carry the player AABB onto the destination side");
+                "repeated source sprint-jump input must carry the player AABB onto the destination side");
         assertTrue(s.player.grounded,
                 "a successful speeding gap crossing must retain physical support on the destination block");
         assertTrue(s.player.vz > 0.0,

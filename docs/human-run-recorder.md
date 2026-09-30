@@ -68,11 +68,17 @@ A terminal chat event is marked first and the next client END tick is still writ
 
 ## Output
 
-Files are created under:
+Files are created in a persistent user-level directory, independent of Minecraft/LabyMod's active instance:
 
-`%APPDATA%\..\Roaming\.minecraft\human-runs\`
+`%APPDATA%\MonsterMazeAI\human-runs\`
 
-More precisely, the recorder uses Minecraft's `mcDataDir`, so the exact directory follows the active client's `.minecraft` data directory.
+On Josh's Windows setup this is normally:
+
+`C:\Users\Josh\AppData\Roaming\MonsterMazeAI\human-runs\`
+
+This deliberately does **not** use Minecraft's `mcDataDir`, because LabyMod can point `mcDataDir` at a temporary instance directory that disappears when the instance is closed.
+
+For advanced use, the output location can be overridden with the Java system property `monstermazeai.humanRunsDir`.
 
 Each game gets these focused files:
 

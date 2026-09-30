@@ -1033,11 +1033,15 @@ def main() -> int:
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--sim-summary", type=Path)
+    parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
 
     run_dir = args.run_dir.resolve()
     output_dir = args.output_dir.resolve() if args.output_dir else run_dir
-    result = normalize_run(run_dir, output_dir)
+    manifest_path = args.manifest
+    if manifest_path is not None and not manifest_path.is_absolute():
+        manifest_path = (Path.cwd() / manifest_path).resolve()
+    result = normalize_run(run_dir, output_dir, manifest_path=manifest_path)
 
     if args.sim_summary:
         comparison = compare_with_simulator(result["summary"], load_json(args.sim_summary))

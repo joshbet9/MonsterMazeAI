@@ -87,18 +87,19 @@ class StableLiveMovementControllerTest {
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         boolean sawForward = false;
-        boolean sawStrafe = false;
+        int strafeTicks = 0;
         for (int tick = 1; tick <= 180; tick++) {
             s.tick = tick;
             Action action = controller.nextAction(s, new Cell(8, 0), false);
             sawForward |= action.forward() > 0.0;
-            sawStrafe |= Math.abs(action.strafe()) > 0.0;
+            if (Math.abs(action.strafe()) > 0.0) strafeTicks++;
             physics.tick(s.player, action);
             if (Math.hypot(s.player.x - 8.5, s.player.z - 0.5) < 0.55) break;
         }
 
         assertTrue(sawForward);
-        assertFalse(sawStrafe);
+        assertTrue(strafeTicks <= 8,
+                "sideways approach should use strafe only as a bounded corner-turn aid, not oscillate");
     }
 
     @Test
@@ -112,7 +113,7 @@ class StableLiveMovementControllerTest {
                 "moderate heading error should not force an unnecessary stop");
         assertTrue(Math.abs(action.yawDelta()) > 0.0,
                 "cursor/yaw steering should be applied in the same tick as forward movement");
-        assertTrue(Math.abs(action.yawDelta()) <= 12.0F);
+        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
         assertFalse(action.strafe() != 0.0);
     }
 

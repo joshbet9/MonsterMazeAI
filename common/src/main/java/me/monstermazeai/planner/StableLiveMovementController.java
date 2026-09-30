@@ -519,42 +519,33 @@ public final class StableLiveMovementController {
 
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
-             * A player can remain physically supported while the block
-             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
-             * lateral error is therefore not source-like: A/D correction is a
-             * normal Minecraft input and is the safest way to recover the lane
-             * without cutting the cardinal corridor.
+             * Correct toward the actual anchored lane in world space, then
+             * convert that correction into the player's current W/A/D frame.
+             * The previous sign-only strafe could point away from the lane once
+             * yaw had drifted, producing a repeatable edge-guard -> zero-input
+             * deadlock even though the player still had supported floor nearby.
              */
-            int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
-            float correctionYaw = cardinalYaw(dirRow, dirColumn);
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = (state.mode == me.monstermazeai.game.Mode.SPEED && speed <= 0.25D)
-                    || (state.mode != me.monstermazeai.game.Mode.SPEED && speed <= MAX_TURNING_SPEED)
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
-            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
-        } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-
-            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
-                action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED
-                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                                : 0.0F,
-                        false);
-            } else {
-                action = new Action(1.0, 0.0, false, true, 0.0F, false);
+            action = laneCorrectionAction(state, dirRow, dirColumn, 0.90D);
+            if (action == null) {
+                action = Action.IDLE;
             }
+            lastDecisionDetail += " LANE_RECOVERY_WORLD crossTrack=" + format(crossTrack)
+                    + " output=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe());
+        } else if (Math.abs(crossTrack) > 0.18) {
+            /*
+             * Medium cross-track error is still a correction state, not a reason
+             * to wait for momentum to decay. Keep a bounded lateral input while
+             * the camera converges; the projected-support guard remains the final
+             * authority near an actual edge.
+             */
+            action = laneCorrectionAction(state, dirRow, dirColumn, 0.60D);
+            if (action == null) {
+                action = Action.IDLE;
+            }
+            lastDecisionDetail += " LANE_FINE crossTrack=" + format(crossTrack)
+                    + " output=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe());
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Normal steering is concurrent with forward movement. This is
@@ -1493,6 +1484,56 @@ public final class StableLiveMovementController {
         return new double[]{bestX, bestZ};
     }
 
+    private Action laneCorrectionAction(
+            GameState state, int dirRow, int dirColumn, double magnitude) {
+        double targetX = state.player.x;
+        double targetZ = state.player.z;
+        if (dirRow == 0) {
+            targetX = laneAnchorX;
+        } else {
+            targetZ = laneAnchorZ;
+        }
+
+        double worldX = targetX - state.player.x;
+        double worldZ = targetZ - state.player.z;
+        double length = Math.hypot(worldX, worldZ);
+        if (length < 1.0E-6D) return null;
+        worldX /= length;
+        worldZ /= length;
+
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float gain = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? turnResponseGain() : 0.5F;
+        float yawDelta = clamp(yawError * gain,
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double forwardWorldX = -Math.sin(postYaw);
+        double forwardWorldZ = Math.cos(postYaw);
+        double strafeWorldX = Math.cos(postYaw);
+        double strafeWorldZ = Math.sin(postYaw);
+
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+        double inputLength = Math.hypot(forward, strafe);
+        if (inputLength > 1.0D) {
+            forward /= inputLength;
+            strafe /= inputLength;
+        }
+
+        Action correction = new Action(
+                forward * magnitude,
+                strafe * magnitude,
+                false,
+                false,
+                yawDelta,
+                false);
+        Action guarded = guardProjectedSupport(
+                state, correction, dirRow, dirColumn);
+        return guarded;
+    }
+
     private double waypointBrakeDistance() {
         // High handling lets a player carry more vanilla momentum through a
         // corner; low handling starts braking earlier. The baseline value remains
@@ -1641,11 +1682,68 @@ public final class StableLiveMovementController {
                         -routeDirRow, -routeDirColumn);
                 float yawError = normalise(desiredYaw - state.player.yaw);
                 float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                lastDecisionDetail = "MOB_YIELD_GAP_HOLD"
+                /*
+                 * The gap that brought us onto the current cell is behind us.
+                 * Holding here while a mob occupies the forward corridor creates
+                 * a fatal stationary loop: there is no safe reverse edge and the
+                 * monster can repeatedly collide with a stationary player.
+                 *
+                 * Commit through the current supported segment instead. This is
+                 * still ordinary Minecraft movement; collision/knockback remain
+                 * authoritative. If the next segment itself is another gap, let
+                 * the dedicated gap motor below own the transition.
+                 */
+                if (waypointIndex < route.size() - 1) {
+                    Cell next = route.cells().get(waypointIndex);
+                    Cell after = route.cells().get(waypointIndex + 1);
+                    if (!isGapEdge(state, next.row(), next.column(), after.row(), after.column())) {
+                        int commitRow = Integer.signum(after.row() - next.row());
+                        int commitColumn = Integer.signum(after.column() - next.column());
+                        float commitYaw = cardinalYaw(commitRow, commitColumn);
+                        float commitError = normalise(commitYaw - state.player.yaw);
+                        float commitTurn = clamp(
+                                commitError * (state.mode == me.monstermazeai.game.Mode.SPEED
+                                        ? turnResponseGain() : 0.5F),
+                                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                        double postYaw = Math.toRadians(state.player.yaw + commitTurn);
+                        double worldX = commitRow;
+                        double worldZ = commitColumn;
+                        double forwardWorldX = -Math.sin(postYaw);
+                        double forwardWorldZ = Math.cos(postYaw);
+                        double strafeWorldX = Math.cos(postYaw);
+                        double strafeWorldZ = Math.sin(postYaw);
+                        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+                        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+                        double magnitude = Math.hypot(forward, strafe);
+                        if (magnitude > 1.0D) {
+                            forward /= magnitude;
+                            strafe /= magnitude;
+                        }
+                        double drive = 0.78D;
+                        Action commit = new Action(
+                                forward * drive,
+                                strafe * drive,
+                                shouldSpeedJump(state, allowJump),
+                                state.mode == me.monstermazeai.game.Mode.SPEED,
+                                commitTurn,
+                                false);
+                        Action guarded = guardProjectedSupport(
+                                state, commit, commitRow, commitColumn);
+                        lastDecisionDetail = "MOB_YIELD_GAP_COMMIT"
+                                + " monster=" + threat.id
+                                + " distance=" + format(bestDistance)
+                                + " yawError=" + format(commitError)
+                                + " output=f=" + format(guarded.forward())
+                                + ",s=" + format(guarded.strafe());
+                        return guarded;
+                    }
+                }
+
+                lastDecisionDetail = "MOB_YIELD_GAP_DEFER"
                         + " monster=" + threat.id
                         + " distance=" + format(bestDistance)
                         + " yawError=" + format(yawError);
-                return new Action(0.0, 0.0, false, false, yawDelta, false);
+                return null;
             }
 
             float desiredYaw = cardinalYaw(-routeDirRow, -routeDirColumn);

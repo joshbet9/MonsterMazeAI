@@ -520,7 +520,6 @@ public final class StableLiveMovementController {
                 dirRow, dirColumn);
 
         Action action;
-        boolean laneRecovery = false;
 
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
@@ -540,7 +539,6 @@ public final class StableLiveMovementController {
                     ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
                     : 0.0F;
             action = new Action(0.0, strafe, false, false, yawDelta, false);
-            laneRecovery = true;
             lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
                     + " strafe=" + format(strafe);
         } else if (Math.abs(crossTrack) > 0.18) {
@@ -631,19 +629,7 @@ public final class StableLiveMovementController {
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
                 && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
-            /*
-             * Speed's lane-recovery input is an immediate closed-loop escape,
-             * not a long-horizon route command. If the lateral correction is
-             * physically supported for the next tick, let it execute and let
-             * the following observation reassess the lane. This mirrors the
-             * proven Speed emergency-dodge rule without changing physics.
-             */
-            boolean speedImmediateLaneRecovery = state.mode == me.monstermazeai.game.Mode.SPEED
-                    && laneRecovery
-                    && hasPredictedPhysicalSupport(state, action, 1);
-            Action guarded = speedImmediateLaneRecovery
-                    ? action
-                    : guardProjectedSupport(state, action, dirRow, dirColumn);
+            Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
                         + " raw=f=" + format(action.forward())

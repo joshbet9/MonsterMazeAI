@@ -4,14 +4,12 @@ import me.monstermazeai.adapter.LegacyWorldObservation;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.settings.MovementInput;
+import net.minecraft.util.MovementInput;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.BlockPos;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
-import net.minecraftforge.client.event.InputEvent;
-import net.minecraftforge.client.event.InputUpdateEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -99,6 +97,8 @@ public final class HumanRunRecorder implements Closeable {
     private boolean rawUseItem;
     private boolean mouseLeftPulse;
     private boolean mouseRightPulse;
+    private boolean previousMouseLeftDown;
+    private boolean previousMouseRightDown;
 
     private float previousYaw = Float.NaN;
     private long previousWorldTick = Long.MIN_VALUE;
@@ -148,16 +148,16 @@ public final class HumanRunRecorder implements Closeable {
         return currentManifest;
     }
 
-    @SubscribeEvent
-    public void onInputUpdate(InputUpdateEvent event) {
-        if (!enabled || event == null || event.entityPlayer != minecraft.thePlayer) return;
-        MovementInput input = event.movementInput;
+    private void captureInput() {
         EntityPlayerSP player = minecraft.thePlayer;
-        if (input == null || player == null) return;
+        if (player == null) return;
 
-        inputForward = input.moveForward;
-        inputStrafe = input.moveStrafe;
-        inputJump = input.jump;
+        MovementInput input = player.movementInput;
+        if (input != null) {
+            inputForward = input.moveForward;
+            inputStrafe = input.moveStrafe;
+            inputJump = input.jump;
+        }
         inputSprint = minecraft.gameSettings.keyBindSprint.isKeyDown();
 
         rawForward = minecraft.gameSettings.keyBindForward.isKeyDown();
@@ -169,14 +169,13 @@ public final class HumanRunRecorder implements Closeable {
         rawSneak = minecraft.gameSettings.keyBindSneak.isKeyDown();
         rawAttack = minecraft.gameSettings.keyBindAttack.isKeyDown();
         rawUseItem = minecraft.gameSettings.keyBindUseItem.isKeyDown();
-    }
 
-    @SubscribeEvent
-    public void onMouseInput(InputEvent.MouseInputEvent event) {
-        if (!enabled || event == null) return;
-        int button = Mouse.getEventButton();
-        if (button == 0 && Mouse.getEventButtonState()) mouseLeftPulse = true;
-        if (button == 1 && Mouse.getEventButtonState()) mouseRightPulse = true;
+        boolean leftDown = Mouse.isButtonDown(0);
+        boolean rightDown = Mouse.isButtonDown(1);
+        mouseLeftPulse = leftDown && !previousMouseLeftDown;
+        mouseRightPulse = rightDown && !previousMouseRightDown;
+        previousMouseLeftDown = leftDown;
+        previousMouseRightDown = rightDown;
     }
 
     @SubscribeEvent
@@ -219,7 +218,8 @@ public final class HumanRunRecorder implements Closeable {
         }
 
         try {
-            write(state);
+            captureInput();
+        write(state);
         } catch (IOException e) {
             System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER write failed: " + e);
             finish("WRITE_ERROR");
@@ -450,6 +450,8 @@ public final class HumanRunRecorder implements Closeable {
         previousAlive = state.alive;
         mouseLeftPulse = false;
         mouseRightPulse = false;
+        previousMouseLeftDown = false;
+        previousMouseRightDown = false;
 
         if (records % 20L == 0L) flushAll();
     }

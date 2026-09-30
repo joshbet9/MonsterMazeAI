@@ -213,6 +213,9 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
+        Action mobAvoidance = avoidIncomingMonster(state);
+        if (mobAvoidance != null) return mobAvoidance;
+
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
         boolean objectiveChanged = goal.row() != goalRow
@@ -1165,6 +1168,97 @@ public final class StableLiveMovementController {
 
     private static double sq(double value) {
         return value * value;
+    }
+
+    /**
+     * Baseline high-skill behaviour: normal monster contact is not treated as
+     * the default route. When a mob is entering the player's lane, use ordinary
+     * Minecraft A/D or S input to create separation, but only toward a cell
+     * which is physically supported. This keeps the behaviour source-valid and
+     * leaves genuine unavoidable contacts to MonsterManager.bump().
+     */
+    private Action avoidIncomingMonster(GameState state) {
+        if (!state.player.grounded || state.maze == null) return null;
+
+        Cell supported = resolveSupportedStartCell(state);
+        if (supported == null) return null;
+
+        int routeDirRow = 0;
+        int routeDirColumn = 0;
+        if (route != null && waypointIndex > 0 && waypointIndex < route.size()) {
+            Cell from = route.cells().get(waypointIndex - 1);
+            Cell to = route.cells().get(waypointIndex);
+            routeDirRow = Integer.signum(to.row() - from.row());
+            routeDirColumn = Integer.signum(to.column() - from.column());
+        }
+        if (routeDirRow == 0 && routeDirColumn == 0) return null;
+
+        MonsterState threat = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (MonsterState monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            double distance = Math.hypot(dx, dz);
+            if (distance > 2.15D || distance < 0.05D) continue;
+
+            double along = dx * routeDirRow + dz * routeDirColumn;
+            if (along <= 0.0D || along > 2.15D) continue;
+
+            double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
+            if (lateral > 0.95D) continue;
+
+            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
+            double score = distance - 0.20D * Math.max(0.0D, closing);
+            if (score < bestScore) {
+                bestScore = score;
+                bestDistance = distance;
+                threat = monster;
+            }
+        }
+
+        if (threat == null) return null;
+
+        int sideRow = routeDirColumn;
+        int sideColumn = -routeDirRow;
+        Cell left = new Cell(supported.row() + sideRow, supported.column() + sideColumn);
+        Cell right = new Cell(supported.row() - sideRow, supported.column() - sideColumn);
+
+        boolean leftFloor = inBounds(left.row(), left.column())
+                && state.maze.isPhysicalFloor(left.row(), left.column());
+        boolean rightFloor = inBounds(right.row(), right.column())
+                && state.maze.isPhysicalFloor(right.row(), right.column());
+
+        double monsterLateral = (threat.x - state.player.x) * routeDirColumn
+                - (threat.z - state.player.z) * routeDirRow;
+
+        if (leftFloor || rightFloor) {
+            double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
+            double strafe;
+            if (preferred < 0.0D && leftFloor) {
+                strafe = -1.0D;
+            } else if (preferred > 0.0D && rightFloor) {
+                strafe = 1.0D;
+            } else if (leftFloor) {
+                strafe = -1.0D;
+            } else {
+                strafe = 1.0D;
+            }
+
+            lastDecisionDetail = "MOB_DODGE"
+                    + " monster=" + threat.id
+                    + " distance=" + format(bestDistance)
+                    + " strafe=" + format(strafe);
+            return new Action(0.65, strafe, false, true, 0.0F, false);
+        }
+
+        lastDecisionDetail = "MOB_YIELD"
+                + " monster=" + threat.id
+                + " distance=" + format(bestDistance);
+        return new Action(-0.65, 0.0, false, false, 0.0F, false);
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

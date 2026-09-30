@@ -8,7 +8,6 @@ import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterRelevance;
 import me.monstermazeai.physics.LegacyMovementModel;
 import me.monstermazeai.physics.MonsterMazeBumpModel;
-import me.monstermazeai.physics.SpeedContactModel;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.PlayerState;
 
@@ -95,9 +94,11 @@ public final class TacticalRouteSimulator {
     private void step(GameState state, Action action, MonsterSimulator monsters) {
         if (action.useAbility()) abilities.activate(state);
 
-        PlayerState beforeContact = state.player.copy();
         boolean wasGrounded = state.player.grounded;
-        physics.tick(state.player, action, state.maze);
+        int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                ? (state.ability.charges > 0 ? 0 : -10)
+                : -10;
+        physics.tick(state.player, action, state.maze, jumpAmplifier);
 
         // Preserve source recovery/fall behaviour; only unrecoverable fall ends
         // a branch.
@@ -113,12 +114,8 @@ public final class TacticalRouteSimulator {
         }
 
         monsters.tick(state);
-        double healthBeforeBump = state.player.health;
-        MonsterMazeBumpModel.apply(state);
-
         // MonsterManager/UtilAction remains authoritative for the bump itself.
-        SpeedContactModel.applyConservativeSlideOutcome(
-                beforeContact, state, state.maze, action, state.player.health < healthBeforeBump);
+        MonsterMazeBumpModel.apply(state);
 
         if (isOnActivePad(state)) {
             abilities.onReachedPad(state, true);

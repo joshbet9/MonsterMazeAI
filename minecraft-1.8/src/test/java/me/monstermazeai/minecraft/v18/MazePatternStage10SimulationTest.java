@@ -137,6 +137,8 @@ public final class MazePatternStage10SimulationTest {
                         + " movementTicks=" + result.movementTicks
                         + " gaps=" + result.gapsSeen
                         + " gapLandings=" + result.gapLandings
+                        + " abilities=" + result.abilityUses
+                        + " mobBumps=" + result.mobBumps
                         + " maxSpeed=" + format(result.maxSpeed)
                         + " failure=" + result.failure;
                 System.err.println("SIM " + line);
@@ -874,6 +876,8 @@ public final class MazePatternStage10SimulationTest {
         int movementTicks;
         int gapsSeen;
         int gapLandings;
+        int abilityUses;
+        int mobBumps;
         double maxSpeed;
         String failure;
         StringBuilder controllerLog = new StringBuilder();

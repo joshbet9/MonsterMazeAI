@@ -43,18 +43,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AuthenticStage10SimulationTest {
     private static final int REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
-    private static final int INITIAL_MONSTERS = 225;
-    private static final int ADDITIONAL_MONSTERS = 30;
 
     @Test
-    void allSourcePatternsAndKitsReachStageTen() {
+    void allModernSourcePatternsAndKitsReachStageTen() {
         List<String> failures = new ArrayList<>();
 
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
-                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL);
+                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.MODERN);
                 if (result.maxStage < REQUIRED_STAGE) {
-                    failures.add("pattern=" + (pattern + 1)
+                    failures.add("mode=MODERN pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage
                             + " tick=" + result.ticks
@@ -74,11 +72,37 @@ class AuthenticStage10SimulationTest {
         assertTrue(failures.isEmpty(), String.join(System.lineSeparator(), failures));
     }
 
-    private RunResult run(int pattern, Kit kit) {
-        return run(pattern, kit, AiProfile.BASELINE);
+    @Test
+    void allSpeedSourcePatternsAndKitsReachStageTen() {
+        List<String> failures = new ArrayList<>();
+
+        for (int pattern = 0; pattern < 3; pattern++) {
+            for (Kit kit : Kit.values()) {
+                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
+                System.out.printf("SPEED pattern=%d kit=%s stage=%d%n",
+                        pattern + 1, kit, result.maxStage);
+                if (result.maxStage < REQUIRED_STAGE) {
+                    failures.add("mode=SPEED pattern=" + (pattern + 1)
+                            + " kit=" + kit
+                            + " stage=" + result.maxStage
+                            + " tick=" + result.ticks
+                            + " health=" + result.health
+                            + " pos=(" + result.x + "," + result.z + ")"
+                            + " firstFallTick=" + result.firstFallTick
+                            + " firstFallDecision=" + result.firstFallDecision
+                            + " decision=" + result.decision);
+                }
+            }
+        }
+
+        assertTrue(failures.isEmpty(), String.join(System.lineSeparator(), failures));
     }
 
-    private RunResult run(int pattern, Kit kit, AiProfile profile) {
+    private RunResult run(int pattern, Kit kit) {
+        return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
+    }
+
+    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -89,7 +113,7 @@ class AuthenticStage10SimulationTest {
         MazeModel maze = new MazeModel(raw);
 
         GameState state = new GameState();
-        state.mode = Mode.MODERN;
+        state.mode = mode;
         state.mazePattern = pattern;
         state.maze = maze;
         state.kit = kit;
@@ -117,7 +141,7 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = INITIAL_MONSTERS;
+        state.pendingMonsterSpawns = initialMonsterCount(mode);
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -174,7 +198,7 @@ class AuthenticStage10SimulationTest {
             }
 
             if (state.stage != lastStage) {
-                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, ADDITIONAL_MONSTERS);
+                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
                 state.pendingMonsterSpawns -= spawned;
                 if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
 
@@ -241,6 +265,14 @@ class AuthenticStage10SimulationTest {
 
     private static void syncPadSurfaces(GameState state) {
         new me.monstermazeai.game.GameProgressionModel().syncPadSurfaces(state);
+    }
+
+    private static int initialMonsterCount(Mode mode) {
+        return mode == Mode.MODERN || mode == Mode.CLASSIC ? 225 : 150;
+    }
+
+    private static int additionalMonsterCount(Mode mode) {
+        return mode == Mode.MODERN || mode == Mode.CLASSIC ? 30 : 15;
     }
 
     private static int spawnInitialBatch(GameState state, Random random, int[] nextId, int count) {

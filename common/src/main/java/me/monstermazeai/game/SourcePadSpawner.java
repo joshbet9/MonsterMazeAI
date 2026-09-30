@@ -92,7 +92,7 @@ public final class SourcePadSpawner {
         for (int i = 0; i < 8 && !candidates.isEmpty(); i++) {
             ArrayList<Cell> avoid = new ArrayList<>(safeZones);
             avoid.add(center);
-            Cell chosen = findFurthest(candidateListAsCells(candidates), avoid);
+            Cell chosen = findLocationAwayFrom(candidates, avoid);
             safeZones.add(chosen);
             candidates.removeIf(c -> distanceSq(chosen, c) <= 36.0);
         }
@@ -119,6 +119,23 @@ public final class SourcePadSpawner {
         return dr * dr + dc * dc;
     }
 
+    private Cell findLocationAwayFrom(List<Cell> locations, List<Cell> awayFrom) {
+        Cell best = null;
+        double bestDistance = -1.0;
+        for (Cell location : locations) {
+            double closest = Double.POSITIVE_INFINITY;
+            for (Cell away : awayFrom) {
+                closest = Math.min(closest, distanceSq(location, away));
+            }
+            if (closest > bestDistance) {
+                bestDistance = closest;
+                best = location;
+            }
+        }
+        if (best == null) throw new IllegalStateException("No SafePad safe-zone candidate");
+        return best;
+    }
+
     private Cell findFurthest(Cell from, List<Cell> list) {
         if (list.isEmpty()) throw new IllegalStateException("No valid SafePad spawn candidates");
         double bestSq = -1.0;
@@ -136,7 +153,4 @@ public final class SourcePadSpawner {
         return best.get(random.nextInt(best.size()));
     }
 
-    private static List<Cell> candidateListAsCells(List<Cell> cells) {
-        return cells;
-    }
 }

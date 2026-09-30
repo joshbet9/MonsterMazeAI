@@ -19,7 +19,7 @@ class HumanRunAnalyzerTest(unittest.TestCase):
         self.assertEqual(info["safePadSeconds"], 28)
         self.assertEqual(info["mode"], "speed")
 
-    def test_scoreboard_overrides_corrupt_observer_kit_and_stage(self):
+    def test_observer_kit_and_stage_are_authoritative_over_scoreboard_conflicts(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "human-speed-run-test-manifest.json").write_text(
@@ -67,8 +67,8 @@ class HumanRunAnalyzerTest(unittest.TestCase):
             write_stream("world", [
                 {
                     "tick":100,"stage":1,"phaseTimerSeconds":60,"alive":True,"completed":False,"mazeDetected":True,"mazePattern":2,
-                    "kit":"JUMPER","jumpCharges":3,"abilityCharges":1,"health":20,"healthDelta":0,
-                    "scoreboardTitle":"Monster Maze","scoreboardLines":["3 (Maverick)","Stage","1","60 Seconds","Safe Pad","Speed","Mode"],
+                    "kit":"MAVERICK","jumpCharges":3,"abilityCharges":1,"health":20,"healthDelta":0,
+                    "scoreboardTitle":"Monster Maze","scoreboardLines":["3 (Repulsor)","Stage","1","60 Seconds","Safe Pad","Speed","Mode"],
                     "activePad":{"row":11,"column":20,"distanceSq":4,"reached":False},
                 },
                 {
@@ -80,7 +80,7 @@ class HumanRunAnalyzerTest(unittest.TestCase):
                 {
                     "tick":102,"stage":1,"phaseTimerSeconds":60,"alive":True,"completed":False,"mazeDetected":True,"mazePattern":2,
                     "kit":"JUMPER","jumpCharges":3,"abilityCharges":1,"health":20,"healthDelta":0,
-                    "scoreboardTitle":"Monster Maze","scoreboardLines":["3 (Maverick)","Stage","2","60 Seconds","Safe Pad","Speed","Mode"],
+                    "scoreboardTitle":"Monster Maze","scoreboardLines":["3 (Repulsor)","Stage","1","60 Seconds","Safe Pad","Speed","Mode"],
                     "activePad":{"row":12,"column":20,"distanceSq":4,"reached":False},
                 },
             ])

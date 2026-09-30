@@ -180,6 +180,12 @@ public final class StableLiveMovementController {
      * available before the player leaves the source AABB.
      */
     private static final double NONJUMPER_GAP_COMMIT_PROGRESS = -4.40D;
+    /*
+     * Human Speed traces use discrete Jump -10 presses rather than holding the
+     * key for the whole gap. Two-tick spacing permits a release/reset tick
+     * between horizontal impulse writes in the source-faithful movement model.
+     */
+    private static final long NONJUMPER_GAP_PULSE_TICKS = 2L;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -1000,14 +1006,12 @@ public final class StableLiveMovementController {
         }
         if (isApproachingGap(state)) {
             if (state.mode == me.monstermazeai.game.Mode.SPEED) {
-                /*
-                 * Speed-mode human traces retain forward input into gap-heavy
-                 * sections. Keep the source jump input active and let the
-                 * simulator/server-side jump lock decide when the horizontal
-                 * impulse is actually legal.
-                 */
-                lastSpeedJumpInputTick = state.tick;
-                return true;
+                if (lastSpeedJumpInputTick == Long.MIN_VALUE
+                        || state.tick - lastSpeedJumpInputTick >= NONJUMPER_GAP_PULSE_TICKS) {
+                    lastSpeedJumpInputTick = state.tick;
+                    return true;
+                }
+                return false;
             }
             // Preserve the pre-calibration Modern/Original behaviour.
             return false;
@@ -2054,36 +2058,34 @@ public final class StableLiveMovementController {
         boolean jumpThisTick = false;
 
         /*
-         * Non-Jumper speeding is a deliberate repeated jump input while
-         * remaining grounded. The source Jump -10 removes the vertical impulse,
-         * but the sprint-jump routine still writes the horizontal 0.2 impulse.
-         * Let the configured Max Speed cadence continue for the whole committed
-         * crossing until the destination AABB is physically overlapped. The
-         * source jump lock turns these inputs into horizontal sprint-jump
-         * impulses for non-Jumpers without adding vertical lift.
+         * The source-faithful non-Jumper Speed mechanic is a discrete Jump -10
+         * pulse. The released tick resets jumpTicks, allowing the next pulse to
+         * write another horizontal impulse. Do not use destination AABB overlap
+         * as the cutoff: the player's AABB can touch the far block while the
+         * feet are already unsupported, which was the exact observed failure.
+         * Restrict the calibrated edge pulses to the last ~1 block of the source
+         * crossing; normal steering owns the earlier run-up.
          */
         boolean destinationOverlapping = playerAabbOverlapsCell(state, toRow, toColumn);
-        boolean nonJumperGapHold = state.mode == me.monstermazeai.game.Mode.SPEED
+        boolean nonJumperSpeedPulse = state.mode == me.monstermazeai.game.Mode.SPEED
                 && state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
-                && !destinationOverlapping;
-        boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && progress < 1.05D
+                && (lastSpeedJumpInputTick == Long.MIN_VALUE
+                    || state.tick - lastSpeedJumpInputTick >= NONJUMPER_GAP_PULSE_TICKS);
+        boolean nonJumperLegacyPulse = state.mode != me.monstermazeai.game.Mode.SPEED
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
                 && !destinationOverlapping
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
-        if (nonJumperGapHold) {
-            /*
-             * Once the Speed gap is committed, hold the source jump input for
-             * the whole grounded crossing window. LegacyMovementModel models
-             * the ten-tick Jump -10 lock from the held input, which is preferable
-             * to a controller-side cadence that can accidentally release the
-             * key on the one tick where the source lock expires.
-             */
+        if (nonJumperSpeedPulse) {
             jumpThisTick = true;
-            lastDecisionDetail = "GAP_SPEED_HOLD edge=" + gapEdgeText()
-                    + " progress=" + format(progress);
-        } else if (nonJumperSpeedPulse) {
+            lastSpeedJumpInputTick = state.tick;
+            lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
+                    + " progress=" + format(progress)
+                    + " cadence=" + NONJUMPER_GAP_PULSE_TICKS;
+        } else if (nonJumperLegacyPulse) {
             jumpThisTick = true;
             lastSpeedJumpInputTick = state.tick;
             lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
@@ -2121,17 +2123,10 @@ public final class StableLiveMovementController {
         }
         /*
          * The critical edge tick is the last grounded tick on the source
-         * block. Do not make the jump input depend on a narrow exact progress
-         * threshold or on whether the previous observation happened to mark
-         * takeoff as started. Once committed, keep jump held/pulsed whenever
-         * grounded until the landing is confirmed. This removes the observed
-         * "ran off the end without pressing space" failure caused by a one-tick
-         * observation boundary.
-         *
-         * allowJump means a charged/real jump is available. Non-Jumper
-         * speeding still benefits from the jump input, so the motor input is
-         * intentionally requested for the committed gap regardless of that
-         * permission; the server-side jump lock suppresses the actual jump.
+         * block. Speed-mode non-Jumpers use the calibrated two-tick pulse
+         * cadence above, while Modern/Original retain the legacy takeoff rule.
+         * allowJump still governs the normal Jumper ability path; the Speed
+         * non-Jumper pulse is an ordinary source input and has no vertical lift.
          */
         boolean jumpInput = jumpThisTick;
         boolean sprintInput = !jumpInput || state.kit != me.monstermazeai.kit.Kit.JUMPER;

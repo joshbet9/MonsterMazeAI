@@ -61,8 +61,14 @@ public final class StableLiveMovementController {
     private static final double PHYSICS_WALK_SPEED = 0.10D;
     private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
     private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
-    /** One-tick safety horizon matches the live observe -> decide -> move cadence. */
-    private static final int SUPPORT_LOOKAHEAD_TICKS = 1;
+    /**
+     * Minimum physical-support horizon. High reaction skill extends this
+     * lookahead so a fast player can brake/correct before the AABB reaches a
+     * one-block lane edge. The projection never changes physics; it only chooses
+     * an earlier source-valid input.
+     */
+    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -619,7 +625,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -1250,6 +1256,12 @@ public final class StableLiveMovementController {
         float correction = clamp(normalise(desired - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         return new Action(0.0, 0.0, false, false, correction, false);
+    }
+
+    private int supportLookaheadTicks() {
+        int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
+        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
+                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {

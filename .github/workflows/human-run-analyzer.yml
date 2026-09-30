@@ -72,6 +72,27 @@ jobs:
             /tmp/human-run-dataset-analysis/runs/**/*.jsonl
             /tmp/human-run-dataset-analysis/runs/**/analysis/*.json
 
+  calibration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run tick-level human trace physics calibration
+        run: |
+          mvn -B -ntp -pl common -am             -Dtest=HumanTracePhysicsCalibrationTest             -Dsurefire.failIfNoSpecifiedTests=false             test
+      - name: Upload calibration residual report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-trace-physics-calibration
+          path: |
+            common/target/surefire-reports/me.monstermazeai.physics.HumanTracePhysicsCalibrationTest.txt
+            common/target/surefire-reports/TEST-me.monstermazeai.physics.HumanTracePhysicsCalibrationTest.xml
+
   integration:
     runs-on: ubuntu-latest
     steps:

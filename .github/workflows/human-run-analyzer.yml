@@ -1,0 +1,21 @@
+name: Human run analyzer
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/human-run-analysis
+      - feature/human-run-recorder
+
+jobs:
+  analyzer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run human-run analyzer tests
+        working-directory: tools
+        run: python -m unittest -v test_human_run_analyzer.py

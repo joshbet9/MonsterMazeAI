@@ -9,7 +9,7 @@ import me.monstermazeai.game.Mode;
 import me.monstermazeai.game.TimerModel;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
-import me.monstermazeai.monster.MonsterMazeBumpModel;
+import me.monstermazeai.physics.MonsterMazeBumpModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMovementModel;

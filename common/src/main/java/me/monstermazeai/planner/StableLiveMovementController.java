@@ -1487,11 +1487,43 @@ public final class StableLiveMovementController {
             float yawError = normalise(desiredYaw - state.player.yaw);
             if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
                 float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+                /*
+                 * Keep retreating while the camera aligns. The source player can
+                 * combine backward/strafe movement with camera rotation; pure
+                 * in-place turning leaves a one-cell corridor occupied by the
+                 * approaching monster and was the repeatable Jumper deadlock.
+                 *
+                 * Convert the reverse cardinal world vector into local W/A/D
+                 * input using the post-turn yaw, then run the same support guard
+                 * in the reverse route direction.
+                 */
+                double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+                double forwardWorldX = -Math.sin(postYaw);
+                double forwardWorldZ = Math.cos(postYaw);
+                double strafeWorldX = Math.cos(postYaw);
+                double strafeWorldZ = Math.sin(postYaw);
+                double reverseX = -routeDirRow;
+                double reverseZ = -routeDirColumn;
+                double forward = reverseX * forwardWorldX + reverseZ * forwardWorldZ;
+                double strafe = reverseX * strafeWorldX + reverseZ * strafeWorldZ;
+                double magnitude = Math.hypot(forward, strafe);
+                if (magnitude > 1.0D) {
+                    forward /= magnitude;
+                    strafe /= magnitude;
+                }
+                Action retreat = new Action(
+                        forward * 0.65D, strafe * 0.65D,
+                        false, false, yawDelta, false);
+                Action guarded = guardProjectedSupport(
+                        state, retreat, -routeDirRow, -routeDirColumn);
                 lastDecisionDetail = "MOB_YIELD_ALIGN"
                         + " monster=" + threat.id
                         + " distance=" + format(bestDistance)
-                        + " yawError=" + format(yawError);
-                return new Action(0.0, 0.0, false, false, yawDelta, false);
+                        + " yawError=" + format(yawError)
+                        + " retreat=f=" + format(guarded.forward())
+                        + ",s=" + format(guarded.strafe());
+                return guarded;
             }
         }
 

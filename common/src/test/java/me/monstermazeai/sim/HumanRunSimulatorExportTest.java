@@ -8,17 +8,28 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 
 /**
- * Exports the same deterministic closed-loop simulator used by the authentic
- * acceptance tests in a machine-readable form for human-run comparison.
+ * Exports a long-horizon authentic closed-loop simulator run for direct
+ * comparison with a recorded human run. Conditions are supplied as Maven
+ * system properties so CI can match the simulator to the discovered run.
  */
 class HumanRunSimulatorExportTest {
     @Test
-    void exportSpeedPattern3RepulsorHighSkill() throws IOException {
+    void exportMatchingLongHorizonRun() throws IOException {
+        Mode mode = Mode.valueOf(System.getProperty("humanRunMode", "SPEED").toUpperCase(Locale.ROOT));
+        Kit kit = Kit.valueOf(System.getProperty("humanRunKit", "REPULSOR").toUpperCase(Locale.ROOT));
+        int recorderPattern = Integer.parseInt(System.getProperty("humanRunPattern", "3"));
+        if (recorderPattern < 1 || recorderPattern > 3) {
+            throw new IllegalArgumentException("humanRunPattern must be 1..3");
+        }
+        AiProfile profile = AiProfile.valueOf(
+                System.getProperty("humanRunProfile", "HIGH_SKILL").toUpperCase(Locale.ROOT));
+
         AuthenticStage10SimulationTest.RunResult result =
-                AuthenticStage10SimulationTest.run(
-                        2, Kit.REPULSOR, AiProfile.HIGH_SKILL, Mode.SPEED);
+                AuthenticStage10SimulationTest.runLong(
+                        recorderPattern - 1, kit, profile, mode);
 
         Path output = Path.of(System.getProperty(
                 "humanRunSimulatorSummary",
@@ -26,7 +37,10 @@ class HumanRunSimulatorExportTest {
 
         String json = "{\n"
                 + "  \"schemaVersion\": 1,\n"
-                + "  \"conditions\": {\"mode\": \"speed\", \"kit\": \"REPULSOR\", \"pattern\": 3, \"profile\": \"HIGH_SKILL\"},\n"
+                + "  \"conditions\": {\"mode\": \"" + mode.name().toLowerCase(Locale.ROOT)
+                + "\", \"kit\": \"" + kit.name()
+                + "\", \"pattern\": " + recorderPattern
+                + ", \"profile\": \"" + profile.name() + "\"},\n"
                 + "  \"simulator\": {"
                 + "\"stageReached\": " + result.maxStage()
                 + ", \"durationTicks\": " + result.ticks()
@@ -41,10 +55,15 @@ class HumanRunSimulatorExportTest {
         Files.writeString(output, json);
         System.out.println("HUMAN_RUN_SIMULATOR_EXPORT "
                 + output.toAbsolutePath()
+                + " mode=" + mode
+                + " kit=" + kit
+                + " pattern=" + recorderPattern
+                + " profile=" + profile
                 + " stage=" + result.maxStage()
                 + " ticks=" + result.ticks()
                 + " maxSpeed=" + result.maxHorizontalSpeed());
     }
+
     private static String escapeJson(String value) {
         if (value == null) return "";
         return value.replace("\\", "\\\\")

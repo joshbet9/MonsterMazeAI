@@ -40,14 +40,15 @@ class MovementBenchmarkTest {
         MazeModel maze = new MazeModel(raw);
 
         GameState s = player();
+        s.mode = Mode.SPEED;
         s.kit = Kit.MAVERICK;
         s.player.x = 10.5;
-        s.player.z = 10.95;
+        s.player.z = 11.05;
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        // Start close enough to the source edge that one measured source
-        // sprint-jump impulse can physically overlap the destination AABB.
+        // Start on the supported lip of the source block so the source
+        // sprint-jump horizontal impulse can carry the AABB into the destination.
         s.player.vz = 0.42;
 
         LegacyMovementModel physics = new LegacyMovementModel();
@@ -64,12 +65,16 @@ class MovementBenchmarkTest {
                 "the first tick is airborne while the player crosses the gap");
 
         boolean landed = false;
-        for (int i = 0; i < 8; i++) {
-            if (s.player.grounded) {
+        for (int i = 0; i < 6; i++) {
+            if (s.player.grounded && s.player.z > 12.0) {
                 landed = true;
                 break;
             }
-            physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
+            physics.tick(
+                    s.player,
+                    new Action(1, 0, i < 2, true, 0, false),
+                    maze,
+                    -10);
         }
 
         assertTrue(landed,

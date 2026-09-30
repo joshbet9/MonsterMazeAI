@@ -29,6 +29,18 @@ public final class Simulator {
         this.progression=new GameProgressionModel(abilities); this.monsterSeed=monsters.seed();
     }
 
+    /**
+     * Start a closed-loop source-style simulation. Ability state and phase
+     * progression are initialized together so the caller cannot accidentally
+     * run a live game with a zero/uninitialized phase timer.
+     */
+    public void initialise(GameState state) {
+        if (state == null) throw new IllegalArgumentException("state");
+        abilities.initialiseForMode(state);
+        progression.initialise(state);
+        progression.syncPadSurfaces(state);
+    }
+
     public void tick(GameState state, Action action) {
         if(!state.alive) return;
         if(action.useAbility()) abilities.activate(state);

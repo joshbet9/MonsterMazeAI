@@ -49,7 +49,7 @@ class MovementBenchmarkTest {
         s.player.vz = 0.39;
 
         LegacyMovementModel physics = new LegacyMovementModel();
-        physics.tick(s.player, new Action(0, 1, true, true, 0, false), maze, -10);
+        physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
 
         assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
                 "Jump -10 must suppress vertical lift for non-Jumper speeding");

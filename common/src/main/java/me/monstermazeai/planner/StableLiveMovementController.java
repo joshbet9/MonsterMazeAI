@@ -537,9 +537,15 @@ public final class StableLiveMovementController {
                     : crossSign * Math.signum(dirRow);
             float correctionYaw = cardinalYaw(dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
+            /*
+             * Keep the safe lateral correction, but rotate toward the route in
+             * parallel. This avoids spending an entire recovery with the camera
+             * perpendicular to the corridor, which is especially costly near a
+             * stage deadline.
+             */
+            float yawDelta = clamp(
+                    (float) (correctionError * turnResponseGain()),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             action = new Action(0.0, strafe, false, false, yawDelta, false);
             lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
                     + " strafe=" + format(strafe);

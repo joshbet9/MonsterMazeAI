@@ -104,7 +104,11 @@ public final class MonsterSimulator {
             // and the entity turns toward the waypoint by at most 30 degrees.
             // ControllerMove passes the command speed unchanged; it is
             // multiplied only by GenericAttributes.MOVEMENT_SPEED.
-            double movementInput = speed * SNOWMAN_MOVEMENT_SPEED;
+            double controllerSpeed = state.mode == me.monstermazeai.game.Mode.SPEED
+                    && horizontalSq < 4.0D
+                    ? Math.min(speed, 1.0D)
+                    : speed;
+            double movementInput = controllerSpeed * SNOWMAN_MOVEMENT_SPEED;
             float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
 

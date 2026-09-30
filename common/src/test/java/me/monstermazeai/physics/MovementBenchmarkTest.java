@@ -46,13 +46,29 @@ class MovementBenchmarkTest {
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        s.player.vz = 0.39;
+        // Start close enough to the source edge that one measured source
+        // sprint-jump impulse can physically overlap the destination AABB.
+        s.player.vz = 0.42;
 
         LegacyMovementModel physics = new LegacyMovementModel();
+
+        // The source sprint-jump horizontal impulse is applied before the
+        // normal ground-friction step. Starting at z=10.95 therefore cannot
+        // overlap the destination AABB in a single tick; the faithful model
+        // reaches it on the following airborne tick.
         physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
 
         assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
                 "Jump -10 must suppress vertical lift for non-Jumper speeding");
+        assertFalse(s.player.grounded,
+                "the first tick is airborne while the player crosses the gap");
+
+        physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
+        physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
+        physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
+
+        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
+                "the landing tick must restore the path height");
         assertTrue(s.player.z > 11.70,
                 "the source sprint-jump horizontal impulse must carry the player AABB onto the destination side");
         assertTrue(s.player.grounded,

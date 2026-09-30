@@ -62,7 +62,8 @@ public final class StableLiveMovementController {
     private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
     private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
     /** One-tick safety horizon matches the live observe -> decide -> move cadence. */
-    private static final int SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -242,7 +243,10 @@ public final class StableLiveMovementController {
          * a nearby monster can be used as a source-faithful bump toward the
          * active pad. MobInteractionDecision refuses this at <= 2 hearts.
          */
-        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
+        MonsterState intentionalBump = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? MobInteractionDecision.chooseIntentionalBump(
+                        state, profile.tendencies.positiveMobKnockback)
+                : MobInteractionDecision.chooseIntentionalBump(state);
         if (intentionalBump != null) {
             Action bumpAction = steerIntoMonster(state, intentionalBump);
             if (bumpAction != null) return bumpAction;
@@ -339,7 +343,8 @@ public final class StableLiveMovementController {
         } else {
             long threat = threatSignature(state);
             boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
+                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION)
+                    || (!gapExecutionActive && currentSegmentDeviation(state, route, waypointIndex) > 0.95D);
 
             if (routeInvalid) {
                 /*
@@ -515,41 +520,33 @@ public final class StableLiveMovementController {
 
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
-             * A player can remain physically supported while the block
-             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
-             * lateral error is therefore not source-like: A/D correction is a
-             * normal Minecraft input and is the safest way to recover the lane
-             * without cutting the cardinal corridor.
+             * Correct toward the actual anchored lane in world space, then
+             * convert that correction into the player's current W/A/D frame.
+             * The previous sign-only strafe could point away from the lane once
+             * yaw had drifted, producing a repeatable edge-guard -> zero-input
+             * deadlock even though the player still had supported floor nearby.
              */
-            int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
-            float correctionYaw = cardinalYaw(dirRow, dirColumn);
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
-            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
-        } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-
-            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
-                action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED
-                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                                : 0.0F,
-                        false);
-            } else {
-                action = new Action(1.0, 0.0, false, true, 0.0F, false);
+            action = laneCorrectionAction(state, dirRow, dirColumn, 0.90D);
+            if (action == null) {
+                action = Action.IDLE;
             }
+            lastDecisionDetail += " LANE_RECOVERY_WORLD crossTrack=" + format(crossTrack)
+                    + " output=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe());
+        } else if (Math.abs(crossTrack) > 0.18) {
+            /*
+             * Medium cross-track error is still a correction state, not a reason
+             * to wait for momentum to decay. Keep a bounded lateral input while
+             * the camera converges; the projected-support guard remains the final
+             * authority near an actual edge.
+             */
+            action = laneCorrectionAction(state, dirRow, dirColumn, 0.60D);
+            if (action == null) {
+                action = Action.IDLE;
+            }
+            lastDecisionDetail += " LANE_FINE crossTrack=" + format(crossTrack)
+                    + " output=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe());
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Normal steering is concurrent with forward movement. This is
@@ -564,7 +561,10 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            double turnGain = state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? turnResponseGain() : 0.5D;
+            float turn = clamp((float) (yawError * turnGain),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < waypointBrakeDistance()
@@ -619,7 +619,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -964,12 +964,12 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        if (isApproachingGap(state)) {
-            // The source speed mechanic can request frequent jump inputs, but a
-            // jump already in progress cannot be retimed when the player reaches
-            // a one-block void. Preserve the grounded takeoff state instead.
-            return false;
-        }
+        /*
+         * Non-Jumper jump inputs are the source Speed-mode mechanic. Modern
+         * does not use this repeated Jump -10 + sprint-jump acceleration path;
+         * ordinary movement and explicit gap logic remain authoritative there.
+         */
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) return false;
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < cadenceTicks) {
@@ -1085,6 +1085,30 @@ public final class StableLiveMovementController {
                 toRow + 0.5D, toColumn + 0.5D,
                 dirRow, dirColumn);
         return Math.abs(lateral) <= 0.65D;
+    }
+
+    /**
+     * Distance from the active route segment, unlike the global corridor metric.
+     * A player can land near a later parallel segment after an edge recovery;
+     * treating that unrelated segment as valid hides the fact that the current
+     * waypoint is more than a block away and leaves the motor following stale
+     * geometry.
+     */
+    private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
+        if (route == null || route.size() < 2
+                || targetIndex <= 0 || targetIndex >= route.size()) return 0.0;
+
+        Cell from = route.cells().get(targetIndex - 1);
+        Cell to = route.cells().get(targetIndex);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (dirRow == 0) {
+            return Math.abs(state.player.x - (from.row() + 0.5D));
+        }
+        if (dirColumn == 0) {
+            return Math.abs(state.player.z - (from.column() + 0.5D));
+        }
+        return Double.POSITIVE_INFINITY;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {
@@ -1222,22 +1246,32 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
-        Action[] alternatives = {
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
-        };
+        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? new Action[] {
+                    new Action(action.forward() * (0.20D + (0.50D * profile.attributes.handling)),
+                            action.strafe() * (0.20D + (0.50D * profile.attributes.handling)),
+                            false, action.sprint(), action.yawDelta(), false),
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                }
+                : new Action[] {
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks(state))) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1250,6 +1284,17 @@ public final class StableLiveMovementController {
         float correction = clamp(normalise(desired - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         return new Action(0.0, 0.0, false, false, correction, false);
+    }
+
+    private double turnResponseGain() {
+        return 0.25D + profile.attributes.agility * 0.50D;
+    }
+
+    private int supportLookaheadTicks(GameState state) {
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) return MIN_SUPPORT_LOOKAHEAD_TICKS;
+        int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
+        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
+                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {
@@ -1464,6 +1509,86 @@ public final class StableLiveMovementController {
         return new double[]{bestX, bestZ};
     }
 
+    private Action laneCorrectionAction(
+            GameState state, int dirRow, int dirColumn, double magnitude) {
+        double targetX = state.player.x;
+        double targetZ = state.player.z;
+        if (dirRow == 0) {
+            targetX = laneAnchorX;
+        } else {
+            targetZ = laneAnchorZ;
+        }
+
+        double worldX = targetX - state.player.x;
+        double worldZ = targetZ - state.player.z;
+        double length = Math.hypot(worldX, worldZ);
+        if (length < 1.0E-6D) return null;
+        worldX /= length;
+        worldZ /= length;
+
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float gain = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? (float) turnResponseGain() : 0.5F;
+        float yawDelta = clamp(yawError * gain,
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double forwardWorldX = -Math.sin(postYaw);
+        double forwardWorldZ = Math.cos(postYaw);
+        double strafeWorldX = Math.cos(postYaw);
+        double strafeWorldZ = Math.sin(postYaw);
+
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+        double inputLength = Math.hypot(forward, strafe);
+        if (inputLength > 1.0D) {
+            forward /= inputLength;
+            strafe /= inputLength;
+        }
+
+        Action correction = new Action(
+                forward * magnitude,
+                strafe * magnitude,
+                false,
+                false,
+                yawDelta,
+                false);
+        return guardLaneCorrectionSupport(state, correction);
+    }
+
+    /**
+     * Lane correction is a local one-tick maneuver. The normal route guard
+     * projects several ticks ahead and scores alternatives by forward route
+     * progress; that is correct for route driving, but it can reject a lateral
+     * correction whose purpose is specifically to regain the anchored lane.
+     *
+     * Keep the same physical-support test, but shrink the correction until the
+     * immediate projected footprint remains supported. This preserves edge
+     * protection without turning a valid A/D correction into a permanent stop.
+     */
+    private Action guardLaneCorrectionSupport(GameState state, Action correction) {
+        if (state.maze == null || !state.player.grounded) return correction;
+        if (hasPredictedPhysicalSupport(state, correction, 1)) return correction;
+
+        final double[] scales = {0.70D, 0.45D, 0.25D, 0.10D};
+        for (double scale : scales) {
+            Action candidate = new Action(
+                    correction.forward() * scale,
+                    correction.strafe() * scale,
+                    false,
+                    correction.sprint(),
+                    correction.yawDelta(),
+                    false);
+            if (hasPredictedPhysicalSupport(state, candidate, 1)) {
+                return candidate;
+            }
+        }
+        return new Action(
+                0.0, 0.0, false, false,
+                correction.yawDelta(), false);
+    }
+
     private double waypointBrakeDistance() {
         // High handling lets a player carry more vanilla momentum through a
         // corner; low handling starts braking earlier. The baseline value remains
@@ -1612,11 +1737,68 @@ public final class StableLiveMovementController {
                         -routeDirRow, -routeDirColumn);
                 float yawError = normalise(desiredYaw - state.player.yaw);
                 float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                lastDecisionDetail = "MOB_YIELD_GAP_HOLD"
+                /*
+                 * The gap that brought us onto the current cell is behind us.
+                 * Holding here while a mob occupies the forward corridor creates
+                 * a fatal stationary loop: there is no safe reverse edge and the
+                 * monster can repeatedly collide with a stationary player.
+                 *
+                 * Commit through the current supported segment instead. This is
+                 * still ordinary Minecraft movement; collision/knockback remain
+                 * authoritative. If the next segment itself is another gap, let
+                 * the dedicated gap motor below own the transition.
+                 */
+                if (waypointIndex < route.size() - 1) {
+                    Cell next = route.cells().get(waypointIndex);
+                    Cell after = route.cells().get(waypointIndex + 1);
+                    if (!isGapEdge(state, next.row(), next.column(), after.row(), after.column())) {
+                        int commitRow = Integer.signum(after.row() - next.row());
+                        int commitColumn = Integer.signum(after.column() - next.column());
+                        float commitYaw = cardinalYaw(commitRow, commitColumn);
+                        float commitError = normalise(commitYaw - state.player.yaw);
+                        float commitTurn = clamp(
+                                commitError * (state.mode == me.monstermazeai.game.Mode.SPEED
+                                        ? (float) turnResponseGain() : 0.5F),
+                                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                        double postYaw = Math.toRadians(state.player.yaw + commitTurn);
+                        double worldX = commitRow;
+                        double worldZ = commitColumn;
+                        double forwardWorldX = -Math.sin(postYaw);
+                        double forwardWorldZ = Math.cos(postYaw);
+                        double strafeWorldX = Math.cos(postYaw);
+                        double strafeWorldZ = Math.sin(postYaw);
+                        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+                        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+                        double magnitude = Math.hypot(forward, strafe);
+                        if (magnitude > 1.0D) {
+                            forward /= magnitude;
+                            strafe /= magnitude;
+                        }
+                        double drive = 0.78D;
+                        Action commit = new Action(
+                                forward * drive,
+                                strafe * drive,
+                                shouldSpeedJump(state, allowJump),
+                                state.mode == me.monstermazeai.game.Mode.SPEED,
+                                commitTurn,
+                                false);
+                        Action guarded = guardProjectedSupport(
+                                state, commit, commitRow, commitColumn);
+                        lastDecisionDetail = "MOB_YIELD_GAP_COMMIT"
+                                + " monster=" + threat.id
+                                + " distance=" + format(bestDistance)
+                                + " yawError=" + format(commitError)
+                                + " output=f=" + format(guarded.forward())
+                                + ",s=" + format(guarded.strafe());
+                        return guarded;
+                    }
+                }
+
+                lastDecisionDetail = "MOB_YIELD_GAP_DEFER"
                         + " monster=" + threat.id
                         + " distance=" + format(bestDistance)
                         + " yawError=" + format(yawError);
-                return new Action(0.0, 0.0, false, false, yawDelta, false);
+                return null;
             }
 
             float desiredYaw = cardinalYaw(-routeDirRow, -routeDirColumn);
@@ -1934,6 +2116,10 @@ public final class StableLiveMovementController {
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
+            if (state.mode == me.monstermazeai.game.Mode.SPEED
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+                lastSpeedJumpInputTick = Long.MIN_VALUE;
+            }
             return executeCommittedGap(state, allowJump);
         }
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
@@ -1941,8 +2127,18 @@ public final class StableLiveMovementController {
             return new Action(1.0, 0.0, false, true, 0.0F, false);
         }
         if (distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
-            lastDecisionDetail = "GAP_MISSED edge=" + gapEdgeText() + " progress=" + format(progress);
-            return null;
+            /*
+             * Do not fall through into ordinary waypoint steering after a missed
+             * edge. The route is now stale by definition: the player has passed
+             * the committed takeoff window without entering the gap transition.
+             * Stop for this one observation and let the next tick's
+             * current-segment deviation check build a physical route from the
+             * player's actual supported cell.
+             */
+            fullRouteEvaluationPending = true;
+            lastDecisionDetail = "GAP_MISSED_REPLAN edge=" + gapEdgeText()
+                    + " progress=" + format(progress);
+            return new Action(0.0, 0.0, false, false, 0.0F, false);
         }
         gapExecutionActive = true;
         gapTakeoffStarted = false;
@@ -1974,7 +2170,8 @@ public final class StableLiveMovementController {
          * Let Max Speed control this pre-gap cadence while the gap motor owns
          * the timing window, so tactical replanning cannot steal the inputs.
          */
-        boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
+        boolean nonJumperSpeedPulse = state.mode == me.monstermazeai.game.Mode.SPEED
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
                 && progress < GAP_JUMP_PROGRESS
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE

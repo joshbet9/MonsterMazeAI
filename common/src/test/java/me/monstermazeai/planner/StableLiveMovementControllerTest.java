@@ -130,6 +130,20 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void JumperDoesNotSpendChargesOnOrdinaryGroundTravel() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.player.jumpCharges = 3;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(0, 8), true);
+
+        assertTrue(action.forward() > 0.0);
+        assertFalse(action.jump(),
+                "modern Jumper charges must be reserved for committed aerial traversal");
+    }
+
+    @Test
     void commitsSafePadEdgeCrossingInsteadOfTreatingPadSurfaceAsOrdinaryMazeFloor() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;

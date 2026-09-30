@@ -527,11 +527,10 @@ public final class StableLiveMovementController {
                 else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
                 boolean sprint = forward >= 0.95 && absError <= 15.0;
-                boolean jump = allowJump
-                        && state.player.grounded
-                        && forward > 0.0
-                        && distance > WAYPOINT_ARRIVAL
-                        && absError <= 20.0;
+                // Baseline Jumper does not spend a charge during ordinary
+                // corridor traversal. Jump input is a terrain decision:
+                // committed gaps/pad entries own it explicitly below.
+                boolean jump = false;
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
             } else {
@@ -544,10 +543,10 @@ public final class StableLiveMovementController {
             boolean brake = distance < WAYPOINT_BRAKE
                     && closingSpeed(state, dx, dz) > 0.04;
             double forward = brake ? 0.0 : 1.0;
-            boolean jump = allowJump
-                    && state.player.grounded
-                    && forward > 0.0
-                    && distance > WAYPOINT_ARRIVAL;
+            // Do not convert "Jumper is available" into unconditional
+            // jump-spam. Ordinary route traversal stays grounded; gap
+            // execution owns the actual jump timing.
+            boolean jump = false;
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 

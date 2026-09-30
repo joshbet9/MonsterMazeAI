@@ -681,6 +681,7 @@ def find_sim_metrics(payload: Dict[str, Any]) -> Dict[str, Any]:
 def compare_with_simulator(human_summary: Dict[str, Any], sim_payload: Dict[str, Any]) -> Dict[str, Any]:
     human = dict(human_summary.get("metrics", {}))
     human["stageReached"] = human_summary.get("run", {}).get("stageReached")
+    human["durationSeconds"] = human_summary.get("run", {}).get("durationSeconds")
     sim = find_sim_metrics(sim_payload)
     aliases = {
         "stageReached": ("stageReached", "stage_reached"),

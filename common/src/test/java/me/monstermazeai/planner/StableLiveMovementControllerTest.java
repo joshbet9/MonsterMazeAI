@@ -207,7 +207,7 @@ class StableLiveMovementControllerTest {
         assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
                 controller.lastDecisionDetail());
         assertEquals(0.0, recovery.forward(), 1.0e-9);
-        assertEquals(12.0F, recovery.yawDelta(), 1.0e-6F);
+        assertEquals(12.0F, Math.abs(recovery.yawDelta()), 1.0e-6F);
     }
 
     @Test

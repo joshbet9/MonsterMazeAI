@@ -98,7 +98,6 @@ public final class LegacyMovementModel implements PhysicsModel {
             p.grounded = true;
         }
 
-        boolean wasAirborne = !groundedAtStart || p.pendingAirborne || action.jump() && !groundedAtStart;
         if (maze != null) {
             MazeCollision collision = new MazeCollision(maze);
             collision.move(p, p.vx, p.vy, p.vz);
@@ -118,7 +117,10 @@ public final class LegacyMovementModel implements PhysicsModel {
             p.grounded = false;
         }
 
-        if (!p.grounded || wasAirborne) {
+        // A collision landing zeroes vertical velocity; do not immediately
+        // apply another gravity step in the same tick. The falling tick itself
+        // is represented by MazeCollision.move() setting grounded=true.
+        if (!p.grounded) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
         }

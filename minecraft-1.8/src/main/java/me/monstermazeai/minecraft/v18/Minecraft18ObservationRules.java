@@ -35,8 +35,8 @@ public final class Minecraft18ObservationRules {
 
             if (lower.contains("safe pad")) {
                 Integer value = timeSeconds(line);
-                if (value == null && i + 1 < cleanLines.size()) {
-                    value = timeSeconds(cleanLines.get(i + 1));
+                if (value == null) {
+                    value = adjacentValue(cleanLines, i, true, true);
                 }
                 if (value != null) {
                     safePadSeconds = value;
@@ -45,8 +45,8 @@ public final class Minecraft18ObservationRules {
 
             if (lower.equals("stage") || lower.startsWith("stage ") || lower.startsWith("stage:")) {
                 Integer value = firstInteger(line);
-                if (value == null && i + 1 < cleanLines.size()) {
-                    value = firstInteger(cleanLines.get(i + 1));
+                if (value == null) {
+                    value = adjacentValue(cleanLines, i, true, true);
                 }
                 if (value != null) {
                     stage = Math.max(1, value);
@@ -98,6 +98,29 @@ public final class Minecraft18ObservationRules {
             }
         }
         return false;
+    }
+
+    private static Integer adjacentValue(List<String> lines, int labelIndex,
+                                            boolean checkPrevious, boolean checkNext) {
+        if (checkPrevious) {
+            for (int i = labelIndex - 1; i >= 0 && i >= labelIndex - 2; i--) {
+                String candidate = lines.get(i);
+                if (candidate.trim().length() == 0) continue;
+                Integer value = timeSeconds(candidate);
+                if (value != null) return value;
+                break;
+            }
+        }
+        if (checkNext) {
+            for (int i = labelIndex + 1; i < lines.size() && i <= labelIndex + 3; i++) {
+                String candidate = lines.get(i);
+                if (candidate.trim().length() == 0) continue;
+                Integer value = timeSeconds(candidate);
+                if (value != null) return value;
+                break;
+            }
+        }
+        return null;
     }
 
     private static Integer timeSeconds(String text) {

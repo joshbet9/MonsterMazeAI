@@ -183,6 +183,34 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void recoversLargerSupportedLaneDriftInsideAabbEnvelope() {
+        GameState s = state(0.5, 0.5, 90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 0), false);
+        s.tick = 2;
+        controller.nextAction(s, new Cell(8, 0), false);
+        s.tick = 3;
+        controller.nextAction(s, new Cell(8, 0), false);
+
+        // Cross-track = -0.682: still supported by the z=0 floor block because
+        // the player AABB reaches z=0.118 (> 0).
+        s.tick = 4;
+        s.player.z = -0.182;
+        s.player.yaw = 90.0F;
+
+        Action recovery = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"),
+                controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+        assertEquals(0.0, recovery.forward(), 1.0e-9);
+        assertEquals(12.0F, recovery.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
     void recoversObservedSupportedLaneDriftInsteadOfDeadlocking() {
         GameState s = state(0.5, 0.5, 90.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

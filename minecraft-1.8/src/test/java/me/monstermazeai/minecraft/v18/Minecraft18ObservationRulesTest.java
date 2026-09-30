@@ -82,6 +82,18 @@ public class Minecraft18ObservationRulesTest {
     }
 
     @Test
+    public void explicitInventoryKitEvidenceIsDistinguishedFromUnknown() {
+        assertEquals(me.monstermazeai.kit.Kit.REPULSOR,
+                Minecraft18ObservationRules.detectKitEvidence(
+                        Arrays.asList("§e§lRight Click§f§l - §a§lRepulse")));
+        assertNull(Minecraft18ObservationRules.detectKitEvidence(
+                Arrays.asList("§aSafe Pad Locator", "§aViewing: Players Visible")));
+        assertEquals(me.monstermazeai.kit.Kit.JUMPER,
+                Minecraft18ObservationRules.detectKit(
+                        Arrays.asList("§aSafe Pad Locator", "§aViewing: Players Visible")));
+    }
+
+    @Test
     public void doesNotMisclassifyOrdinaryScoreboard() {
         Minecraft18ObservationRules.ScoreboardData data =
                 Minecraft18ObservationRules.parseScoreboard(

@@ -226,7 +226,8 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
-        boolean mobHit = detectLiveMobHit(state);
+        boolean speedMode = state.mode == me.monstermazeai.game.Mode.SPEED;
+        boolean mobHit = speedMode && detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(
                     mobHitRecoveryUntilTick,
@@ -242,16 +243,15 @@ public final class StableLiveMovementController {
                     + " recoveryUntil=" + mobHitRecoveryUntilTick
                     + " grounded=" + state.player.grounded;
             /*
-             * While airborne, the server's bump velocity is authoritative.
-             * Do not inject a jump, strafe, or stale route turn into it.
-             * Once grounded, route construction below uses the new position.
+             * Speed-mode human calibration includes source monster knockback.
+             * Modern/Original retain their pre-human-run movement contract.
              */
             if (!state.player.grounded) {
                 return airborneMobRecoveryAction(state, goal);
             }
         }
 
-        if (state.tick <= mobHitRecoveryUntilTick && !state.player.grounded) {
+        if (speedMode && state.tick <= mobHitRecoveryUntilTick && !state.player.grounded) {
             return airborneMobRecoveryAction(state, goal);
         }
 
@@ -278,14 +278,16 @@ public final class StableLiveMovementController {
          * a nearby monster can be used as a source-faithful bump toward the
          * active pad. MobInteractionDecision refuses this at <= 2 hearts.
          */
-        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
-        if (intentionalBump != null) {
-            Action bumpAction = steerIntoMonster(state, intentionalBump);
-            if (bumpAction != null) return bumpAction;
-        }
+        if (speedMode) {
+            MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
+            if (intentionalBump != null) {
+                Action bumpAction = steerIntoMonster(state, intentionalBump);
+                if (bumpAction != null) return bumpAction;
+            }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
+            Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+            if (mobAvoidance != null) return mobAvoidance;
+        }
 
         /*
          * Restore the original pre-calibration commitment position for

@@ -61,8 +61,8 @@ class MovementBenchmarkTest {
 
         assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
                 "Jump -10 must suppress vertical lift for non-Jumper speeding");
-        assertFalse(s.player.grounded,
-                "the first tick is airborne while the player crosses the gap");
+        assertTrue(s.player.z > 11.5,
+                "the first Speed pulse must carry the player to the far lip of the source gap");
 
         boolean landed = false;
         for (int i = 0; i < 6; i++) {

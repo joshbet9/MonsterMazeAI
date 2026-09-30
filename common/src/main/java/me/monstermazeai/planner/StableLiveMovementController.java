@@ -581,8 +581,7 @@ public final class StableLiveMovementController {
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 
-        if (!gapExecutionActive
-                && (distance <= 1.20D || Math.abs(crossTrack) > 0.20D)) {
+        if (!gapExecutionActive && Math.abs(crossTrack) > 0.20D) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"

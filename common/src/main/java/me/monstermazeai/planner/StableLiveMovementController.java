@@ -964,12 +964,12 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        if (state.mode != me.monstermazeai.game.Mode.SPEED && isApproachingGap(state)) {
-            // In Modern mode preserve the conservative pre-gap cadence. Speed
-            // mode uses the source repeated Jump -10 + sprint-jump interaction
-            // and must be allowed to prime the horizontal impulse window.
-            return false;
-        }
+        /*
+         * Non-Jumper jump inputs are the source Speed-mode mechanic. Modern
+         * does not use this repeated Jump -10 + sprint-jump acceleration path;
+         * ordinary movement and explicit gap logic remain authoritative there.
+         */
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) return false;
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < cadenceTicks) {

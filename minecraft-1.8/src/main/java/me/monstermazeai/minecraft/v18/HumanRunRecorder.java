@@ -237,7 +237,8 @@ public final class HumanRunRecorder implements Closeable {
         runStamp = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date());
         currentManifest = new File(directory, "human-speed-run-" + runStamp + "-manifest.json").toPath();
 
-        try {\n        manifestWriter = open(currentManifest);
+        try {
+            manifestWriter = open(currentManifest);
         movementWriter = open(new File(directory, "human-speed-run-" + runStamp + "-movement.jsonl").toPath());
         inputWriter = open(new File(directory, "human-speed-run-" + runStamp + "-input.jsonl").toPath());
         worldWriter = open(new File(directory, "human-speed-run-" + runStamp + "-world.jsonl").toPath());
@@ -285,6 +286,25 @@ public final class HumanRunRecorder implements Closeable {
         flushAll();
         System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER started: "
                 + currentManifest.toAbsolutePath());
+        return true;
+        } catch (IOException e) {
+            System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER failed to open: " + e);
+            closeAllWriters();
+            manifestWriter = null;
+            movementWriter = null;
+            inputWriter = null;
+            worldWriter = null;
+            navigationWriter = null;
+            monsterWriter = null;
+            mazeWriter = null;
+            inventoryWriter = null;
+            collisionWriter = null;
+            eventWriter = null;
+            currentManifest = null;
+            runStamp = null;
+            inRun = false;
+            return false;
+        }
     }
 
     private BufferedWriter open(Path path) throws IOException {

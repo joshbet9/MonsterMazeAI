@@ -117,7 +117,12 @@ class AuthenticStage10SimulationTest {
         state.player.grounded = true;
 
         AbilityModel abilities = new AbilityModel();
-        MonsterSimulator monsterSimulator = new MonsterSimulator(maze, monsterRandom, 1.4, seed ^ 0x6A09E667F3BCC909L);
+        /*
+         * Human Speed-mode monster traces show an effective command magnitude
+         * around 0.08 before ground friction. With the modeled 0.2 movement
+         * attribute, the empirically calibrated ControllerMove speed is 0.4.
+         */
+        MonsterSimulator monsterSimulator = new MonsterSimulator(maze, monsterRandom, 0.4, seed ^ 0x6A09E667F3BCC909L);
         Simulator simulator = new Simulator(
                 new LegacyMazePhysics(),
                 monsterSimulator,

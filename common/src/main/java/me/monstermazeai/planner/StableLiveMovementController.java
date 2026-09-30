@@ -48,8 +48,6 @@ public final class StableLiveMovementController {
     public StableLiveMovementController(AiProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
-        this.routePlanner = new MonsterAwareRoutePlanner();
-        this.backgroundRoutePlanner = new MonsterAwareRoutePlanner();
     }
 
     public AiProfile profile() {

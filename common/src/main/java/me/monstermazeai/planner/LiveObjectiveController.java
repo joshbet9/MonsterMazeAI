@@ -1,6 +1,7 @@
 package me.monstermazeai.planner;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.ability.AbilityDecision;
 import me.monstermazeai.game.PadModel;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
@@ -59,14 +60,34 @@ public final class LiveObjectiveController {
             lastDecisionReason = "MOVEMENT_PLANNER";
             lastDecisionDetail = movement.lastDecisionDetail()
                     + " | action=" + describe(action);
+
+            if (AbilityDecision.shouldUse(state, lastDecisionReason, lastDecisionDetail)) {
+                action = withAbility(action);
+                lastDecisionDetail += " | ABILITY_USE";
+            }
             return action;
         } catch (IllegalArgumentException noRoute) {
             lastDecisionReason = "NO_ROUTE";
             lastDecisionDetail = noRoute.getMessage() == null
                     ? "movement planner rejected route"
                     : noRoute.getMessage();
+            if (AbilityDecision.shouldUse(state, lastDecisionReason, lastDecisionDetail)) {
+                lastDecisionDetail += " | ABILITY_USE";
+                return new Action(0.0, 0.0, false, false, 0.0F, true);
+            }
             return Action.IDLE;
         }
+    }
+
+    private static Action withAbility(Action action) {
+        if (action == null) return new Action(0.0, 0.0, false, false, 0.0F, true);
+        return new Action(
+                action.forward(),
+                action.strafe(),
+                action.jump(),
+                action.sprint(),
+                action.yawDelta(),
+                true);
     }
 
     public String lastDecisionReason() { return lastDecisionReason; }

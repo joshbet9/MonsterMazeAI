@@ -378,7 +378,7 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null) {
+            if (tactical != null && isMeaningfulTacticalAction(tactical)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }
@@ -1009,6 +1009,15 @@ public final class StableLiveMovementController {
      * recovery state therefore remains correct even when the first airborne
      * observation arrives a few ticks after the hit.
      */
+    private static boolean isMeaningfulTacticalAction(Action action) {
+        return action.forward() != 0.0
+                || action.strafe() != 0.0
+                || action.jump()
+                || action.sprint()
+                || action.yawDelta() != 0.0F
+                || action.useAbility();
+    }
+
     private boolean detectLiveMobHit(GameState state) {
         boolean hit = !Double.isNaN(previousHealth)
                 && state.player.health < previousHealth - 0.5D;

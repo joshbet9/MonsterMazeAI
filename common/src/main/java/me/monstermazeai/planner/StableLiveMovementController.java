@@ -1097,16 +1097,53 @@ public final class StableLiveMovementController {
         // target while simultaneously applying the local movement component
         // that points at it. This is still ordinary Minecraft input; it is not
         // a physics shortcut.
-        float postTurnError = normalise(desiredYaw - normalise(state.player.yaw + yawDelta));
-        double errorRad = Math.toRadians(postTurnError);
-        double forward = Math.cos(errorRad);
-        double strafe = -Math.sin(errorRad);
+        /*
+         * Air control is weak in 1.8, while the Monster Maze source bump starts
+         * the player with roughly 1 block/tick horizontal velocity. Pointing
+         * only at the landing point therefore cannot cancel the knockback
+         * quickly enough. Counter the measured source velocity, then bias the
+         * remaining air-control vector toward the supported landing target.
+         */
+        double targetDx = target[0] - state.player.x;
+        double targetDz = target[1] - state.player.z;
+        double targetLen = Math.hypot(targetDx, targetDz);
+        if (targetLen > 1.0E-9) {
+            targetDx /= targetLen;
+            targetDz /= targetLen;
+        }
+        double speedX = state.player.vx;
+        double speedZ = state.player.vz;
+        double horizontalSpeed = Math.hypot(speedX, speedZ);
+        double desiredWorldX = targetDx;
+        double desiredWorldZ = targetDz;
+        if (horizontalSpeed > 0.05D) {
+            double cancelWeight = Math.min(2.5D, 1.0D + horizontalSpeed);
+            desiredWorldX -= (speedX / horizontalSpeed) * cancelWeight;
+            desiredWorldZ -= (speedZ / horizontalSpeed) * cancelWeight;
+        }
+        double desiredLen = Math.hypot(desiredWorldX, desiredWorldZ);
+        if (desiredLen < 1.0E-9) {
+            desiredWorldX = targetDx;
+            desiredWorldZ = targetDz;
+            desiredLen = 1.0D;
+        }
+        desiredWorldX /= desiredLen;
+        desiredWorldZ /= desiredLen;
+
+        float postTurnYaw = state.player.yaw + yawDelta;
+        double yawRad = Math.toRadians(postTurnYaw);
+        double forwardWorldX = -Math.sin(yawRad);
+        double forwardWorldZ = Math.cos(yawRad);
+        double strafeWorldX = Math.cos(yawRad);
+        double strafeWorldZ = Math.sin(yawRad);
+        double forward = desiredWorldX * forwardWorldX + desiredWorldZ * forwardWorldZ;
+        double strafe = desiredWorldX * strafeWorldX + desiredWorldZ * strafeWorldZ;
         double inputMagnitude = Math.hypot(forward, strafe);
-        if (inputMagnitude > 1.0) {
+        if (inputMagnitude > 1.0D) {
             forward /= inputMagnitude;
             strafe /= inputMagnitude;
         }
-        boolean sprint = forward > 0.80;
+        boolean sprint = true;
         lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
                 + " target=" + format(target[0]) + "," + format(target[1])
                 + " yawError=" + format(yawError)

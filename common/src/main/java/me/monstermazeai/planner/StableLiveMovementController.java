@@ -170,8 +170,16 @@ public final class StableLiveMovementController {
     /** Press jump only once the player is at the actual source-block edge. */
     /** Strong players begin the jump before the source block centre so the vanilla arc lands inside the destination. */
     private static final double GAP_JUMP_PROGRESS = -0.80D;
-    /** Begin the committed gap window slightly before the actual jump impulse. */
+    /** Begin the committed gap window slightly before the actual Jump-class takeoff. */
     private static final double GAP_COMMIT_PROGRESS = -1.80D;
+    /*
+     * Non-Jumpers are different: Jump -10 suppresses vertical lift but still
+     * imposes a ten-tick jump lock. Human Speed runs repeatedly cross one-block
+     * gaps using the same horizontal speeding mechanic, so the first committed
+     * pulse must have enough runway for a second source-valid pulse to become
+     * available before the player leaves the source AABB.
+     */
+    private static final double NONJUMPER_GAP_COMMIT_PROGRESS = -3.25D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -1966,7 +1974,10 @@ public final class StableLiveMovementController {
         int gapIndex = waypointIndex - 1;
         double progress = currentGapProgress(state, gapIndex);
         double distanceToTakeoff = GAP_JUMP_PROGRESS - progress;
-        if (progress >= GAP_COMMIT_PROGRESS && progress <= 1.65D) {
+        double commitProgress = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                ? GAP_COMMIT_PROGRESS
+                : NONJUMPER_GAP_COMMIT_PROGRESS;
+        if (progress >= commitProgress && progress <= 1.65D) {
             gapExecutionActive = true;
             // Commit early enough that a single-tick physics/replan boundary
             // cannot make us miss the jump input at the block edge.

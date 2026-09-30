@@ -15,6 +15,7 @@ import me.monstermazeai.planner.LiveObjectiveController;
 import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
 import me.monstermazeai.planner.RobustLiveController;
 import me.monstermazeai.collision.CollisionModel;
+import me.monstermazeai.testdata.SourceMazeLayouts;
 
 import org.junit.jupiter.api.Test;
 

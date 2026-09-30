@@ -122,6 +122,8 @@ In addition to route/hazard measurements, the current extractor records:
 - forward, strafe, and reverse fractions
 - sprint and stationary fractions
 - continuous forward-run lengths
+- full stage-cycle time vs `PAD_TARGET_CHANGED → PAD_REACHED` travel time
+- pad travel path excess against the straight-line target distance
 - jump rate and yaw-rate distributions
 - target-heading error and heading-correction fraction
 - raw movement input change count

@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.PadModel;
 import me.monstermazeai.maze.Cell;
+import me.monstermazeai.maze.GapJumpPolicy;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterState;
@@ -48,10 +49,23 @@ public final class StableLiveMovementController {
     public StableLiveMovementController(AiProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        GapJumpPolicy gapPolicy = gapJumpPolicy(profile);
+        this.routePlanner = new MonsterAwareRoutePlanner(gapPolicy);
+        this.backgroundRoutePlanner = new MonsterAwareRoutePlanner(gapPolicy);
     }
 
     public AiProfile profile() {
         return profile;
+    }
+
+    /**
+     * Higher Jumper IQ reduces the controller's expected risk penalty for a
+     * source-valid gap shortcut. This changes route selection only; actual gap
+     * execution remains governed by the source jump/physics rules.
+     */
+    private static GapJumpPolicy gapJumpPolicy(AiProfile profile) {
+        double risk = 0.35D + (1.15D * (1.0D - profile.tendencies.jumperIq));
+        return new GapJumpPolicy(risk);
     }
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
@@ -103,14 +117,14 @@ public final class StableLiveMovementController {
      */
     private static final double MAX_INITIAL_LANE_OFFSET = 0.65;
 
-    private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
+    private final MonsterAwareRoutePlanner routePlanner;
     private final LegacyMovementModel movementProjection = new LegacyMovementModel();
     /*
      * Strategic route simulation is deliberately isolated from the live motor.
      * The motor must never wait for source-faithful multi-candidate simulation:
      * a stale movement command can carry the player off a one-block platform.
      */
-    private final MonsterAwareRoutePlanner backgroundRoutePlanner = new MonsterAwareRoutePlanner();
+    private final MonsterAwareRoutePlanner backgroundRoutePlanner;
     private final ExecutorService routePlanningExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "MonsterMaze-strategic-planner");
         thread.setDaemon(true);

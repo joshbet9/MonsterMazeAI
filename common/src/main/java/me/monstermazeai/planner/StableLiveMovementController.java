@@ -535,7 +535,7 @@ public final class StableLiveMovementController {
             int nextDirColumn = Integer.signum(nextCell.column() - targetCellColumn);
             if (Math.abs(nextDirRow) + Math.abs(nextDirColumn) == 1
                     && (nextDirRow != dirRow || nextDirColumn != dirColumn)) {
-                double turnFraction = clamp((1.25D - distance) / 0.90D, 0.0D, 1.0D);
+                float turnFraction = (float) clamp((1.25D - distance) / 0.90D, 0.0D, 1.0D);
                 float nextYaw = cardinalYaw(nextDirRow, nextDirColumn);
                 float deltaToNext = normalise(nextYaw - desiredYaw);
                 desiredYaw = normalise(desiredYaw + deltaToNext * (float) turnFraction);

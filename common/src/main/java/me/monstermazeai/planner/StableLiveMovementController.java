@@ -391,6 +391,23 @@ public final class StableLiveMovementController {
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
         if (padEntry != null) return padEntry;
 
+        /*
+         * Gap crossings are a motor-level source interaction. They must own the
+         * command before tactical replanning can run, otherwise a local mob
+         * branch can replace the edge-timed speeding/jump input for one tick.
+         */
+        if (waypointIndex > 0 && waypointIndex < route.size()) {
+            Cell gapFrom = route.cells().get(waypointIndex - 1);
+            Cell gapTo = route.cells().get(waypointIndex);
+            if (isGapEdge(state, gapFrom.row(), gapFrom.column(), gapTo.row(), gapTo.column())) {
+                Action gapAction = prepareOrStartGap(state,
+                        Integer.signum(gapTo.row() - gapFrom.row()),
+                        Integer.signum(gapTo.column() - gapFrom.column()),
+                        allowJump);
+                if (gapAction != null) return gapAction;
+            }
+        }
+
         // When a source interaction is close enough to matter this tick, hand
         // control to the same tactical simulator used during route selection.
         // This is what makes deliberate contact and ability use real live actions,
@@ -429,10 +446,6 @@ public final class StableLiveMovementController {
         int dirColumn = Integer.signum(targetCellColumn - startCellColumn);
 
         boolean gapEdge = isGapEdge(state, startCellRow, startCellColumn, targetCellRow, targetCellColumn);
-        if (gapEdge) {
-            Action gapAction = prepareOrStartGap(state, dirRow, dirColumn, allowJump);
-            if (gapAction != null) return gapAction;
-        }
 
         if (!gapEdge && Math.abs(dirRow) + Math.abs(dirColumn) != 1) {
             // Defensive failure: PlayerRoute is normally cardinal, with the

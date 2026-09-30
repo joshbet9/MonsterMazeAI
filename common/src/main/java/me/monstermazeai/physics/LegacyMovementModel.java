@@ -14,12 +14,6 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
     private static final double SPRINT_JUMP_IMPULSE = 0.20D;
-    /**
-     * Minecraft 1.8.9 retains the small downward motion value while the player
-     * is standing on a solid block. Human-run telemetry repeatedly records
-     * this exact value on grounded ticks.
-     */
-    private static final double GROUND_VERTICAL_MOTION = -0.0784000015258789D;
     private static final int NON_JUMPER_JUMP_COOLDOWN_TICKS = 10;
 
     @Override
@@ -44,6 +38,16 @@ public final class LegacyMovementModel implements PhysicsModel {
      */
     public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
                      int jumpAmplifier) {
+        tick(p, action, maze, jumpAmplifier, true);
+    }
+
+    /**
+     * Source jump-lock physics with mode-specific Speed technique enabled
+     * only when requested. Human traces calibrate the horizontal non-Jumper
+     * impulse in Speed mode; Modern-mode acceptance must remain unchanged.
+     */
+    public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
+                     int jumpAmplifier, boolean speedMode) {
         p.yaw += action.yawDelta();
         while (p.yaw >= 180.0F) p.yaw -= 360.0F;
         while (p.yaw < -180.0F) p.yaw += 360.0F;
@@ -60,7 +64,7 @@ public final class LegacyMovementModel implements PhysicsModel {
                  * that holding Space does not inject that impulse every tick,
                  * so preserve the vanilla-style jump cooldown state.
                  */
-                if (action.sprint()) {
+                if (speedMode && action.sprint()) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
@@ -133,12 +137,6 @@ public final class LegacyMovementModel implements PhysicsModel {
         if (!p.grounded) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
-        } else {
-            /*
-             * Keep the observed grounded motionY. This is part of the 1.8
-             * entity state even though the player's feet remain on the floor.
-             */
-            p.vy = GROUND_VERTICAL_MOTION;
         }
 
         p.pendingAirborne = false;

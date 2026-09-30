@@ -59,6 +59,7 @@ class AuthenticStage10SimulationTest {
                             + " pos=(" + result.x + "," + result.z + ")"
                             + " firstFallTick=" + result.firstFallTick
                             + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
+                            + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
                             + " firstFallDecision=" + result.firstFallDecision
                             + " decision=" + result.decision);
                 }
@@ -118,6 +119,7 @@ class AuthenticStage10SimulationTest {
         int lastStage = 1;
         long firstFallTick = -1L;
         double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
+        double firstFallVx = Double.NaN, firstFallVz = Double.NaN;
         String firstFallDecision = "NONE";
         String previousAction = "NONE";
 
@@ -168,6 +170,8 @@ class AuthenticStage10SimulationTest {
                 firstFallX = state.player.x;
                 firstFallY = state.player.y;
                 firstFallZ = state.player.z;
+                firstFallVx = state.player.vx;
+                firstFallVz = state.player.vz;
                 firstFallDecision = agent.lastDecisionDetail() + " PREVIOUS_ACTION=" + previousAction;
             }
 
@@ -176,7 +180,7 @@ class AuthenticStage10SimulationTest {
 
         return new RunResult(maxStage, state.tick, state.player.health,
                 state.player.x, state.player.z, firstFallTick, firstFallX, firstFallY, firstFallZ,
-                firstFallDecision, agent.lastDecisionDetail());
+                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -286,6 +290,8 @@ class AuthenticStage10SimulationTest {
             double firstFallX,
             double firstFallY,
             double firstFallZ,
+            double firstFallVx,
+            double firstFallVz,
             String firstFallDecision,
             String decision) {}
 }

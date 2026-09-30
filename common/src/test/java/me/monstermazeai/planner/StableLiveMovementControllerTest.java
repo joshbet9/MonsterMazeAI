@@ -447,4 +447,22 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void turnsLargeHeadingErrorWhileResidualMomentumIsStillPresent() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.mode = me.monstermazeai.game.Mode.SPEED;
+        s.player.vx = 0.18;
+        s.player.vz = 0.0;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F,
+                "large corner errors must continue turning while residual momentum is present");
+    }
+
+
 }

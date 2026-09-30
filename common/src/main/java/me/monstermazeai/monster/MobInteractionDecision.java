@@ -11,7 +11,7 @@ import me.monstermazeai.game.PadModel;
  * ordinary travel time and the resulting source bump points toward the pad.
  */
 public final class MobInteractionDecision {
-    private static final double MIN_SAFE_HEALTH = 4.0; // 2 hearts: never intentionally contact.
+    private static final double MIN_SAFE_HEALTH = 8.0; // 2 hearts: never intentionally contact.
     private static final double CONTACT_RANGE = 2.75;
     private static final double CONTACT_RANGE_SQ = CONTACT_RANGE * CONTACT_RANGE;
     private static final double PAD_RADIUS = 2.5;
@@ -21,6 +21,15 @@ public final class MobInteractionDecision {
     private MobInteractionDecision() {}
 
     public static MonsterState chooseIntentionalBump(GameState state) {
+        return chooseIntentionalBump(state, 0.25);
+    }
+
+    public static MonsterState chooseIntentionalBump(
+            GameState state, double positiveMobKnockback) {
+        if (!Double.isFinite(positiveMobKnockback)
+                || positiveMobKnockback < 0.0 || positiveMobKnockback > 1.0) {
+            throw new IllegalArgumentException("positiveMobKnockback must be in [0,1]");
+        }
         if (state == null || !state.alive || state.completed
                 || state.player.health <= MIN_SAFE_HEALTH
                 || state.activePadRow < 0 || state.activePadColumn < 0
@@ -62,7 +71,8 @@ public final class MobInteractionDecision {
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
             double towardPad = bumpUx * padUx + bumpUz * padUz;
-            if (towardPad < 0.70) continue;
+            double minimumTowardPad = 0.70 - 0.30 * positiveMobKnockback;
+            if (towardPad < minimumTowardPad) continue;
 
             double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
             if (score < bestScore) {

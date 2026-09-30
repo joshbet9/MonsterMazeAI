@@ -145,4 +145,55 @@ class AbilityModelTest {
         model.consumeBodyRushContact(s);
         assertEquals(before - 40, s.ability.activeUntilTick);
     }
+    @Test
+    void bodyRushIsReservedForLowHealthImminentContact() {
+        GameState s = new GameState();
+        s.kit = Kit.BODY_BUILDER;
+        s.ability.activations = 2;
+        s.player.health = 20.0;
+        s.monsters.add(new MonsterState(9, 1.0, 0.0, 0.0));
+        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "monster nearby"));
+
+        s.player.health = 4.0;
+        MonsterState m = s.monsters.get(0);
+        m.vx = -0.4;
+        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "imminent contact"));
+    }
+
+    @Test
+    void bodyRushPreservesResourceWhenPositiveMobKbCanSolveDeadline() {
+        GameState s = new GameState();
+        s.kit = Kit.BODY_BUILDER;
+        s.ability.activations = 2;
+        s.player.health = 12.0;
+        s.activePadRow = 10;
+        s.activePadColumn = 0;
+        s.phaseTicksRemaining = 20;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.monsters.add(new MonsterState(10, -0.4, 0.0, 0.5));
+
+        assertFalse(AbilityDecision.shouldUse(s, "NO_ROUTE", "positive mob KB available"));
+    }
+
+    @Test
+    void cryoRequiresExplicitRouteOpeningAndARelevantMonster() {
+        GameState s = new GameState();
+        s.kit = Kit.SLOWBALLER;
+        s.activePadRow = 8;
+        s.activePadColumn = 0;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.ability.cooldownUntilTick = 0;
+        s.monsters.add(new MonsterState(11, 4.0, 0.0, 0.5));
+
+        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "monster nearby"));
+        assertTrue(AbilityDecision.shouldUse(s, "ROUTE_OPENING", "monster blocks efficient route"));
+
+        s.monsters.get(0).x = 4.0;
+        s.monsters.get(0).z = 4.0;
+        assertFalse(AbilityDecision.shouldUse(s, "ROUTE_OPENING", "monster is off route"));
+    }
+
 }
+

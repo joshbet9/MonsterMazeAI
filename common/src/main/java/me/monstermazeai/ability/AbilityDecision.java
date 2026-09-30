@@ -3,6 +3,7 @@ package me.monstermazeai.ability;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.monster.MobInteractionDecision;
 
 /**
  * Strategic ability-use policy.
@@ -33,6 +34,7 @@ public final class AbilityDecision {
 
     private static final double BODY_RUSH_TRIGGER_SQ = 6.25;
     private static final double CRYO_TRIGGER_SQ = 36.0;
+    private static final double CRYO_ROUTE_CORRIDOR = 1.65;
 
     private AbilityDecision() {}
 
@@ -52,19 +54,17 @@ public final class AbilityDecision {
                     || repulsorLethalEmergency(state));
         }
 
-        if (state.kit == Kit.BODY_BUILDER && state.ability.activations <= 0) return false;
-        if (state.kit == Kit.SLOWBALLER && state.tick < state.ability.cooldownUntilTick) return false;
-
-        double nearestSq = nearestActiveMonsterDistanceSq(state);
-        switch (state.kit) {
-            case BODY_BUILDER:
-                return nearestSq <= BODY_RUSH_TRIGGER_SQ
-                        && state.ability.activeUntilTick <= state.tick;
-            case SLOWBALLER:
-                return nearestSq <= CRYO_TRIGGER_SQ;
-            default:
-                return false;
+        if (state.kit == Kit.BODY_BUILDER) {
+            return state.ability.activations > 0
+                    && state.ability.activeUntilTick <= state.tick
+                    && (bodyRushDeadlineEmergency(state, objectiveReason)
+                    || bodyRushLethalEmergency(state));
         }
+        if (state.kit == Kit.SLOWBALLER) {
+            return state.tick >= state.ability.cooldownUntilTick
+                    && cryoRouteOpening(state, objectiveReason);
+        }
+        return false;
     }
 
     private static boolean repulsorDeadlineEmergency(GameState state, String objectiveReason) {
@@ -101,6 +101,64 @@ public final class AbilityDecision {
                 + DEADLINE_MARGIN_TICKS;
 
         return requiredTicks >= state.phaseTicksRemaining;
+    }
+
+    private static boolean bodyRushDeadlineEmergency(GameState state, String objectiveReason) {
+        if (!"NO_ROUTE".equals(objectiveReason)) return false;
+        if (MobInteractionDecision.chooseIntentionalBump(state) != null) return false;
+        MonsterState nearest = nearestActiveMonster(state);
+        if (nearest == null || distanceSq(state, nearest) > BODY_RUSH_TRIGGER_SQ) return false;
+        if (state.phaseTicksRemaining <= 0) return false;
+        return deadlineEmergency(state);
+    }
+
+    private static boolean bodyRushLethalEmergency(GameState state) {
+        if (state.player.health > LETHAL_HEALTH) return false;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            if (distanceSq(state, monster) > BODY_RUSH_TRIGGER_SQ) continue;
+            if (imminentCollision(state, monster)) return true;
+        }
+        return false;
+    }
+
+    private static boolean deadlineEmergency(GameState state) {
+        if (state.activePadRow < 0 || state.activePadColumn < 0) return false;
+        double dx = state.activePadRow + 0.5 - state.player.x;
+        double dz = state.activePadColumn + 0.5 - state.player.z;
+        double distanceToPad = Math.max(0.0, Math.hypot(dx, dz) - SAFE_PAD_RADIUS);
+        double estimatedFastestTicks = distanceToPad * ESTIMATED_TICKS_PER_BLOCK;
+        return estimatedFastestTicks + ROUTE_REOPEN_WAIT_RESERVE_TICKS + DEADLINE_MARGIN_TICKS
+                >= state.phaseTicksRemaining;
+    }
+
+    private static boolean cryoRouteOpening(GameState state, String objectiveReason) {
+        if (!"ROUTE_OPENING".equals(objectiveReason)) return false;
+        if (state.activePadRow < 0 || state.activePadColumn < 0) return false;
+
+        double toPadX = state.activePadRow + 0.5 - state.player.x;
+        double toPadZ = state.activePadColumn + 0.5 - state.player.z;
+        double padDistance = Math.hypot(toPadX, toPadZ);
+        if (padDistance < 1.0E-6) return false;
+
+        double ux = toPadX / padDistance;
+        double uz = toPadZ / padDistance;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            if (distanceSq(state, monster) > CRYO_TRIGGER_SQ) continue;
+            double mx = monster.x - state.player.x;
+            double mz = monster.z - state.player.z;
+            double along = mx * ux + mz * uz;
+            if (along <= 0.0 || along >= padDistance) continue;
+            double lateral = Math.abs(mx * uz - mz * ux);
+            if (lateral <= CRYO_ROUTE_CORRIDOR) return true;
+        }
+        return false;
+    }
+
+    private static boolean activeMonster(GameState state, MonsterState monster) {
+        return monster != null && !monster.removed
+                && !monster.launched(state.tick) && !monster.frozen(state.tick);
     }
 
     private static boolean repulsorLethalEmergency(GameState state) {

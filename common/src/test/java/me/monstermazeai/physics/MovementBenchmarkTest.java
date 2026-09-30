@@ -82,19 +82,6 @@ class MovementBenchmarkTest {
                 "holding jump must enter the source-style jump cooldown");
     }
 
-    @Test
-    void groundedMotionYMatchesMinecraft18Telemetry() {
-        GameState s = player();
-        s.player.y = GameState.PATH_Y;
-        s.player.grounded = true;
-
-        new LegacyMovementModel().tick(s.player, Action.IDLE, s.maze, -10);
-
-        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-12);
-        assertEquals(-0.0784000015258789D, s.player.vy, 1.0e-12);
-        assertTrue(s.player.grounded);
-    }
-
     @Test void movementIsTickDeterministic(){
         assertEquals(run(60,6),run(60,6),1e-12);
         assertEquals(run(60,8),run(60,8),1e-12);

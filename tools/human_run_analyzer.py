@@ -16,7 +16,7 @@ import json
 import math
 import statistics
 import re
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
@@ -146,24 +146,31 @@ def scoreboard_info(lines: Sequence[Any]) -> Dict[str, Any]:
 
     stage = None
     safe_seconds = None
+    def nearby_numeric_value(index: int) -> Optional[int]:
+        same = first_int(cleaned[index])
+        if same is not None and re.fullmatch(r"\\s*\\d+\\s*", cleaned[index]):
+            return same
+        candidates = []
+        for distance in (1, 2):
+            for neighbor_index in (index - distance, index + distance):
+                if 0 <= neighbor_index < len(cleaned):
+                    value = first_int(cleaned[neighbor_index])
+                    if value is None:
+                        continue
+                    pure = bool(re.fullmatch(r"\\s*\\d+\\s*", cleaned[neighbor_index]))
+                    candidates.append((0 if pure else 1, distance, value))
+        if same is not None:
+            candidates.append((1, 0, same))
+        return min(candidates)[2] if candidates else None
+
     for i, line in enumerate(cleaned):
         lower = line.lower()
         if "stage" in lower:
-            value = first_int(line)
-            if value is None:
-                for neighbor in cleaned[max(0, i - 2):min(len(cleaned), i + 3)]:
-                    value = first_int(neighbor)
-                    if value is not None:
-                        break
+            value = nearby_numeric_value(i)
             if value is not None and 0 < value < 10000:
                 stage = value
         if "second" in lower and ("safe" in lower or "pad" in lower):
-            value = first_int(line)
-            if value is None:
-                for neighbor in cleaned[max(0, i - 2):min(len(cleaned), i + 3)]:
-                    value = first_int(neighbor)
-                    if value is not None:
-                        break
+            value = nearby_numeric_value(i)
             if value is not None:
                 safe_seconds = value
     if safe_seconds is None:

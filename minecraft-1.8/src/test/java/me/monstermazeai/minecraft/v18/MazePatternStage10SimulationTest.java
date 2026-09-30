@@ -2,7 +2,15 @@ package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
+import me.monstermazeai.ability.AbilityDecision;
+import me.monstermazeai.ability.AbilityModel;
+import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
+import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.monster.MonsterMazeBumpModel;
+import me.monstermazeai.monster.MonsterSimulator;
+import me.monstermazeai.monster.MonsterState;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -187,6 +195,33 @@ public final class MazePatternStage10SimulationTest {
 
         FirstPadSpeedrunController controller = new FirstPadSpeedrunController();
 
+        /*
+         * Keep a real GameState alongside the adapter-facing centered-world
+         * player. GameState uses the source Monster Maze coordinate frame
+         * (0..98, cell centres at row+0.5); the controller/1.8 observer uses
+         * centered Minecraft coordinates. This bridge is intentionally explicit
+         * so we never "fix" physics by changing the Minecraft coordinate frame.
+         */
+        MazeModel monsterMaze = new MazeModel(raw);
+        GameState tacticalState = new GameState();
+        tacticalState.mode = Mode.ORIGINAL;
+        tacticalState.maze = monsterMaze;
+        tacticalState.kit = kit;
+        tacticalState.alive = true;
+        tacticalState.inMonsterMaze = true;
+        tacticalState.player.x = player.x + HALF;
+        tacticalState.player.y = player.y;
+        tacticalState.player.z = player.z + HALF;
+        tacticalState.player.grounded = player.grounded;
+        tacticalState.player.health = 20.0;
+        tacticalState.player.maxHealth = 20.0;
+        tacticalState.activePadRow = -1;
+        tacticalState.activePadColumn = -1;
+        AbilityModel abilities = new AbilityModel();
+        abilities.initialiseForMode(tacticalState);
+        MonsterSimulator monsterSimulator = new MonsterSimulator(monsterMaze, new Random(0x4D4D0000L + seed * 1009L), 0.18D);
+        spawnInitialMonsters(tacticalState, raw, seed);
+
         Cell activePad = pads.get(0);
         Cell oldPad = null;
         Cell previewPad = null;
@@ -212,8 +247,14 @@ public final class MazePatternStage10SimulationTest {
 
             boolean[][] physical = physicalFloor(
                     raw, activePad, oldPad, oldPadTicksRemaining, previewPad);
+            syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
+            tacticalState.previewPadRow = previewPad == null ? -1 : previewPad.row;
+            tacticalState.previewPadColumn = previewPad == null ? -1 : previewPad.column;
+            tacticalState.tick = ticks;
+            monsterSimulator.tick(tacticalState);
+
             LegacyWorldObservation observation = observation(
-                    ticks, stage, pattern + 1, kit, player, activePad, raw, physical);
+                    ticks, stage, pattern + 1, kit, player, activePad, raw, physical, tacticalState, abilities);
 
             LegacyAction action;
             ByteArrayOutputStream controllerLog = new ByteArrayOutputStream();
@@ -228,6 +269,17 @@ public final class MazePatternStage10SimulationTest {
             result.controllerLog.append(controllerLog.toString());
             if (action == null) action = LegacyAction.IDLE;
 
+            /*
+             * Ability use is now a real source-model operation. The adapter
+             * action only carries the pulse; AbilityModel owns the cooldown,
+             * charge, freeze, launch and Body Rush state exactly as the live
+             * common model does.
+             */
+            if (action.useAbility) {
+                boolean activated = abilities.activate(tacticalState);
+                if (activated) result.abilityUses++;
+            }
+
             if (action.jump) result.jumpTicks++;
             result.trace.append("t=").append(ticks)
                     .append(" p=").append(format(player.x)).append(",")
@@ -237,6 +289,20 @@ public final class MazePatternStage10SimulationTest {
             if (action.forward > 0.01D) result.movementTicks++;
 
             step(player, action, physical, result);
+
+            syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
+            int bumps = MonsterMazeBumpModel.apply(tacticalState);
+            if (bumps > 0) {
+                player.x = tacticalState.player.x - HALF;
+                player.y = tacticalState.player.y;
+                player.z = tacticalState.player.z - HALF;
+                player.vx = tacticalState.player.vx;
+                player.vy = tacticalState.player.vy;
+                player.vz = tacticalState.player.vz;
+                player.grounded = tacticalState.player.grounded;
+                player.alive = tacticalState.player.health > 0.0;
+                result.mobBumps += bumps;
+            }
 
             if (!player.alive) {
                 result.stage = stage;
@@ -302,6 +368,11 @@ public final class MazePatternStage10SimulationTest {
                 previewPad = null;
                 stage++;
                 targetCaptured = false;
+                tacticalState.stage = stage;
+                tacticalState.activePadRow = activePad.row;
+                tacticalState.activePadColumn = activePad.column;
+                spawnStageMonsters(tacticalState, raw, seed, stage);
+                abilities.onReachedPad(tacticalState, false);
                 stageTicksRemaining = stageTimeTicks(stage);
             }
         }
@@ -324,7 +395,8 @@ public final class MazePatternStage10SimulationTest {
 
     private static LegacyWorldObservation observation(
             long tick, int stage, int pattern, Kit kit, SimPlayer p, Cell pad,
-            int[][] raw, boolean[][] physical) {
+            int[][] raw, boolean[][] physical, GameState tacticalState,
+            AbilityModel abilities) {
         return new LegacyWorldObservation(
                 tick,
                 true,
@@ -341,8 +413,10 @@ public final class MazePatternStage10SimulationTest {
                         p.yaw, 0.0F, p.grounded,
                         20.0D, 20.0D),
                 kit,
-                kit == Kit.JUMPER ? 3 : 0,
-                0,
+                tacticalState.ability.charges,
+                kit == Kit.BODY_BUILDER
+                        ? tacticalState.ability.activations
+                        : tacticalState.ability.charges,
                 new LegacyWorldObservation.BlockPoint(0, 0, 0),
                 new LegacyWorldObservation.Pad(
                         pad.row, pad.column,
@@ -350,9 +424,66 @@ public final class MazePatternStage10SimulationTest {
                         isOnPad(p, pad)),
                 raw,
                 physical,
-                Collections.<LegacyWorldObservation.Monster>emptyList(),
+                monsterObservations(tacticalState),
                 "Monster Maze",
                 Collections.<String>emptyList());
+    }
+
+    private static void syncTacticalState(
+            GameState state, SimPlayer player, Cell activePad, int stage,
+            int phaseTicks, long tick) {
+        state.tick = tick;
+        state.stage = stage;
+        state.activePadRow = activePad.row;
+        state.activePadColumn = activePad.column;
+        state.phaseTicksRemaining = Math.max(0, phaseTicks);
+        state.player.x = player.x + HALF;
+        state.player.y = player.y;
+        state.player.z = player.z + HALF;
+        state.player.vx = player.vx;
+        state.player.vy = player.vy;
+        state.player.vz = player.vz;
+        state.player.yaw = player.yaw;
+        state.player.grounded = player.grounded;
+        state.player.health = player.health;
+        state.player.maxHealth = 20.0;
+        state.alive = player.alive;
+    }
+
+    private static List<LegacyWorldObservation.Monster> monsterObservations(GameState state) {
+        List<LegacyWorldObservation.Monster> out = new ArrayList<LegacyWorldObservation.Monster>();
+        for (MonsterState m : state.monsters) {
+            out.add(new LegacyWorldObservation.Monster(
+                    m.id, "monster_maze_monster", "monster",
+                    m.x - HALF, m.y, m.z - HALF,
+                    m.vx, m.vy, m.vz, m.removed));
+        }
+        return out;
+    }
+
+    private static void spawnInitialMonsters(GameState state, int[][] raw, int seed) {
+        Random random = new Random(0x6D4D0000L + seed * 31337L);
+        spawnMonsters(state, raw, 150, random, 100000);
+    }
+
+    private static void spawnStageMonsters(GameState state, int[][] raw, int seed, int stage) {
+        Random random = new Random(0x7D4D0000L + seed * 31337L + stage * 7919L);
+        spawnMonsters(state, raw, 15, random, 100000 + stage * 1000);
+    }
+
+    private static void spawnMonsters(GameState state, int[][] raw, int count, Random random, int idBase) {
+        List<Cell> spawns = new ArrayList<Cell>();
+        for (int r = 0; r < SIZE; r++) for (int c = 0; c < SIZE; c++)
+            if (raw[r][c] == 2) spawns.add(new Cell(r, c));
+        if (spawns.isEmpty()) throw new AssertionError("Maze has no MonsterMaze spawn cells");
+        for (int i = 0; i < count; i++) {
+            Cell spawn = spawns.get(random.nextInt(spawns.size()));
+            state.monsters.add(new MonsterState(
+                    idBase + i,
+                    spawn.row + 0.5,
+                    0.0,
+                    spawn.column + 0.5));
+        }
     }
 
     private static void step(

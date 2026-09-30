@@ -52,7 +52,7 @@ class AuthenticStage10SimulationTest {
 
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
-                RunResult result = run(pattern, kit, AiProfile.BASELINE);
+                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL);
                 if (result.maxStage < REQUIRED_STAGE) {
                     failures.add("pattern=" + (pattern + 1)
                             + " kit=" + kit

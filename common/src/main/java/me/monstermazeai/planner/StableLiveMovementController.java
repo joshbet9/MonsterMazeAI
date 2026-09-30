@@ -565,6 +565,16 @@ public final class StableLiveMovementController {
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 
+        Action guarded = guardProjectedSupport(state, action);
+        if (guarded != action) {
+            lastDecisionDetail += " EDGE_GUARD"
+                    + " raw=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe())
+                    + " guarded=f=" + format(guarded.forward())
+                    + ",s=" + format(guarded.strafe());
+            action = guarded;
+        }
+
         lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)
                 + " target=" + targetX + "," + targetZ
                 + " dist=" + format(distance)
@@ -1355,6 +1365,99 @@ public final class StableLiveMovementController {
             }
         }
         return best;
+    }
+
+    /**
+     * Reject only a grounded input whose predicted next center leaves the
+     * player's 0.6-wide AABB unsupported. This changes ordinary input, never
+     * the physics outcome, and is therefore a legitimate closed-loop safety
+     * policy for the Minecraft controller.
+     */
+    private Action guardProjectedSupport(GameState state, Action action) {
+        if (!state.player.grounded || gapExecutionActive || action.useAbility()) return action;
+        if (state.maze == null || hasProjectedSupport(state, action)) return action;
+
+        Action[] alternatives = new Action[] {
+                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                new Action(-0.6, 0.0, false, false, action.yawDelta(), false),
+                new Action(0.0, -1.0, false, false, action.yawDelta(), false),
+                new Action(0.0, 1.0, false, false, action.yawDelta(), false)
+        };
+
+        Action best = alternatives[0];
+        double bestProgress = Double.NEGATIVE_INFINITY;
+        for (Action candidate : alternatives) {
+            if (!hasProjectedSupport(state, candidate)) continue;
+            double progress = projectedForwardProgress(state, candidate);
+            if (progress > bestProgress) {
+                bestProgress = progress;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private boolean hasProjectedSupport(GameState state, Action action) {
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double friction = SLIPPERINESS * GROUND_FRICTION;
+        double factor = WALK_SPEED
+                * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
+                * (0.16277136F / (friction * friction * friction));
+
+        double magnitude = action.strafe() * action.strafe() + action.forward() * action.forward();
+        if (magnitude >= 1.0E-4D) {
+            double normal = Math.max(1.0D, Math.sqrt(magnitude));
+            double scale = factor / normal;
+            double sin = Math.sin(yaw);
+            double cos = Math.cos(yaw);
+            double vx = state.player.vx + action.strafe() * scale * cos
+                    - action.forward() * scale * sin;
+            double vz = state.player.vz + action.forward() * scale * cos
+                    + action.strafe() * scale * sin;
+
+            if (action.jump() && action.sprint()) {
+                // Same horizontal sprint-jump impulse used by LegacyMovementModel.
+                vx -= Math.sin(yaw) * 0.2D;
+                vz += Math.cos(yaw) * 0.2D;
+            }
+
+            return playerAabbSupported(state, state.player.x + vx, state.player.z + vz);
+        }
+        return playerAabbSupported(state, state.player.x + state.player.vx, state.player.z + state.player.vz);
+    }
+
+    private double projectedForwardProgress(GameState state, Action action) {
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double projectedVx = state.player.vx;
+        double projectedVz = state.player.vz;
+        double magnitude = action.strafe() * action.strafe() + action.forward() * action.forward();
+        if (magnitude >= 1.0E-4D) {
+            double friction = SLIPPERINESS * GROUND_FRICTION;
+            double factor = WALK_SPEED
+                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
+                    * (0.16277136F / (friction * friction * friction));
+            double scale = factor / Math.max(1.0D, Math.sqrt(magnitude));
+            double sin = Math.sin(yaw), cos = Math.cos(yaw);
+            projectedVx += action.strafe() * scale * cos - action.forward() * scale * sin;
+            projectedVz += action.forward() * scale * cos + action.strafe() * scale * sin;
+        }
+        return projectedVx * forwardX + projectedVz * forwardZ;
+    }
+
+    private boolean playerAabbSupported(GameState state, double x, double z) {
+        final double halfWidth = 0.30D;
+        int minRow = (int) Math.floor(x - halfWidth);
+        int maxRow = (int) Math.floor(Math.nextDown(x + halfWidth));
+        int minColumn = (int) Math.floor(z - halfWidth);
+        int maxColumn = (int) Math.floor(Math.nextDown(z + halfWidth));
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (inBounds(row, column) && state.maze.isPhysicalFloor(row, column)) return true;
+            }
+        }
+        return false;
     }
 
     private Action maybeBeginPadEntryCommitment(GameState state, Cell goal, boolean allowJump) {

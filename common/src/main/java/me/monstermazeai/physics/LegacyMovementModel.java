@@ -88,7 +88,13 @@ public final class LegacyMovementModel implements PhysicsModel {
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;
-                if (action.sprint()) {
+                /*
+                 * In Speed mode, the sprint-jump impulse follows actual
+                 * forward sprint state. A held sprint key with zero forward
+                 * input does not produce horizontal jump impulse in the human
+                 * traces. Non-Speed behavior remains source-compatible.
+                 */
+                if (action.sprint() && (!speedMode || action.forward() > 0.0F)) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;

@@ -248,13 +248,14 @@ public final class StableLiveMovementController {
 
         GameState routingState = transitionRoutingState(
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
-        int startRow = (int) Math.floor(state.player.x);
-        int startColumn = (int) Math.floor(state.player.z);
-        if (!inBounds(startRow, startColumn) || !inBounds(goal.row(), goal.column())) {
-            lastDecisionDetail = "OUT_OF_BOUNDS start=" + startRow + "," + startColumn
-                    + " goal=" + goal.row() + "," + goal.column();
+        Cell supportedStart = resolveSupportedStartCell(state);
+        if (supportedStart == null || !inBounds(goal.row(), goal.column())) {
+            lastDecisionDetail = "NO_PHYSICAL_SUPPORT player=" + format(state.player.x) + "," + format(state.player.z)
+                    + " y=" + format(state.player.y) + " goal=" + goal.row() + "," + goal.column();
             return Action.IDLE;
         }
+        int startRow = supportedStart.row();
+        int startColumn = supportedStart.column();
 
         // Entering any physical cell of the Safe Pad completes the movement
         // objective. Do not continue toward the beacon centre or re-route back
@@ -1119,6 +1120,43 @@ public final class StableLiveMovementController {
      * geometric rather than based on the raw maze cells because SafePad.build
      * replaces a 5x5 area, including cells that were air in the canonical maze.
      */
+    /**
+     * Resolve the player's logical route anchor from the same physical support
+     * used by the movement model. Minecraft collision is AABB-based, so the
+     * block containing floor(x,z) can be air while the player's 0.6-wide body
+     * still overlaps a neighbouring solid cell.
+     */
+    private Cell resolveSupportedStartCell(GameState state) {
+        int currentRow = (int) Math.floor(state.player.x);
+        int currentColumn = (int) Math.floor(state.player.z);
+        if (inBounds(currentRow, currentColumn)
+                && state.maze.isPhysicalFloor(currentRow, currentColumn)) {
+            return new Cell(currentRow, currentColumn);
+        }
+
+        final double halfWidth = 0.30D;
+        int minRow = (int) Math.floor(state.player.x - halfWidth);
+        int maxRow = (int) Math.floor(Math.nextDown(state.player.x + halfWidth));
+        int minColumn = (int) Math.floor(state.player.z - halfWidth);
+        int maxColumn = (int) Math.floor(Math.nextDown(state.player.z + halfWidth));
+
+        Cell best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (!inBounds(row, column) || !state.maze.isPhysicalFloor(row, column)) continue;
+                double dx = state.player.x - (row + 0.5D);
+                double dz = state.player.z - (column + 0.5D);
+                double distance = dx * dx + dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = new Cell(row, column);
+                }
+            }
+        }
+        return best;
+    }
+
     private Action maybeBeginPadEntryCommitment(GameState state, Cell goal, boolean allowJump) {
         if (route == null || route.size() < 2 || padEntryCommitment) return null;
         if (state.padReached || PadModel.isOn(state.player, goal.row() + 0.5,
@@ -1127,8 +1165,8 @@ public final class StableLiveMovementController {
         double outside = distanceOutsidePad(state, goal);
         if (outside > PAD_ENTRY_COMMIT_DISTANCE) return null;
 
-        Cell current = new Cell((int) Math.floor(state.player.x), (int) Math.floor(state.player.z));
-        if (!state.maze.isPhysicalFloor(current.row(), current.column())) return null;
+        Cell current = resolveSupportedStartCell(state);
+        if (current == null) return null;
 
         int[] direction = terminalRouteDirection();
         if (direction == null) return null;

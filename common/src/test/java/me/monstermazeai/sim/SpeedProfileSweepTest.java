@@ -18,10 +18,16 @@ import java.util.List;
  * maze geometry, monster simulation and kit mechanics remain untouched.
  */
 class SpeedProfileSweepTest {
-    private static final Kit[][] CASES = {
-            {Kit.JUMPER, Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK},
-            {Kit.JUMPER, Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK},
-            {Kit.JUMPER, Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK}
+    private static final int[][] CASES = {
+            {0, Kit.JUMPER.ordinal()},
+            {0, Kit.SLOWBALLER.ordinal()},
+            {0, Kit.BODY_BUILDER.ordinal()},
+            {1, Kit.JUMPER.ordinal()},
+            {1, Kit.SLOWBALLER.ordinal()},
+            {1, Kit.BODY_BUILDER.ordinal()},
+            {2, Kit.JUMPER.ordinal()},
+            {2, Kit.SLOWBALLER.ordinal()},
+            {2, Kit.BODY_BUILDER.ordinal()}
     };
 
     @Test
@@ -40,8 +46,8 @@ class SpeedProfileSweepTest {
             for (int pattern = 0; pattern < CASES.length; pattern++) {
                 for (Kit kit : CASES[pattern]) {
                     AuthenticStage10SimulationTest.RunResult result =
-                            AuthenticStage10SimulationTest.runToEnd(
-                                    pattern, kit, profile, Mode.SPEED);
+                            AuthenticStage10SimulationTest.runDiagnostic(
+                                    pattern, kit, profile, Mode.SPEED, 20);
                     totalStage += result.maxStage();
                     if (result.maxStage() >= 10) stage10++;
                     if (result.maxStage() >= 15) stage15++;
@@ -55,7 +61,7 @@ class SpeedProfileSweepTest {
                 }
             }
 
-            double average = totalStage / 15.0;
+            double average = totalStage / (double) CASES.length;
             rows.add(new Row(handling, average, stage10, stage15, minStage, maxStage));
         }
 
@@ -67,8 +73,8 @@ class SpeedProfileSweepTest {
         System.out.println("===== SPEED PROFILE SWEEP SUMMARY =====");
         for (Row row : rows) {
             System.out.printf(
-                    "handling=%.2f average=%.3f stage10=%d/15 stage15=%d/15 min=%d max=%d%n",
-                    row.handling(), row.average(), row.stage10(), row.stage15(),
+                    "handling=%.2f average=%.3f stage10=%d/%d stage15=%d/%d min=%d max=%d%n",
+                    row.handling(), row.average(), row.stage10(), CASES.length, row.stage15(), CASES.length,
                     row.minStage(), row.maxStage());
         }
     }

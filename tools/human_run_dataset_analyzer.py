@@ -134,6 +134,8 @@ def analyze_dataset(dataset_dir: Path, output_dir: Path) -> Dict[str, Any]:
     for manifest_path in manifests:
         manifest = load_json(manifest_path)
         run_id = str(manifest.get("runId") or manifest_path.stem.replace("-manifest", ""))
+        if run_id.startswith("human-speed-run-"):
+            run_id = run_id[len("human-speed-run-"):]
         run_output = run_root / run_id
         result = normalize_run(
             dataset_dir,

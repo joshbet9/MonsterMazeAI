@@ -555,7 +555,38 @@ public final class StableLiveMovementController {
 
         Action action;
 
-        if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+        /*
+         * Corner acquisition has priority over lane recovery. The old ordering
+         * let a cross-track error (>0.28) suppress the turn at exactly the
+         * moment a 90-degree route corner needed the camera to acquire the new
+         * cardinal heading. That produced the recurring CORNER_VECTOR ->
+         * LANE_RECOVERY -> near-zero-speed -> overshoot loop seen in the
+         * deterministic Speed traces.
+         *
+         * Human runs do not stop to perfectly centre before every corner: they
+         * keep a bounded movement vector active while turning. Preserve that
+         * behaviour whenever the desired heading is substantially different,
+         * then return to lane correction once the new corridor is acquired.
+         */
+        double absYawError = Math.abs(yawError);
+        if (absYawError > MAX_DRIVE_STEER_ERROR && absYawError < 135.0F) {
+            double errorRad = Math.toRadians(yawError);
+            double turnForward = Math.cos(errorRad) * 0.65D;
+            double turnStrafe = -Math.sin(errorRad) * 0.65D;
+            boolean jump = shouldSpeedJump(state, allowJump);
+            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            action = new Action(turnForward, turnStrafe, jump, false, turn, false);
+            lastDecisionDetail += " CORNER_ACQUIRE";
+        } else if (absYawError >= 135.0F) {
+            /*
+             * A near-reverse heading cannot be safely driven through a one-cell
+             * corridor. Acquire the heading first, but do not wait for the
+             * player to become completely stationary before turning.
+             */
+            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            action = new Action(0.0, 0.0, false, false, turn, false);
+            lastDecisionDetail += " REVERSE_TURN";
+        } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
              * A player can remain physically supported while the block
              * containing floor(x,z) is air. Stopping forever at a 0.3-0.5

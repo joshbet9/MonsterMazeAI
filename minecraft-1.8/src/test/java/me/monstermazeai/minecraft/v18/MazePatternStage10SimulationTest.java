@@ -433,7 +433,7 @@ public final class MazePatternStage10SimulationTest {
                 p.alive,
                 false,
                 stage,
-                30,
+                Math.max(0, (tacticalState.phaseTicksRemaining + 19) / 20),
                 (int) (tick / 20L),
                 new LegacyWorldObservation.Player(
                         p.x, p.y, p.z,

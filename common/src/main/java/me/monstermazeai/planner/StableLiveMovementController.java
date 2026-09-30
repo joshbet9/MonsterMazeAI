@@ -1377,34 +1377,54 @@ public final class StableLiveMovementController {
 
     private double[] findAirRecoveryTarget(GameState state, Cell goal) {
         /*
-         * The recovery controller actively cancels the measured knockback, so
-         * predicting a landing point from the uncorrected velocity is internally
-         * inconsistent. Instead, land on the nearest real physical floor under
-         * or around the player, with only a small bias toward the current goal.
-         * Once grounded, normal route planning resumes.
+         * The source bump supplies the player with a large horizontal impulse.
+         * Select the recovery surface from the point the same 1.8 movement model
+         * predicts the player's feet will reach naturally, not merely the nearest
+         * floor around the current position.
          */
+        me.monstermazeai.player.PlayerState ballistic = state.player.copy();
+        int landingTicks = 0;
+        final int MAX_RECOVERY_TICKS = 20;
+        while (landingTicks < MAX_RECOVERY_TICKS
+                && !ballistic.grounded
+                && ballistic.y > GameState.PATH_Y - 3.0D) {
+            movementProjection.tick(
+                    ballistic,
+                    Action.IDLE,
+                    state.maze,
+                    0);
+            landingTicks++;
+        }
+
+        double predictedX = ballistic.x;
+        double predictedZ = ballistic.z;
+        double goalX = goal.row() + 0.5D;
+        double goalZ = goal.column() + 0.5D;
+
+        int centreRow = (int) Math.floor(predictedX);
+        int centreCol = (int) Math.floor(predictedZ);
+
         double bestX = state.player.x;
         double bestZ = state.player.z;
         double bestScore = Double.POSITIVE_INFINITY;
 
-        int centreRow = (int) Math.floor(state.player.x);
-        int centreCol = (int) Math.floor(state.player.z);
-        double goalX = goal.row() + 0.5D;
-        double goalZ = goal.column() + 0.5D;
-
-        for (int row = Math.max(0, centreRow - 5);
-             row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 5); row++) {
-            for (int col = Math.max(0, centreCol - 5);
-                 col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 5); col++) {
+        for (int row = Math.max(0, centreRow - 7);
+             row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 7); row++) {
+            for (int col = Math.max(0, centreCol - 7);
+                 col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 7); col++) {
                 if (!state.maze.isPhysicalFloor(row, col)) continue;
 
                 double x = row + 0.5D;
                 double z = col + 0.5D;
-                double currentDistance = sq(x - state.player.x) + sq(z - state.player.z);
+                double landingDistance = sq(x - predictedX) + sq(z - predictedZ);
                 double goalDistance = sq(x - goalX) + sq(z - goalZ);
 
-                // Safety dominates route progress during an airborne recovery.
-                double score = currentDistance + 0.03D * goalDistance;
+                /*
+                 * Landing safety dominates strategic progress, but the goal gets
+                 * a small bias so a choice among several equally reachable floor
+                 * cells does not unnecessarily reverse the route.
+                 */
+                double score = landingDistance + 0.025D * goalDistance;
                 if (score < bestScore) {
                     bestScore = score;
                     bestX = x;
@@ -1415,7 +1435,6 @@ public final class StableLiveMovementController {
 
         return new double[]{bestX, bestZ};
     }
-
 
     private static double sq(double value) {
         return value * value;

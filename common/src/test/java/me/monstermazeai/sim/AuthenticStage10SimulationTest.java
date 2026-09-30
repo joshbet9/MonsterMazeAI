@@ -5,6 +5,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.Mode;
 import me.monstermazeai.game.SourcePadSpawner;
 import me.monstermazeai.kit.Kit;
+import me.monstermazeai.player.AiProfile;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterSimulator;
@@ -51,7 +52,7 @@ class AuthenticStage10SimulationTest {
 
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
-                RunResult result = run(pattern, kit);
+                RunResult result = run(pattern, kit, AiProfile.BASELINE);
                 if (result.maxStage < REQUIRED_STAGE) {
                     failures.add("pattern=" + (pattern + 1)
                             + " kit=" + kit
@@ -74,6 +75,10 @@ class AuthenticStage10SimulationTest {
     }
 
     private RunResult run(int pattern, Kit kit) {
+        return run(pattern, kit, AiProfile.BASELINE);
+    }
+
+    private RunResult run(int pattern, Kit kit, AiProfile profile) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -117,7 +122,7 @@ class AuthenticStage10SimulationTest {
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
                         new LiveObjectiveController(
-                                new MazeAwareRecedingHorizonController(1))));
+                                new MazeAwareRecedingHorizonController(1, profile))));
 
         int maxStage = 1;
         int lastStage = 1;

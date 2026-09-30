@@ -42,6 +42,16 @@ public final class MobInteractionDecision {
         double padUx = padDx / padLen;
         double padUz = padDz / padLen;
 
+        /*
+         * A normal bump is a real source movement primitive: the server gives
+         * the player a unit horizontal velocity away from the monster. Good
+         * players can exploit a monster that is already beside them and whose
+         * bump vector points strongly toward the next pad. Do not reserve this
+         * for deadline emergencies; allow an opportunistic bump when it has a
+         * clear directional benefit and enough health to absorb the four damage.
+         */
+        boolean emergency = ordinaryTicks + EMERGENCY_MARGIN_TICKS >= state.phaseTicksRemaining;
+
         MonsterState best = null;
         double bestScore = Double.POSITIVE_INFINITY;
         for (MonsterState monster : state.monsters) {
@@ -62,9 +72,23 @@ public final class MobInteractionDecision {
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
             double towardPad = bumpUx * padUx + bumpUz * padUz;
-            if (towardPad < 0.70) continue;
 
-            double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
+            /*
+             * Emergency mode keeps the old conservative threshold. Outside an
+             * emergency, require an even cleaner alignment so ordinary routing
+             * is never replaced merely because a mob happens to be nearby.
+             */
+            double requiredAlignment = emergency ? 0.70 : 0.88;
+            if (towardPad < requiredAlignment) continue;
+
+            /*
+             * Prefer a contact that is close to the one-block source collision
+             * radius and points strongly toward the pad. The emergency state
+             * gets a modest score bonus, but opportunistic use remains valid.
+             */
+            double distancePenalty = Math.abs(horizontal - 1.0);
+            double emergencyBonus = emergency ? -0.5 : 0.0;
+            double score = distancePenalty - towardPad * 3.0 + emergencyBonus;
             if (score < bestScore) {
                 bestScore = score;
                 best = monster;

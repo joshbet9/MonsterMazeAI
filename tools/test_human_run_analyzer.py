@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from human_run_analyzer import classify_death, normalize_run, scoreboard_info
+from human_run_analyzer import classify_death, compare_with_simulator, normalize_run, scoreboard_info
 
 
 class HumanRunAnalyzerTest(unittest.TestCase):
@@ -104,6 +104,20 @@ class HumanRunAnalyzerTest(unittest.TestCase):
             self.assertTrue(any(a["type"] == "WORLD_STAGE_CONFLICT" for a in result["anomalies"]))
             self.assertTrue((root / "analysis" / "summary.json").exists())
             self.assertTrue((root / "normalized" / "decisions.jsonl").exists())
+
+    def test_simulator_condition_mismatch_is_explicit(self):
+        human = {
+            "conditions": {"mode": "speed", "kit": "REPULSOR", "pattern": 3},
+            "run": {"stageReached": 10, "durationSeconds": 20.0},
+            "metrics": {},
+        }
+        simulator = {
+            "conditions": {"mode": "speed", "kit": "JUMPER", "pattern": 3},
+            "simulator": {"stageReached": 9, "durationSeconds": 18.0},
+        }
+        comparison = compare_with_simulator(human, simulator)
+        self.assertFalse(comparison["conditionMatch"])
+        self.assertEqual(comparison["conditionDifferences"][0]["field"], "kit")
 
     def test_death_classification_uses_knockback_candidate(self):
         events = [{"type": "KNOCKBACK_CANDIDATE", "tick": 100}]

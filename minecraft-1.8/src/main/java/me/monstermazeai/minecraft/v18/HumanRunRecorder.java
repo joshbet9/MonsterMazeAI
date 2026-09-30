@@ -259,13 +259,7 @@ public final class HumanRunRecorder implements Closeable {
                 .append(s.pad == null ? "null" : Math.sqrt(Math.max(0.0, s.pad.distanceSq)))
                 .append(",\"recordIndex\":").append(records).append("}");
 
-        b.append(",\"scoreboard\":{\"title\":\"").append(escape(s.scoreboardTitle))
-                .append("\",\"lines\":[");
-        for (int i = 0; i < s.scoreboardLines.size(); i++) {
-            if (i > 0) b.append(",");
-            b.append("\"").append(escape(s.scoreboardLines.get(i))).append("\"");
-        }
-        b.append("]}}");
+        b.append("}");
         return b.toString();
     }
 

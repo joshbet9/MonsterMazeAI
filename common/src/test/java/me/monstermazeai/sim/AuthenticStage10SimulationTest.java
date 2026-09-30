@@ -72,7 +72,8 @@ class AuthenticStage10SimulationTest {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
-        Random random = new Random(seed);
+        Random monsterRandom = new Random(seed ^ 0x6A09E667F3BCC909L);
+        Random padRandom = new Random(seed ^ 0xBB67AE8584CAA73BL);
 
         int[][] raw = SourceMazeLayouts.maze(pattern);
         MazeModel maze = new MazeModel(raw);
@@ -92,7 +93,7 @@ class AuthenticStage10SimulationTest {
         state.player.grounded = true;
 
         AbilityModel abilities = new AbilityModel();
-        MonsterSimulator monsterSimulator = new MonsterSimulator(maze, random, 1.4, seed);
+        MonsterSimulator monsterSimulator = new MonsterSimulator(maze, monsterRandom, 1.4, seed ^ 0x6A09E667F3BCC909L);
         Simulator simulator = new Simulator(
                 new LegacyMazePhysics(),
                 monsterSimulator,
@@ -101,13 +102,12 @@ class AuthenticStage10SimulationTest {
 
         simulator.initialise(state);
 
-        SourcePadSpawner pads = new SourcePadSpawner(maze, random);
+        SourcePadSpawner pads = new SourcePadSpawner(maze, padRandom);
         Cell initial = pads.initialPad();
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        spawnInitial(state, random, nextMonsterId);
-        state.pendingMonsterSpawns = 0;
+        state.pendingMonsterSpawns = INITIAL_MONSTERS;
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -121,6 +121,15 @@ class AuthenticStage10SimulationTest {
         String firstFallDecision = "NONE";
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
+            // Source MonsterManager schedules its starter spawn task before its
+            // movement task: 25 monsters are added per server tick until the
+            // mode's 225-monster starter quota is reached.
+            if (state.pendingMonsterSpawns > 0) {
+                int batch = Math.min(25, state.pendingMonsterSpawns);
+                int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
+                state.pendingMonsterSpawns -= spawned;
+            }
+
             ActionInput action = decide(agent, state);
 
             simulator.tick(state, action.action);
@@ -136,7 +145,7 @@ class AuthenticStage10SimulationTest {
             }
 
             if (state.stage != lastStage) {
-                int spawned = spawnAdditional(state, random, nextMonsterId, ADDITIONAL_MONSTERS);
+                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, ADDITIONAL_MONSTERS);
                 state.pendingMonsterSpawns -= spawned;
                 if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
 

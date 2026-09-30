@@ -176,8 +176,9 @@ jobs:
 
           for directory in dirs:
               simulator = json.loads((directory / "simulator-summary.json").read_text())
-              human = json.loads((directory / "analysis" / "summary.json").read_text())
-              comparison = json.loads((directory / "analysis" / "simulator-comparison.json").read_text())
+              analysis_root = directory / "analysis" / "analysis"
+              human = json.loads((analysis_root / "summary.json").read_text())
+              comparison = json.loads((analysis_root / "simulator-comparison.json").read_text())
 
               assert comparison["conditionMatch"] is True, comparison
               assert comparison["gaps"], comparison

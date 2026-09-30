@@ -68,7 +68,8 @@ public final class AbilityDecision {
         if (state.kit == Kit.SLOWBALLER) {
             return state.tick >= state.ability.cooldownUntilTick
                     && !isOnActivePad(state)
-                    && cryoImmediateThreat(state); 
+                    && (cryoImmediateThreat(state)
+                    || cryoRouteOpening(state, objectiveReason));
         }
         return false;
     }
@@ -189,7 +190,7 @@ public final class AbilityDecision {
             if (!activeMonster(state, monster)) continue;
             double distance = Math.sqrt(distanceSq(state, monster));
             if (distance > 3.5) continue;
-            if (imminentCollision(state, monster)) return true;
+            if (imminentClosingContact(state, monster)) return true;
             if (distance <= 2.0) close++;
         }
         return state.player.health <= 12.0 && close >= 1;
@@ -244,6 +245,22 @@ public final class AbilityDecision {
             if (imminentCollision(state, monster)) return true;
         }
         return false;
+    }
+
+    private static boolean imminentClosingContact(GameState state, MonsterState monster) {
+        double dx = monster.x - state.player.x;
+        double dz = monster.z - state.player.z;
+        double distance = Math.hypot(dx, dz);
+        if (distance > 1.05D) {
+            double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
+            if (speedSq < 1.0E-6) return false;
+            double closing = (monster.vx * -dx + monster.vz * -dz) / Math.max(distance, 1.0E-6);
+            return closing > 0.0 && distance / closing <= IMMINENT_HIT_TICKS;
+        }
+        double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
+        if (speedSq < 1.0E-6) return false;
+        double closing = (monster.vx * -dx + monster.vz * -dz) / Math.max(distance, 1.0E-6);
+        return closing > 0.0;
     }
 
     private static boolean imminentCollision(GameState state, MonsterState monster) {

@@ -152,6 +152,27 @@ public final class HumanRunRecorder implements Closeable {
         return enabled;
     }
 
+    public Kit getDeclaredKit() {
+        return declaredKit;
+    }
+
+    /**
+     * Change the kit declaration only while no human run is active.
+     */
+    public Kit cycleDeclaredKit() {
+        if (inRun) return declaredKit;
+
+        Kit[] kits = Kit.values();
+        if (declaredKit == null) {
+            declaredKit = kits[0];
+        } else {
+            int current = declaredKit.ordinal();
+            declaredKit = current >= kits.length - 1 ? null : kits[current + 1];
+        }
+        declaredKitSource = declaredKit == null ? null : "manual_key";
+        return declaredKit;
+    }
+
     public boolean isActive() {
         return inRun && manifestWriter != null;
     }
@@ -286,6 +307,7 @@ public final class HumanRunRecorder implements Closeable {
         eventWriter = open(new File(directory, "human-speed-run-" + runStamp + "-events.jsonl").toPath());
 
         inRun = true;
+        inventoryKitEvidence = detectInventoryKitEvidence();
         records = 0L;
         previousYaw = Float.NaN;
         previousWorldTick = Long.MIN_VALUE;
@@ -322,6 +344,14 @@ public final class HumanRunRecorder implements Closeable {
         writeHeader(collisionWriter, "collision");
         writeHeader(eventWriter, "events");
         writeEvent(state.worldTick, 0L, "GAME_START", "");
+        if (declaredKit != null) {
+            writeEvent(state.worldTick, 0L, "KIT_DECLARED",
+                    "kit=" + declaredKit.name() + ",source=" + safeEventValue(declaredKitSource));
+        }
+        if (inventoryKitEvidence != null) {
+            writeEvent(state.worldTick, 0L, "KIT_INVENTORY_EVIDENCE",
+                    "kit=" + inventoryKitEvidence.name());
+        }
         flushAll();
         System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER started: "
                 + currentManifest.toAbsolutePath());

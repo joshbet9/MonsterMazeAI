@@ -33,32 +33,50 @@ class MovementBenchmarkTest {
     }
     
     @Test
-    void nonJumperSpeedingUsesHorizontalSprintJumpImpulseAcrossOneBlockGap() {
-        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
-        raw[10][10] = 1;
-        raw[10][12] = 1;
-        MazeModel maze = new MazeModel(raw);
+    void nonJumperJumpRequestDoesNotInjectSyntheticSprintJumpImpulse() {
+        GameState jumping = player();
+        GameState walking = player();
 
-        GameState s = player();
-        s.kit = Kit.MAVERICK;
-        s.player.x = 10.5;
-        s.player.z = 10.99;
-        s.player.y = GameState.PATH_Y;
-        s.player.yaw = 0.0F;
-        s.player.grounded = true;
-        s.player.vz = 0.39;
+        jumping.kit = Kit.MAVERICK;
+        walking.kit = Kit.MAVERICK;
+        jumping.player.yaw = 37.0F;
+        walking.player.yaw = 37.0F;
+        jumping.player.vx = 0.24;
+        walking.player.vx = 0.24;
+        jumping.player.vz = 0.31;
+        walking.player.vz = 0.31;
 
         LegacyMovementModel physics = new LegacyMovementModel();
-        physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
+        Action jump = new Action(1, 0, true, true, 0, false);
+        Action noJump = new Action(1, 0, false, true, 0, false);
 
-        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
-                "Jump -10 must suppress vertical lift for non-Jumper speeding");
-        assertTrue(s.player.z > 11.70,
-                "the source sprint-jump horizontal impulse must carry the player AABB onto the destination side");
-        assertTrue(s.player.grounded,
-                "a successful speeding gap crossing must retain physical support on the destination block");
-        assertTrue(s.player.vz > 0.0,
-                "the successful crossing must preserve forward momentum");
+        physics.tick(jumping.player, jump, jumping.maze, -10);
+        physics.tick(walking.player, noJump, walking.maze, -10);
+
+        assertEquals(walking.player.x, jumping.player.x, 1.0e-12,
+                "Jump -10 must not add horizontal sprint-jump displacement");
+        assertEquals(walking.player.z, jumping.player.z, 1.0e-12,
+                "Jump -10 must not add horizontal sprint-jump displacement");
+        assertEquals(walking.player.vx, jumping.player.vx, 1.0e-12,
+                "Jump -10 must not add horizontal sprint-jump velocity");
+        assertEquals(walking.player.vz, jumping.player.vz, 1.0e-12,
+                "Jump -10 must not add horizontal sprint-jump velocity");
+        assertEquals(-0.0784000015258789D, jumping.player.vy, 1.0e-12,
+                "Grounded 1.8 motionY is retained after a suppressed jump request");
+        assertTrue(jumping.player.grounded);
+    }
+
+    @Test
+    void groundedMotionYMatchesMinecraft18Telemetry() {
+        GameState s = player();
+        s.player.y = GameState.PATH_Y;
+        s.player.grounded = true;
+
+        new LegacyMovementModel().tick(s.player, Action.IDLE, s.maze, -10);
+
+        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-12);
+        assertEquals(-0.0784000015258789D, s.player.vy, 1.0e-12);
+        assertTrue(s.player.grounded);
     }
 
     @Test void movementIsTickDeterministic(){

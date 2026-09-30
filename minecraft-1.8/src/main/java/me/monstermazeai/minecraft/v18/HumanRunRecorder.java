@@ -417,7 +417,7 @@ public final class HumanRunRecorder implements Closeable {
                 .append(",\"completed\":").append(state.completed)
                 .append(",\"mazeDetected\":").append(state.mazeDetected)
                 .append(",\"mazePattern\":").append(state.mazePattern)
-                .append(",\"kit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\\"")
+                .append(",\"kit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\"")
                 .append(",\"jumpCharges\":").append(state.jumpCharges)
                 .append(",\"abilityCharges\":").append(state.abilityCharges)
                 .append(",\"health\":").append(state.player.health)
@@ -567,7 +567,7 @@ public final class HumanRunRecorder implements Closeable {
                     .append(",\"itemId\":").append(itemId)
                     .append(",\"metadata\":").append(metadata)
                     .append(",\"count\":").append(stack.stackSize)
-                    .append(",\"displayName\":\"").append(escape(display)).append("\\"}");
+                    .append(",\"displayName\":\"").append(escape(display)).append("\"}");
         }
         b.append("]}");
 

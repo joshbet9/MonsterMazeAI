@@ -42,10 +42,6 @@ public final class MazeAwareRecedingHorizonController {
         return lastDecisionDetail;
     }
 
-    public AiProfile profile() {
-        return stableMovement.profile();
-    }
-
     public Action[] nextActions(GameState state, Cell goal, boolean allowJump) {
         return nextActions(state, goal, allowJump, 0);
     }

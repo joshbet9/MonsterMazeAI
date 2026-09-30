@@ -1504,7 +1504,7 @@ public final class StableLiveMovementController {
         float desiredYaw = cardinalYaw(dirRow, dirColumn);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float gain = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? turnResponseGain() : 0.5F;
+                ? (float) turnResponseGain() : 0.5F;
         float yawDelta = clamp(yawError * gain,
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
@@ -1703,7 +1703,7 @@ public final class StableLiveMovementController {
                         float commitError = normalise(commitYaw - state.player.yaw);
                         float commitTurn = clamp(
                                 commitError * (state.mode == me.monstermazeai.game.Mode.SPEED
-                                        ? turnResponseGain() : 0.5F),
+                                        ? (float) turnResponseGain() : 0.5F),
                                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
                         double postYaw = Math.toRadians(state.player.yaw + commitTurn);
                         double worldX = commitRow;

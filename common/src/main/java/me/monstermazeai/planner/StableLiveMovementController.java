@@ -179,7 +179,7 @@ public final class StableLiveMovementController {
      * pulse must have enough runway for a second source-valid pulse to become
      * available before the player leaves the source AABB.
      */
-    private static final double NONJUMPER_GAP_COMMIT_PROGRESS = -3.25D;
+    private static final double NONJUMPER_GAP_COMMIT_PROGRESS = -4.40D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;

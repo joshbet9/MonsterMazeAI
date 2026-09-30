@@ -1536,11 +1536,10 @@ public final class StableLiveMovementController {
             double dx = monster.x - state.player.x;
             double dz = monster.z - state.player.z;
             double distance = Math.hypot(dx, dz);
-            double reactionRange = 2.0D + 0.65D * profile.attributes.reactions;
-            if (distance > reactionRange || distance < 0.05D) continue;
+            if (distance > 2.15D || distance < 0.05D) continue;
 
             double along = dx * routeDirRow + dz * routeDirColumn;
-            if (along <= 0.0D || along > reactionRange) continue;
+            if (along <= 0.0D || along > 2.15D) continue;
 
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
             if (lateral > 0.95D) continue;
@@ -1601,7 +1600,6 @@ public final class StableLiveMovementController {
         }
 
         if (leftFloor || rightFloor) {
-            double reactionRange = 2.0D + 0.65D * profile.attributes.reactions;
             double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
             double strafe;
             if (preferred < 0.0D && leftFloor) {
@@ -1614,10 +1612,7 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            double urgency = Math.max(0.0D,
-                    Math.min(1.0D, (reactionRange - bestDistance) / Math.max(reactionRange - 0.75D, 0.1D)));
-            double dodgeForward = 0.70D - 0.35D * urgency;
-            Action dodge = new Action(dodgeForward, strafe, false, true, 0.0F, false);
+            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id

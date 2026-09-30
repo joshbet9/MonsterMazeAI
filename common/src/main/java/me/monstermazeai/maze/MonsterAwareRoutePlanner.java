@@ -61,11 +61,33 @@ public final class MonsterAwareRoutePlanner {
         }
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        PlayerRoute chosen = chooseByGapRisk(
-                pathfinder.shortestPathToRegionWithoutGaps(state.maze, start, regionCenter, radius),
-                pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius));
+        PlayerRoute chosen;
+        if (hasRelevantMonster(state)) {
+            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+            chosen = chooseByGapRisk(
+                    toRoute(threatAware.shortestPathToRegion(
+                            state, start, regionCenter, radius, false)),
+                    toRoute(threatAware.shortestPathToRegion(
+                            state, start, regionCenter, radius, true)));
+        } else {
+            chosen = chooseByGapRisk(
+                    pathfinder.shortestPathToRegionWithoutGaps(state.maze, start, regionCenter, radius),
+                    pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius));
+        }
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
+    }
+
+    private static boolean hasRelevantMonster(GameState state) {
+        for (var monster : state.monsters) {
+            if (MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) return true;
+        }
+        return false;
+    }
+
+    private static List<Cell> toRoute(List<Cell> cells) {
+        return cells;
     }
 
     public PlayerRoute route(GameState state, Cell start, Cell goal) {

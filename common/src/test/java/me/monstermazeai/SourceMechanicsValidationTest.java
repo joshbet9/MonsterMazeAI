@@ -184,6 +184,32 @@ class SourceMechanicsValidationTest {
     }
 
     @Test
+    void safePadCreatesFullFiveByFivePhysicalSurfaceAndDecaysLikeSource() {
+        GameState s = state(Kit.JUMPER);
+        GameProgressionModel progression = new GameProgressionModel();
+        progression.initialise(s);
+
+        s.activePadRow = 50;
+        s.activePadColumn = 50;
+        progression.syncPadSurfaces(s);
+
+        assertTrue(s.maze.isPhysicalFloor(48, 48), "pad corner must be physical floor");
+        assertTrue(s.maze.isPhysicalFloor(50, 52), "pad edge must be physical floor");
+        assertTrue(s.maze.hasPadSurface(48, 48));
+
+        s.oldPads.add(new me.monstermazeai.maze.Cell(50, 50));
+        s.oldPadDecaySeconds.put(new me.monstermazeai.maze.Cell(50, 50), 1);
+        s.activePadRow = -1;
+        s.activePadColumn = -1;
+        for (int i = 0; i < 19; i++) progression.tick(s);
+        assertTrue(s.maze.hasPadSurface(48, 48), "old pad must remain through its decay interval");
+
+        progression.tick(s);
+        assertFalse(s.maze.hasPadSurface(48, 48), "expired old pad must be removed");
+        assertFalse(s.maze.isPhysicalFloor(48, 48), "underlying void must be restored");
+    }
+
+    @Test
     void centerDeteriorationStartsAfterTwentyLiveSeconds() {
         GameState s = state(Kit.JUMPER);
         GameProgressionModel progression = new GameProgressionModel();

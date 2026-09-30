@@ -118,6 +118,35 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void laneRecoveryRotatesTowardRouteWhileKeepingLateralCorrection() {
+        GameState s = state(0.5, 0.5, -90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        // Preserve the segment anchor but place the player modestly outside its
+        // corridor while already moving. The recovery must stay lateral for
+        // edge safety and also rotate the camera back toward the route.
+        s.tick = 2;
+        s.player.x = 0.90;
+        s.player.z = 1.50;
+        s.player.vx = 0.12;
+        s.player.vz = 0.00;
+        s.player.grounded = true;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertEquals(0.0, action.forward(), 1.0e-6);
+        assertNotEquals(0.0, action.strafe(), 1.0e-6);
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F,
+                "lane recovery should rotate toward the route while recovering laterally");
+        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

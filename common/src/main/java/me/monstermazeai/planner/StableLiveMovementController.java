@@ -521,7 +521,6 @@ public final class StableLiveMovementController {
 
         Action action;
 
-        boolean laneRecovery = false;
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
              * A player can remain physically supported while the block
@@ -540,7 +539,6 @@ public final class StableLiveMovementController {
                     ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
                     : 0.0F;
             action = new Action(0.0, strafe, false, false, yawDelta, false);
-            laneRecovery = true;
             lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
                     + " strafe=" + format(strafe);
         } else if (Math.abs(crossTrack) > 0.18) {
@@ -631,18 +629,7 @@ public final class StableLiveMovementController {
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
                 && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
-            /*
-             * A lane correction is an immediately observed recovery action.
-             * Give Speed two ticks of physical-support horizon: enough to avoid
-             * the one-tick exception's edge overshoot, while not allowing the
-             * three-tick strategic guard to deadlock a valid correction.
-             */
-            boolean speedTwoTickLaneRecovery = state.mode == me.monstermazeai.game.Mode.SPEED
-                    && laneRecovery
-                    && hasPredictedPhysicalSupport(state, action, 2);
-            Action guarded = speedTwoTickLaneRecovery
-                    ? action
-                    : guardProjectedSupport(state, action, dirRow, dirColumn);
+            Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
                         + " raw=f=" + format(action.forward())

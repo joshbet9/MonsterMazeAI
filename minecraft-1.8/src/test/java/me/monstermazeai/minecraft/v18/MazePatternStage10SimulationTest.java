@@ -338,6 +338,7 @@ public final class MazePatternStage10SimulationTest {
                 syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
                 abilities.onReachedPad(tacticalState, stage == 1);
                 player.health = tacticalState.player.health;
+                player.maxHealth = tacticalState.player.maxHealth;
                 result.padsReached++;
                 int shortenedSeconds = Math.max(6, 16 - (stage - 1));
                 stageTicksRemaining = Math.min(
@@ -451,7 +452,7 @@ public final class MazePatternStage10SimulationTest {
         state.player.yaw = player.yaw;
         state.player.grounded = player.grounded;
         state.player.health = player.health;
-        state.player.maxHealth = 20.0;
+        state.player.maxHealth = player.maxHealth;
         state.alive = player.alive;
     }
 
@@ -549,6 +550,7 @@ public final class MazePatternStage10SimulationTest {
         p.pendingAirborne = commonPlayer.pendingAirborne;
         p.jumpTicks = commonPlayer.jumpTicks;
         p.health = commonPlayer.health;
+        p.maxHealth = commonPlayer.maxHealth;
         if (jumpStarted) p.jumpCharges--;
         result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
         if (p.y < -2.0D) p.alive = false;

@@ -269,15 +269,13 @@ public final class TacticalRouteSimulator {
          * model; StableLiveMovementController remains the normal motor authority.
          */
         List<Action> out = new ArrayList<>(20);
+        // Live Monster Maze movement is cardinal-route driven. The tactical
+        // simulator must therefore search only actions the live motor can
+        // execute without violating the corridor invariant. Yaw steering is
+        // retained as an explicit control dimension; lateral/reverse actions
+        // are deliberately excluded from the tactical action space.
         addMovement(out, 1, 0, false, 0);
         addMovement(out, 1, 0, true, 0);
-        addMovement(out, 1, -1, false, 0);
-        addMovement(out, 1, -1, true, 0);
-        addMovement(out, 1, 1, false, 0);
-        addMovement(out, 1, 1, true, 0);
-        addMovement(out, 0, -1, false, 0);
-        addMovement(out, 0, 1, false, 0);
-        addMovement(out, -1, 0, false, 0);
         addMovement(out, 1, 0, false, -30);
         addMovement(out, 1, 0, false, 30);
         addMovement(out, 1, 0, true, -30);

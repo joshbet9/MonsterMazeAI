@@ -8,7 +8,9 @@ import me.monstermazeai.maze.Cell;
 import me.monstermazeai.player.PlayerState;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class GameState {
     public static final double PATH_Y = 0.0;
@@ -31,6 +33,8 @@ public final class GameState {
     public AbilityState ability = new AbilityState();
     public final List<MonsterState> monsters = new ArrayList<>();
     public final List<Cell> oldPads = new ArrayList<>();
+    /** Remaining source decay seconds for each inactive SafePad surface. */
+    public final Map<Cell, Integer> oldPadDecaySeconds = new HashMap<>();
     public int activePadRow = -1, activePadColumn = -1;
     public int previewPadRow = -1, previewPadColumn = -1;
     public boolean alive = true;
@@ -98,6 +102,7 @@ public final class GameState {
         s.inMonsterMaze=inMonsterMaze;
         s.padReached=padReached;
         s.oldPads.addAll(oldPads);
+        s.oldPadDecaySeconds.putAll(oldPadDecaySeconds);
         for (MonsterState monster : monsters) s.monsters.add(monster.copy());
         return s;
     }

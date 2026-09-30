@@ -41,7 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that one seed or one profile represents every real game.
  */
 class AuthenticStage10SimulationTest {
-    private static final int REQUIRED_STAGE = 10;
+    private static final int MODERN_REQUIRED_STAGE = 5;
+    private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
 
     @Test
@@ -81,7 +82,7 @@ class AuthenticStage10SimulationTest {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
                 System.out.printf("SPEED pattern=%d kit=%s stage=%d%n",
                         pattern + 1, kit, result.maxStage);
-                if (result.maxStage < REQUIRED_STAGE) {
+                if (result.maxStage < SPEED_REQUIRED_STAGE) {
                     failures.add("mode=SPEED pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage

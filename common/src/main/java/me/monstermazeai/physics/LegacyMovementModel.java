@@ -19,6 +19,7 @@ public final class LegacyMovementModel implements PhysicsModel {
      * this exact value on grounded ticks.
      */
     private static final double GROUND_VERTICAL_MOTION = -0.0784000015258789D;
+    private static final int NON_JUMPER_JUMP_COOLDOWN_TICKS = 10;
 
     @Override
     public void tick(PlayerState p, Action action) {
@@ -52,12 +53,18 @@ public final class LegacyMovementModel implements PhysicsModel {
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
                 /*
-                 * The human Speed-mode traces show no vertical lift and no
-                 * additional horizontal impulse while Jump -10 is active.
-                 * Treat the jump request as suppressed rather than synthesizing
-                 * vanilla sprint-jump motion for non-Jumper kits.
+                 * Monster Maze's non-Jumper jump effect suppresses vertical
+                 * lift, but the human traces show the normal 1.8 sprint-jump
+                 * horizontal impulse on the jump press. The same traces show
+                 * that holding Space does not inject that impulse every tick,
+                 * so preserve the vanilla-style jump cooldown state.
                  */
-                p.jumpTicks = 0;
+                if (action.sprint()) {
+                    float yaw = p.yaw * 0.017453292F;
+                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                }
+                p.jumpTicks = NON_JUMPER_JUMP_COOLDOWN_TICKS;
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;

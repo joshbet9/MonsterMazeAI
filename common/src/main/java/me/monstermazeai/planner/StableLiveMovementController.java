@@ -388,6 +388,13 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
+        /*
+         * A gap jump must begin before the source cell centre so the vanilla
+         * jump arc lands inside the destination block. Promote an imminent,
+         * collinear gap into the active edge early enough for that timing.
+         */
+        preactivateUpcomingGap(state);
+        
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
         if (padEntry != null) return padEntry;
 
@@ -1836,6 +1843,64 @@ public final class StableLiveMovementController {
         double dx = Math.max(0.0, Math.abs(state.player.x - centerX) - 2.5);
         double dz = Math.max(0.0, Math.abs(state.player.z - centerZ) - 2.5);
         return Math.hypot(dx, dz);
+    }
+
+    /**
+     * Promote the next gap edge while the player is still on its incoming
+     * cardinal segment. This does not teleport or skip physical cells; it only
+     * gives the gap executor enough advance notice to press Jump before the
+     * source-cell centre, where the measured vanilla arc lands safely.
+     */
+    private void preactivateUpcomingGap(GameState state) {
+        if (gapExecutionActive || route == null || waypointIndex >= route.size() - 1) return;
+
+        int firstGap = -1;
+        for (int i = Math.max(waypointIndex, 0); i < route.size() - 1; i++) {
+            Cell from = route.cells().get(i);
+            Cell to = route.cells().get(i + 1);
+            if (isGapEdge(state, from.row(), from.column(), to.row(), to.column())) {
+                firstGap = i;
+                break;
+            }
+        }
+        if (firstGap < 1 || firstGap <= waypointIndex) return;
+
+        Cell gapFrom = route.cells().get(firstGap);
+        Cell gapTo = route.cells().get(firstGap + 1);
+        int gapDirRow = Integer.signum(gapTo.row() - gapFrom.row());
+        int gapDirColumn = Integer.signum(gapTo.column() - gapFrom.column());
+
+        /*
+         * Do not skip a genuine corner between the current waypoint and the gap
+         * start. Every intervening route edge must share the gap's cardinal
+         * direction.
+         */
+        for (int i = waypointIndex; i < firstGap; i++) {
+            Cell a = route.cells().get(i);
+            Cell b = route.cells().get(i + 1);
+            int dr = Integer.signum(b.row() - a.row());
+            int dc = Integer.signum(b.column() - a.column());
+            if (dr != gapDirRow || dc != gapDirColumn) return;
+        }
+
+        double sourceX = gapFrom.row() + 0.5D;
+        double sourceZ = gapFrom.column() + 0.5D;
+        double dx = state.player.x - sourceX;
+        double dz = state.player.z - sourceZ;
+        double progress = dx * gapDirRow + dz * gapDirColumn;
+        double lateral = gapDirRow != 0
+                ? dz
+                : dx;
+        if (Math.abs(lateral) > 0.75D) return;
+
+        if (progress < -1.40D || progress > 0.60D) return;
+
+        /*
+         * The incoming segment is cardinal and the player is close to its first
+         * gap endpoint. Hand the motor the gap edge before the source centre.
+         */
+        waypointIndex = firstGap + 1;
+        anchoredSegmentIndex = -1;
     }
 
     private Action prepareOrStartGap(GameState state, int dirRow, int dirColumn, boolean allowJump) {

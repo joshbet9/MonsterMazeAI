@@ -1075,7 +1075,9 @@ public final class StableLiveMovementController {
      */
     private boolean hasPredictedPhysicalSupport(GameState state, Action action) {
         if (state.maze == null) return true;
-        double yaw = Math.toRadians(state.player.yaw);
+        // Minecraft applies the camera/yaw change before the movement
+        // integrator consumes this tick's forward/strafe inputs.
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
         double strafeX = Math.cos(yaw);

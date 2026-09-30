@@ -178,7 +178,7 @@ class AuthenticStage10SimulationTest {
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
-        boolean allowJump = state.kit == Kit.JUMPER && state.ability.charges > 0;
+        boolean allowJump = state.kit != Kit.JUMPER || state.ability.charges > 0;
         return new ActionInput(agent.decide(state, allowJump));
     }
 

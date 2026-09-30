@@ -58,18 +58,29 @@ public final class LegacyMovementModel implements PhysicsModel {
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
                 /*
-                 * Monster Maze's non-Jumper jump effect suppresses vertical
-                 * lift, but the human traces show the normal 1.8 sprint-jump
-                 * horizontal impulse on the jump press. The same traces show
-                 * that holding Space does not inject that impulse every tick,
-                 * so preserve the vanilla-style jump cooldown state.
+                 * Speed mode uses the human-observed "jump press" cadence:
+                 * suppress vertical lift, apply one horizontal sprint-jump
+                 * impulse, then suppress repeats while Space remains held.
+                 *
+                 * Non-Speed modes retain the legacy simulator semantics that
+                 * existing Modern acceptance tests were built around.
                  */
-                if (speedMode && action.sprint()) {
-                    float yaw = p.yaw * 0.017453292F;
-                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                if (speedMode) {
+                    if (action.sprint()) {
+                        float yaw = p.yaw * 0.017453292F;
+                        p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                        p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                    }
+                    p.jumpTicks = NON_JUMPER_JUMP_COOLDOWN_TICKS;
+                } else {
+                    p.vy = 0.0D;
+                    if (action.sprint()) {
+                        float yaw = p.yaw * 0.017453292F;
+                        p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                        p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                    }
+                    p.jumpTicks = 0;
                 }
-                p.jumpTicks = NON_JUMPER_JUMP_COOLDOWN_TICKS;
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;

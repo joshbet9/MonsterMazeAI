@@ -196,14 +196,24 @@ public final class HumanRunRecorder implements Closeable {
         LegacyWorldObservation state = observer.observe().state;
 
         if (!inRun) {
-            if (Minecraft18RunBoundary.isGameStart(state)) begin(state);
-            else {
+            if (Minecraft18RunBoundary.isGameStart(state)) {
+                if (!begin(state)) {
+                    resetInput();
+                    return;
+                }
+            } else {
                 resetInput();
                 return;
             }
         }
 
-        write(state);
+        try {
+            write(state);
+        } catch (IOException e) {
+            System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER write failed: " + e);
+            finish("WRITE_ERROR");
+            return;
+        }
 
         if (pendingEndReason != null) {
             finish(pendingEndReason);
@@ -217,16 +227,17 @@ public final class HumanRunRecorder implements Closeable {
         }
     }
 
-    private void begin(LegacyWorldObservation state) throws IOException {
+    private boolean begin(LegacyWorldObservation state) {
         File directory = new File(minecraft.mcDataDir, DIRECTORY);
         if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory()) {
-            throw new IOException("Could not create " + directory.getAbsolutePath());
+            System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER failed to create " + directory.getAbsolutePath());
+            return false;
         }
 
         runStamp = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date());
         currentManifest = new File(directory, "human-speed-run-" + runStamp + "-manifest.json").toPath();
 
-        manifestWriter = open(currentManifest);
+        try {\n        manifestWriter = open(currentManifest);
         movementWriter = open(new File(directory, "human-speed-run-" + runStamp + "-movement.jsonl").toPath());
         inputWriter = open(new File(directory, "human-speed-run-" + runStamp + "-input.jsonl").toPath());
         worldWriter = open(new File(directory, "human-speed-run-" + runStamp + "-world.jsonl").toPath());
@@ -858,6 +869,19 @@ public final class HumanRunRecorder implements Closeable {
             pendingEndReason = null;
             resetInput();
         }
+    }
+
+    private void closeAllWriters() {
+        closeWriter(manifestWriter);
+        closeWriter(movementWriter);
+        closeWriter(inputWriter);
+        closeWriter(worldWriter);
+        closeWriter(navigationWriter);
+        closeWriter(monsterWriter);
+        closeWriter(mazeWriter);
+        closeWriter(inventoryWriter);
+        closeWriter(collisionWriter);
+        closeWriter(eventWriter);
     }
 
     private static void closeWriter(BufferedWriter writer) {

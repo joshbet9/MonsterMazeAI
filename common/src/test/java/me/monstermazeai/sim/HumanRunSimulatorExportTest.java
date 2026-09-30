@@ -3,6 +3,7 @@ package me.monstermazeai.sim;
 import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.player.AiProfile;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -18,6 +19,10 @@ import java.util.Locale;
 class HumanRunSimulatorExportTest {
     @Test
     void exportMatchingLongHorizonRun() throws IOException {
+        Assumptions.assumeTrue(
+                Boolean.getBoolean("humanRunComparison"),
+                "long-horizon comparison export is enabled by comparison CI only");
+
         Mode mode = Mode.valueOf(System.getProperty("humanRunMode", "SPEED").toUpperCase(Locale.ROOT));
         Kit kit = Kit.valueOf(System.getProperty("humanRunKit", "REPULSOR").toUpperCase(Locale.ROOT));
         int recorderPattern = Integer.parseInt(System.getProperty("humanRunPattern", "3"));
@@ -47,10 +52,18 @@ class HumanRunSimulatorExportTest {
                 + ", \"durationTicks\": " + result.ticks()
                 + ", \"durationSeconds\": " + (result.ticks() / 20.0)
                 + ", \"healthRemaining\": " + result.health()
+                + ", \"damageTaken\": " + result.damageTaken()
+                + ", \"damagePerStage\": " + (result.damageTaken() / Math.max(result.maxStage(), 1))
                 + ", \"maxHorizontalSpeed\": " + result.maxHorizontalSpeed()
                 + ", \"maxTickDisplacement\": " + result.maxTickDisplacement()
                 + ", \"firstFallTick\": " + result.firstFallTick()
-                + ", \"firstFallDecision\": \"" + escapeJson(result.firstFallDecision()) + "\"}"
+                + ", \"firstFallDecision\": \"" + escapeJson(result.firstFallDecision()) + "\""
+                + ", \"alive\": " + result.alive()
+                + ", \"completed\": " + result.completed()
+                + ", \"maxTicks\": 20000"
+                + ", \"termination\": \"" + (result.completed()
+                    ? "COMPLETED" : result.alive() ? "MAX_TICKS" : "DEAD") + "\""
+                + ", \"longHorizon\": true}"
                 + "\n}\n";
 
         Files.writeString(output, json);
@@ -62,7 +75,10 @@ class HumanRunSimulatorExportTest {
                 + " profile=" + profile
                 + " stage=" + result.maxStage()
                 + " ticks=" + result.ticks()
-                + " maxSpeed=" + result.maxHorizontalSpeed());
+                + " maxSpeed=" + result.maxHorizontalSpeed()
+                + " damageTaken=" + result.damageTaken()
+                + " termination=" + (result.completed()
+                    ? "COMPLETED" : result.alive() ? "MAX_TICKS" : "DEAD"));
     }
 
     private static AiProfile profileForName(String name) {

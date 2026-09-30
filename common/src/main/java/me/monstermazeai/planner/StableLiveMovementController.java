@@ -1232,20 +1232,22 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
-        double retain = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? 0.20D + (0.50D * profile.attributes.handling) : 0.0D;
-        Action[] alternatives = {
-                ...(state.mode == me.monstermazeai.game.Mode.SPEED
-                        ? new Action[] {
-                            new Action(action.forward() * retain, action.strafe() * retain,
-                                    false, action.sprint(), action.yawDelta(), false)
-                        }
-                        : new Action[0]),
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
-        };
+        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? new Action[] {
+                    new Action(action.forward() * (0.20D + (0.50D * profile.attributes.handling)),
+                            action.strafe() * (0.20D + (0.50D * profile.attributes.handling)),
+                            false, action.sprint(), action.yawDelta(), false),
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                }
+                : new Action[] {
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;

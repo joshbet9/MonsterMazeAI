@@ -20,7 +20,10 @@ public final class MonsterSimulator {
     private static final double WAYPOINT_TOLERANCE = 0.4;
     private static final double CELL_CENTER_OFFSET = 0.5;
     private static final double GRAVITY = 0.08;
-    private static final double AIR_DRAG = 0.98;
+    private static final double AIR_DRAG = 0.9800000190734863D;
+    private static final double SNOWMAN_MOVEMENT_SPEED = 0.20000000298023224D;
+    private static final double GROUND_SLIPPERINESS = 0.6D;
+    private static final double GROUND_FRICTION = GROUND_SLIPPERINESS * 0.91D;
     private final MazeModel maze;
     private final Random random;
     private final double speed;
@@ -57,14 +60,37 @@ public final class MonsterSimulator {
             double tx = m.waypointRow + 0.5;
             double tz = m.waypointColumn + 0.5;
             double dx = tx - m.x, dz = tz - m.z;
-            double distance = Math.hypot(dx, dz);
-            if (distance < 1.0E-9) continue;
+            double horizontalSq = dx * dx + dz * dz;
+            if (horizontalSq < 2.500000277905201E-7D) continue;
 
-            double step = Math.min(speed, distance);
-            m.vx = dx / distance * step;
-            m.vz = dz / distance * step;
-            m.x += m.vx;
-            m.z += m.vz;
+            // Source UtilEnt.CreatureMoveFast -> ControllerMove.c(): command
+            // speed is multiplied by the Snowman's 0.2 movement attribute,
+            // and the entity turns toward the waypoint by at most 30 degrees.
+            double command = speed;
+            if (horizontalSq < 4.0D) command = Math.min(command, 1.0D);
+            double movementInput = command * SNOWMAN_MOVEMENT_SPEED;
+            float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
+            m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
+
+            // EntityLiving.g() receives the controller's forward movement input,
+            // accelerates motX/motZ, moves the bounding box, then applies the
+            // quartz path block's 0.6 slipperiness * 0.91 friction multiplier.
+            double yaw = Math.toRadians(m.yaw);
+            double forwardX = -Math.sin(yaw);
+            double forwardZ = Math.cos(yaw);
+            m.vx += forwardX * movementInput * 0.98D;
+            m.vz += forwardZ * movementInput * 0.98D;
+            double stepSq = m.vx * m.vx + m.vz * m.vz;
+            double distance = Math.hypot(dx, dz);
+            if (stepSq > 0.0D) {
+                // Entity.move() can stop a mob at an edge; the tactical simulator
+                // does not own the block AABB, so retain the velocity and leave
+                // floor/edge death to the caller's physical model.
+                m.x += m.vx;
+                m.z += m.vz;
+            }
+            m.vx *= GROUND_FRICTION;
+            m.vz *= GROUND_FRICTION;
         }
     }
 
@@ -142,6 +168,22 @@ public final class MonsterSimulator {
 
     private static boolean atWaypoint(MonsterState m, double x, double z) {
         return Math.hypot(m.x - x, m.z - z) < WAYPOINT_TOLERANCE;
+    }
+
+    private static float approachAngle(float current, float target, float maximumDelta) {
+        float delta = normaliseDegrees(target - current);
+        if (delta > maximumDelta) delta = maximumDelta;
+        if (delta < -maximumDelta) delta = -maximumDelta;
+        float result = current + delta;
+        while (result < -180.0F) result += 360.0F;
+        while (result >= 180.0F) result -= 360.0F;
+        return result;
+    }
+
+    private static float normaliseDegrees(float angle) {
+        while (angle <= -180.0F) angle += 360.0F;
+        while (angle > 180.0F) angle -= 360.0F;
+        return angle;
     }
 
     public MonsterSimulator fork(long seed) {

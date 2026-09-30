@@ -219,6 +219,58 @@ def reconstruct_stages(ticks: Sequence[int], worlds: Dict[int, Dict[str, Any]], 
     return reconstructed
 
 
+def run_id_from_manifest(manifest: Dict[str, Any], manifest_path: Optional[Path]) -> Optional[str]:
+    declared = clean_text(manifest.get("runId"))
+    if declared:
+        return declared
+    if manifest_path is None:
+        return None
+    stem = manifest_path.stem
+    return stem[:-9] if stem.endswith("-manifest") else stem
+
+
+def load_annotation(
+    run_dir: Path,
+    manifest: Dict[str, Any],
+    manifest_path: Optional[Path],
+) -> Dict[str, Any]:
+    run_id = run_id_from_manifest(manifest, manifest_path)
+    if not run_id:
+        return {}
+    candidates = [
+        run_dir / "annotations" / f"{run_id}.json",
+        run_dir / "human-runs" / "annotations" / f"{run_id}.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+                return value if isinstance(value, dict) else {}
+            except (OSError, json.JSONDecodeError):
+                return {}
+    return {}
+
+
+def inventory_kit_evidence(records: Sequence[Dict[str, Any]]) -> Counter[str]:
+    evidence: Counter[str] = Counter()
+    for record in records:
+        for item in record.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            name = clean_text(item.get("displayName")).lower()
+            if "jumps remaining" in name:
+                evidence["JUMPER"] += 1
+            elif "repulse" in name:
+                evidence["REPULSOR"] += 1
+            elif "cryo" in name or "slowball" in name:
+                evidence["SLOWBALLER"] += 1
+            elif "body rush" in name or "body builder" in name:
+                evidence["BODY_BUILDER"] += 1
+            elif "maverick" in name:
+                evidence["MAVERICK"] += 1
+    return evidence
+
+
 def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], end_reason: Optional[str]) -> Dict[str, Any]:
     modes: Counter[str] = Counter()
     kits: Counter[str] = Counter()

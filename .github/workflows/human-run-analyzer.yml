@@ -18,7 +18,59 @@ jobs:
           python-version: "3.11"
       - name: Run human-run analyzer tests
         working-directory: tools
-        run: python -m unittest -v test_human_run_analyzer.py
+        run: |
+          python -m unittest -v test_human_run_analyzer.py
+          python -m unittest -v test_human_run_dataset_analyzer.py
+
+  dataset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Analyze all recorded human runs
+        run: |
+          python tools/human_run_dataset_analyzer.py human-runs --output-dir /tmp/human-run-dataset-analysis
+      - name: Verify human dataset coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path("/tmp/human-run-dataset-analysis/dataset-summary.json").read_text())
+          expected = {
+              "20260930-174746-835": ("MAVERICK", 3, 49),
+              "20260930-181006-247": ("REPULSOR", 2, 26),
+              "20260930-195111-185": ("JUMPER", 1, 38),
+              "20260930-195904-165": ("SLOWBALLER", 3, 1),
+              "20260930-195916-359": ("SLOWBALLER", 1, 21),
+              "20260930-200313-358": ("BODY_BUILDER", 3, 41),
+          }
+
+          assert summary["dataset"]["runCount"] == len(expected), summary["dataset"]
+          seen = {}
+          for run in summary["runs"]:
+              run_id = run["runId"]
+              seen[run_id] = (
+                  run["conditions"].get("kit"),
+                  run["conditions"].get("pattern"),
+                  run["run"].get("stageReached"),
+              )
+              assert "MISSING_KIT_METADATA" not in run["anomalyTypes"], run
+
+          assert seen == expected, {"expected": expected, "seen": seen}
+          print(json.dumps(summary["dataset"], indent=2, sort_keys=True))
+          PY
+      - name: Upload human dataset analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-run-dataset-analysis
+          path: |
+            /tmp/human-run-dataset-analysis/dataset-summary.json
+            /tmp/human-run-dataset-analysis/runs.jsonl
+            /tmp/human-run-dataset-analysis/runs/**/*.jsonl
+            /tmp/human-run-dataset-analysis/runs/**/analysis/*.json
 
   integration:
     runs-on: ubuntu-latest
@@ -27,14 +79,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Fetch recorded Pattern 3 fixture
-        run: |
-          git fetch --depth=1 origin data/human-run-pattern3
-          git archive FETCH_HEAD human-runs | tar -x
-
       - name: Analyze recorded run
         run: |
-          python tools/human_run_analyzer.py human-runs --output-dir /tmp/human-run-analysis
+          python tools/human_run_analyzer.py human-runs --manifest human-runs/human-speed-run-20260930-174746-835-manifest.json --output-dir /tmp/human-run-analysis
 
       - name: Resolve simulator conditions
         id: human_conditions
@@ -70,7 +117,7 @@ jobs:
 
       - name: Analyze recorded run against matching simulator
         run: |
-          python tools/human_run_analyzer.py human-runs             --output-dir /tmp/human-run-analysis             --sim-summary simulator-summary.json
+          python tools/human_run_analyzer.py human-runs             --manifest human-runs/human-speed-run-20260930-174746-835-manifest.json             --output-dir /tmp/human-run-analysis             --sim-summary simulator-summary.json
 
       - name: Verify human-vs-simulator comparison
         run: |

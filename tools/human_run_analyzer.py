@@ -271,9 +271,15 @@ def inventory_kit_evidence(records: Sequence[Dict[str, Any]]) -> Counter[str]:
     return evidence
 
 
-def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], end_reason: Optional[str]) -> Dict[str, Any]:
+def infer_metadata(
+    manifest: Dict[str, Any],
+    worlds: Dict[int, Dict[str, Any]],
+    end_reason: Optional[str],
+    inventory_records: Sequence[Dict[str, Any]] = (),
+    annotation: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     modes: Counter[str] = Counter()
-    kits: Counter[str] = Counter()
+    scoreboard_kits: Counter[str] = Counter()
     patterns: Counter[int] = Counter()
     observer_kits: Counter[str] = Counter()
 
@@ -284,41 +290,64 @@ def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], 
             if info["mode"]:
                 modes[info["mode"]] += 1
             if info["kit"]:
-                # Scoreboard text is corroborating evidence only. The recorder
-                # writes state.kit from the same observer state that drives the
-                # AI world model, so it is the authoritative kit source.
-                pass
-        if world.get("kit"):
-            kit_value = clean_text(world.get("kit")).upper()
-            if kit_value in KNOWN_KITS:
-                observer_kits[kit_value] += 1
-                kits[kit_value] += 1
+                scoreboard_kits[info["kit"]] += 1
+        observer_value = world.get("observerKit", world.get("kit"))
+        observer_value = clean_text(observer_value).upper()
+        if observer_value in KNOWN_KITS:
+            observer_kits[observer_value] += 1
         raw_pattern = world.get("mazePattern")
         if isinstance(raw_pattern, int) and raw_pattern >= 0:
             patterns[raw_pattern] += 1
 
-    raw_pattern = patterns.most_common(1)[0][0] if patterns else None
     declared_kit = clean_text(manifest.get("declaredKit")).upper()
     if declared_kit not in KNOWN_KITS:
         declared_kit = None
 
+    annotation_kit = clean_text((annotation or {}).get("kit")).upper()
+    if annotation_kit not in KNOWN_KITS:
+        annotation_kit = None
+
+    inventory_evidence = inventory_kit_evidence(inventory_records)
+    inventory_kit = inventory_evidence.most_common(1)[0][0] if inventory_evidence else None
+    inventory_consistent = (
+        len(inventory_evidence) == 1 and inventory_evidence[inventory_kit] > 0
+    )
+
+    # Curated declaration is the authoritative condition for a human run.
+    # Raw observer kit may legitimately be JUMPER due to its legacy fallback.
+    if declared_kit:
+        resolved_kit, kit_evidence = declared_kit, "manifest.declaredKit"
+    elif annotation_kit:
+        resolved_kit, kit_evidence = annotation_kit, "curated_annotation"
+    elif inventory_consistent:
+        resolved_kit, kit_evidence = inventory_kit, "inventory.displayName"
+    else:
+        resolved_kit, kit_evidence = None, None
+
+    raw_pattern = patterns.most_common(1)[0][0] if patterns else None
     metadata: Dict[str, Any] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "source": "minecraft-human",
         "minecraftVersion": manifest.get("minecraftVersion", "1.8.9"),
         "mode": modes.most_common(1)[0][0] if modes else None,
-        "kit": declared_kit if declared_kit else (kits.most_common(1)[0][0] if kits else None),
-        "kitEvidence": "manifest.declaredKit" if declared_kit else ("world.kit" if kits else None),
-        "pattern": raw_pattern if raw_pattern is not None else None,
+        "kit": resolved_kit,
+        "kitEvidence": kit_evidence,
+        "pattern": raw_pattern,
         "rawMazePattern": raw_pattern,
-        "patternEvidence": "world.mazePattern",
+        "patternEvidence": "world.mazePattern" if raw_pattern is not None else None,
         "terminalReason": end_reason,
         "boundary": manifest.get("boundary"),
     }
-    if observer_kits:
-        metadata["observerKit"] = observer_kits.most_common(1)[0][0]
     if declared_kit:
         metadata["declaredKit"] = declared_kit
+    if annotation_kit:
+        metadata["annotationKit"] = annotation_kit
+    if observer_kits:
+        metadata["observerKit"] = observer_kits.most_common(1)[0][0]
+    if scoreboard_kits:
+        metadata["scoreboardKitCandidate"] = scoreboard_kits.most_common(1)[0][0]
+    if inventory_evidence:
+        metadata["inventoryKitEvidence"] = dict(inventory_evidence)
     return metadata
 
 

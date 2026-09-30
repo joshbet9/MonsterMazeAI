@@ -866,6 +866,7 @@ public final class MazePatternStage10SimulationTest {
         int jumpTicks;
         Kit kit;
         int jumpCharges;
+        double health = 20.0D;
     }
 
     private static final class Result {

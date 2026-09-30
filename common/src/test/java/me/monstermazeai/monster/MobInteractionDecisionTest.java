@@ -67,4 +67,20 @@ class MobInteractionDecisionTest {
 
         assertNull(MobInteractionDecision.chooseIntentionalBump(s));
     }
+    @Test
+    void refusesIntentionalBumpBelowEightHealth() {
+        GameState s = new GameState();
+        s.activePadRow = 20;
+        s.activePadColumn = 10;
+        s.phaseTicksRemaining = 1;
+        s.player.x = 10.0;
+        s.player.y = 0.0;
+        s.player.z = 10.0;
+        s.player.health = 7.0;
+        s.monsters.add(new MonsterState(7, 9.0, 0.0, 10.0));
+
+        assertNull(MobInteractionDecision.chooseIntentionalBump(s));
+    }
+
+
 }

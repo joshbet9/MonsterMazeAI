@@ -1,6 +1,7 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -131,6 +132,9 @@ class MonsterAwareRoutePlannerTest {
     @Test
     void zeroGapRiskAllowsThePhysicalShortcutWhenItIsActuallyShorter() {
         GameState state = new GameState();
+        // This test exercises only the configurable gap-cost policy, not the
+        // Jumper's finite three-charge resource budget.
+        state.kit = Kit.MAVERICK;
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r < MazeModel.SIZE; r++)
             for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;

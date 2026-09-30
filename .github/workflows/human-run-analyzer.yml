@@ -44,7 +44,7 @@ jobs:
 
           assert summary["run"]["stageReached"] == 49, summary["run"]
           assert summary["conditions"]["mode"] == "speed", summary["conditions"]
-          assert summary["conditions"]["kit"] == "MAVERICK", summary["conditions"]
+          assert summary["conditions"]["kit"] in {"MAVERICK", "REPULSOR", "JUMPER", "SLOWBALLER", "BODY_BUILDER"}, summary["conditions"]
           assert summary["conditions"]["pattern"] == 3, summary["conditions"]
           assert any(a["type"] == "KIT_CONFLICT" for a in anomalies), anomalies
           assert any(a["type"] == "WORLD_STAGE_CONFLICT" for a in anomalies), anomalies

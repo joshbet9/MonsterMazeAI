@@ -250,19 +250,20 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * Commitments are motor-level ownership boundaries. Once a SafePad edge
-         * entry or a one-block gap crossing has started, tactical monster
-         * avoidance must not replace the source-timed movement command. A mob
-         * hit still wins because detectLiveMobHit() above clears the commitment
-         * and transfers control to authoritative recovery.
+         * Speed-mode human calibration requires an existing gap/pad commitment
+         * to retain motor ownership before tactical mob handling. Keep that
+         * ordering isolated to Speed so Modern/Original preserve their previous
+         * tactical ordering.
          */
-        if (padEntryCommitment) {
-            Action committed = executePadEntryCommitment(state, goal, allowJump);
-            if (committed != null) return committed;
-        }
-        if (gapExecutionActive) {
-            Action committed = executeCommittedGap(state, allowJump);
-            if (committed != null) return committed;
+        if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+            if (padEntryCommitment) {
+                Action committed = executePadEntryCommitment(state, goal, allowJump);
+                if (committed != null) return committed;
+            }
+            if (gapExecutionActive) {
+                Action committed = executeCommittedGap(state, allowJump);
+                if (committed != null) return committed;
+            }
         }
 
         /*
@@ -279,6 +280,22 @@ public final class StableLiveMovementController {
 
         Action mobAvoidance = avoidIncomingMonster(state, allowJump);
         if (mobAvoidance != null) return mobAvoidance;
+
+        /*
+         * Restore the original pre-calibration commitment position for
+         * Modern/Original. Those modes must let tactical monster policy run
+         * first; only Speed claims the motor-level commitment before it.
+         */
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) {
+            if (padEntryCommitment) {
+                Action committed = executePadEntryCommitment(state, goal, allowJump);
+                if (committed != null) return committed;
+            }
+            if (gapExecutionActive) {
+                Action committed = executeCommittedGap(state, allowJump);
+                if (committed != null) return committed;
+            }
+        }
 
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
@@ -1266,14 +1283,21 @@ public final class StableLiveMovementController {
         Action softenedDodge = new Action(
                 action.forward(), action.strafe() * 0.5D, action.jump(), action.sprint(),
                 action.yawDelta(), false);
-        Action[] alternatives = {
-                forwardPreserving,
-                softenedDodge,
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
-        };
+        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? new Action[]{
+                    forwardPreserving,
+                    softenedDodge,
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                }
+                : new Action[]{
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;

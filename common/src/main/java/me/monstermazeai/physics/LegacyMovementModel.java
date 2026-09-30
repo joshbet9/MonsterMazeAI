@@ -123,14 +123,21 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static boolean hasPhysicalFloor(me.monstermazeai.maze.MazeModel maze, double x, double z) {
         if (maze == null) return true;
 
-        // Minecraft's player has width, so keep support while any of the
-        // central hitbox samples still overlap a physical floor cell.
-        final double halfWidth = 0.30;
-        double[] xs = {x - halfWidth, x + halfWidth};
-        double[] zs = {z - halfWidth, z + halfWidth};
-        for (double sampleX : xs) {
-            for (double sampleZ : zs) {
-                if (maze.isPhysicalFloor((int)Math.floor(sampleX), (int)Math.floor(sampleZ))) return true;
+        // Player width in 1.8 is 0.6 blocks. Ground support exists while any
+        // part of the player's horizontal AABB overlaps a physical floor block.
+        final double halfWidth = 0.30D;
+        final double minX = x - halfWidth;
+        final double maxX = x + halfWidth;
+        final double minZ = z - halfWidth;
+        final double maxZ = z + halfWidth;
+        int minRow = (int) Math.floor(minX);
+        int maxRow = (int) Math.floor(Math.nextDown(maxX));
+        int minCol = (int) Math.floor(minZ);
+        int maxCol = (int) Math.floor(Math.nextDown(maxZ));
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int col = minCol; col <= maxCol; col++) {
+                if (maze.isPhysicalFloor(row, col)) return true;
             }
         }
         return false;

@@ -1863,7 +1863,7 @@ public final class StableLiveMovementController {
                 break;
             }
         }
-        if (firstGap < 1 || firstGap <= waypointIndex) return;
+        if (firstGap < 1 || firstGap < waypointIndex) return;
 
         Cell gapFrom = route.cells().get(firstGap);
         Cell gapTo = route.cells().get(firstGap + 1);
@@ -1893,7 +1893,7 @@ public final class StableLiveMovementController {
                 : dx;
         if (Math.abs(lateral) > 0.75D) return;
 
-        if (progress < -1.40D || progress > 0.60D) return;
+        if (progress < -2.60D || progress > 0.60D) return;
 
         /*
          * The incoming segment is cardinal and the player is close to its first

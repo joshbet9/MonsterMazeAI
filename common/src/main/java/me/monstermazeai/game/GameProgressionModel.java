@@ -77,10 +77,13 @@ public final class GameProgressionModel {
         // physical 5x5 surface for 11 decay ticks before restoring the maze.
         decayOldPads(state);
 
-        // Center deterioration starts 20 seconds after LIVE and then advances
-        // once per second through the source's 11-step decay sequence.
+        // Center deterioration starts 20 seconds after LIVE and advances once
+        // per second through the source's 11-step sequence. The final tick is
+        // physical: source center path cells (5/6) become normal route cells;
+        // decorative center cells (3/4) fall into the void.
         if (state.liveSeconds >= 20 && state.centerSafeZoneDecay > 0) {
             state.centerSafeZoneDecay--;
+            if (state.centerSafeZoneDecay == 1) deteriorateCenter(state);
         }
 
         if (state.phaseTicksRemaining > 0) return;
@@ -167,6 +170,22 @@ public final class GameProgressionModel {
             state.oldPads.remove(pad);
             it.remove();
         }
+    }
+
+    private void deteriorateCenter(GameState state) {
+        if (state.maze == null) return;
+
+        for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
+            for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
+                int value = state.maze.raw(row, column);
+                if (value == 5 || value == 6) {
+                    state.maze.setDisabled(row, column, false);
+                } else if (value == 3 || value == 4) {
+                    state.maze.setPhysicalFloor(row, column, false);
+                }
+            }
+        }
+        state.centerSafeZoneDecay = -1;
     }
 
     private boolean isOnPad(GameState state, int row, int column) {

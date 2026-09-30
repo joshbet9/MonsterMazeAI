@@ -359,8 +359,13 @@ public final class HumanRunRecorder implements Closeable {
     private void writeManifest(LegacyWorldObservation state, File directory) throws IOException {
         manifestWriter.write("{\"recordType\":\"manifest\",\"jsonVersion\":" + JSON_VERSION
                 + ",\"minecraftVersion\":\"1.8.9\",\"worldTick\":" + state.worldTick
-                + ",\"stage\":" + state.stage
-                + ",\"files\":[\""
+                + ",\"runId\":\"" + escape(runStamp)
+                + "\",\"stage\":" + state.stage
+                + ",\"declaredKit\":\"" + escape(declaredKit == null ? "" : declaredKit.name())
+                + "\",\"declaredKitEvidence\":\"" + escape(declaredKitSource)
+                + "\",\"inventoryKitEvidence\":\"" + escape(inventoryKitEvidence == null ? "" : inventoryKitEvidence.name())
+                + "\",\"observerKit\":\"" + escape(state.kit == null ? "" : state.kit.name())
+                + "\",\"files\":[\""
                 + "human-speed-run-" + runStamp + "-movement.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-input.jsonl\",\""
                 + "human-speed-run-" + runStamp + "-world.jsonl\",\""
@@ -496,6 +501,9 @@ public final class HumanRunRecorder implements Closeable {
                 .append(",\"mazeDetected\":").append(state.mazeDetected)
                 .append(",\"mazePattern\":").append(state.mazePattern)
                 .append(",\"kit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\"")
+                .append(",\"observerKit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\"")
+                .append(",\"declaredKit\":\"").append(escape(declaredKit == null ? "" : declaredKit.name())).append("\"")
+                .append(",\"inventoryKitEvidence\":\"").append(escape(inventoryKitEvidence == null ? "" : inventoryKitEvidence.name())).append("\""
                 .append(",\"jumpCharges\":").append(state.jumpCharges)
                 .append(",\"abilityCharges\":").append(state.abilityCharges)
                 .append(",\"health\":").append(state.player.health)
@@ -699,6 +707,28 @@ public final class HumanRunRecorder implements Closeable {
 
         previousMazeHash = mazeHash;
         previousPhysicalFloorHash = physicalFloorHash;
+    }
+
+    private Kit detectInventoryKitEvidence() {
+        EntityPlayerSP player = minecraft.thePlayer;
+        if (player == null) return null;
+        List<String> displayNames = new ArrayList<String>();
+        for (int slot = 0; slot < player.inventory.getSizeInventory(); slot++) {
+            ItemStack stack = player.inventory.getStackInSlot(slot);
+            if (stack == null) continue;
+            displayNames.add(stack.hasDisplayName() ? stack.getDisplayName() : "");
+        }
+        return Minecraft18ObservationRules.detectKitEvidence(displayNames);
+    }
+
+    private static Kit parseKit(String value) {
+        if (value == null) return null;
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.length() == 0) return null;
+        for (Kit kit : Kit.values()) {
+            if (kit.name().equals(normalized)) return kit;
+        }
+        return null;
     }
 
     private void writeInventoryIfChanged(LegacyWorldObservation state) throws IOException {

@@ -150,7 +150,7 @@ public final class TacticalRouteSimulator {
         for (int depth = 0; depth < TACTICAL_HORIZON; depth++) {
             List<Node> next = new ArrayList<>();
             for (Node node : beam) {
-                for (Action action : tacticalActions(node.state, route, wp)) {
+                for (Action action : tacticalActions(node.state, route, node.waypoint)) {
                     GameState s = node.state.copyForSimulation();
                     s.tick = source.tick + depth + 1;
                     MonsterSimulator branchMonsters = monsterSimulator(s, source.tick + depth + 1);

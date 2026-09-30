@@ -45,7 +45,7 @@ class AuthenticStage10SimulationTest {
     private static final int MODERN_REQUIRED_STAGE = 5;
     private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
-    private static final int FULL_RUN_MAX_TICKS = 100_000;
+    private static final int FULL_RUN_MAX_TICKS = 20_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {

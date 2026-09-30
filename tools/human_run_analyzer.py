@@ -226,9 +226,15 @@ def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], 
             if info["mode"]:
                 modes[info["mode"]] += 1
             if info["kit"]:
-                kits[info["kit"]] += 1
+                # Scoreboard text is corroborating evidence only. The recorder
+                # writes state.kit from the same observer state that drives the
+                # AI world model, so it is the authoritative kit source.
+                pass
         if world.get("kit"):
-            observer_kits[clean_text(world.get("kit")).upper()] += 1
+            kit_value = clean_text(world.get("kit")).upper()
+            if kit_value in KNOWN_KITS:
+                observer_kits[kit_value] += 1
+                kits[kit_value] += 1
         raw_pattern = world.get("mazePattern")
         if isinstance(raw_pattern, int) and raw_pattern >= 0:
             patterns[raw_pattern] += 1
@@ -240,6 +246,7 @@ def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], 
         "minecraftVersion": manifest.get("minecraftVersion", "1.8.9"),
         "mode": modes.most_common(1)[0][0] if modes else None,
         "kit": kits.most_common(1)[0][0] if kits else None,
+        "kitEvidence": "world.kit" if kits else None,
         "pattern": raw_pattern if raw_pattern is not None else None,
         "rawMazePattern": raw_pattern,
         "patternEvidence": "world.mazePattern",
@@ -401,7 +408,9 @@ def normalize_run(run_dir: Path, output_dir: Path) -> Dict[str, Any]:
     for tick in ticks:
         m, i, w, n, mon = movement.get(tick, {}), inputs.get(tick, {}), world.get(tick, {}), navigation.get(tick, {}), monsters.get(tick, {})
         scoreboard = scoreboard_info(w.get("scoreboardLines", [])) if isinstance(w.get("scoreboardLines"), list) else {}
-        stage = scoreboard.get("stage") or reconstructed.get(tick) or w.get("stage")
+        stage = w.get("stage") if isinstance(w.get("stage"), (int, float)) else (
+            scoreboard.get("stage") or reconstructed.get(tick)
+        )
 
         px, py, pz = float(m.get("x", 0.0)), float(m.get("y", 0.0)), float(m.get("z", 0.0))
         nearest, nearby = nearest_monster(mon, px, py, pz)

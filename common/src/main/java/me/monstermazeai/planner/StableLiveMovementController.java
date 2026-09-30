@@ -532,23 +532,70 @@ public final class StableLiveMovementController {
              * without cutting the cardinal corridor.
              */
             int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
+            /*
+             * Recovery input is expressed in world space first, then converted
+             * into the player's current W/A/D frame. The old implementation
+             * selected a local strafe sign from the route cardinal direction,
+             * which only corrected cross-track error for some camera headings.
+             * At a perpendicular heading that "lateral" input could actually
+             * become route-forward movement, leaving the player offset for many
+             * ticks while the stage timer continued to run.
+             *
+             * Keep the route direction dominant so recovery remains a travel
+             * action, while adding a smaller world-space bias back toward the
+             * anchored corridor. Both components are ordinary simultaneous
+             * Minecraft movement inputs; the physics model is unchanged.
+             */
+            double routeWeight = 0.90D;
+            double lateralWeight = 0.40D;
+            double desiredWorldX = dirRow * routeWeight;
+            double desiredWorldZ = dirColumn * routeWeight;
+            if (dirRow == 0) {
+                desiredWorldX += -crossSign * lateralWeight;
+            } else {
+                desiredWorldZ += -crossSign * lateralWeight;
+            }
+
+            double desiredLength = Math.hypot(desiredWorldX, desiredWorldZ);
+            if (desiredLength > 1.0E-9) {
+                desiredWorldX /= desiredLength;
+                desiredWorldZ /= desiredLength;
+            }
+
             float correctionYaw = cardinalYaw(dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
             /*
-             * Keep the safe lateral correction, but rotate toward the route in
-             * parallel. This avoids spending an entire recovery with the camera
-             * perpendicular to the corridor, which is especially costly near a
-             * stage deadline.
+             * Turn and drive in the same tick. Calculate the movement vector
+             * against the post-turn camera heading so the current input does
+             * not immediately become stale as the view rotates.
              */
             float yawDelta = clamp(
                     (float) (correctionError * turnResponseGain()),
                     -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
+            double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+            double forwardWorldX = -Math.sin(postYaw);
+            double forwardWorldZ = Math.cos(postYaw);
+            double strafeWorldX = Math.cos(postYaw);
+            double strafeWorldZ = Math.sin(postYaw);
+
+            double forward = desiredWorldX * forwardWorldX + desiredWorldZ * forwardWorldZ;
+            double strafe = desiredWorldX * strafeWorldX + desiredWorldZ * strafeWorldZ;
+            double inputLength = Math.hypot(forward, strafe);
+            if (inputLength > 1.0D) {
+                forward /= inputLength;
+                strafe /= inputLength;
+            }
+
+            boolean jump = shouldSpeedJump(state, allowJump);
+            boolean sprint = state.player.grounded && forward > 0.75D
+                    && Math.abs(correctionError) <= MAX_DRIVE_STEER_ERROR;
+            action = new Action(forward, strafe, jump, sprint, yawDelta, false);
             lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
+                    + " routeWeight=" + format(routeWeight)
+                    + " lateralWeight=" + format(lateralWeight)
+                    + " world=" + format(desiredWorldX) + "," + format(desiredWorldZ)
+                    + " f=" + format(forward)
+                    + " s=" + format(strafe);
         } else if (Math.abs(crossTrack) > 0.18) {
             double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
             double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;

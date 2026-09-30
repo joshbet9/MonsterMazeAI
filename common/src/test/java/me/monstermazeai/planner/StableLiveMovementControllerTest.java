@@ -222,6 +222,52 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void releasesCommittedNonJumperGapAfterSupportedDestinationCrossing() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        for (int column = 13; column <= 18; column++) raw[10][column] = 1;
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.activePadRow = 10;
+        s.activePadColumn = 18;
+        s.player.x = 10.5;
+        s.player.z = 9.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(10, 18), true);
+
+        s.player.z = 10.99;
+        s.tick = 2;
+        Action takeoff = controller.nextAction(s, new Cell(10, 18), true);
+        assertTrue(takeoff.jump(), controller.lastDecisionDetail());
+
+        // Model the grounded destination-side state after the horizontal
+        // Jump -10 speeding crossing. The controller should release the old
+        // gap rather than continuing to own the edge indefinitely.
+        s.player.z = 12.35;
+        s.player.vz = 0.12;
+        s.player.grounded = true;
+        s.tick = 3;
+        Action after = controller.nextAction(s, new Cell(10, 18), true);
+
+        assertFalse(controller.lastDecisionDetail().contains("GAP_EXECUTE"),
+                controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("GAP_CROSSED_CONFIRMED")
+                        || controller.lastDecisionDetail().contains("waypoint="),
+                controller.lastDecisionDetail());
+        assertTrue(after.forward() >= 0.0);
+    }
+
+    @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -468,6 +468,36 @@ def death_chain(events: Sequence[Dict[str, Any]]) -> List[str]:
     return result[-12:]
 
 
+def validate_stream_ticks(records: Sequence[Dict[str, Any]], stream: str, errors: List[Dict[str, Any]]) -> None:
+    previous_tick: Optional[int] = None
+    seen: set[int] = set()
+    for index, record in enumerate(records, 1):
+        value = record.get("tick")
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        tick = int(value)
+        if tick in seen:
+            errors.append({"type": "DUPLICATE_TICK", "stream": stream, "tick": tick, "recordIndex": index})
+        if previous_tick is not None and tick <= previous_tick:
+            errors.append({"type": "NON_MONOTONIC_TICK", "stream": stream, "tick": tick, "previousTick": previous_tick})
+        seen.add(tick)
+        previous_tick = tick
+
+
+def consecutive_run_lengths(values: Sequence[bool]) -> List[int]:
+    lengths: List[int] = []
+    current = 0
+    for value in values:
+        if value:
+            current += 1
+        elif current:
+            lengths.append(current)
+            current = 0
+    if current:
+        lengths.append(current)
+    return lengths
+
+
 def normalize_run(
     run_dir: Path,
     output_dir: Path,

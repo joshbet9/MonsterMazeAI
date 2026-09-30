@@ -8,6 +8,7 @@ import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.physics.PhysicsModel;
+import me.monstermazeai.physics.LegacyMovementModel;
 import me.monstermazeai.physics.MonsterMazeBumpModel;
 
 public final class Simulator {
@@ -30,11 +31,16 @@ public final class Simulator {
     public void tick(GameState state, Action action) {
         if(!state.alive) return;
         if(action.useAbility()) abilities.activate(state);
-        physics.tick(state.player, action);
+        if (physics instanceof LegacyMovementModel legacy) {
+            legacy.tick(state.player, action, state.maze);
+        } else {
+            physics.tick(state.player, action);
+        }
         monsters.tick(state);
         // Use the authoritative source bump model directly in the closed-loop simulator.
         MonsterMazeBumpModel.apply(state);
         progression.tick(state);
+        progression.syncPadSurfaces(state);
         if(state.player.y>0.0 && state.kit==me.monstermazeai.kit.Kit.JUMPER) abilities.consumeJumperCharge(state);
         state.tick++;
     }

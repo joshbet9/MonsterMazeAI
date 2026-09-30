@@ -124,7 +124,7 @@ class AuthenticStage10SimulationTest {
                 Cell preview = pads.nextPad(avoid);
                 state.previewPadRow = preview.row();
                 state.previewPadColumn = preview.column();
-                activatePadSurface(state, preview);
+                syncPadSurfaces(state);
                 removeMonstersOnPad(state, preview);
                 state.previewPadRequested = false;
             }
@@ -171,6 +171,10 @@ class AuthenticStage10SimulationTest {
         if (center == null) return;
         state.activePadRow = center.row();
         state.activePadColumn = center.column();
+        syncPadSurfaces(state);
+    }
+
+    private static void syncPadSurfaces(GameState state) {
         new me.monstermazeai.game.GameProgressionModel().syncPadSurfaces(state);
     }
 

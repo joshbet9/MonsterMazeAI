@@ -19,7 +19,9 @@ import me.monstermazeai.testdata.SourceMazeLayouts;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 
@@ -121,6 +123,7 @@ class AuthenticStage10SimulationTest {
         double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
         double firstFallVx = Double.NaN, firstFallVz = Double.NaN;
         String firstFallDecision = "NONE";
+        Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
@@ -136,6 +139,16 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
+            if (pattern == 0 && kit == Kit.JUMPER) {
+                trace.addLast("tick=" + state.tick
+                        + " pos=" + format(state.player.x) + "," + format(state.player.z)
+                        + " y=" + format(state.player.y)
+                        + " yaw=" + format(state.player.yaw)
+                        + " v=" + format(state.player.vx) + "," + format(state.player.vz)
+                        + " decision=" + decisionBeforeTick.replace(' ', '_')
+                        + " action=" + currentAction.replace(' ', '_'));
+                while (trace.size() > 30) trace.removeFirst();
+            }
 
             simulator.tick(state, action.action);
 
@@ -175,7 +188,8 @@ class AuthenticStage10SimulationTest {
                 firstFallVz = state.player.vz;
                 firstFallDecision = decisionBeforeTick
                         + " ACTION=" + currentAction
-                        + " PREVIOUS_ACTION=" + previousAction;
+                        + " PREVIOUS_ACTION=" + previousAction
+                        + " TRACE=" + String.join(" || ", trace);
             }
 
             previousAction = currentAction;
@@ -284,6 +298,10 @@ class AuthenticStage10SimulationTest {
     }
 
     private record ActionInput(me.monstermazeai.player.Action action) {}
+
+    private static String format(double value) {
+        return String.format(java.util.Locale.ROOT, "%.3f", value);
+    }
 
     private record RunResult(
             int maxStage,

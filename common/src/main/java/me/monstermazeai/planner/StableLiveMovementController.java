@@ -8,6 +8,7 @@ import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.physics.LegacyMovementModel;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -81,6 +82,7 @@ public final class StableLiveMovementController {
     private static final double MAX_INITIAL_LANE_OFFSET = 0.65;
 
     private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
+    private final LegacyMovementModel movementProjection = new LegacyMovementModel();
     /*
      * Strategic route simulation is deliberately isolated from the live motor.
      * The motor must never wait for source-faithful multi-candidate simulation:
@@ -1123,34 +1125,22 @@ public final class StableLiveMovementController {
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {
         if (state.maze == null) return true;
 
-        double x = state.player.x;
-        double z = state.player.z;
-        double vx = state.player.vx;
-        double vz = state.player.vz;
-        float yawDegrees = state.player.yaw + action.yawDelta();
-        double friction = PHYSICS_SLIPPERINESS * PHYSICS_GROUND_FRICTION;
-        double factor = PHYSICS_WALK_SPEED
-                * (action.sprint() ? PHYSICS_SPRINT_MULTIPLIER : 1.0D)
-                * (PHYSICS_GROUND_FACTOR / (friction * friction * friction));
-        double magnitude = Math.hypot(action.forward(), action.strafe());
-        if (magnitude >= 1.0E-4D) {
-            double scale = factor / Math.max(1.0D, magnitude);
-            double yaw = Math.toRadians(yawDegrees);
-            double sin = Math.sin(yaw);
-            double cos = Math.cos(yaw);
-            vx += action.strafe() * scale * cos - action.forward() * scale * sin;
-            vz += action.forward() * scale * cos + action.strafe() * scale * sin;
-        }
+        var projected = state.player.copy();
+        int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0 ? 0 : -10;
+        int steps = Math.max(1, ticks);
 
-        for (int tick = 0; tick < Math.max(1, ticks); tick++) {
-            x += vx;
-            z += vz;
-            if (!hasPhysicalFloorFootprint(state.maze, x, z)) return false;
-            vx *= friction;
-            vz *= friction;
+        for (int i = 0; i < steps; i++) {
+            movementProjection.tick(projected, action, state.maze, jumpAmplifier);
+            if (!projected.grounded && projected.y > 0.02D) {
+                // A real jump may legitimately leave the floor between ticks.
+                continue;
+            }
+            if (!hasPhysicalFloorFootprint(state.maze, projected.x, projected.z)) return false;
         }
         return true;
     }
+
 
     private double projectedRouteProgress(GameState state, Action action,
                                           int dirRow, int dirColumn) {

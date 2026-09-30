@@ -982,20 +982,18 @@ public final class StableLiveMovementController {
             return false;
         }
         if (isApproachingGap(state)) {
-            /*
-             * Do not suppress the source Jump -10 input in the final approach.
-             * The ten-tick server-side jump lock is the source timing mechanism:
-             * keeping jump active lets the next real horizontal impulse occur as
-             * soon as the lock expires, rather than creating an artificial
-             * no-jump window immediately before the gap.
-             *
-             * Human recordings repeatedly retain forward movement and show
-             * jump activity around monster/gap-heavy sections. The controller
-             * should therefore preserve the input and let LegacyMovementModel
-             * decide when the source impulse is actually legal.
-             */
-            lastSpeedJumpInputTick = state.tick;
-            return true;
+            if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+                /*
+                 * Speed-mode human traces retain forward input into gap-heavy
+                 * sections. Keep the source jump input active and let the
+                 * simulator/server-side jump lock decide when the horizontal
+                 * impulse is actually legal.
+                 */
+                lastSpeedJumpInputTick = state.tick;
+                return true;
+            }
+            // Preserve the pre-calibration Modern/Original behaviour.
+            return false;
         }
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
@@ -1639,7 +1637,8 @@ public final class StableLiveMovementController {
              * the same forward + occasional jump response seen repeatedly in the
              * recorded runs without inventing a new physics mechanic.
              */
-            boolean speedJump = state.kit != me.monstermazeai.kit.Kit.JUMPER
+            boolean speedJump = state.mode == me.monstermazeai.game.Mode.SPEED
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER
                     && shouldSpeedJump(state, allowJump);
             Action dodge = new Action(1.0, strafe, speedJump, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
@@ -1986,7 +1985,9 @@ public final class StableLiveMovementController {
         double distanceToTakeoff = GAP_JUMP_PROGRESS - progress;
         double commitProgress = state.kit == me.monstermazeai.kit.Kit.JUMPER
                 ? GAP_COMMIT_PROGRESS
-                : NONJUMPER_GAP_COMMIT_PROGRESS;
+                : state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? NONJUMPER_GAP_COMMIT_PROGRESS
+                    : GAP_COMMIT_PROGRESS;
         if (progress >= commitProgress && progress <= 1.65D) {
             gapExecutionActive = true;
             // Commit early enough that a single-tick physics/replan boundary
@@ -2038,12 +2039,27 @@ public final class StableLiveMovementController {
          * impulses for non-Jumpers without adding vertical lift.
          */
         boolean destinationOverlapping = playerAabbOverlapsCell(state, toRow, toColumn);
+        boolean nonJumperGapHold = state.mode == me.monstermazeai.game.Mode.SPEED
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded
+                && !destinationOverlapping;
         boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
                 && !destinationOverlapping
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
-        if (nonJumperSpeedPulse) {
+        if (nonJumperGapHold) {
+            /*
+             * Once the Speed gap is committed, hold the source jump input for
+             * the whole grounded crossing window. LegacyMovementModel models
+             * the ten-tick Jump -10 lock from the held input, which is preferable
+             * to a controller-side cadence that can accidentally release the
+             * key on the one tick where the source lock expires.
+             */
+            jumpThisTick = true;
+            lastDecisionDetail = "GAP_SPEED_HOLD edge=" + gapEdgeText()
+                    + " progress=" + format(progress);
+        } else if (nonJumperSpeedPulse) {
             jumpThisTick = true;
             lastSpeedJumpInputTick = state.tick;
             lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()

@@ -372,3 +372,4 @@ class NaturalMatrixDiagnosticTest {
             String firstFallDecision,
             String decision) {}
 }
+

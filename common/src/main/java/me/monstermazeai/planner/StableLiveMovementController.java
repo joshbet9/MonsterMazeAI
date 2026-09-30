@@ -689,7 +689,7 @@ public final class StableLiveMovementController {
                 && !speedLaneRecovery
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"

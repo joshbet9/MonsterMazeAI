@@ -17,12 +17,20 @@ import java.util.Random;
 public final class SourcePadSpawner {
     private final Random random;
     private final List<Cell> validSafePadSpawns;
+    private final List<Cell> fallbackPathCells;
 
     public SourcePadSpawner(MazeModel maze, Random random) {
         if (maze == null) throw new IllegalArgumentException("maze");
         if (random == null) throw new IllegalArgumentException("random");
         this.random = random;
         this.validSafePadSpawns = buildValidSafePadSpawns(maze);
+        ArrayList<Cell> fallback = new ArrayList<>();
+        for (int r0 = 0; r0 < MazeModel.SIZE; r0++) {
+            for (int c0 = 0; c0 < MazeModel.SIZE; c0++) {
+                if (maze.isRawPath(r0, c0)) fallback.add(new Cell(r0, c0));
+            }
+        }
+        this.fallbackPathCells = List.copyOf(fallback);
     }
 
     public List<Cell> validSafePadSpawns() {
@@ -31,15 +39,16 @@ public final class SourcePadSpawner {
 
     /** Initial pad: furthest valid candidate from maze center, random tie break. */
     public Cell initialPad() {
-        return findFurthest(new Cell(49, 49), validSafePadSpawns);
+        return findFurthest(new Cell(49, 49), pool());
     }
 
     /** Later pads: >=40 blocks from every currently active/old pad, random candidate. */
     public Cell nextPad(List<Cell> avoid) {
         if (avoid == null || avoid.isEmpty()) return initialPad();
 
+        List<Cell> candidates = pool();
         ArrayList<Cell> best = new ArrayList<>();
-        for (Cell candidate : validSafePadSpawns) {
+        for (Cell candidate : candidates) {
             boolean allowed = true;
             for (Cell existing : avoid) {
                 if (existing == null) continue;
@@ -50,8 +59,12 @@ public final class SourcePadSpawner {
             }
             if (allowed) best.add(candidate);
         }
-        if (best.isEmpty()) return findFurthest(new Cell(49, 49), validSafePadSpawns);
+        if (best.isEmpty()) return findFurthest(new Cell(49, 49), candidates);
         return best.get(random.nextInt(best.size()));
+    }
+
+    private List<Cell> pool() {
+        return validSafePadSpawns.isEmpty() ? fallbackPathCells : validSafePadSpawns;
     }
 
     private List<Cell> buildValidSafePadSpawns(MazeModel maze) {

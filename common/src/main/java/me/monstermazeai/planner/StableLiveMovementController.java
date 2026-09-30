@@ -147,7 +147,8 @@ public final class StableLiveMovementController {
     private static final long PAD_ENTRY_MAX_TICKS = 18L;
     private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.10D;
     /** Press jump only once the player is at the actual source-block edge. */
-    private static final double GAP_JUMP_PROGRESS = 0.45D;
+    /** The void begins after the middle air cell; jump just before the edge. */
+    private static final double GAP_JUMP_PROGRESS = 0.20D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -1835,7 +1836,7 @@ public final class StableLiveMovementController {
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText() + " progress=" + format(progress);
         }
         if (gapTakeoffStarted && state.player.grounded && progress > 0.90D
-                && playerOverlapsCell(state, toRow, toColumn, 0.05D)) {
+                && playerAabbOverlapsCell(state, toRow, toColumn)) {
             gapLandingConfirmTicks++;
             if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
                 int completedIndex = waypointIndex;
@@ -1849,7 +1850,10 @@ public final class StableLiveMovementController {
         } else {
             gapLandingConfirmTicks = 0;
         }
-        if (progress > 2.45D || state.player.y < GameState.PATH_Y - 3.0D) {
+        // Never fail a committed jump solely because its centre passed the
+        // endpoint: the player's 0.6-wide AABB can still overlap the destination
+        // block while vanilla gravity is bringing the feet down onto it.
+        if (state.player.y < GameState.PATH_Y - 3.0D) {
             lastDecisionDetail = "GAP_LANDING_FAILED edge=" + gapEdgeText() + " progress=" + format(progress);
             clearGapCommitment();
             return null;
@@ -1897,9 +1901,15 @@ public final class StableLiveMovementController {
         return (state.player.x - fromX) * edgeX + (state.player.z - fromZ) * edgeZ;
     }
 
-    private boolean playerOverlapsCell(GameState state, int row, int column, double tolerance) {
-        return state.player.x > row + tolerance && state.player.x < row + 1.0 - tolerance
-                && state.player.z > column + tolerance && state.player.z < column + 1.0 - tolerance;
+    private boolean playerAabbOverlapsCell(GameState state, int row, int column) {
+        final double halfWidth = 0.30D;
+        double minX = state.player.x - halfWidth;
+        double maxX = state.player.x + halfWidth;
+        double minZ = state.player.z - halfWidth;
+        double maxZ = state.player.z + halfWidth;
+        double overlapX = Math.min(maxX, row + 1.0D) - Math.max(minX, row);
+        double overlapZ = Math.min(maxZ, column + 1.0D) - Math.max(minZ, column);
+        return overlapX > 0.05D && overlapZ > 0.05D;
     }
 
     private String gapEdgeText() {

@@ -524,23 +524,79 @@ public final class StableLiveMovementController {
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
              * A player can remain physically supported while the block
-             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
-             * lateral error is therefore not source-like: A/D correction is a
-             * normal Minecraft input and is the safest way to recover the lane
-             * without cutting the cardinal corridor.
+             * containing floor(x,z) is air. The previous recovery used pure
+             * A/D, which removes all route-forward velocity while the cross
+             * track error is corrected. The full-run telemetry shows this is
+             * one of the dominant Speed-mode time losses: the controller spends
+             * thousands of ticks recovering laterally while the active pad timer
+             * continues to run.
+             *
+             * In Speed mode, use a normal Minecraft W+A/D vector that points
+             * forward along the selected cardinal route while biasing toward the
+             * lane centre. The vector is normalised exactly like ordinary local
+             * movement input, so this does not add any non-Minecraft movement.
+             * The camera may also make its normal <=30 degree/tick correction in
+             * the same tick; we do not wait for a stationary turn.
+             *
+             * The immediate next-tick support check is kept here as the safety
+             * boundary. Subsequent observations can correct the new position.
+             * Modern and non-Speed behaviour retain the established conservative
+             * branch.
              */
             int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
-            float correctionYaw = cardinalYaw(dirRow, dirColumn);
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
-            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
+            if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+                double lateralWeight = Math.min(0.80D,
+                        0.45D + (Math.abs(crossTrack) - MAX_SAFE_LANE_ERROR) * 0.70D);
+                double desiredWorldX = dirRow;
+                double desiredWorldZ = dirColumn;
+                if (dirRow == 0) {
+                    desiredWorldX += -crossSign * lateralWeight;
+                } else {
+                    desiredWorldZ += -crossSign * lateralWeight;
+                }
+
+                double desiredLength = Math.hypot(desiredWorldX, desiredWorldZ);
+                desiredWorldX /= desiredLength;
+                desiredWorldZ /= desiredLength;
+
+                float yawCorrection = normalise(cardinalYaw(dirRow, dirColumn) - state.player.yaw);
+                float turn = clamp((float) (yawCorrection * turnResponseGain()),
+                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                double postYaw = Math.toRadians(state.player.yaw + turn);
+                double forwardWorldX = -Math.sin(postYaw);
+                double forwardWorldZ = Math.cos(postYaw);
+                double strafeWorldX = Math.cos(postYaw);
+                double strafeWorldZ = Math.sin(postYaw);
+
+                double forward = desiredWorldX * forwardWorldX + desiredWorldZ * forwardWorldZ;
+                double strafe = desiredWorldX * strafeWorldX + desiredWorldZ * strafeWorldZ;
+                double inputLength = Math.hypot(forward, strafe);
+                if (inputLength > 1.0D) {
+                    forward /= inputLength;
+                    strafe /= inputLength;
+                }
+
+                boolean jump = shouldSpeedJump(state, allowJump);
+                boolean sprint = state.player.grounded
+                        && forward > 0.75D
+                        && Math.abs(yawCorrection) <= MAX_DRIVE_STEER_ERROR;
+                action = new Action(forward, strafe, jump, sprint, turn, false);
+                lastDecisionDetail += " SPEED_LANE_RECOVERY"
+                        + " crossTrack=" + format(crossTrack)
+                        + " lateralWeight=" + format(lateralWeight);
+            } else {
+                double strafe = dirRow == 0
+                        ? -crossSign * Math.signum(dirColumn)
+                        : crossSign * Math.signum(dirRow);
+                float correctionYaw = cardinalYaw(dirRow, dirColumn);
+                float correctionError = normalise(correctionYaw - state.player.yaw);
+                float yawDelta = speed <= MAX_TURNING_SPEED
+                        ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                        : 0.0F;
+                action = new Action(0.0, strafe, false, false, yawDelta, false);
+                lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
+                        + " strafe=" + format(strafe);
+            }
         } else if (Math.abs(crossTrack) > 0.18) {
             double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
             double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
@@ -625,10 +681,15 @@ public final class StableLiveMovementController {
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 
+        boolean speedLaneRecovery = state.mode == me.monstermazeai.game.Mode.SPEED
+                && Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR
+                && action != null
+                && lastDecisionDetail.contains("SPEED_LANE_RECOVERY");
         if (!gapExecutionActive
+                && !speedLaneRecovery
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"

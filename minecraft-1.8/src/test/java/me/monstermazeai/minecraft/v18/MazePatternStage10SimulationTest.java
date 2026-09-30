@@ -229,6 +229,7 @@ public final class MazePatternStage10SimulationTest {
         spawnInitialMonsters(tacticalState, raw, seed);
 
         Cell activePad = pads.get(0);
+        setPadDisabled(monsterMaze, activePad, true);
         Cell oldPad = null;
         Cell previewPad = null;
         int stage = 1;
@@ -385,7 +386,9 @@ public final class MazePatternStage10SimulationTest {
                     return result;
                 }
 
+                setPadDisabled(monsterMaze, oldPad, false);
                 activePad = previewPad != null ? previewPad : pads.get(padIndex);
+                setPadDisabled(monsterMaze, activePad, true);
                 previewPad = null;
                 stage++;
                 targetCaptured = false;
@@ -713,6 +716,17 @@ public final class MazePatternStage10SimulationTest {
         double dr = a.row - b.row;
         double dc = a.column - b.column;
         return dr * dr + dc * dc;
+    }
+
+    private static void setPadDisabled(MazeModel maze, Cell pad, boolean disabled) {
+        if (maze == null || pad == null) return;
+        for (int dr = -2; dr <= 2; dr++) {
+            for (int dc = -2; dc <= 2; dc++) {
+                int r = pad.row + dr;
+                int c = pad.column + dc;
+                if (inBounds(r, c)) maze.setDisabled(r, c, disabled);
+            }
+        }
     }
 
     private static boolean isOnPad(SimPlayer p, Cell pad) {

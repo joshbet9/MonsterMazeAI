@@ -684,7 +684,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -1286,7 +1286,7 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
@@ -1311,7 +1311,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks())) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks(state))) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1332,7 +1332,7 @@ public final class StableLiveMovementController {
         return 0.25D + profile.attributes.agility * 0.50D;
     }
 
-    private int supportLookaheadTicks() {
+    private int supportLookaheadTicks(GameState state) {
         /*
          * Speed mode is explicitly trying to maximise continuous traversal.
          * The previous reaction-based 2-3 tick support forecast was repeatedly
@@ -1347,8 +1347,7 @@ public final class StableLiveMovementController {
          * re-evaluate the new position, while vanilla physics remains entirely
          * authoritative.
          */
-        if (profile.attributes != null
-                && profile.mode == me.monstermazeai.game.Mode.SPEED) {
+        if (state != null && state.mode == me.monstermazeai.game.Mode.SPEED) {
             return MIN_SUPPORT_LOOKAHEAD_TICKS;
         }
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);

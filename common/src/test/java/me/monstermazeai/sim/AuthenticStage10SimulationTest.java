@@ -44,6 +44,7 @@ class AuthenticStage10SimulationTest {
     private static final int MODERN_REQUIRED_STAGE = 5;
     private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
+    private static final int FULL_RUN_MAX_TICKS = 100_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {
@@ -183,7 +184,8 @@ class AuthenticStage10SimulationTest {
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
-        for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
+        int maxTicks = targetStage > 0 ? MAX_TICKS : FULL_RUN_MAX_TICKS;
+        for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the
             // mode's 225-monster starter quota is reached.

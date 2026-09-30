@@ -206,7 +206,10 @@ class AuthenticStage10SimulationTest {
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
-                state.player.x, state.player.z, firstFallTick, firstFallX, firstFallY, firstFallZ,
+                state.player.x, state.player.z, firstFallTick,
+                firstFallPreX, firstFallPreY, firstFallPreZ,
+                firstFallPreVx, firstFallPreVy, firstFallPreVz,
+                firstFallX, firstFallY, firstFallZ,
                 firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
     }
 
@@ -318,6 +321,12 @@ class AuthenticStage10SimulationTest {
             double x,
             double z,
             long firstFallTick,
+            double firstFallPreX,
+            double firstFallPreY,
+            double firstFallPreZ,
+            double firstFallPreVx,
+            double firstFallPreVy,
+            double firstFallPreVz,
             double firstFallX,
             double firstFallY,
             double firstFallZ,

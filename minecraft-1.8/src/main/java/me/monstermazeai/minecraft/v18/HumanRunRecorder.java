@@ -229,6 +229,18 @@ public final class HumanRunRecorder implements Closeable {
             }
         }
 
+        // Client tick callbacks can occasionally observe the same Minecraft
+        // world tick more than once. The canonical recorder is one sample per
+        // world tick; otherwise every synchronized stream receives duplicate
+        // ticks and later alignment becomes ambiguous.
+        if (state.worldTick == previousWorldTick) {
+            if (pendingEndReason != null) {
+                finish(pendingEndReason);
+                pendingEndReason = null;
+            }
+            return;
+        }
+
         try {
             captureInput();
         write(state);

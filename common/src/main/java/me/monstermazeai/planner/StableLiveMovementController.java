@@ -879,8 +879,24 @@ public final class StableLiveMovementController {
              * immediate gap edge instead of being handed the final straight-run
              * waypoint and walking past the gap.
              */
+            if (segmentLength == 2) {
+                /*
+                 * A gap edge is itself the motor segment. The active waypoint
+                 * must therefore be the landing cell, so the gap executor gets
+                 * control while the player is still approaching the source edge.
+                 * Returning the gap source here delayed commitment until after
+                 * the source-cell centre and starved non-Jumper speeding of its
+                 * pre-gap acceleration window.
+                 */
+                return i + 1;
+            }
             if (nextRow != segmentRow || nextColumn != segmentColumn
                     || nextLength != segmentLength) {
+                if (nextLength == 2) {
+                    // The next segment is a gap: make its landing cell the
+                    // waypoint so the gap executor can own the approach.
+                    return i + 1;
+                }
                 return i;
             }
         }
@@ -1934,6 +1950,12 @@ public final class StableLiveMovementController {
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
+            if (state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+                // Each source speeding edge begins with a fresh cadence window.
+                // Do not inherit a regular-route pulse that happened a few
+                // ticks earlier and accidentally suppress the pre-gap pulse.
+                lastSpeedJumpInputTick = Long.MIN_VALUE;
+            }
             return executeCommittedGap(state, allowJump);
         }
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {

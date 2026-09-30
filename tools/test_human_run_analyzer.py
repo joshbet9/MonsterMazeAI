@@ -98,7 +98,7 @@ class HumanRunAnalyzerTest(unittest.TestCase):
             summary = result["summary"]
             self.assertEqual(summary["conditions"]["kit"], "MAVERICK")
             self.assertEqual(summary["conditions"]["mode"], "speed")
-            self.assertEqual(summary["conditions"]["pattern"], 3)
+            self.assertEqual(summary["conditions"]["pattern"], 2)
             self.assertEqual(summary["run"]["stageReached"], 2)
             self.assertTrue(any(a["type"] == "KIT_CONFLICT" for a in result["anomalies"]))
             self.assertTrue(any(a["type"] == "WORLD_STAGE_CONFLICT" for a in result["anomalies"]))

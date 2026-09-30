@@ -236,7 +236,8 @@ class AuthenticStage10SimulationTest {
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
                 firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail(),
-                maxHorizontalSpeed, maxTickDisplacement);
+                maxHorizontalSpeed, maxTickDisplacement,
+                state.alive, state.completed, state.player.damageTaken);
     }
 
     private static String formatFailure(String mode, int pattern, Kit kit, RunResult result) {
@@ -382,5 +383,8 @@ class AuthenticStage10SimulationTest {
             String firstFallDecision,
             String decision,
             double maxHorizontalSpeed,
-            double maxTickDisplacement) {}
+            double maxTickDisplacement,
+            boolean alive,
+            boolean completed,
+            double damageTaken) {}
 }

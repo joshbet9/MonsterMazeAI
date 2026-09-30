@@ -567,7 +567,7 @@ public final class StableLiveMovementController {
             float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
-                boolean brake = distance < WAYPOINT_BRAKE
+                boolean brake = distance < waypointBrakeDistance()
                         && closingSpeed(state, dx, dz) > 0.04;
                 /*
                  * Keep forward input concurrent with cursor movement, but do not
@@ -609,7 +609,7 @@ public final class StableLiveMovementController {
                         false);
             }
         } else {
-            boolean brake = distance < WAYPOINT_BRAKE
+            boolean brake = distance < waypointBrakeDistance()
                     && closingSpeed(state, dx, dz) > 0.04;
             double forward = brake ? 0.0 : 1.0;
             boolean jump = shouldSpeedJump(state, allowJump);
@@ -1462,6 +1462,13 @@ public final class StableLiveMovementController {
         }
 
         return new double[]{bestX, bestZ};
+    }
+
+    private double waypointBrakeDistance() {
+        // High handling lets a player carry more vanilla momentum through a
+        // corner; low handling starts braking earlier. The baseline value remains
+        // exactly the former 0.70-block threshold.
+        return 0.15D + (1.0D - profile.attributes.handling) * 1.10D;
     }
 
     private static double sq(double value) {

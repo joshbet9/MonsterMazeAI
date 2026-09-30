@@ -9,6 +9,8 @@ public final class MazeModel {
     private final int[][] raw;
     private final boolean[][] disabled;
     private final boolean[][] physicalFloor;
+    /** Source SafePad surface overlay; distinct from the underlying maze floor. */
+    private final boolean[][] padSurface;
     private long dynamicSignature;
 
     public MazeModel(int[][] raw) {
@@ -16,6 +18,7 @@ public final class MazeModel {
         this.raw = new int[SIZE][SIZE];
         this.disabled = new boolean[SIZE][SIZE];
         this.physicalFloor = new boolean[SIZE][SIZE];
+        this.padSurface = new boolean[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             if (raw[r].length != SIZE) throw new IllegalArgumentException("Maze must be 99x99");
             System.arraycopy(raw[r], 0, this.raw[r], 0, SIZE);
@@ -33,28 +36,42 @@ public final class MazeModel {
 
     public void setDisabled(int row, int col, boolean value) {
         if (disabled[row][col] == value) return;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
         disabled[row][col] = value;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
     }
+    /** Source SafePad builds a 5x5 physical floor, including cells that were previously void. */
+    public void setPadSurface(int row, int col, boolean value) {
+        if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) return;
+        if (padSurface[row][col] == value) return;
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        padSurface[row][col] = value;
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+    }
+
+    public boolean hasPadSurface(int row, int col) {
+        return row >= 0 && row < SIZE && col >= 0 && col < SIZE && padSurface[row][col];
+    }
+
     public boolean isPhysicalFloor(int row, int col) {
         return row >= 0 && row < SIZE && col >= 0 && col < SIZE
-                && physicalFloor[row][col];
+                && (physicalFloor[row][col] || padSurface[row][col]);
     }
     public void setPhysicalFloor(int row, int col, boolean value) {
         if (physicalFloor[row][col] == value) return;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
         physicalFloor[row][col] = value;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
     }
 
     /** Compact O(1) signature of dynamic floor/waypoint state for live replanning. */
     public long dynamicSignature() { return dynamicSignature; }
 
-    private static long cellSignature(int row, int col, boolean disabled, boolean floor) {
+    private static long cellSignature(int row, int col, boolean disabled, boolean floor, boolean pad) {
         long value = (((long) row) << 32) ^ (col & 0xffffffffL);
         if (disabled) value ^= 0xC2B2AE3D27D4EB4FL;
         if (floor) value ^= 0x165667B19E3779F9L;
+        if (pad) value ^= 0x27D4EB2F165667B1L;
         value *= 0x9E3779B97F4A7C15L;
         value ^= value >>> 29;
         value *= 0xC2B2AE3D27D4EB4FL;
@@ -67,6 +84,7 @@ public final class MazeModel {
             for (int c = 0; c < SIZE; c++) {
                 copy.disabled[r][c] = disabled[r][c];
                 copy.physicalFloor[r][c] = physicalFloor[r][c];
+                copy.padSurface[r][c] = padSurface[r][c];
             }
         }
         copy.dynamicSignature = dynamicSignature;

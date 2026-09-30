@@ -555,12 +555,12 @@ public final class StableLiveMovementController {
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
-            } else if (distance <= 1.25 && Math.abs(yawError) < 135.0F) {
+            } else if (distance <= 4.50 && Math.abs(yawError) < 135.0F) {
                 /*
-                 * At a tight corner, keep a bounded W+A/D vector active while
+                 * Near a cardinal corner, keep a bounded W+A/D vector active while
                  * the camera turns. The vector is derived from the actual
                  * heading error, so it rotates smoothly toward the next
-                 * cardinal segment instead of strafing blindly.
+                 * cardinal segment instead of waiting in place or strafing blindly.
                  */
                 double errorRad = Math.toRadians(yawError);
                 double forward = Math.cos(errorRad) * 0.65D;

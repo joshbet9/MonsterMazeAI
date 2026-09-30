@@ -554,41 +554,7 @@ public final class StableLiveMovementController {
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
-            } else if (Math.abs(yawError) <= 135.0F) {
-                // Keep moving during a 36-135 degree heading change. W+A/D
-                // steering is ordinary Minecraft input and prevents stationary
-                // exposure to mobs while the camera closes the corner.
-                double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.75D;
-                double strafe = -Math.sin(errorRad) * 0.75D;
-                boolean jump = shouldSpeedJump(state, allowJump);
-                action = new Action(forward, strafe, jump, false, turn, false);
-                lastDecisionDetail += " TURN_DRIVE";
-            } else {
-                // A target directly behind the player can be approached with
-                // normal backward input while the camera rotates. This is
-                // especially important when a newly selected pad reverses the
-                // route direction.
-                double forward = -0.55D;
-                boolean jump = shouldSpeedJump(state, allowJump);
-                action = new Action(forward, 0.0, jump, false, turn, false);
-                lastDecisionDetail += " REVERSE_TURN";
-            }
-
-            /*
-             * At a tight 90-degree corner a real player can keep moving
-             * through the turn with A/D while rotating the camera. Pure
-             * yaw acquisition here unnecessarily leaves the player
-             * stationary in a mob-filled maze. Use one cardinal strafe
-             * toward the new segment while the camera continues to turn.
-             */
-            if (distance <= 1.05 && Math.abs(yawError) < 135.0F) {
-                double strafe = yawError > 0.0F ? -1.0 : 1.0;
-                action = new Action(
-                        0.0, strafe, false, false,
-                        turn, false);
-                lastDecisionDetail += " CORNER_STRAFE";
-            }
+            } else if (distance <= 1.05 && Math.abs(yawError) < 135.0F) {
                 /*
                  * At a tight 90-degree corner a real player can keep moving
                  * through the turn with A/D while rotating the camera. Pure

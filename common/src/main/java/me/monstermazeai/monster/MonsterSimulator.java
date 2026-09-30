@@ -136,8 +136,8 @@ public final class MonsterSimulator {
         Cell cursor = current;
         while (true) {
             Cell next = new Cell(
-                    cursor.row() + direction.rowDelta(),
-                    cursor.column() + direction.columnDelta());
+                    cursor.row() + direction.dr,
+                    cursor.column() + direction.dc);
             if (!maze.isTraversable(next.row(), next.column())) break;
 
             target = next;

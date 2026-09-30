@@ -1088,12 +1088,30 @@ public final class StableLiveMovementController {
         float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float yawError = normalise(desiredYaw - state.player.yaw);
         float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        // A struck player remains controllable in the air. Use the same W+A/D
+        // vector a strong Minecraft player would use: rotate toward the landing
+        // target while simultaneously applying the local movement component
+        // that points at it. This is still ordinary Minecraft input; it is not
+        // a physics shortcut.
+        float postTurnError = normalise(desiredYaw - normalise(state.player.yaw + yawDelta));
+        double errorRad = Math.toRadians(postTurnError);
+        double forward = Math.cos(errorRad);
+        double strafe = -Math.sin(errorRad);
+        double inputMagnitude = Math.hypot(forward, strafe);
+        if (inputMagnitude > 1.0) {
+            forward /= inputMagnitude;
+            strafe /= inputMagnitude;
+        }
+        boolean sprint = forward > 0.80;
         lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
                 + " target=" + format(target[0]) + "," + format(target[1])
                 + " yawError=" + format(yawError)
                 + " yawDelta=" + format(yawDelta)
+                + " f=" + format(forward)
+                + " s=" + format(strafe)
                 + " vy=" + format(state.player.vy);
-        return new Action(1.0, 0.0, false, true, yawDelta, false);
+        return new Action(forward, strafe, false, sprint, yawDelta, false);
     }
 
     private double[] findAirRecoveryTarget(GameState state, Cell goal) {

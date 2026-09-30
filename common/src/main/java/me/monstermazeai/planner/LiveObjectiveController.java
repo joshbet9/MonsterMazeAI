@@ -61,8 +61,7 @@ public final class LiveObjectiveController {
             lastDecisionDetail = movement.lastDecisionDetail()
                     + " | action=" + describe(action);
 
-            if (AbilityDecision.shouldUse(state, lastDecisionReason, lastDecisionDetail,
-                    movement.profile().tendencies)) {
+            if (AbilityDecision.shouldUse(state, lastDecisionReason, lastDecisionDetail)) {
                 action = withAbility(action);
                 lastDecisionDetail += " | ABILITY_USE";
             }
@@ -89,10 +88,6 @@ public final class LiveObjectiveController {
                 action.sprint(),
                 action.yawDelta(),
                 true);
-    }
-
-    public me.monstermazeai.player.AiTendencies tendencies() {
-        return movement.profile().tendencies;
     }
 
     public String lastDecisionReason() { return lastDecisionReason; }

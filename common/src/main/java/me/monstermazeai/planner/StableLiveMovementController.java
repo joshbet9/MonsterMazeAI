@@ -548,63 +548,7 @@ public final class StableLiveMovementController {
                     Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
             float correctionError = normalise(correctionYaw - state.player.yaw);
 
-            /*
-             * Speed mode can afford a more continuous lane correction because
-             * the motor is re-evaluated every tick. For modest cross-track error
-             * while the camera is already broadly facing the segment, keep the
-             * cardinal drive active and add only the world-space lateral
-             * correction needed to return to the corridor. This removes the
-             * repeated stop-turn-start cycle visible in early Speed runs.
-             *
-             * The threshold deliberately ends at MAX_SAFE_LANE_ERROR. Larger
-             * offsets still use the established conservative recovery branch,
-             * and Modern keeps the existing behaviour unchanged.
-             */
-            if (state.mode == me.monstermazeai.game.Mode.SPEED
-                    && Math.abs(crossTrack) <= MAX_SAFE_LANE_ERROR
-                    && Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
-                double lateralWeight = Math.min(0.30D,
-                        Math.abs(crossTrack) / Math.max(MAX_SAFE_LANE_ERROR, 1.0E-6D) * 0.30D);
-                double desiredWorldX = dirRow;
-                double desiredWorldZ = dirColumn;
-                double crossSign = Math.signum(crossTrack);
-                if (dirRow == 0) {
-                    desiredWorldX += -crossSign * lateralWeight;
-                } else {
-                    desiredWorldZ += -crossSign * lateralWeight;
-                }
-
-                double desiredLength = Math.hypot(desiredWorldX, desiredWorldZ);
-                if (desiredLength > 1.0E-9D) {
-                    desiredWorldX /= desiredLength;
-                    desiredWorldZ /= desiredLength;
-                }
-
-                float turn = clamp((float) (yawError * turnResponseGain()),
-                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                double postYaw = Math.toRadians(state.player.yaw + turn);
-                double forwardWorldX = -Math.sin(postYaw);
-                double forwardWorldZ = Math.cos(postYaw);
-                double strafeWorldX = Math.cos(postYaw);
-                double strafeWorldZ = Math.sin(postYaw);
-
-                double forward = desiredWorldX * forwardWorldX
-                        + desiredWorldZ * forwardWorldZ;
-                double strafe = desiredWorldX * strafeWorldX
-                        + desiredWorldZ * strafeWorldZ;
-                double inputLength = Math.hypot(forward, strafe);
-                if (inputLength > 1.0D) {
-                    forward /= inputLength;
-                    strafe /= inputLength;
-                }
-
-                boolean jump = shouldSpeedJump(state, allowJump);
-                boolean sprint = state.player.grounded
-                        && forward > 0.75D
-                        && Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR;
-                action = new Action(forward, strafe, jump, sprint, turn, false);
-                lastDecisionDetail += " SPEED_LANE_DRIVE";
-            } else if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
+            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
                 action = new Action(
                         0.0, 0.0, false, false,
                         speed <= MAX_TURNING_SPEED
@@ -684,7 +628,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -1286,7 +1230,7 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
@@ -1311,7 +1255,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks(state))) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks())) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1332,24 +1276,7 @@ public final class StableLiveMovementController {
         return 0.25D + profile.attributes.agility * 0.50D;
     }
 
-    private int supportLookaheadTicks(GameState state) {
-        /*
-         * Speed mode is explicitly trying to maximise continuous traversal.
-         * The previous reaction-based 2-3 tick support forecast was repeatedly
-         * converting valid present-tick W/A/D inputs into reduced or zero input
-         * because it anticipated a future edge before the player had actually
-         * reached it. That safety policy costs substantial elapsed time on the
-         * source's one-block corridors.
-         *
-         * Keep the physical support check itself unchanged, but in Speed mode
-         * only require the immediately-following tick to remain supported. This
-         * is still a source-valid controller decision: the next observation can
-         * re-evaluate the new position, while vanilla physics remains entirely
-         * authoritative.
-         */
-        if (state != null && state.mode == me.monstermazeai.game.Mode.SPEED) {
-            return MIN_SUPPORT_LOOKAHEAD_TICKS;
-        }
+    private int supportLookaheadTicks() {
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
         return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
                 Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));

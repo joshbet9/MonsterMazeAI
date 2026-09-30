@@ -24,8 +24,9 @@ class HumanRunSimulatorExportTest {
         if (recorderPattern < 1 || recorderPattern > 3) {
             throw new IllegalArgumentException("humanRunPattern must be 1..3");
         }
-        AiProfile profile = AiProfile.valueOf(
-                System.getProperty("humanRunProfile", "HIGH_SKILL").toUpperCase(Locale.ROOT));
+        String profileName = System.getProperty("humanRunProfile", "HIGH_SKILL")
+                .toUpperCase(Locale.ROOT);
+        AiProfile profile = profileForName(profileName);
 
         AuthenticStage10SimulationTest.RunResult result =
                 AuthenticStage10SimulationTest.runLong(
@@ -40,7 +41,7 @@ class HumanRunSimulatorExportTest {
                 + "  \"conditions\": {\"mode\": \"" + mode.name().toLowerCase(Locale.ROOT)
                 + "\", \"kit\": \"" + kit.name()
                 + "\", \"pattern\": " + recorderPattern
-                + ", \"profile\": \"" + profile.name() + "\"},\n"
+                + ", \"profile\": \"" + profileName + "\"},\n"
                 + "  \"simulator\": {"
                 + "\"stageReached\": " + result.maxStage()
                 + ", \"durationTicks\": " + result.ticks()
@@ -62,6 +63,14 @@ class HumanRunSimulatorExportTest {
                 + " stage=" + result.maxStage()
                 + " ticks=" + result.ticks()
                 + " maxSpeed=" + result.maxHorizontalSpeed());
+    }
+
+    private static AiProfile profileForName(String name) {
+        return switch (name) {
+            case "BASELINE" -> AiProfile.BASELINE;
+            case "HIGH_SKILL" -> AiProfile.HIGH_SKILL;
+            default -> throw new IllegalArgumentException("Unsupported humanRunProfile: " + name);
+        };
     }
 
     private static String escapeJson(String value) {

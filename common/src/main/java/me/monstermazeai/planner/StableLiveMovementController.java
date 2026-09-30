@@ -2127,8 +2127,18 @@ public final class StableLiveMovementController {
             return new Action(1.0, 0.0, false, true, 0.0F, false);
         }
         if (distanceToTakeoff < -GAP_JUMP_LATE_TOLERANCE) {
-            lastDecisionDetail = "GAP_MISSED edge=" + gapEdgeText() + " progress=" + format(progress);
-            return null;
+            /*
+             * Do not fall through into ordinary waypoint steering after a missed
+             * edge. The route is now stale by definition: the player has passed
+             * the committed takeoff window without entering the gap transition.
+             * Stop for this one observation and let the next tick's
+             * current-segment deviation check build a physical route from the
+             * player's actual supported cell.
+             */
+            fullRouteEvaluationPending = true;
+            lastDecisionDetail = "GAP_MISSED_REPLAN edge=" + gapEdgeText()
+                    + " progress=" + format(progress);
+            return new Action(0.0, 0.0, false, false, 0.0F, false);
         }
         gapExecutionActive = true;
         gapTakeoffStarted = false;

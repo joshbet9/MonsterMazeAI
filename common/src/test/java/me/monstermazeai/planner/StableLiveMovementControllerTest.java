@@ -161,6 +161,8 @@ class StableLiveMovementControllerTest {
 
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"),
                 controller.lastDecisionDetail());
+        assertEquals(12.0F, recovery.yawDelta(), 1.0e-6F,
+                "positive Z cross-track error while traveling +X must steer toward -Z (yaw 180)");
         assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
                 controller.lastDecisionDetail());
         assertEquals(0.0, recovery.strafe(), 1.0e-9);

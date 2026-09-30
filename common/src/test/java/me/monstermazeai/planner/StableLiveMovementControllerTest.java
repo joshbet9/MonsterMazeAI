@@ -32,6 +32,40 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void seedsRouteFromAdjacentPhysicalBlockWhenFloorCellIsAir() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[42][49] = 1;
+        raw[42][50] = 1;
+        raw[42][51] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = maze;
+        s.activePadRow = 42;
+        s.activePadColumn = 51;
+        // Integer cell is (42,48), but the 0.6-block AABB overlaps the
+        // physical (42,49) block exactly like LegacyMovementModel support.
+        s.player.x = 42.70;
+        s.player.z = 48.99;
+        s.player.y = 0.0;
+        s.player.grounded = true;
+        s.player.yaw = 0.0F;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(42, 51), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("NO_ROUTE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("NO_SUPPORTED_START"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "supported boundary position must remain routable");
+    }
+
+    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -570,7 +570,8 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            float turn = clamp((float) (yawError * turnResponseGain()),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < waypointBrakeDistance()
@@ -1256,6 +1257,12 @@ public final class StableLiveMovementController {
         float correction = clamp(normalise(desired - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         return new Action(0.0, 0.0, false, false, correction, false);
+    }
+
+    private double turnResponseGain() {
+        // Agility changes only the controller's camera-input response. The
+        // source still caps the physical yaw change at 30 degrees/tick.
+        return 0.25D + profile.attributes.agility * 0.50D;
     }
 
     private int supportLookaheadTicks() {

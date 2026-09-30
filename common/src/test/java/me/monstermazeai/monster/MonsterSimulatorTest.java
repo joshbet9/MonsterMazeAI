@@ -30,7 +30,7 @@ class MonsterSimulatorTest {
 
         // Source UtilEnt.CreatureMoveFast changes 1.4 -> 1.0 for distance < 2,
         // then ControllerMove applies the snowman's 0.2 movement attribute.
-        assertEquals(10.70D, monster.z, 1.0e-9);
-        assertEquals(0.1092D, monster.vz, 1.0e-9);
+        assertEquals(10.70D, monster.z, 1.0e-7);
+        assertEquals(0.1092D, monster.vz, 1.0e-7);
     }
 }

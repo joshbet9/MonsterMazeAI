@@ -504,10 +504,7 @@ public final class StableLiveMovementController {
              * supported cell without sprinting. No strafe or diagonal shortcut
              * is introduced.
              */
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
+            float correctionYaw = laneCorrectionYaw(crossTrack, dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
             if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
                 action = new Action(
@@ -521,10 +518,7 @@ public final class StableLiveMovementController {
             }
             lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack);
         } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
+            float correctionYaw = laneCorrectionYaw(crossTrack, dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
 
             if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
@@ -998,6 +992,21 @@ public final class StableLiveMovementController {
             }
         }
         return best;
+    }
+
+    /**
+     * Perpendicular recovery heading used to pull the player's actual supported
+     * position back toward the route centreline. This is not the route heading:
+     * lane recovery must correct the cross-axis error before resuming forward
+     * travel on the cardinal segment.
+     */
+    private static float laneCorrectionYaw(double crossTrack, int rowDirection, int columnDirection) {
+        if (rowDirection != 0) {
+            // Segment runs along X; correct Z.
+            return crossTrack > 0.0 ? 180.0F : 0.0F;
+        }
+        // Segment runs along Z; correct X.
+        return crossTrack > 0.0 ? 90.0F : -90.0F;
     }
 
     private static boolean currentCellSupportsPlayer(GameState state) {

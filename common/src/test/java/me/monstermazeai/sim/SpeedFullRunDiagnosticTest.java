@@ -23,10 +23,15 @@ class SpeedFullRunDiagnosticTest {
 
                 boolean naturallyTerminated = result.firstFallTick() >= 0 || result.ticks() < 100_000;
                 System.out.printf(
-                        "SPEED_FULL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%s pos=%.3f,%.3f firstFallTick=%d naturalEnd=%s finalDecision=%s%n",
+                        "SPEED_FULL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%s pos=%.3f,%.3f "
+                                + "firstFallTick=%d terminalTick=%d terminalStage=%d phaseTicks=%d "
+                                + "terminalPad=%d,%d terminalOnPad=%s naturalEnd=%s%n",
                         pattern + 1, kit, result.maxStage(), result.ticks(),
                         Double.toString(result.health()), result.x(), result.z(), result.firstFallTick(),
-                        naturallyTerminated, result.lastDecisionDetail().replace(' ', '_'));
+                        result.terminalTick(), result.terminalStage(), result.terminalPhaseTicksRemaining(),
+                        result.terminalPadRow(), result.terminalPadColumn(), result.terminalOnPad(),
+                        naturallyTerminated); 
+                System.out.println("TERMINAL_DECISION " + result.terminalDecision().replace(' ', '_'));
             }
         }
     }

@@ -269,9 +269,11 @@ public final class StableLiveMovementController {
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
         Cell supportedStart = resolveSupportedStartCell(state);
         if (supportedStart == null || !inBounds(goal.row(), goal.column())) {
+            Action recovery = unsupportedEdgeRecoveryAction(state, goal, allowJump);
             lastDecisionDetail = "NO_PHYSICAL_SUPPORT player=" + format(state.player.x) + "," + format(state.player.z)
-                    + " y=" + format(state.player.y) + " goal=" + goal.row() + "," + goal.column();
-            return Action.IDLE;
+                    + " y=" + format(state.player.y) + " goal=" + goal.row() + "," + goal.column()
+                    + " recovery=" + recovery;
+            return recovery;
         }
         int startRow = supportedStart.row();
         int startColumn = supportedStart.column();
@@ -1439,6 +1441,70 @@ public final class StableLiveMovementController {
      * block containing floor(x,z) can be air while the player's 0.6-wide body
      * still overlaps a neighbouring solid cell.
      */
+    /**
+     * Last-chance ledge recovery. Minecraft does not instantly teleport a
+     * player away when its AABB loses floor support; there is still horizontal
+     * air control on the falling tick. Use that real control window rather than
+     * returning IDLE and guaranteeing a straight vertical fall.
+     */
+    private Action unsupportedEdgeRecoveryAction(GameState state, Cell goal, boolean allowJump) {
+        Cell best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        int centreRow = (int) Math.floor(state.player.x);
+        int centreColumn = (int) Math.floor(state.player.z);
+
+        for (int row = Math.max(0, centreRow - 4);
+             row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 4); row++) {
+            for (int column = Math.max(0, centreColumn - 4);
+                 column <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreColumn + 4); column++) {
+                if (!state.maze.isPhysicalFloor(row, column)) continue;
+                double supportDistance = sq((row + 0.5D) - state.player.x)
+                        + sq((column + 0.5D) - state.player.z);
+                double goalDistance = goal == null ? 0.0
+                        : sq((row + 0.5D) - (goal.row() + 0.5D))
+                        + sq((column + 0.5D) - (goal.column() + 0.5D));
+                double score = supportDistance + 0.02D * goalDistance;
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = new Cell(row, column);
+                }
+            }
+        }
+
+        if (best == null) return Action.IDLE;
+
+        double dx = best.row() + 0.5D - state.player.x;
+        double dz = best.column() + 0.5D - state.player.z;
+        double length = Math.max(Math.hypot(dx, dz), 1.0E-9D);
+        double ux = dx / length;
+        double uz = dz / length;
+
+        double yawRad = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(yawRad);
+        double forwardZ = Math.cos(yawRad);
+        double strafeX = Math.cos(yawRad);
+        double strafeZ = Math.sin(yawRad);
+
+        double forward = ux * forwardX + uz * forwardZ;
+        double strafe = ux * strafeX + uz * strafeZ;
+        double magnitude = Math.hypot(forward, strafe);
+        if (magnitude > 1.0D) {
+            forward /= magnitude;
+            strafe /= magnitude;
+        }
+
+        boolean emergencyJump = allowJump
+                && state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0
+                && state.player.y > -0.05D;
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        return new Action(forward, strafe, emergencyJump, forward > 0.75,
+                yawDelta, false);
+    }
+
     private Cell resolveSupportedStartCell(GameState state) {
         int currentRow = (int) Math.floor(state.player.x);
         int currentColumn = (int) Math.floor(state.player.z);

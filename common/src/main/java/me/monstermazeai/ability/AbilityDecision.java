@@ -19,7 +19,7 @@ import me.monstermazeai.monster.MobInteractionDecision;
 public final class AbilityDecision {
     private static final double REPULSOR_RANGE_SQ = 36.0;
     private static final double LETHAL_HEALTH = 4.0;
-    private static final double IMMINENT_HIT_RANGE = 1.60;
+    private static final double IMMINENT_HIT_RANGE = 1.05;
     private static final int IMMINENT_HIT_TICKS = 6;
     private static final double ESTIMATED_TICKS_PER_BLOCK = 5.0;
     private static final double SAFE_PAD_RADIUS = 2.5;
@@ -177,13 +177,20 @@ public final class AbilityDecision {
     }
 
     private static boolean bodyRushImmediateThreat(GameState state) {
+        /*
+         * Body Rush has only two activations. A stationary mob inside two blocks
+         * is not, by itself, enough reason to spend one. Prefer genuine closing
+         * contact, or preserve the resource for a low-health approach.
+         */
+        if (MobInteractionDecision.chooseIntentionalBump(state) != null) return false;
+
         int close = 0;
         for (MonsterState monster : state.monsters) {
             if (!activeMonster(state, monster)) continue;
             double distance = Math.sqrt(distanceSq(state, monster));
             if (distance > 3.5) continue;
-            if (distance <= 2.0 || imminentCollision(state, monster)) return true;
-            close++;
+            if (imminentCollision(state, monster)) return true;
+            if (distance <= 2.0) close++;
         }
         return state.player.health <= 12.0 && close >= 1;
     }

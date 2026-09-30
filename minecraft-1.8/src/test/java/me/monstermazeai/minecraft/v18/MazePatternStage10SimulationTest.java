@@ -355,6 +355,14 @@ public final class MazePatternStage10SimulationTest {
                 }
             }
 
+            // Match common Simulator's post-progression Jumper charge handling:
+            // an airborne successful jump consumes one charge subject to the
+            // source recharge/grace rules, while pad capture happens first.
+            if (player.y > GameState.PATH_Y && kit == Kit.JUMPER) {
+                abilities.consumeJumperCharge(tacticalState);
+                player.jumpCharges = tacticalState.ability.charges;
+            }
+
             if (stageTicksRemaining <= 0) {
                 if (!targetCaptured) {
                     result.stage = stage;

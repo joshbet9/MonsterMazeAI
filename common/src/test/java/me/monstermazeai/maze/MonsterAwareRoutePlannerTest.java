@@ -142,6 +142,11 @@ class MonsterAwareRoutePlannerTest {
         raw[10][13] = 0;
         state.maze = new MazeModel(raw);
 
+        PlayerPathfinder pathfinder = new PlayerPathfinder();
+        assertEquals(
+                List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)),
+                pathfinder.shortestPath(state.maze, new Cell(10, 10), new Cell(10, 14)));
+
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 

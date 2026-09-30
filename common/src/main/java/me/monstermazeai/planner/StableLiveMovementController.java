@@ -92,8 +92,13 @@ public final class StableLiveMovementController {
     private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
-    /** Do not attempt lane recovery once the player is already near the cell edge. */
-    private static final double MAX_SAFE_LANE_ERROR = 0.28;
+    /**
+     * Start lateral lane recovery only once the player is materially offset.
+     * Keeping the normal forward+steering controller active through smaller
+     * offsets avoids unnecessary strafe-only slowdown on one-block corridors;
+     * the projected-support guard remains the final physical safety check.
+     */
+    private static final double MAX_SAFE_LANE_ERROR = 0.40;
     /*
      * Monster Maze SafePads are centred on integer block coordinates, while
      * PlayerRoute cells use half-block cell centres. The live player can

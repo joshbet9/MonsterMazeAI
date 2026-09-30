@@ -227,7 +227,9 @@ def run_id_from_manifest(manifest: Dict[str, Any], manifest_path: Optional[Path]
     if manifest_path is None:
         return None
     stem = manifest_path.stem
-    return stem[:-9] if stem.endswith("-manifest") else stem
+    stem = stem[:-9] if stem.endswith("-manifest") else stem
+    prefix = "human-speed-run-"
+    return stem[len(prefix):] if stem.startswith(prefix) else stem
 
 
 def load_annotation(

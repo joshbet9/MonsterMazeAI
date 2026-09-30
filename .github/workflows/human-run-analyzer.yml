@@ -100,91 +100,112 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Analyze recorded run
-        run: |
-          python tools/human_run_analyzer.py human-runs --manifest human-runs/human-speed-run-20260930-174746-835-manifest.json --output-dir /tmp/human-run-analysis
 
-      - name: Resolve simulator conditions
-        id: human_conditions
-        shell: python
+      - name: Resolve all human runs
         run: |
+          python tools/human_run_dataset_analyzer.py human-runs --output-dir /tmp/human-run-dataset-analysis
+          python - <<'PY'
           import json
-          import os
           from pathlib import Path
 
-          summary = json.loads(Path("/tmp/human-run-analysis/analysis/summary.json").read_text())
-          conditions = summary["conditions"]
-          required = ("mode", "kit", "pattern")
-          missing = [key for key in required if conditions.get(key) is None]
-          if missing:
-              raise SystemExit(f"missing simulator conditions: {missing}")
+          summary = json.loads(Path("/tmp/human-run-dataset-analysis/dataset-summary.json").read_text())
+          rows = []
+          for run in summary["runs"]:
+              conditions = run["conditions"]
+              run_id = run["runId"]
+              manifests = sorted(Path("human-runs").glob(f"*{run_id}-manifest.json"))
+              if len(manifests) != 1:
+                  raise SystemExit(f"{run_id}: expected exactly one manifest, found {manifests}")
+              for key in ("mode", "kit", "pattern"):
+                  if conditions.get(key) is None:
+                      raise SystemExit(f"{run_id}: missing simulator condition {key}")
+              rows.append((
+                  run_id,
+                  str(conditions["mode"]).upper(),
+                  str(conditions["kit"]).upper(),
+                  int(conditions["pattern"]),
+                  str(manifests[0]),
+              ))
 
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-              output.write(f"mode={conditions['mode'].upper()}\n")
-              output.write(f"kit={conditions['kit'].upper()}\n")
-              output.write(f"pattern={int(conditions['pattern'])}\n")
-              output.write("profile=HIGH_SKILL\n")
+          out = Path("/tmp/human-run-conditions.tsv")
+          out.write_text(
+              "".join(
+                  f"{run_id}\t{mode}\t{kit}\t{pattern}\t{manifest}\n"
+                  for run_id, mode, kit, pattern, manifest in rows
+              ),
+              encoding="utf-8",
+          )
+          print(out.read_text(), end="")
+          PY
 
-          print(json.dumps({
-              "mode": conditions["mode"],
-              "kit": conditions["kit"],
-              "pattern": conditions["pattern"],
-              "profile": "HIGH_SKILL",
-          }, indent=2))
-
-      - name: Build long-horizon matching simulator summary
+      - name: Build all matching long-horizon simulator comparisons
         run: |
-          mvn -B -ntp -pl common -am             -Dtest=HumanRunSimulatorExportTest             -Dsurefire.failIfNoSpecifiedTests=false             -DhumanRunMode=${{ steps.human_conditions.outputs.mode }}             -DhumanRunKit=${{ steps.human_conditions.outputs.kit }}             -DhumanRunPattern=${{ steps.human_conditions.outputs.pattern }}             -DhumanRunProfile=${{ steps.human_conditions.outputs.profile }} -DhumanRunComparison=true             -DhumanRunSimulatorSummary=$GITHUB_WORKSPACE/simulator-summary.json             test
+          rm -rf /tmp/human-run-comparisons
+          mkdir -p /tmp/human-run-comparisons
+          while IFS=$'\t' read -r run_id mode kit pattern manifest; do
+            test -n "$run_id"
+            out="/tmp/human-run-comparisons/$run_id"
+            mkdir -p "$out"
+            echo "===== $run_id mode=$mode kit=$kit pattern=$pattern ====="
+            mvn -B -ntp -pl common -am \
+              -Dtest=HumanRunSimulatorExportTest \
+              -Dsurefire.failIfNoSpecifiedTests=false \
+              -DhumanRunMode="$mode" \
+              -DhumanRunKit="$kit" \
+              -DhumanRunPattern="$pattern" \
+              -DhumanRunProfile=HIGH_SKILL \
+              -DhumanRunComparison=true \
+              -DhumanRunSimulatorSummary="$out/simulator-summary.json" \
+              test
+            python tools/human_run_analyzer.py human-runs \
+              --manifest "$manifest" \
+              --output-dir "$out/analysis" \
+              --sim-summary "$out/simulator-summary.json"
+          done < /tmp/human-run-conditions.tsv
 
-      - name: Analyze recorded run against matching simulator
-        run: |
-          python tools/human_run_analyzer.py human-runs             --manifest human-runs/human-speed-run-20260930-174746-835-manifest.json             --output-dir /tmp/human-run-analysis             --sim-summary simulator-summary.json
-
-      - name: Verify human-vs-simulator comparison
+      - name: Verify all human-vs-simulator comparisons
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          summary = json.loads(Path("/tmp/human-run-analysis/analysis/summary.json").read_text())
-          anomalies = json.loads(Path("/tmp/human-run-analysis/analysis/anomalies.json").read_text())
-          simulator = json.loads(Path("simulator-summary.json").read_text())
-          comparison = json.loads(Path("/tmp/human-run-analysis/analysis/simulator-comparison.json").read_text())
+          root = Path("/tmp/human-run-comparisons")
+          records = []
+          dirs = sorted(p for p in root.iterdir() if p.is_dir())
+          assert dirs, "no human-run comparison directories were produced"
 
-          assert summary["run"]["stageReached"] == 49, summary["run"]
-          assert summary["conditions"]["mode"] == "speed", summary["conditions"]
-          assert summary["conditions"]["kit"] == "MAVERICK", summary["conditions"]
-          assert summary["conditions"]["pattern"] == 3, summary["conditions"]
-          assert simulator["conditions"]["mode"] == summary["conditions"]["mode"]
-          assert simulator["conditions"]["kit"] == summary["conditions"]["kit"]
-          assert simulator["conditions"]["pattern"] == summary["conditions"]["pattern"]
-          assert simulator["conditions"]["profile"] == "HIGH_SKILL"
-          assert simulator["simulator"]["durationTicks"] > 0
-          assert comparison["conditionMatch"] is True, comparison
-          assert comparison["gaps"], comparison
-          assert any(a["type"] == "KIT_CONFLICT" for a in anomalies), anomalies
-          assert any(a["type"] == "WORLD_STAGE_CONFLICT" for a in anomalies), anomalies
+          for directory in dirs:
+              simulator = json.loads((directory / "simulator-summary.json").read_text())
+              human = json.loads((directory / "analysis" / "summary.json").read_text())
+              comparison = json.loads((directory / "analysis" / "simulator-comparison.json").read_text())
 
-          print(json.dumps({
-              "human": {
-                  "stageReached": summary["run"]["stageReached"],
-                  "mode": summary["conditions"]["mode"],
-                  "kit": summary["conditions"]["kit"],
-                  "pattern": summary["conditions"]["pattern"],
-              },
-              "simulator": simulator["simulator"],
-              "anomalyTypes": sorted({a["type"] for a in anomalies}),
-              "comparisonMetrics": [g["metric"] for g in comparison["gaps"]],
-          }, indent=2))
+              assert comparison["conditionMatch"] is True, comparison
+              assert comparison["gaps"], comparison
+              for key in ("mode", "kit", "pattern"):
+                  assert simulator["conditions"][key] == human["conditions"][key], (
+                      directory.name, key, simulator["conditions"], human["conditions"]
+                  )
+              assert simulator["conditions"]["profile"] == "HIGH_SKILL"
+              assert simulator["simulator"]["durationTicks"] > 0
+
+              records.append({
+                  "runId": directory.name,
+                  "humanStage": human["run"]["stageReached"],
+                  "simulatorStage": simulator["simulator"]["stageReached"],
+                  "humanDamagePerStage": human["metrics"].get("damagePerStage"),
+                  "simulatorDamagePerStage": simulator["simulator"].get("damagePerStage"),
+                  "metrics": [gap["metric"] for gap in comparison["gaps"]],
+              })
+
+          Path(root / "comparison-index.json").write_text(
+              json.dumps({"runCount": len(records), "runs": records}, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({"runCount": len(records), "runs": records}, indent=2, sort_keys=True))
           PY
 
       - name: Upload comparison report
         uses: actions/upload-artifact@v4
         with:
           name: human-vs-simulator-report
-          path: |
-            simulator-summary.json
-            /tmp/human-run-analysis/analysis/summary.json
-            /tmp/human-run-analysis/analysis/anomalies.json
-            /tmp/human-run-analysis/analysis/simulator-comparison.json
-            /tmp/human-run-analysis/normalized/*.jsonl
+          path: /tmp/human-run-comparisons/**

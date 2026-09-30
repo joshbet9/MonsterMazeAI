@@ -222,6 +222,81 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void mobAvoidanceStaysForwardDrivenInsteadOfBecomingEdgeGuardIdle() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.BODY_BUILDER;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        // Bootstrap the cardinal route first. On the following observation a
+        // monster enters the controller's immediate lane while a side floor
+        // exists. Human recordings show W remains the dominant avoidance input.
+        s.tick = 1;
+        Action bootstrap = controller.nextAction(s, new Cell(0, 8), true);
+        assertTrue(bootstrap.forward() > 0.0 || Math.abs(bootstrap.yawDelta()) > 0.0);
+
+        me.monstermazeai.monster.MonsterState monster =
+                new me.monstermazeai.monster.MonsterState(99, 0.5, 0.0, 2.1);
+        monster.vz = -0.10;
+        s.monsters.add(monster);
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), true);
+
+        assertTrue(action.forward() > 0.0,
+                "a supported mob dodge must not collapse to stationary EDGE_GUARD output");
+        assertTrue(action.sprint());
+        assertTrue(controller.lastDecisionDetail().contains("MOB_DODGE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("guarded=f=0.000,s=0.000"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
+    void monsterCannotInterruptCommittedGapCrossing() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        for (int column = 13; column <= 30; column++) raw[10][column] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = maze;
+        s.kit = me.monstermazeai.kit.Kit.BODY_BUILDER;
+        s.activePadRow = 10;
+        s.activePadColumn = 30;
+        s.player.x = 10.5;
+        s.player.z = 9.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+        controller.nextAction(s, new Cell(10, 30), true);
+
+        s.player.z = 10.99;
+        s.tick = 2;
+        Action committed = controller.nextAction(s, new Cell(10, 30), true);
+        assertTrue(committed.forward() > 0.0);
+        assertTrue(committed.jump());
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"),
+                controller.lastDecisionDetail());
+
+        MonsterState monster = new MonsterState(100, 10.5, 0.0, 11.6);
+        monster.vz = -0.10;
+        s.monsters.add(monster);
+        s.tick = 3;
+
+        Action afterThreat = controller.nextAction(s, new Cell(10, 30), true);
+        assertTrue(afterThreat.forward() > 0.0);
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"),
+                "a committed gap crossing must retain motor ownership during mob proximity: "
+                        + controller.lastDecisionDetail());
+    }
+
+    @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -19,6 +19,23 @@ public class Minecraft18ObservationRulesTest {
         assertTrue(Minecraft18ObservationRules.looksLikeMonsterMaze(data));
     }
 
+
+    @Test
+    public void parsesNativeMineplexScoreboardWithValuesBeforeLabels() {
+        Minecraft18ObservationRules.ScoreboardData data =
+                Minecraft18ObservationRules.parseScoreboard(
+                        "Monster Maze",
+                        Arrays.asList(
+                                "3 (Repulsor)", "PB", "    ",
+                                "13", "Stage", "   ",
+                                "28 Seconds", "Safe Pad", "  ",
+                                "1", "Players", " ", "Speed", "Mode"));
+
+        assertEquals(28, data.safePadSeconds);
+        assertEquals(13, data.stage);
+        assertTrue(Minecraft18ObservationRules.looksLikeMonsterMaze(data));
+    }
+
     @Test
     public void parsesInlineSafePadAndStage() {
         Minecraft18ObservationRules.ScoreboardData data =

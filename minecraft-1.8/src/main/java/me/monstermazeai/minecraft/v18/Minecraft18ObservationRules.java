@@ -35,22 +35,16 @@ public final class Minecraft18ObservationRules {
 
             if (lower.contains("safe pad")) {
                 Integer value = timeSeconds(line);
-                if (value == null && i + 1 < cleanLines.size()) {
-                    value = timeSeconds(cleanLines.get(i + 1));
-                }
-                if (value != null) {
-                    safePadSeconds = value;
-                }
+                if (value == null) value = previousNonEmptyValue(cleanLines, i);
+                if (value == null) value = nextNonEmptyValue(cleanLines, i);
+                if (value != null) safePadSeconds = value;
             }
 
             if (lower.equals("stage") || lower.startsWith("stage ") || lower.startsWith("stage:")) {
                 Integer value = firstInteger(line);
-                if (value == null && i + 1 < cleanLines.size()) {
-                    value = firstInteger(cleanLines.get(i + 1));
-                }
-                if (value != null) {
-                    stage = Math.max(1, value);
-                }
+                if (value == null) value = nextStageValue(cleanLines, i);
+                if (value == null) value = previousNonEmptyValue(cleanLines, i);
+                if (value != null) stage = Math.max(1, value);
             }
         }
 
@@ -98,6 +92,35 @@ public final class Minecraft18ObservationRules {
             }
         }
         return false;
+    }
+
+    private static Integer previousNonEmptyValue(List<String> lines, int index) {
+        for (int i = index - 1; i >= 0; i--) {
+            String candidate = lines.get(i);
+            if (candidate.trim().length() == 0) continue;
+            return timeSeconds(candidate);
+        }
+        return null;
+    }
+
+    private static Integer nextNonEmptyValue(List<String> lines, int index) {
+        for (int i = index + 1; i < lines.size(); i++) {
+            String candidate = lines.get(i);
+            if (candidate.trim().length() == 0) continue;
+            return timeSeconds(candidate);
+        }
+        return null;
+    }
+
+    private static Integer nextStageValue(List<String> lines, int index) {
+        for (int i = index + 1; i < lines.size() && i <= index + 3; i++) {
+            String candidate = lines.get(i);
+            if (candidate.trim().length() == 0) continue;
+            String lower = candidate.toLowerCase(Locale.ROOT);
+            if (lower.contains("second") || lower.contains("player")) return null;
+            return firstInteger(candidate);
+        }
+        return null;
     }
 
     private static Integer timeSeconds(String text) {

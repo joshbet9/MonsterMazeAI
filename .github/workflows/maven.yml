@@ -49,3 +49,21 @@ jobs:
 
       - name: Run focused Speed diagnostics
         run: mvn -B -ntp -pl common -am -Dtest=SpeedFailureDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false test
+
+  speed-ceiling:
+    name: Speed Stage-15 ceiling
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run Speed Stage-15 ceiling diagnostic
+        run: mvn -B -ntp -pl common -am -Dtest=SpeedCeilingDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false test

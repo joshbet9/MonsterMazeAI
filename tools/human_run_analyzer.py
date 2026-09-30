@@ -758,6 +758,9 @@ def normalize_run(
         if clean_text(w.get("observerKit", w.get("kit"))).upper() in KNOWN_KITS
     )
     resolved_kit = metadata.get("kit")
+    declared_kit = clean_text(manifest.get("declaredKit")).upper()
+    if declared_kit not in KNOWN_KITS:
+        declared_kit = None
     annotation_kit = clean_text(annotation.get("kit")).upper()
     if annotation_kit not in KNOWN_KITS:
         annotation_kit = None

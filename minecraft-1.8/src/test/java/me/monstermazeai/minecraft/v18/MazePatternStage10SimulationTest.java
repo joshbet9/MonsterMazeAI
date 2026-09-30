@@ -257,7 +257,6 @@ public final class MazePatternStage10SimulationTest {
             tacticalState.previewPadRow = previewPad == null ? -1 : previewPad.row;
             tacticalState.previewPadColumn = previewPad == null ? -1 : previewPad.column;
             tacticalState.tick = ticks;
-            monsterSimulator.tick(tacticalState);
 
             LegacyWorldObservation observation = observation(
                     ticks, stage, pattern + 1, kit, player, activePad, raw, physical, tacticalState, abilities);
@@ -297,6 +296,7 @@ public final class MazePatternStage10SimulationTest {
             step(player, action, physical, result);
 
             syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
+            monsterSimulator.tick(tacticalState);
             int bumps = MonsterMazeBumpModel.apply(tacticalState);
             if (bumps > 0) {
                 player.x = tacticalState.player.x - HALF;
@@ -306,6 +306,8 @@ public final class MazePatternStage10SimulationTest {
                 player.vy = tacticalState.player.vy;
                 player.vz = tacticalState.player.vz;
                 player.grounded = tacticalState.player.grounded;
+                player.health = tacticalState.player.health;
+                player.maxHealth = tacticalState.player.maxHealth;
                 player.alive = tacticalState.player.health > 0.0;
                 result.mobBumps += bumps;
             }
@@ -336,13 +338,14 @@ public final class MazePatternStage10SimulationTest {
             if (!targetCaptured && isOnPad(player, activePad)) {
                 targetCaptured = true;
                 syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
-                abilities.onReachedPad(tacticalState, stage == 1);
+                // Delegate pad healing/recharge to the common source model.
+                // Solo progression then shortens the phase to four seconds.
+                abilities.onReachedPad(tacticalState, true);
                 player.health = tacticalState.player.health;
                 player.maxHealth = tacticalState.player.maxHealth;
+                player.jumpCharges = tacticalState.ability.charges;
                 result.padsReached++;
-                int shortenedSeconds = Math.max(6, 16 - (stage - 1));
-                stageTicksRemaining = Math.min(
-                        stageTicksRemaining, shortenedSeconds * 20);
+                stageTicksRemaining = Math.min(stageTicksRemaining, 4 * 20);
 
                 if (stage >= targetStage) {
                     result.stage = stage;
@@ -517,11 +520,6 @@ public final class MazePatternStage10SimulationTest {
         commonPlayer.jumpCharges = p.jumpCharges;
         commonPlayer.jumpTicks = p.jumpTicks;
 
-        boolean jumpStarted = action.jump
-                && commonPlayer.grounded
-                && commonPlayer.jumpTicks == 0
-                && commonPlayer.jumpCharges > 0;
-
         int[][] floorRaw = new int[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             for (int col = 0; col < SIZE; col++) {
@@ -551,7 +549,6 @@ public final class MazePatternStage10SimulationTest {
         p.jumpTicks = commonPlayer.jumpTicks;
         p.health = commonPlayer.health;
         p.maxHealth = commonPlayer.maxHealth;
-        if (jumpStarted) p.jumpCharges--;
         result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
         if (p.y < -2.0D) p.alive = false;
     }

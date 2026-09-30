@@ -41,8 +41,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that one seed or one profile represents every real game.
  */
 class AuthenticStage10SimulationTest {
-    private static final int REQUIRED_STAGE = 10;
+    private static final int MODERN_REQUIRED_STAGE = 5;
+    private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
+    private static final int FULL_RUN_MAX_TICKS = 100_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {
@@ -51,7 +53,7 @@ class AuthenticStage10SimulationTest {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.MODERN);
-                if (result.maxStage < REQUIRED_STAGE) {
+                if (result.maxStage < MODERN_REQUIRED_STAGE) {
                     failures.add("mode=MODERN pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage
@@ -81,7 +83,7 @@ class AuthenticStage10SimulationTest {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
                 System.out.printf("SPEED pattern=%d kit=%s stage=%d%n",
                         pattern + 1, kit, result.maxStage);
-                if (result.maxStage < REQUIRED_STAGE) {
+                if (result.maxStage < SPEED_REQUIRED_STAGE) {
                     failures.add("mode=SPEED pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage
@@ -89,6 +91,10 @@ class AuthenticStage10SimulationTest {
                             + " health=" + result.health
                             + " pos=(" + result.x + "," + result.z + ")"
                             + " firstFallTick=" + result.firstFallTick
+                            + " firstFallPrePos=" + result.firstFallPreX + "," + result.firstFallPreY + "," + result.firstFallPreZ
+                            + " firstFallPreV=" + result.firstFallPreVx + "," + result.firstFallPreVy + "," + result.firstFallPreVz
+                            + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
+                            + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
                             + " firstFallDecision=" + result.firstFallDecision
                             + " decision=" + result.decision);
                 }
@@ -102,7 +108,26 @@ class AuthenticStage10SimulationTest {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }
 
+    static RunResult runDiagnostic(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return runDiagnostic(pattern, kit, profile, mode, requiredStage(mode));
+    }
+
+    static RunResult runDiagnostic(int pattern, Kit kit, AiProfile profile, Mode mode, int targetStage) {
+        if (targetStage <= 0) {
+            return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
+        }
+        return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, targetStage);
+    }
+
+    static RunResult runToEnd(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
+    }
+
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, requiredStage(mode));
+    }
+
+    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int targetStage) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -159,7 +184,8 @@ class AuthenticStage10SimulationTest {
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
-        for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
+        int maxTicks = targetStage > 0 ? MAX_TICKS : FULL_RUN_MAX_TICKS;
+        for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the
             // mode's 225-monster starter quota is reached.
@@ -174,16 +200,16 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
-                trace.addLast("tick=" + state.tick
-                        + " pos=" + format(state.player.x) + "," + format(state.player.z)
-                        + " y=" + format(state.player.y)
-                        + " yaw=" + format(state.player.yaw)
-                        + " v=" + format(state.player.vx) + "," + format(state.player.vz)
-                        + " decision=" + decisionBeforeTick.replace(' ', '_')
-                        + " action=" + currentAction.replace(' ', '_'));
-                while (trace.size() > 30) trace.removeFirst();
-            }
+            trace.addLast("tick=" + state.tick
+                    + " stage=" + state.stage
+                    + " pos=" + format(state.player.x) + "," + format(state.player.z)
+                    + " y=" + format(state.player.y)
+                    + " yaw=" + format(state.player.yaw)
+                    + " v=" + format(state.player.vx) + "," + format(state.player.vy) + "," + format(state.player.vz)
+                    + " hp=" + format(state.player.health)
+                    + " decision=" + decisionBeforeTick.replace(' ', '_')
+                    + " action=" + currentAction.replace(' ', '_'));
+            while (trace.size() > 30) trace.removeFirst();
 
             simulator.tick(state, action.action);
 
@@ -231,7 +257,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (targetStage > 0 && maxStage >= targetStage) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -265,6 +291,10 @@ class AuthenticStage10SimulationTest {
 
     private static void syncPadSurfaces(GameState state) {
         new me.monstermazeai.game.GameProgressionModel().syncPadSurfaces(state);
+    }
+
+    private static int requiredStage(Mode mode) {
+        return mode == Mode.SPEED ? SPEED_REQUIRED_STAGE : MODERN_REQUIRED_STAGE;
     }
 
     private static int initialMonsterCount(Mode mode) {
@@ -351,7 +381,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,

@@ -68,7 +68,14 @@ public final class StableLiveMovementController {
      * This does not change physics or floor collision rules. It only determines
      * when the controller may enter its existing slow perpendicular recovery.
      */
-    private static final double MAX_RECOVERABLE_LANE_ERROR = 0.48;
+    /*
+     * With a 0.30-block half-width player AABB, a one-block floor cell can
+     * continue to provide positive overlap until the player centre is just
+     * under 0.80 blocks from that cell centre. Keep a tiny epsilon inside the
+     * exact collision boundary; this is a geometry-derived controller envelope,
+     * not a physics relaxation.
+     */
+    private static final double MAX_RECOVERABLE_LANE_ERROR = 0.79;
     /*
      * Monster Maze SafePads are centred on integer block coordinates, while
      * PlayerRoute cells use half-block cell centres. The live player can

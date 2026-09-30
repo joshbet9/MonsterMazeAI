@@ -112,7 +112,7 @@ class HumanTracePhysicsCalibrationTest {
                         actionInput.strafe,
                         actionInput.jump,
                         actionInput.sprint,
-                        next.yawDelta,
+                        (float) next.yawDelta,
                         false);
 
                 boolean hasDamage = Math.abs(current.healthDelta) > 1.0e-9
@@ -225,7 +225,7 @@ class HumanTracePhysicsCalibrationTest {
         p.vx = motion.vx;
         p.vy = motion.vy;
         p.vz = motion.vz;
-        p.yaw = motion.yaw;
+        p.yaw = (float) motion.yaw;
         p.grounded = motion.grounded;
         if (center != null) {
             p.x -= center.x - 49.0D;

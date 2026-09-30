@@ -458,8 +458,25 @@ public final class StableLiveMovementController {
         Action action;
 
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
-            action = new Action(0.0, 0.0, false, false, 0.0F, false);
-            lastDecisionDetail += " SAFETY_STOP crossTrack=" + format(crossTrack);
+            /*
+             * A player can remain physically supported while the block
+             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
+             * lateral error is therefore not source-like: A/D correction is a
+             * normal Minecraft input and is the safest way to recover the lane
+             * without cutting the cardinal corridor.
+             */
+            int crossSign = crossTrack > 0.0 ? 1 : -1;
+            double strafe = dirRow == 0
+                    ? -crossSign * Math.signum(dirColumn)
+                    : crossSign * Math.signum(dirRow);
+            float correctionYaw = cardinalYaw(dirRow, dirColumn);
+            float correctionError = normalise(correctionYaw - state.player.yaw);
+            float yawDelta = speed <= MAX_TURNING_SPEED
+                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                    : 0.0F;
+            action = new Action(0.0, strafe, false, false, yawDelta, false);
+            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
+                    + " strafe=" + format(strafe);
         } else if (Math.abs(crossTrack) > 0.18) {
             double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
             double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;

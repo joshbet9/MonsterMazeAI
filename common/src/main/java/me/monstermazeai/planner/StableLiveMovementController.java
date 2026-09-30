@@ -362,25 +362,24 @@ public final class StableLiveMovementController {
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
         if (padEntry != null) return padEntry;
 
-        // When a source interaction is close enough to matter this tick, hand
-        // control to the same tactical simulator used during route selection.
-        // This is what makes deliberate contact and ability use real live actions,
-        // rather than merely simulated route preferences.
+        /*
+         * Tactical search may decide that an ability pulse or a legacy jump is
+         * useful against a local threat, but it is not allowed to become a
+         * second movement controller. In particular, tactical strafe/reverse
+         * choices must never bypass the cardinal corridor safety checks below.
+         */
+        boolean tacticalAbilityPulse = false;
+        boolean tacticalJumpHint = false;
         long currentThreatSignature = threatSignature(state);
         if (routePlanner.shouldUseTacticalAction(state)
                 && currentThreatSignature != lastTacticalSignature) {
-            /*
-             * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
-             */
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
             if (tactical != null) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
+                tacticalAbilityPulse = tactical.useAbility();
+                tacticalJumpHint = tactical.jump();
+                lastDecisionDetail += " TACTICAL_HINT=" + tactical;
             }
         }
 
@@ -534,6 +533,27 @@ public final class StableLiveMovementController {
                     && forward > 0.0
                     && distance > WAYPOINT_ARRIVAL;
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
+        }
+
+        /*
+         * Merge only source-valid side-band inputs into the authoritative motor
+         * result. Strafe/reverse/yaw from tactical search are intentionally
+         * ignored; the returned action always preserves the cardinal route.
+         */
+        if (tacticalAbilityPulse || (tacticalJumpHint && allowJump
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded && action.forward() > 0.0)) {
+            boolean jump = action.jump()
+                    || (tacticalJumpHint && allowJump
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                    && state.player.grounded && action.forward() > 0.0);
+            action = new Action(
+                    action.forward(),
+                    0.0,
+                    jump,
+                    action.sprint(),
+                    action.yawDelta(),
+                    action.useAbility() || tacticalAbilityPulse);
         }
 
         lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)

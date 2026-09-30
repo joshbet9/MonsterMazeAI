@@ -50,19 +50,25 @@ public final class AbilityDecision {
 
         if (state.kit == Kit.REPULSOR) {
             return state.ability.charges > 0
+                    && !isOnActivePad(state)
                     && (repulsorDeadlineEmergency(state, objectiveReason)
-                    || repulsorLethalEmergency(state));
+                    || repulsorLethalEmergency(state)
+                    || repulsorImmediateThreat(state));
         }
 
         if (state.kit == Kit.BODY_BUILDER) {
             return state.ability.activations > 0
                     && state.ability.activeUntilTick <= state.tick
+                    && !isOnActivePad(state)
                     && (bodyRushDeadlineEmergency(state, objectiveReason)
-                    || bodyRushLethalEmergency(state));
+                    || bodyRushLethalEmergency(state)
+                    || bodyRushImmediateThreat(state));
         }
+
         if (state.kit == Kit.SLOWBALLER) {
             return state.tick >= state.ability.cooldownUntilTick
-                    && cryoRouteOpening(state, objectiveReason);
+                    && !isOnActivePad(state)
+                    && cryoImmediateThreat(state); 
         }
         return false;
     }
@@ -154,6 +160,67 @@ public final class AbilityDecision {
             if (lateral <= CRYO_ROUTE_CORRIDOR) return true;
         }
         return false;
+    }
+
+    private static boolean repulsorImmediateThreat(GameState state) {
+        int nearby = 0;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            double distance = Math.sqrt(distanceSq(state, monster));
+            if (distance > 6.0) continue;
+            nearby++;
+            if (imminentCollision(state, monster)) return true;
+        }
+        // Preserve charges, but clear a genuine local cluster before it becomes
+        // a chain of four-damage bumps.
+        return nearby >= 3;
+    }
+
+    private static boolean bodyRushImmediateThreat(GameState state) {
+        int close = 0;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            double distance = Math.sqrt(distanceSq(state, monster));
+            if (distance > 3.5) continue;
+            if (distance <= 2.0 || imminentCollision(state, monster)) return true;
+            close++;
+        }
+        return state.player.health <= 12.0 && close >= 1;
+    }
+
+    private static boolean cryoImmediateThreat(GameState state) {
+        if (state.activePadRow < 0 || state.activePadColumn < 0) return false;
+
+        double toPadX = state.activePadRow + 0.5 - state.player.x;
+        double toPadZ = state.activePadColumn + 0.5 - state.player.z;
+        double padDistance = Math.hypot(toPadX, toPadZ);
+        if (padDistance < 1.0E-6) return false;
+
+        double ux = toPadX / padDistance;
+        double uz = toPadZ / padDistance;
+        int corridorThreats = 0;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            double distance = Math.sqrt(distanceSq(state, monster));
+            if (distance > 6.0) continue;
+            double mx = monster.x - state.player.x;
+            double mz = monster.z - state.player.z;
+            double along = mx * ux + mz * uz;
+            double lateral = Math.abs(mx * uz - mz * ux);
+            if (along < -0.5 || along > padDistance + 1.0) continue;
+            if (lateral <= 2.0) {
+                corridorThreats++;
+                if (distance <= 2.5 || imminentCollision(state, monster)) return true;
+            }
+        }
+        return corridorThreats >= 2;
+    }
+
+    private static boolean isOnActivePad(GameState state) {
+        return state.activePadRow >= 0 && state.activePadColumn >= 0
+                && me.monstermazeai.game.PadModel.isOn(state.player,
+                state.activePadRow + 0.5, GameState.PAD_SURFACE_Y,
+                state.activePadColumn + 0.5);
     }
 
     private static boolean activeMonster(GameState state, MonsterState monster) {

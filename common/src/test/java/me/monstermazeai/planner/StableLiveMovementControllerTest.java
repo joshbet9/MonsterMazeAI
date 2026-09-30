@@ -87,6 +87,53 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void preservesCommittedRouteWhenAabbOverlapsAdjacentPhysicalCell() {
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[59][49] = 1;
+        raw[60][49] = 1;
+        raw[61][49] = 1;
+        raw[61][50] = 1;
+        raw[62][50] = 1;
+        for (int row = 78; row <= 82; row++) {
+            for (int col = 72; col <= 74; col++) raw[row][col] = 1;
+        }
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 82;
+        s.activePadColumn = 74;
+        s.player.x = 59.30;
+        s.player.z = 49.05;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action first = controller.nextAction(s, new Cell(82, 74), false);
+        assertNotNull(first);
+        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0,
+                controller.lastDecisionDetail());
+
+        // The AABB overlaps route cell (59,49) and adjacent physical cell
+        // (60,49). The committed route must continue from (59,49), not rebuild
+        // from whichever physical block has the greater overlap.
+        s.tick = 2;
+        s.player.x = 59.08;
+        s.player.z = 49.15;
+
+        Action second = controller.nextAction(s, new Cell(82, 74), false);
+        assertFalse(controller.lastDecisionDetail().contains("FAST_RECOVERY_ROUTE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("NO_SUPPORTED_START"),
+                controller.lastDecisionDetail());
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

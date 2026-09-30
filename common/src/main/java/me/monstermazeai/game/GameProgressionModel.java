@@ -39,7 +39,7 @@ public final class GameProgressionModel {
         // checkPlayersOnSafePad() runs every server tick.
         if (onActive && !state.padReached) {
             state.padReached = true;
-            abilities.onReachedPad(state, true);
+            abilities.onReachedPad(state, state.stage == 1);
 
             int shortenedSeconds = Math.max(6, 16 - (state.stage - 1));
             state.phaseTicksRemaining = Math.min(

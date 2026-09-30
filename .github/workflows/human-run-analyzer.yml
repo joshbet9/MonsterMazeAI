@@ -66,7 +66,7 @@ jobs:
 
       - name: Build long-horizon matching simulator summary
         run: |
-          mvn -B -ntp -pl common -am             -Dtest=HumanRunSimulatorExportTest             -Dsurefire.failIfNoSpecifiedTests=false             -DhumanRunMode=${{ steps.human_conditions.outputs.mode }}             -DhumanRunKit=${{ steps.human_conditions.outputs.kit }}             -DhumanRunPattern=${{ steps.human_conditions.outputs.pattern }}             -DhumanRunProfile=${{ steps.human_conditions.outputs.profile }}             -DhumanRunSimulatorSummary=$GITHUB_WORKSPACE/simulator-summary.json             test
+          mvn -B -ntp -pl common -am             -Dtest=HumanRunSimulatorExportTest             -Dsurefire.failIfNoSpecifiedTests=false             -DhumanRunMode=${{ steps.human_conditions.outputs.mode }}             -DhumanRunKit=${{ steps.human_conditions.outputs.kit }}             -DhumanRunPattern=${{ steps.human_conditions.outputs.pattern }}             -DhumanRunProfile=${{ steps.human_conditions.outputs.profile }} -DhumanRunComparison=true             -DhumanRunSimulatorSummary=$GITHUB_WORKSPACE/simulator-summary.json             test
 
       - name: Analyze recorded run against matching simulator
         run: |

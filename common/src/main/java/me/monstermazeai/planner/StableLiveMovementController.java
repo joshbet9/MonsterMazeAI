@@ -39,7 +39,14 @@ import java.util.concurrent.Future;
 public final class StableLiveMovementController {
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
-    private static final double ROUTE_DEVIATION = 0.55;
+    /*
+     * A supported player centre may be up to ~0.80 blocks from a route cell
+     * centre before the 0.30-block AABB loses all positive floor overlap.
+     * Keep the route alive through a source mob-bump displacement inside that
+     * physical envelope; lane recovery then brings the player back without
+     * inventing a fresh route anchor.
+     */
+    private static final double ROUTE_DEVIATION = 0.79;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence

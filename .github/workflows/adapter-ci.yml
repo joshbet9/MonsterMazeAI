@@ -45,4 +45,23 @@ jobs:
 
       - name: Build and test adapter
         working-directory: minecraft-1.8
-        run: gradle --no-daemon build
+        run: |
+          set +e
+          gradle --no-daemon build
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "===== MAZE SIMULATOR JUNIT XML ====="
+            find . -name maze-simulator-report.txt -type f -print -exec cat {} \; || true
+            echo "===== END MAZE SIMULATOR JUNIT XML ====="
+            exit $status
+          fi
+
+      - name: Upload simulator test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maze-simulator-test-report
+          path: |
+            minecraft-1.8/build/test-results/test
+            minecraft-1.8/build/maze-simulator-report-*.txt
+          if-no-files-found: warn

@@ -259,7 +259,7 @@ class StableLiveMovementControllerTest {
 
     @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
-        GameState s = state(0.5, 0.5, -20.0F);
+        GameState s = state(0.5, 0.5, -10.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action action = controller.nextAction(s, new Cell(0, 8), false);

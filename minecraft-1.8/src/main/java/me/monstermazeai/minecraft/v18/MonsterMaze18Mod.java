@@ -3,6 +3,7 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.adapter.LiveMovementValidator;
+import me.monstermazeai.kit.Kit;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
@@ -31,6 +32,7 @@ public final class MonsterMaze18Mod {
     private HumanRunRecorder humanRunRecorder;
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private net.minecraft.client.settings.KeyBinding toggleHumanRecorder;
+    private net.minecraft.client.settings.KeyBinding cycleHumanKit;
     private boolean aiEnabled;
     private boolean runEndedLatch;
     private boolean fullRoutingMode;
@@ -54,6 +56,9 @@ public final class MonsterMaze18Mod {
         toggleHumanRecorder = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.humanRecorder", Keyboard.KEY_F7, "key.categories.monstermazeai");
         ClientRegistry.registerKeyBinding(toggleHumanRecorder);
+        cycleHumanKit = new net.minecraft.client.settings.KeyBinding(
+                "key.monstermazeai.humanKit", Keyboard.KEY_F6, "key.categories.monstermazeai");
+        ClientRegistry.registerKeyBinding(cycleHumanKit);
 
         aiEnabled = false;
         runEndedLatch = false;
@@ -66,6 +71,8 @@ public final class MonsterMaze18Mod {
 
         System.out.println("[MonsterMazeAI/1.8] HYBRID mode ready (F8)");
         System.out.println("[MonsterMazeAI/1.8] Human run recorder ready (F7): records actual keyboard/mouse input + live observation to human-runs/*.jsonl");
+        System.out.println("[MonsterMazeAI/1.8] Human kit declaration ready (F6): " +
+                (humanRunRecorder.getDeclaredKit() == null ? "NONE" : humanRunRecorder.getDeclaredKit().name()));
         System.out.println("[MonsterMazeAI/1.8] First pad uses synchronous optimal speedrun; subsequent pads use normal live AI runtime");
         System.out.println("[MonsterMazeAI/1.8] Per-game GPT summary telemetry enabled");
     }
@@ -76,6 +83,17 @@ public final class MonsterMaze18Mod {
 
         if (event.phase != TickEvent.Phase.START || observer == null) {
             return;
+        }
+
+        if (cycleHumanKit != null && cycleHumanKit.isPressed()) {
+            if (humanRunRecorder.isActive()) {
+                System.out.println("[MonsterMazeAI/1.8] HUMAN KIT locked during active run: " +
+                        (humanRunRecorder.getDeclaredKit() == null ? "NONE" : humanRunRecorder.getDeclaredKit().name()));
+            } else {
+                Kit selectedKit = humanRunRecorder.cycleDeclaredKit();
+                System.out.println("[MonsterMazeAI/1.8] HUMAN KIT set to " +
+                        (selectedKit == null ? "NONE (clear)" : selectedKit.name()));
+            }
         }
 
         if (toggleHumanRecorder != null && toggleHumanRecorder.isPressed()) {

@@ -196,6 +196,7 @@ class SourceMechanicsValidationTest {
         assertTrue(s.maze.isPhysicalFloor(48, 48), "pad corner must be physical floor");
         assertTrue(s.maze.isPhysicalFloor(50, 52), "pad edge must be physical floor");
         assertTrue(s.maze.hasPadSurface(48, 48));
+        s.maze.setPhysicalFloor(48, 48, false);
 
         s.oldPads.add(new me.monstermazeai.maze.Cell(50, 50));
         s.oldPadDecaySeconds.put(new me.monstermazeai.maze.Cell(50, 50), 1);

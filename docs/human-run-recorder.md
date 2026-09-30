@@ -52,7 +52,13 @@ Start Minecraft normally and join Monster Maze.
 
 The recorder is **F7**. It is independent of the AI **F8** toggle.
 
+The human kit declaration is **F6**. Press F6 while no run is active to cycle:
+`JUMPER → SLOWBALLER → BODY_BUILDER → REPULSOR → MAVERICK → NONE`.
+Press F6 until the kit you are actually using is shown before pressing F7. The declaration is locked for the duration of the run. `NONE` clears it for runs that should not be accepted as kit-labelled calibration data.
+
 Press F7 before starting a run. You do not need to toggle it for every game: leave it enabled and it will automatically create a new run directory/file set for each detected game.
+
+The recorder no longer treats the observer's legacy unknown-kit fallback as human kit truth. An explicit F6 declaration is recorded as provenance, and explicit inventory signatures are recorded separately as corroborating evidence.
 
 The recorder starts a game when `Minecraft18Observer` reports `inMonsterMaze=true`.
 
@@ -133,7 +139,9 @@ Per-tick game state needed for stage/timer/ability decisions:
 - SafePad timer and elapsed run time
 - Monster Maze/alive/completed/detection state
 - maze pattern
-- detected kit
+- observer kit (the live observer's value)
+- declared human kit, when set with F6
+- inventory kit evidence, when an explicit kit item is visible
 - jump and ability charges
 - health and selected hotbar slot
 - scoreboard title and lines
@@ -217,9 +225,20 @@ Sparse causal transitions:
 
 The stream is intentionally event-oriented rather than another copy of every tick.
 
+### Kit provenance
+
+The manifest and every world tick distinguish these fields:
+
+- `kit`: the observer's live value, retained for compatibility with existing telemetry.
+- `observerKit`: the same value named explicitly as observer-derived.
+- `declaredKit`: the human condition declared with F6.
+- `inventoryKitEvidence`: an explicit kit signature detected from inventory.
+
+For calibration, analysis resolves the human kit from the declared value first, then a curated annotation, then a uniquely identifying inventory signature. A scoreboard kit string is corroborating evidence only; it can display PB/other-player kit text rather than the kit actually being used by the recorded player.
+
 ## Recommended recording procedure
 
-For calibration, use the recorder with the AI disabled (F8 off) and play a normal strong Speed-mode run.
+For calibration, use the recorder with the AI disabled (F8 off), set the correct kit with F6, and play a normal strong Speed-mode run.
 
 A good run is more useful than a scripted/TAS-perfect run because we want to see realistic:
 

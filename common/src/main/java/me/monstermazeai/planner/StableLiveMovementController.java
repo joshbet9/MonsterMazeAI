@@ -258,17 +258,40 @@ public final class StableLiveMovementController {
 
         GameState routingState = transitionRoutingState(
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
+
+        /*
+         * A grounded observation must have a physically supported graph seed.
+         * An airborne observation is different: the existing route/gap
+         * commitment is already authoritative for the flight and must reach the
+         * airborne-continuation branch below without being rejected merely
+         * because the player's current AABB no longer overlaps a standable cell.
+         */
         Cell supportedStart = resolveSupportedStartCell(routingState);
-        if (supportedStart == null || !inBounds(goal.row(), goal.column())) {
-            int startRow = (int) Math.floor(state.player.x);
-            int startColumn = (int) Math.floor(state.player.z);
-            lastDecisionDetail = "NO_SUPPORTED_START start=" + startRow + "," + startColumn
+        int startRow;
+        int startColumn;
+        if (supportedStart != null) {
+            startRow = supportedStart.row();
+            startColumn = supportedStart.column();
+        } else if (!state.player.grounded && route != null && !route.cells().isEmpty()) {
+            int safeIndex = Math.max(0, Math.min(waypointIndex, route.size() - 1));
+            Cell airborneSeed = route.cells().get(safeIndex);
+            startRow = airborneSeed.row();
+            startColumn = airborneSeed.column();
+        } else if (!inBounds(goal.row(), goal.column())) {
+            lastDecisionDetail = "OUT_OF_BOUNDS goal=" + goal.row() + "," + goal.column();
+            return Action.IDLE;
+        } else {
+            int observedRow = (int) Math.floor(state.player.x);
+            int observedColumn = (int) Math.floor(state.player.z);
+            lastDecisionDetail = "NO_SUPPORTED_START start=" + observedRow + "," + observedColumn
                     + " goal=" + goal.row() + "," + goal.column()
                     + " grounded=" + state.player.grounded;
             return Action.IDLE;
         }
-        int startRow = supportedStart.row();
-        int startColumn = supportedStart.column();
+        if (!inBounds(goal.row(), goal.column())) {
+            lastDecisionDetail = "OUT_OF_BOUNDS goal=" + goal.row() + "," + goal.column();
+            return Action.IDLE;
+        }
 
         // Entering any physical cell of the Safe Pad completes the movement
         // objective. Do not continue toward the beacon centre or re-route back

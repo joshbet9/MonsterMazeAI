@@ -46,7 +46,8 @@ public final class StableLiveMovementController {
     private static final double PHYSICS_WALK_SPEED = 0.10D;
     private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
     private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
-    private static final int SUPPORT_LOOKAHEAD_TICKS = 3;
+    /** One-tick safety horizon matches the live observe -> decide -> move cadence. */
+    private static final int SUPPORT_LOOKAHEAD_TICKS = 1;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence

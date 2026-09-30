@@ -604,9 +604,17 @@ public final class StableLiveMovementController {
                 action = new Action(forward, strafe, jump, sprint, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
+                /*
+                 * Camera control remains available while vanilla horizontal
+                 * momentum is decaying. Waiting for speed <= 0.035 before
+                 * rotating was producing long zero-input stalls at real corners
+                 * (the traces repeatedly showed ~0.15-0.25 speed and no yaw
+                 * change). Keep the turn active and let the projected-support
+                 * guard decide whether the residual momentum remains safe.
+                 */
                 action = new Action(
                         0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED ? turn : 0.0F,
+                        turn,
                         false);
             }
         } else {

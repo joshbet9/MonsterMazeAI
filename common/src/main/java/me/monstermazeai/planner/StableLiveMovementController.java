@@ -57,8 +57,18 @@ public final class StableLiveMovementController {
     private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
-    /** Do not attempt lane recovery once the player is already near the cell edge. */
+    /** Normal lane tracking tolerance before the motor begins controlled recovery. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
+    /**
+     * Maximum recoverable cross-track displacement while the current physical
+     * cell still supports the player. The observed 0.383-block drift is a
+     * legitimate supported state in 1.8.9; hard-stopping it prevents the
+     * controller from ever correcting back to the route centreline.
+     *
+     * This does not change physics or floor collision rules. It only determines
+     * when the controller may enter its existing slow perpendicular recovery.
+     */
+    private static final double MAX_RECOVERABLE_LANE_ERROR = 0.48;
     /*
      * Monster Maze SafePads are centred on integer block coordinates, while
      * PlayerRoute cells use half-block cell centres. The live player can
@@ -456,9 +466,33 @@ public final class StableLiveMovementController {
 
         Action action;
 
-        if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+        if (Math.abs(crossTrack) > MAX_RECOVERABLE_LANE_ERROR
+                || !currentCellSupportsPlayer(state)) {
             action = new Action(0.0, 0.0, false, false, 0.0F, false);
             lastDecisionDetail += " SAFETY_STOP crossTrack=" + format(crossTrack);
+        } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+            /*
+             * Controlled recovery remains cardinal/executable: first rotate in
+             * place toward the lane centre, then walk across the current
+             * supported cell without sprinting. No strafe or diagonal shortcut
+             * is introduced.
+             */
+            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
+            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
+            float correctionYaw = (float) Math.toDegrees(
+                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
+            float correctionError = normalise(correctionYaw - state.player.yaw);
+            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
+                action = new Action(
+                        0.0, 0.0, false, false,
+                        speed <= MAX_TURNING_SPEED
+                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                                : 0.0F,
+                        false);
+            } else {
+                action = new Action(0.20, 0.0, false, false, 0.0F, false);
+            }
+            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack);
         } else if (Math.abs(crossTrack) > 0.18) {
             double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
             double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
@@ -890,6 +924,14 @@ public final class StableLiveMovementController {
         if (rowDirection < 0) return 90.0F;  // -X / west
         if (columnDirection > 0) return 0.0F; // +Z / south
         return 180.0F; // -Z / north
+    }
+
+    private static boolean currentCellSupportsPlayer(GameState state) {
+        int row = (int) Math.floor(state.player.x);
+        int column = (int) Math.floor(state.player.z);
+        return row >= 0 && row < me.monstermazeai.maze.MazeModel.SIZE
+                && column >= 0 && column < me.monstermazeai.maze.MazeModel.SIZE
+                && state.maze.isPhysicalFloor(row, column);
     }
 
     private static double crossTrackError(

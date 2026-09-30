@@ -236,6 +236,7 @@ public final class MazePatternStage10SimulationTest {
 
         Cell activePad = pads.get(0);
         setPadDisabled(monsterMaze, activePad, true);
+        setPadPhysicalFloor(monsterMaze, raw, activePad, true);
         Cell oldPad = null;
         Cell previewPad = null;
         int stage = 1;
@@ -256,12 +257,14 @@ public final class MazePatternStage10SimulationTest {
              */
             if (oldPad != null && oldPadTicksRemaining <= 0) {
                 setPadDisabled(monsterMaze, oldPad, false);
+                setPadPhysicalFloor(monsterMaze, raw, oldPad, false);
                 oldPad = null;
             }
 
             if (stageTicksRemaining == 40 && previewPad == null && padIndex + 1 < pads.size()) {
                 previewPad = pads.get(padIndex + 1);
                 setPadDisabled(monsterMaze, previewPad, true);
+                setPadPhysicalFloor(monsterMaze, raw, previewPad, true);
             }
 
             boolean[][] physical = physicalFloor(
@@ -411,6 +414,7 @@ public final class MazePatternStage10SimulationTest {
 
                 activePad = previewPad != null ? previewPad : pads.get(padIndex);
                 setPadDisabled(monsterMaze, activePad, true);
+                setPadPhysicalFloor(monsterMaze, raw, activePad, true);
                 previewPad = null;
                 stage++;
                 targetCaptured = false;
@@ -738,6 +742,19 @@ public final class MazePatternStage10SimulationTest {
         double dr = a.row - b.row;
         double dc = a.column - b.column;
         return dr * dr + dc * dc;
+    }
+
+    private static void setPadPhysicalFloor(
+            MazeModel maze, int[][] raw, Cell pad, boolean physical) {
+        if (maze == null || raw == null || pad == null) return;
+        for (int dr = -2; dr <= 2; dr++) {
+            for (int dc = -2; dc <= 2; dc++) {
+                int r = pad.row + dr;
+                int c = pad.column + dc;
+                if (!inBounds(r, c)) continue;
+                maze.setPhysicalFloor(r, c, physical || raw[r][c] != 0);
+            }
+        }
     }
 
     private static void setPadDisabled(MazeModel maze, Cell pad, boolean disabled) {

@@ -583,4 +583,47 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void cornerAnticipationOverridesOldLaneRecoveryDuringTurnEntry() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        raw[2][1] = 1;
+        raw[2][2] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 2;
+        s.activePadColumn = 2;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.player.yaw = -90.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+        controller.nextAction(s, new Cell(2, 2), false);
+
+        // Near the end of the first (+row) segment, the player is slightly
+        // off its old centreline while the next segment turns +column. The
+        // controller should begin the corner arc rather than let old-segment
+        // lane recovery suppress the turn.
+        s.player.x = 1.70;
+        s.player.z = 0.90;
+        s.player.yaw = -60.0F;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(2, 2), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("CORNER_ANTICIPATE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0,
+                "corner anticipation must retain forward drive while the old lane is still offset");
+    }
+
 }

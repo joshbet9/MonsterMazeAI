@@ -156,8 +156,20 @@ public final class MonsterMaze18Mod {
                     + " monsters=" + state.monsters.size());
         }
 
-        if (state.inMonsterMaze && !gameSummary.isActive()) {
+        if (Minecraft18RunBoundary.isGameStart(state) && !gameSummary.isActive()) {
             gameSummary.begin(state.worldTick);
+        }
+        if (gameSummary.isActive() && Minecraft18RunBoundary.isGameEnd(state)) {
+            printGameSummary(gameSummary.finish(state.worldTick,
+                    state.completed ? "COMPLETED" : (state.alive ? "LEFT_MAZE" : "PLAYER_DEAD")));
+            runEndedLatch = true;
+            executor.releaseAll();
+            executor.setAiEnabled(false);
+            aiEnabled = false;
+            fullRoutingMode = false;
+            firstPadSpeedrun.reset();
+            movementValidator.reset();
+            return;
         }
 
         LegacyAction action;

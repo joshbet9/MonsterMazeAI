@@ -127,7 +127,7 @@ class StableLiveMovementControllerTest {
         assertEquals(0.0, action.forward(), 1.0e-6,
                 "a 90-degree corner acquisition must not cut across the corridor");
         assertEquals(0.0, action.strafe(), 1.0e-6);
-        assertEquals(-12.0F, action.yawDelta(), 1.0e-6F);
+        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
     }
 
     @Test
@@ -320,7 +320,7 @@ class StableLiveMovementControllerTest {
         Action turn = controller.nextAction(s, new Cell(8, 8), false);
         assertEquals(0.0, turn.forward(), 1.0e-6);
         assertEquals(0.0, turn.strafe(), 1.0e-6);
-        assertEquals(-12.0F, turn.yawDelta(), 1.0e-6F);
+        assertEquals(-30.0F, turn.yawDelta(), 1.0e-6F);
         assertTrue(controller.lastDecisionDetail().contains("PAD_TRANSITION_FACE"),
                 controller.lastDecisionDetail());
 

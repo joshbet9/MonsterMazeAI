@@ -82,6 +82,8 @@ public final class MonsterSimulator {
                     m.y = 0.0D;
                     m.vx = 0.0D;
                     m.vz = 0.0D;
+                    m.waypointRow = recovery.row();
+                    m.waypointColumn = recovery.column();
                 }
             }
 

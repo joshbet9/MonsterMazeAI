@@ -240,13 +240,17 @@ def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], 
             patterns[raw_pattern] += 1
 
     raw_pattern = patterns.most_common(1)[0][0] if patterns else None
+    declared_kit = clean_text(manifest.get("declaredKit")).upper()
+    if declared_kit not in KNOWN_KITS:
+        declared_kit = None
+
     metadata: Dict[str, Any] = {
         "schemaVersion": 1,
         "source": "minecraft-human",
         "minecraftVersion": manifest.get("minecraftVersion", "1.8.9"),
         "mode": modes.most_common(1)[0][0] if modes else None,
-        "kit": kits.most_common(1)[0][0] if kits else None,
-        "kitEvidence": "world.kit" if kits else None,
+        "kit": declared_kit if declared_kit else (kits.most_common(1)[0][0] if kits else None),
+        "kitEvidence": "manifest.declaredKit" if declared_kit else ("world.kit" if kits else None),
         "pattern": raw_pattern if raw_pattern is not None else None,
         "rawMazePattern": raw_pattern,
         "patternEvidence": "world.mazePattern",
@@ -255,6 +259,8 @@ def infer_metadata(manifest: Dict[str, Any], worlds: Dict[int, Dict[str, Any]], 
     }
     if observer_kits:
         metadata["observerKit"] = observer_kits.most_common(1)[0][0]
+    if declared_kit:
+        metadata["declaredKit"] = declared_kit
     return metadata
 
 
@@ -601,11 +607,26 @@ def normalize_run(run_dir: Path, output_dir: Path) -> Dict[str, Any]:
         if info.get("mode"):
             scoreboard_modes[info["mode"]] += 1
     observer_kits = Counter(clean_text(w.get("kit")).upper() for w in world.values() if w.get("kit"))
+    declared_kit = clean_text(manifest.get("declaredKit")).upper()
+    if declared_kit not in KNOWN_KITS:
+        declared_kit = None
     if scoreboard_kits and observer_kits and scoreboard_kits.most_common(1)[0][0] != observer_kits.most_common(1)[0][0]:
         anomalies.append({
             "type": "KIT_CONFLICT",
             "scoreboard": scoreboard_kits.most_common(1)[0][0],
             "observer": observer_kits.most_common(1)[0][0],
+        })
+    if declared_kit and observer_kits and declared_kit != observer_kits.most_common(1)[0][0]:
+        anomalies.append({
+            "type": "DECLARED_KIT_CONFLICT",
+            "declared": declared_kit,
+            "observer": observer_kits.most_common(1)[0][0],
+        })
+    if declared_kit and scoreboard_kits and declared_kit != scoreboard_kits.most_common(1)[0][0]:
+        anomalies.append({
+            "type": "DECLARED_KIT_SCOREBOARD_CONFLICT",
+            "declared": declared_kit,
+            "scoreboard": scoreboard_kits.most_common(1)[0][0],
         })
     for tick, w in world.items():
         info = scoreboard_info(w.get("scoreboardLines", [])) if isinstance(w.get("scoreboardLines"), list) else {}

@@ -367,7 +367,8 @@ public final class StableLiveMovementController {
         // A route waypoint is a turn cell. Once its centre is reached, switch
         // to the next segment. Never skip over a corner and then turn back.
         while (waypointIndex < route.size() - 1
-                && distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL) {
+                && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
+                || hasPassedWaypointAlongSegment(state, waypointIndex))) {
             int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
@@ -961,6 +962,50 @@ public final class StableLiveMovementController {
         return Math.hypot(
                 state.player.x - route.targetX(index),
                 state.player.z - route.targetZ(index));
+    }
+
+    /**
+     * Treat a waypoint as completed when the player has physically crossed the
+     * segment endpoint. This is the closed-loop equivalent of PlayerRoute's
+     * forward-waypoint handling: residual vanilla momentum can carry the player
+     * past a corner before the next observation, and turning back toward the
+     * old point is precisely the behaviour that caused the observed edge fall.
+     *
+     * Gap edges are excluded because their endpoint is not a normal standing
+     * waypoint until the committed jump has confirmed the landing.
+     */
+    private boolean hasPassedWaypointAlongSegment(GameState state, int index) {
+        if (route == null || index <= 0 || index >= route.size()) return false;
+
+        int fromRow = route.cells().get(index - 1).row();
+        int fromColumn = route.cells().get(index - 1).column();
+        int toRow = route.cells().get(index).row();
+        int toColumn = route.cells().get(index).column();
+
+        if (isGapEdge(state, fromRow, fromColumn, toRow, toColumn)) return false;
+
+        int dirRow = Integer.signum(toRow - fromRow);
+        int dirColumn = Integer.signum(toColumn - fromColumn);
+        if (Math.abs(dirRow) + Math.abs(dirColumn) != 1) return false;
+
+        double progress;
+        if (dirRow != 0) {
+            progress = (state.player.x - (fromRow + 0.5D)) * dirRow;
+        } else {
+            progress = (state.player.z - (fromColumn + 0.5D)) * dirColumn;
+        }
+
+        double endpointProgress = Math.abs(toRow - fromRow) + Math.abs(toColumn - fromColumn);
+        if (progress <= endpointProgress + 0.08D) return false;
+
+        // Only advance when the player remains reasonably close to the route
+        // corridor; a monster knockback far away must trigger a new route instead
+        // of being mistaken for successful corner traversal.
+        double lateral = crossTrackError(
+                state.player.x, state.player.z,
+                toRow + 0.5D, toColumn + 0.5D,
+                dirRow, dirColumn);
+        return Math.abs(lateral) <= 0.65D;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {

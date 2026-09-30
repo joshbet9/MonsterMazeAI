@@ -1621,7 +1621,8 @@ public final class StableLiveMovementController {
              * Commit only the immediate source-valid dodge here; subsequent
              * observations can correct the lane again.
              */
-            Action guarded = hasPredictedPhysicalSupport(state, dodge, 1)
+            Action guarded = state.mode == me.monstermazeai.game.Mode.SPEED
+                    && hasPredictedPhysicalSupport(state, dodge, 1)
                     ? dodge
                     : guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"

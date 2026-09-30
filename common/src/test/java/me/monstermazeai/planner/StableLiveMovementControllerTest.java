@@ -244,6 +244,47 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void advancesPastOvershotTurnInsteadOfReversingTowardStaleWaypoint() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        raw[2][1] = 1;
+        raw[2][2] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 2;
+        s.activePadColumn = 2;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.player.yaw = -90.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        controller.nextAction(s, new Cell(2, 2), false);
+
+        // Simulate vanilla momentum carrying the player past the first turn
+        // before the next observation is processed.
+        s.player.x = 2.8;
+        s.player.z = 0.5;
+        s.player.vx = 0.12;
+        s.player.vz = 0.0;
+        s.player.yaw = -90.0F;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(2, 2), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("dir=0,1"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() >= 0.0,
+                "the controller must not reverse into the already-passed waypoint");
+    }
+
+    @Test
     void reducesTurnPulseNearCardinalHeading() {
         GameState s = state(0.5, 0.5, -87.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

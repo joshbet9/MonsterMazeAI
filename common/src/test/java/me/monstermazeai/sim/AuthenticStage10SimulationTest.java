@@ -191,6 +191,23 @@ class AuthenticStage10SimulationTest {
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
+        // Direct control/throughput telemetry. These counters measure what the
+        // controller actually asked the 1.8 movement model to do, rather than
+        // inferring behaviour from the final death trace.
+        long movementInputTicks = 0L;
+        long zeroInputTicks = 0L;
+        long stationaryTicks = 0L;
+        long forwardInputTicks = 0L;
+        long sprintInputTicks = 0L;
+        long jumpInputTicks = 0L;
+        long laneRecoveryTicks = 0L;
+        long edgeGuardTicks = 0L;
+        long cornerVectorTicks = 0L;
+        long steerDriveTicks = 0L;
+        long fastRecoveryRouteTicks = 0L;
+        double actualHorizontalDistance = 0.0D;
+        double commandedInputSum = 0.0D;
+
         int maxTicks = targetStage > 0 ? MAX_TICKS : FULL_RUN_MAX_TICKS;
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
@@ -207,6 +224,23 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
+
+            double inputMagnitude = Math.hypot(action.action.forward(), action.action.strafe());
+            commandedInputSum += inputMagnitude;
+            if (inputMagnitude > 1.0E-6D) {
+                movementInputTicks++;
+            } else {
+                zeroInputTicks++;
+                if (Math.hypot(preVx, preVz) < 0.05D) stationaryTicks++;
+            }
+            if (Math.abs(action.action.forward()) > 1.0E-6D) forwardInputTicks++;
+            if (action.action.sprint()) sprintInputTicks++;
+            if (action.action.jump()) jumpInputTicks++;
+            if (decisionBeforeTick.contains("LANE_RECOVERY")) laneRecoveryTicks++;
+            if (decisionBeforeTick.contains("EDGE_GUARD")) edgeGuardTicks++;
+            if (decisionBeforeTick.contains("CORNER_VECTOR")) cornerVectorTicks++;
+            if (decisionBeforeTick.contains("STEER_DRIVE")) steerDriveTicks++;
+            if (decisionBeforeTick.contains("FAST_RECOVERY_ROUTE")) fastRecoveryRouteTicks++;
             trace.addLast("tick=" + state.tick
                     + " stage=" + state.stage
                     + " pos=" + format(state.player.x) + "," + format(state.player.z)
@@ -219,6 +253,7 @@ class AuthenticStage10SimulationTest {
             while (trace.size() > 30) trace.removeFirst();
 
             simulator.tick(state, action.action);
+            actualHorizontalDistance += Math.hypot(state.player.x - preX, state.player.z - preZ);
 
             if (!state.alive && terminalTick < 0L) {
                 terminalTick = state.tick;
@@ -288,7 +323,16 @@ class AuthenticStage10SimulationTest {
                 firstFallX, firstFallY, firstFallZ,
                 firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail(),
                 terminalTick, terminalStage, terminalPhaseTicksRemaining,
-                terminalPadRow, terminalPadColumn, terminalOnPad, terminalDecision);
+                terminalPadRow, terminalPadColumn, terminalOnPad, terminalDecision,
+                movementInputTicks, zeroInputTicks, stationaryTicks, forwardInputTicks,
+                sprintInputTicks, jumpInputTicks, laneRecoveryTicks, edgeGuardTicks,
+                cornerVectorTicks, steerDriveTicks, fastRecoveryRouteTicks,
+                actualHorizontalDistance, commandedInputSum,
+                movementInputTicks / (double) Math.max(1L, state.tick),
+                zeroInputTicks / (double) Math.max(1L, state.tick),
+                stationaryTicks / (double) Math.max(1L, state.tick),
+                actualHorizontalDistance / Math.max(1L, state.tick),
+                commandedInputSum / Math.max(1L, state.tick));
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -430,5 +474,30 @@ class AuthenticStage10SimulationTest {
             int terminalPadRow,
             int terminalPadColumn,
             boolean terminalOnPad,
-            String terminalDecision) {}
+            String terminalDecision,
+            long movementInputTicks,
+            long zeroInputTicks,
+            long stationaryTicks,
+            long forwardInputTicks,
+            long sprintInputTicks,
+            long jumpInputTicks,
+            long laneRecoveryTicks,
+            long edgeGuardTicks,
+            long cornerVectorTicks,
+            long steerDriveTicks,
+            long fastRecoveryRouteTicks,
+            double actualHorizontalDistance,
+            double commandedInputSum,
+            double movementInputShare,
+            double zeroInputShare,
+            double stationaryShare,
+            double averageHorizontalSpeed,
+            double averageCommandedInput) {
+        double totalTicks = Math.max(1L, ticks);
+        double movementInputShare = movementInputTicks / totalTicks;
+        double zeroInputShare = zeroInputTicks / totalTicks;
+        double stationaryShare = stationaryTicks / totalTicks;
+        double averageHorizontalSpeed = actualHorizontalDistance / totalTicks;
+        double averageCommandedInput = commandedInputSum / totalTicks;
+    }
 }

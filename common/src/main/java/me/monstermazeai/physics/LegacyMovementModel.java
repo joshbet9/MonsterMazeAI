@@ -84,29 +84,41 @@ public final class LegacyMovementModel implements PhysicsModel {
 
         moveFlying(p, action.strafe(), action.forward(), movementFactor);
 
-        // Minecraft resolves the entity movement before post-move gravity/drag.
-        p.x += p.vx;
-        p.y += p.vy;
-        p.z += p.vz;
-
-        if (!groundedAtStart || p.pendingAirborne || !p.grounded) {
-            p.vy -= GRAVITY;
-            p.vy *= AIR_DRAG;
-            if (p.y <= 0.0 && p.vy <= 0.0 && hasPhysicalFloor(maze, p.x, p.z)) {
-                p.y = 0.0;
-                p.vy = 0.0;
-                p.grounded = true;
-            } else {
-                p.grounded = false;
-            }
-        } else if (hasPhysicalFloor(maze, p.x, p.z)) {
+        /*
+         * Entity.move() resolves the player's 0.6-wide AABB against the actual
+         * maze blocks before the post-move gravity step. This matters at maze
+         * edges: horizontal motion is clipped by a neighbouring solid block,
+         * while a jump can still cross an air gap because the player's feet
+         * are above the block top.
+         */
+        if (maze != null && p.y < 0.0 && p.y > -0.5 && p.vy <= 0.0
+                && hasPhysicalFloor(maze, p.x, p.z)) {
             p.y = 0.0;
             p.vy = 0.0;
             p.grounded = true;
+        }
+
+        boolean wasAirborne = !groundedAtStart || p.pendingAirborne || action.jump() && !groundedAtStart;
+        if (maze != null) {
+            MazeCollision collision = new MazeCollision(maze);
+            collision.move(p, p.vx, p.vy, p.vz);
         } else {
-            // The player walked/was pushed off the physical maze at floor
-            // height. Do not invent support beneath the void.
+            p.x += p.vx;
+            p.y += p.vy;
+            p.z += p.vz;
+        }
+
+        boolean supported = hasPhysicalFloor(maze, p.x, p.z);
+        boolean landed = supported && p.y <= 0.0D + 1.0E-9D && p.vy <= 0.0D;
+        if (landed) {
+            p.y = 0.0D;
+            p.vy = 0.0D;
+            p.grounded = true;
+        } else {
             p.grounded = false;
+        }
+
+        if (!p.grounded || wasAirborne) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
         }

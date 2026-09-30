@@ -119,6 +119,7 @@ class AuthenticStage10SimulationTest {
         long firstFallTick = -1L;
         double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
         String firstFallDecision = "NONE";
+        String previousAction = "NONE";
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
@@ -131,6 +132,7 @@ class AuthenticStage10SimulationTest {
             }
 
             ActionInput action = decide(agent, state);
+            previousAction = action.action.toString();
 
             simulator.tick(state, action.action);
 
@@ -166,7 +168,7 @@ class AuthenticStage10SimulationTest {
                 firstFallX = state.player.x;
                 firstFallY = state.player.y;
                 firstFallZ = state.player.z;
-                firstFallDecision = agent.lastDecisionDetail();
+                firstFallDecision = agent.lastDecisionDetail() + " PREVIOUS_ACTION=" + previousAction;
             }
 
             if (maxStage >= REQUIRED_STAGE) break;

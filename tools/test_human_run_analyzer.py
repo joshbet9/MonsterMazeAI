@@ -73,12 +73,12 @@ class HumanRunAnalyzerTest(unittest.TestCase):
                 },
                 {
                     "tick":101,"stage":1,"phaseTimerSeconds":60,"alive":True,"completed":False,"mazeDetected":True,"mazePattern":2,
-                    "kit":"JUMPER","jumpCharges":3,"abilityCharges":1,"health":20,"healthDelta":0,
+                    "kit":"MAVERICK","jumpCharges":3,"abilityCharges":1,"health":20,"healthDelta":0,
                     "scoreboardTitle":"Monster Maze","scoreboardLines":["3 (Maverick)","Stage","1","60 Seconds","Safe Pad","Speed","Mode"],
                     "activePad":{"row":11,"column":20,"distanceSq":4,"reached":False},
                 },
                 {
-                    "tick":102,"stage":1,"phaseTimerSeconds":60,"alive":True,"completed":False,"mazeDetected":True,"mazePattern":2,
+                    "tick":102,"stage":2,"phaseTimerSeconds":60,"alive":True,"completed":False,"mazeDetected":True,"mazePattern":2,
                     "kit":"JUMPER","jumpCharges":3,"abilityCharges":1,"health":20,"healthDelta":0,
                     "scoreboardTitle":"Monster Maze","scoreboardLines":["3 (Repulsor)","Stage","1","60 Seconds","Safe Pad","Speed","Mode"],
                     "activePad":{"row":12,"column":20,"distanceSq":4,"reached":False},

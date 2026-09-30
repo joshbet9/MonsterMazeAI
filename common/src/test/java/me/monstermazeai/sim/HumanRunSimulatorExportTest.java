@@ -24,7 +24,7 @@ class HumanRunSimulatorExportTest {
                 "long-horizon comparison export is enabled by comparison CI only");
 
         Mode mode = Mode.valueOf(System.getProperty("humanRunMode", "SPEED").toUpperCase(Locale.ROOT));
-        Kit kit = Kit.valueOf(System.getProperty("humanRunKit", "REPULSOR").toUpperCase(Locale.ROOT));
+        Kit kit = Kit.valueOf(System.getProperty("humanRunKit", "MAVERICK").toUpperCase(Locale.ROOT));
         int recorderPattern = Integer.parseInt(System.getProperty("humanRunPattern", "3"));
         if (recorderPattern < 1 || recorderPattern > 3) {
             throw new IllegalArgumentException("humanRunPattern must be 1..3");

@@ -1,6 +1,5 @@
 package me.monstermazeai.sim;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.player.AiProfile;
@@ -9,8 +8,6 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * Exports the same deterministic closed-loop simulator used by the authentic
@@ -27,30 +24,21 @@ class HumanRunSimulatorExportTest {
                 "humanRunSimulatorSummary",
                 "target/human-run-simulator-summary.json"));
 
-        Map<String, Object> payload = new LinkedHashMap<>();
-        Map<String, Object> conditions = new LinkedHashMap<>();
-        conditions.put("mode", "speed");
-        conditions.put("kit", "REPULSOR");
-        conditions.put("pattern", 3);
-        conditions.put("profile", "HIGH_SKILL");
+        String json = "{\n"
+                + "  \"schemaVersion\": 1,\n"
+                + "  \"conditions\": {\"mode\": \"speed\", \"kit\": \"REPULSOR\", \"pattern\": 3, \"profile\": \"HIGH_SKILL\"},\n"
+                + "  \"simulator\": {"
+                + "\"stageReached\": " + result.maxStage()
+                + ", \"durationTicks\": " + result.ticks()
+                + ", \"durationSeconds\": " + (result.ticks() / 20.0)
+                + ", \"healthRemaining\": " + result.health()
+                + ", \"maxHorizontalSpeed\": " + result.maxHorizontalSpeed()
+                + ", \"maxTickDisplacement\": " + result.maxTickDisplacement()
+                + ", \"firstFallTick\": " + result.firstFallTick()
+                + ", \"firstFallDecision\": \"" + escapeJson(result.firstFallDecision()) + "\"}"
+                + "\n}\n";
 
-        Map<String, Object> simulator = new LinkedHashMap<>();
-        simulator.put("stageReached", result.maxStage());
-        simulator.put("durationTicks", result.ticks());
-        simulator.put("durationSeconds", result.ticks() / 20.0);
-        simulator.put("healthRemaining", result.health());
-        simulator.put("maxHorizontalSpeed", result.maxHorizontalSpeed());
-        simulator.put("maxTickDisplacement", result.maxTickDisplacement());
-        simulator.put("firstFallTick", result.firstFallTick());
-        simulator.put("firstFallDecision", result.firstFallDecision());
-
-        payload.put("schemaVersion", 1);
-        payload.put("conditions", conditions);
-        payload.put("simulator", simulator);
-
-        Files.createDirectories(output.toAbsolutePath().getParent());
-        new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(output.toFile(), payload);
-
+        Files.writeString(output, json);
         System.out.println("HUMAN_RUN_SIMULATOR_EXPORT "
                 + output.toAbsolutePath()
                 + " stage=" + result.maxStage()

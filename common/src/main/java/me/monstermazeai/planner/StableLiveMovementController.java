@@ -1665,10 +1665,12 @@ public final class StableLiveMovementController {
              * the same forward + occasional jump response seen repeatedly in the
              * recorded runs without inventing a new physics mechanic.
              */
-            boolean speedJump = state.mode == me.monstermazeai.game.Mode.SPEED
+            boolean speedMode = state.mode == me.monstermazeai.game.Mode.SPEED;
+            boolean speedJump = speedMode
                     && state.kit != me.monstermazeai.kit.Kit.JUMPER
                     && shouldSpeedJump(state, allowJump);
-            Action dodge = new Action(1.0, strafe, speedJump, true, 0.0F, false);
+            double dodgeForward = speedMode ? 1.0D : 0.65D;
+            Action dodge = new Action(dodgeForward, strafe, speedJump, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
@@ -2092,10 +2094,14 @@ public final class StableLiveMovementController {
                     + " progress=" + format(progress)
                     + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
         } else if (!gapTakeoffStarted && state.player.grounded && progress >= GAP_JUMP_PROGRESS) {
-            jumpThisTick = true;
             gapTakeoffStarted = true;
+            if (!(state.mode == me.monstermazeai.game.Mode.SPEED
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER)) {
+                jumpThisTick = true;
+            }
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText()
-                    + " progress=" + format(progress);
+                    + " progress=" + format(progress)
+                    + (jumpThisTick ? "" : " pulse_pending=true");
         }
         if (gapTakeoffStarted && state.player.grounded && !jumpThisTick && progress > 0.90D
                 && playerAabbOverlapsCell(state, toRow, toColumn)) {

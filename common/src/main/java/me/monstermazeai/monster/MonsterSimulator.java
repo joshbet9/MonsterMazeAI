@@ -36,6 +36,20 @@ public final class MonsterSimulator {
         this.seed = random.nextLong();
     }
 
+    /**
+     * Live-game constructor that preserves the caller's Random stream. The
+     * source MonsterManager shares one RNG across spawning and movement, so
+     * authentic end-to-end simulation must not consume an extra value here.
+     */
+    public MonsterSimulator(MazeModel maze, Random random, double speed, long seed) {
+        if (maze == null) throw new IllegalArgumentException("maze");
+        if (random == null) throw new IllegalArgumentException("random");
+        this.maze = maze;
+        this.random = random;
+        this.speed = speed;
+        this.seed = seed;
+    }
+
     private MonsterSimulator(MazeModel maze, long seed, double speed) {
         this.maze = maze;
         this.random = new Random(seed);

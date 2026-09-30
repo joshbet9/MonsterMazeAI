@@ -75,7 +75,7 @@ public final class MonsterSimulator {
              * positions the real entity could not occupy.
              */
             if (m.y < 0.0D) {
-                Cell recovery = nearestCell(m.x, m.z);
+                Cell recovery = nearestPathCell(m.x, m.z);
                 if (recovery != null) {
                     m.x = recovery.row() + CELL_CENTER_OFFSET;
                     m.z = recovery.column() + CELL_CENTER_OFFSET;
@@ -223,6 +223,24 @@ public final class MonsterSimulator {
             }
         }
         return false;
+    }
+
+    private Cell nearestPathCell(double x, double z) {
+        Cell best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int row = 0; row < MazeModel.SIZE; row++) {
+            for (int column = 0; column < MazeModel.SIZE; column++) {
+                if (!maze.isTraversable(row, column)) continue;
+                double dx = (row + CELL_CENTER_OFFSET) - x;
+                double dz = (column + CELL_CENTER_OFFSET) - z;
+                double distance = dx * dx + dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = new Cell(row, column);
+                }
+            }
+        }
+        return best;
     }
 
     private Cell nearestCell(double x, double z) {

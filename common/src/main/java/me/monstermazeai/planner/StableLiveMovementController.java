@@ -1601,6 +1601,7 @@ public final class StableLiveMovementController {
         }
 
         if (leftFloor || rightFloor) {
+            double reactionRange = 2.0D + 0.65D * profile.attributes.reactions;
             double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
             double strafe;
             if (preferred < 0.0D && leftFloor) {

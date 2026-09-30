@@ -180,6 +180,7 @@ class StableLiveMovementControllerTest {
     @Test
     void commitsAndExecutesOneBlockGapAtTakeoff() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
         raw[10][10] = 1;
         raw[10][12] = 1;
         for (int column = 13; column <= 30; column++) raw[10][column] = 1;
@@ -196,7 +197,7 @@ class StableLiveMovementControllerTest {
         s.activePadRow = 10;
         s.activePadColumn = 30;
         s.player.x = 10.5;
-        s.player.z = 10.0;
+        s.player.z = 9.0;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
         s.tick = 1;

@@ -13,7 +13,12 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
-    private static final double SPRINT_JUMP_IMPULSE = 0.2D;
+    /**
+     * Minecraft 1.8.9 retains the small downward motion value while the player
+     * is standing on a solid block. Human-run telemetry repeatedly records
+     * this exact value on grounded ticks.
+     */
+    private static final double GROUND_VERTICAL_MOTION = -0.0784000015258789D;
 
     @Override
     public void tick(PlayerState p, Action action) {
@@ -46,15 +51,12 @@ public final class LegacyMovementModel implements PhysicsModel {
 
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
-                // Monster Maze applies Jump -10 to non-Jumpers. That blocks the
-                // vertical impulse but the sprint-jump's horizontal impulse is
-                // still applied by the source jump routine.
-                p.vy = 0.0D;
-                if (action.sprint()) {
-                    float yaw = p.yaw * 0.017453292F;
-                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
-                }
+                /*
+                 * The human Speed-mode traces show no vertical lift and no
+                 * additional horizontal impulse while Jump -10 is active.
+                 * Treat the jump request as suppressed rather than synthesizing
+                 * vanilla sprint-jump motion for non-Jumper kits.
+                 */
                 p.jumpTicks = 0;
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
@@ -123,6 +125,12 @@ public final class LegacyMovementModel implements PhysicsModel {
         if (!p.grounded) {
             p.vy -= GRAVITY;
             p.vy *= AIR_DRAG;
+        } else {
+            /*
+             * Keep the observed grounded motionY. This is part of the 1.8
+             * entity state even though the player's feet remain on the floor.
+             */
+            p.vy = GROUND_VERTICAL_MOTION;
         }
 
         p.pendingAirborne = false;

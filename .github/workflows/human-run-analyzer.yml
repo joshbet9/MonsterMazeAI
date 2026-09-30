@@ -31,10 +31,47 @@ jobs:
         run: |
           git fetch --depth=1 origin data/human-run-pattern3
           git archive FETCH_HEAD human-runs | tar -x
-      - name: Build deterministic simulator comparison summary
-        run: mvn -B -ntp -pl common -am -Dtest=HumanRunSimulatorExportTest -Dsurefire.failIfNoSpecifiedTests=false -DhumanRunSimulatorSummary=$GITHUB_WORKSPACE/simulator-summary.json test
-      - name: Analyze recorded run against simulator
-        run: python tools/human_run_analyzer.py human-runs --output-dir /tmp/human-run-analysis --sim-summary simulator-summary.json
+
+      - name: Analyze recorded run
+        run: |
+          python tools/human_run_analyzer.py human-runs --output-dir /tmp/human-run-analysis
+
+      - name: Resolve simulator conditions
+        id: human_conditions
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          summary = json.loads(Path("/tmp/human-run-analysis/analysis/summary.json").read_text())
+          conditions = summary["conditions"]
+          required = ("mode", "kit", "pattern")
+          missing = [key for key in required if conditions.get(key) is None]
+          if missing:
+              raise SystemExit(f"missing simulator conditions: {missing}")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"mode={conditions['mode'].upper()}\n")
+              output.write(f"kit={conditions['kit'].upper()}\n")
+              output.write(f"pattern={int(conditions['pattern'])}\n")
+              output.write("profile=HIGH_SKILL\n")
+
+          print(json.dumps({
+              "mode": conditions["mode"],
+              "kit": conditions["kit"],
+              "pattern": conditions["pattern"],
+              "profile": "HIGH_SKILL",
+          }, indent=2))
+
+      - name: Build long-horizon matching simulator summary
+        run: |
+          mvn -B -ntp -pl common -am             -Dtest=HumanRunSimulatorExportTest             -Dsurefire.failIfNoSpecifiedTests=false             -DhumanRunMode=${{ steps.human_conditions.outputs.mode }}             -DhumanRunKit=${{ steps.human_conditions.outputs.kit }}             -DhumanRunPattern=${{ steps.human_conditions.outputs.pattern }}             -DhumanRunProfile=${{ steps.human_conditions.outputs.profile }}             -DhumanRunSimulatorSummary=$GITHUB_WORKSPACE/simulator-summary.json             test
+
+      - name: Analyze recorded run against matching simulator
+        run: |
+          python tools/human_run_analyzer.py human-runs             --output-dir /tmp/human-run-analysis             --sim-summary simulator-summary.json
+
       - name: Verify human-vs-simulator comparison
         run: |
           python - <<'PY'
@@ -43,25 +80,36 @@ jobs:
 
           summary = json.loads(Path("/tmp/human-run-analysis/analysis/summary.json").read_text())
           anomalies = json.loads(Path("/tmp/human-run-analysis/analysis/anomalies.json").read_text())
+          simulator = json.loads(Path("simulator-summary.json").read_text())
+          comparison = json.loads(Path("/tmp/human-run-analysis/analysis/simulator-comparison.json").read_text())
 
           assert summary["run"]["stageReached"] == 49, summary["run"]
           assert summary["conditions"]["mode"] == "speed", summary["conditions"]
-          assert summary["conditions"]["kit"] in {"MAVERICK", "REPULSOR", "JUMPER", "SLOWBALLER", "BODY_BUILDER"}, summary["conditions"]
+          assert summary["conditions"]["kit"] in {
+              "MAVERICK", "REPULSOR", "JUMPER", "SLOWBALLER", "BODY_BUILDER"
+          }, summary["conditions"]
           assert summary["conditions"]["pattern"] == 3, summary["conditions"]
-          comparison = json.loads(Path("/tmp/human-run-analysis/analysis/simulator-comparison.json").read_text())
+          assert simulator["conditions"]["mode"] == summary["conditions"]["mode"]
+          assert simulator["conditions"]["kit"] == summary["conditions"]["kit"]
+          assert simulator["conditions"]["pattern"] == summary["conditions"]["pattern"]
+          assert simulator["conditions"]["profile"] == "HIGH_SKILL"
+          assert simulator["simulator"]["durationTicks"] > 0
           assert comparison["gaps"], comparison
           assert any(a["type"] == "KIT_CONFLICT" for a in anomalies), anomalies
           assert any(a["type"] == "WORLD_STAGE_CONFLICT" for a in anomalies), anomalies
+
           print(json.dumps({
-              "stageReached": summary["run"]["stageReached"],
-              "mode": summary["conditions"]["mode"],
-              "kit": summary["conditions"]["kit"],
-              "pattern": summary["conditions"]["pattern"],
+              "human": {
+                  "stageReached": summary["run"]["stageReached"],
+                  "mode": summary["conditions"]["mode"],
+                  "kit": summary["conditions"]["kit"],
+                  "pattern": summary["conditions"]["pattern"],
+              },
+              "simulator": simulator["simulator"],
               "anomalyTypes": sorted({a["type"] for a in anomalies}),
               "comparisonMetrics": [g["metric"] for g in comparison["gaps"]],
           }, indent=2))
           PY
-
 
       - name: Upload comparison report
         uses: actions/upload-artifact@v4

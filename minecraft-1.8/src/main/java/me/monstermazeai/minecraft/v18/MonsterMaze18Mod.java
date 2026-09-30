@@ -221,9 +221,7 @@ public final class MonsterMaze18Mod {
         if (!aiEnabled || event == null || event.message == null) return;
         String text = event.message.getUnformattedText();
         if (text == null) return;
-        String lower = text.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("fell off the maze") || lower.contains("solo run over")
-                || lower.contains("you weren't on the safe pad")) {
+        if (Minecraft18RunBoundary.isTerminalChat(text)) {
             runEndedLatch = true;
 
             if (gameSummary != null && gameSummary.isActive()) {

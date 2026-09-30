@@ -1529,9 +1529,39 @@ public final class StableLiveMovementController {
                 false,
                 yawDelta,
                 false);
-        Action guarded = guardProjectedSupport(
-                state, correction, dirRow, dirColumn);
-        return guarded;
+        return guardLaneCorrectionSupport(state, correction);
+    }
+
+    /**
+     * Lane correction is a local one-tick maneuver. The normal route guard
+     * projects several ticks ahead and scores alternatives by forward route
+     * progress; that is correct for route driving, but it can reject a lateral
+     * correction whose purpose is specifically to regain the anchored lane.
+     *
+     * Keep the same physical-support test, but shrink the correction until the
+     * immediate projected footprint remains supported. This preserves edge
+     * protection without turning a valid A/D correction into a permanent stop.
+     */
+    private Action guardLaneCorrectionSupport(GameState state, Action correction) {
+        if (state.maze == null || !state.player.grounded) return correction;
+        if (hasPredictedPhysicalSupport(state, correction, 1)) return correction;
+
+        final double[] scales = {0.70D, 0.45D, 0.25D, 0.10D};
+        for (double scale : scales) {
+            Action candidate = new Action(
+                    correction.forward() * scale,
+                    correction.strafe() * scale,
+                    false,
+                    correction.sprint(),
+                    correction.yawDelta(),
+                    false);
+            if (hasPredictedPhysicalSupport(state, candidate, 1)) {
+                return candidate;
+            }
+        }
+        return new Action(
+                0.0, 0.0, false, false,
+                correction.yawDelta(), false);
     }
 
     private double waypointBrakeDistance() {

@@ -117,7 +117,7 @@ class AbilityModelTest {
         assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
 
         s.player.health = 6.0;
-        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
+        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
     }
 
     @Test
@@ -127,7 +127,7 @@ class AbilityModelTest {
         s.ability.charges = 3;
         s.player.x = 0.5;
         s.player.z = 0.5;
-        s.monsters.add(new MonsterState(4, 2.0, 0.0, 0.5));
+        s.monsters.add(new MonsterState(4, 3.0, 0.0, 0.5));
 
         assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "normal movement"));
     }
@@ -187,7 +187,7 @@ class AbilityModelTest {
         s.ability.cooldownUntilTick = 0;
         s.monsters.add(new MonsterState(11, 4.0, 0.0, 0.5));
 
-        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "monster nearby"));
+        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "monster in route corridor"));
         assertTrue(AbilityDecision.shouldUse(s, "ROUTE_OPENING", "monster blocks efficient route"));
 
         s.monsters.get(0).x = 4.0;

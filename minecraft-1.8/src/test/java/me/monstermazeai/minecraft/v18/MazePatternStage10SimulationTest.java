@@ -332,6 +332,9 @@ public final class MazePatternStage10SimulationTest {
              */
             if (!targetCaptured && isOnPad(player, activePad)) {
                 targetCaptured = true;
+                syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
+                abilities.onReachedPad(tacticalState, stage == 1);
+                player.health = tacticalState.player.health;
                 result.padsReached++;
                 int shortenedSeconds = Math.max(6, 16 - (stage - 1));
                 stageTicksRemaining = Math.min(
@@ -375,7 +378,6 @@ public final class MazePatternStage10SimulationTest {
                 tacticalState.activePadRow = activePad.row;
                 tacticalState.activePadColumn = activePad.column;
                 spawnStageMonsters(tacticalState, raw, seed, stage);
-                abilities.onReachedPad(tacticalState, false);
                 stageTicksRemaining = stageTimeTicks(stage);
             }
         }

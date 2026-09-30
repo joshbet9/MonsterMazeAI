@@ -1234,7 +1234,17 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
+        /*
+         * Do not turn an unsupported full-speed command directly into a hard
+         * stop. A source-valid reduced forward input can preserve lane progress
+         * while bleeding momentum, which is preferable to idling at a corner
+         * and exposing the player to monsters. Handling controls how much of the
+         * original command we are willing to retain.
+         */
+        double retain = 0.20D + (0.50D * profile.attributes.handling);
         Action[] alternatives = {
+                new Action(action.forward() * retain, action.strafe() * retain,
+                        false, action.sprint(), action.yawDelta(), false),
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),

@@ -57,6 +57,7 @@ import java.util.Locale;
  */
 public final class HumanRunRecorder implements Closeable {
     private static final String DIRECTORY = "human-runs";
+    private static final String OUTPUT_PROPERTY = "monstermazeai.humanRunsDir";
     private static final int JSON_VERSION = 2;
     private static final double MONSTER_LOCAL_RADIUS = 20.0D;
     private static final double MONSTER_EVENT_RADIUS = 32.0D;
@@ -243,7 +244,7 @@ public final class HumanRunRecorder implements Closeable {
     }
 
     private boolean begin(LegacyWorldObservation state) {
-        File directory = new File(minecraft.mcDataDir, DIRECTORY);
+        File directory = outputDirectory();
         if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory()) {
             System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER failed to create " + directory.getAbsolutePath());
             return false;
@@ -325,6 +326,21 @@ public final class HumanRunRecorder implements Closeable {
             inRun = false;
             return false;
         }
+    }
+
+    private File outputDirectory() {
+        String configured = System.getProperty(OUTPUT_PROPERTY);
+        if (configured != null && configured.trim().length() > 0) {
+            return new File(configured.trim());
+        }
+
+        String appData = System.getenv("APPDATA");
+        if (appData != null && appData.length() > 0) {
+            return new File(appData, "MonsterMazeAI" + File.separator + DIRECTORY);
+        }
+
+        return new File(System.getProperty("user.home"),
+                "MonsterMazeAI" + File.separator + DIRECTORY);
     }
 
     private BufferedWriter open(Path path) throws IOException {

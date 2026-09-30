@@ -266,7 +266,16 @@ public final class StableLiveMovementController {
          * airborne-continuation branch below without being rejected merely
          * because the player's current AABB no longer overlaps a standable cell.
          */
-        Cell supportedStart = resolveSupportedStartCell(routingState);
+        Cell supportedStart = route == null
+                ? resolveSupportedStartCell(routingState)
+                : resolveSupportedRouteCell(routingState, route);
+        if (supportedStart == null && route != null) {
+            // Preserve a committed route through sub-cell boundary states. The
+            // observed AABB may overlap an adjacent physical block whose graph
+            // cell is not the route we are currently executing; selecting that
+            // neighbour can invent a new heading and cut a corner.
+            supportedStart = resolveSupportedStartCell(routingState);
+        }
         int startRow;
         int startColumn;
         if (supportedStart != null) {
@@ -332,18 +341,24 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
-            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
+            Cell routeSupportedStart = resolveSupportedRouteCell(state, route);
+            boolean routeInvalid = (!gapExecutionActive && routeSupportedStart == null)
                     || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
 
             if (routeInvalid) {
+                Cell recoveryStart = routeSupportedStart != null
+                        ? routeSupportedStart
+                        : resolveSupportedStartCell(state);
                 /*
                  * Recover immediately with a cheap physical route, then let the
                  * background planner decide whether a different risk-aware route
                  * is preferable. Never block the motor waiting for that result.
                  */
+                int recoveryRow = recoveryStart == null ? startRow : recoveryStart.row();
+                int recoveryColumn = recoveryStart == null ? startColumn : recoveryStart.column();
                 route = regionRadius > 0
-                        ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
-                        : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
+                        ? routePlanner.routeToRegionFast(state, new Cell(recoveryRow, recoveryColumn), goal, regionRadius)
+                        : routePlanner.routeFast(state, new Cell(recoveryRow, recoveryColumn), goal);
                 waypointIndex = firstTurnWaypoint(route);
                 anchoredSegmentIndex = -1;
                 lastRouteTick = state.tick;
@@ -945,6 +960,47 @@ public final class StableLiveMovementController {
         if (rowDirection < 0) return 90.0F;  // -X / west
         if (columnDirection > 0) return 0.0F; // +Z / south
         return 180.0F; // -Z / north
+    }
+
+    /**
+     * Resolve a physically supported route cell under the same 0.6-block AABB
+     * rule as LegacyMovementModel, preferring cells already present in the
+     * committed cardinal corridor. This prevents a boundary overlap with an
+     * adjacent block from silently switching the route heading.
+     */
+    private static Cell resolveSupportedRouteCell(GameState state, PlayerRoute route) {
+        if (state == null || state.maze == null || route == null || route.cells().isEmpty()) return null;
+
+        final double halfWidth = 0.30D;
+        final double minX = state.player.x - halfWidth;
+        final double maxX = state.player.x + halfWidth;
+        final double minZ = state.player.z - halfWidth;
+        final double maxZ = state.player.z + halfWidth;
+
+        Cell best = null;
+        double bestOverlap = -1.0D;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (Cell cell : route.cells()) {
+            int row = cell.row();
+            int column = cell.column();
+            if (!state.maze.isPhysicalFloor(row, column)) continue;
+
+            double overlapX = Math.min(maxX, row + 1.0D) - Math.max(minX, row);
+            double overlapZ = Math.min(maxZ, column + 1.0D) - Math.max(minZ, column);
+            if (overlapX <= 0.0D || overlapZ <= 0.0D) continue;
+
+            double overlap = overlapX * overlapZ;
+            double distance = sq(state.player.x - (row + 0.5D))
+                    + sq(state.player.z - (column + 0.5D));
+            if (overlap > bestOverlap
+                    || (Double.compare(overlap, bestOverlap) == 0 && distance < bestDistance)) {
+                best = cell;
+                bestOverlap = overlap;
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 
     /**

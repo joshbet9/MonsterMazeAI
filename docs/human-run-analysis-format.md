@@ -158,13 +158,19 @@ This lets the simulator target recurring mechanisms rather than optimizing again
 
 ## 9. Simulator comparison
 
-For each human run, compare a simulator run under the same mode, pattern, maze/seed when available, kit, and mechanics version.
+For each human run, compare a long-horizon simulator run under the same mode, recorder-facing pattern, kit, and mechanics version. The AI profile is an explicit simulator parameter because a human recording cannot establish an AI personality profile.
+
+The current CI pipeline resolves mode/kit/pattern from the normalized human run, runs the authentic closed-loop simulator until death, completion, or the safety tick cap, and then feeds that result back through the same comparison layer.
 
 comparison output contains:
 
-    human: {stageReached, meanStageTime, routeExcessRatio, damagePerStage, knockbackRecoveryRate}
-    simulator: {stageReached, meanStageTime, routeExcessRatio, damagePerStage, knockbackRecoveryRate}
-    gaps: [{metric, human, simulator, interpretation}]
+    conditions: {...human conditions...}
+    simulatorConditions: {...simulator conditions...}
+    conditionMatch: true|false
+    conditionDifferences: [...]
+    human: {stageReached, durationSeconds, meanStageTime, routeExcessRatio, damagePerStage, ...}
+    simulator: {stageReached, durationSeconds, damagePerStage, maxHorizontalSpeed, ...}
+    gaps: [{metric, human, simulator, simulatorMinusHuman, relationship}]
 
 Do not collapse this into one human-likeness score or ranking. We want actionable behavioural gaps.
 
@@ -212,12 +218,13 @@ Partial datasets may still be analyzed, but affected fields cannot be used as ca
 4. Run human-run ingest.
 5. Validate and reconstruct metadata/stages/events.
 6. Emit normalized JSONL and summary.
-7. Run the matching simulator condition.
-8. Normalize simulator output to the same metric vocabulary.
-9. Produce human-vs-simulator comparison.
-10. Aggregate repeated strong human decisions into calibration distributions.
-11. Tune attributes/tendencies and rerun simulator regression tests.
-12. Validate the resulting logic in Minecraft.
+7. Resolve the simulator mode, kit, and recorder-facing pattern from the normalized human run; choose the AI profile explicitly.
+8. Run the matching long-horizon simulator condition without the old Stage-10 stop gate.
+9. Normalize simulator output to the same metric vocabulary.
+10. Produce human-vs-simulator comparison and explicit condition-match status.
+11. Aggregate repeated strong human decisions into calibration distributions.
+12. Tune attributes/tendencies and rerun simulator regression tests.
+13. Validate the resulting logic in Minecraft.
 
 ## 14. Key principle
 

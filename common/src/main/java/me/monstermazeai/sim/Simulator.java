@@ -45,10 +45,11 @@ public final class Simulator {
         if(!state.alive) return;
         if(action.useAbility()) abilities.activate(state);
         int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
+        boolean speedMode = state.mode == me.monstermazeai.game.Mode.SPEED;
         if (physics instanceof LegacyMovementModel legacy) {
-            legacy.tick(state.player, action, state.maze, jumpAmplifier);
+            legacy.tick(state.player, action, state.maze, jumpAmplifier, speedMode);
         } else if (physics instanceof LegacyMazePhysics legacyMaze) {
-            legacyMaze.tick(state.player, action, state.maze, jumpAmplifier);
+            legacyMaze.tick(state.player, action, state.maze, jumpAmplifier, speedMode);
         } else {
             physics.tick(state.player, action);
         }

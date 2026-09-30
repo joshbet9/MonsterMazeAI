@@ -147,6 +147,7 @@ public final class GameProgressionModel {
         for (int row = pad.row() - 2; row <= pad.row() + 2; row++) {
             for (int column = pad.column() - 2; column <= pad.column() + 2; column++) {
                 state.maze.setPadSurface(row, column, true);
+                state.maze.setDisabled(row, column, true);
             }
         }
     }
@@ -165,6 +166,7 @@ public final class GameProgressionModel {
             for (int row = pad.row() - 2; row <= pad.row() + 2; row++) {
                 for (int column = pad.column() - 2; column <= pad.column() + 2; column++) {
                     state.maze.setPadSurface(row, column, false);
+                    state.maze.setDisabled(row, column, false);
                 }
             }
             state.oldPads.remove(pad);

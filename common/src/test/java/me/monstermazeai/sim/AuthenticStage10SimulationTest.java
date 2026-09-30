@@ -134,6 +134,7 @@ class AuthenticStage10SimulationTest {
             }
 
             ActionInput action = decide(agent, state);
+            String decisionBeforeTick = agent.lastDecisionDetail();
             previousAction = action.action.toString();
 
             simulator.tick(state, action.action);
@@ -172,7 +173,7 @@ class AuthenticStage10SimulationTest {
                 firstFallZ = state.player.z;
                 firstFallVx = state.player.vx;
                 firstFallVz = state.player.vz;
-                firstFallDecision = agent.lastDecisionDetail() + " PREVIOUS_ACTION=" + previousAction;
+                firstFallDecision = decisionBeforeTick + " ACTION=" + previousAction;
             }
 
             if (maxStage >= REQUIRED_STAGE) break;

@@ -1939,7 +1939,9 @@ public final class StableLiveMovementController {
          * intentionally requested for the committed gap regardless of that
          * permission; the server-side jump lock suppresses the actual jump.
          */
-        boolean jumpInput = state.player.grounded && progress >= GAP_JUMP_PROGRESS;
+        boolean jumpInput = state.player.grounded
+                && !gapTakeoffStarted
+                && progress >= GAP_JUMP_PROGRESS;
         boolean sprintInput = !jumpInput || state.kit != me.monstermazeai.kit.Kit.JUMPER;
         lastDecisionDetail = "GAP_EXECUTE edge=" + gapEdgeText() + " progress=" + format(progress)
                 + " takeoff=" + gapTakeoffStarted + " jumpInput=" + jumpInput

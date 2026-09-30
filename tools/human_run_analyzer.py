@@ -720,9 +720,25 @@ def compare_with_simulator(human_summary: Dict[str, Any], sim_payload: Dict[str,
         elif direction.get(metric) == "lower":
             relation = "SIM_LOWER" if gap < 0 else "SIM_HIGHER" if gap > 0 else "MATCH"
         gaps.append({"metric": metric, "human": hv, "simulator": sv, "simulatorMinusHuman": gap, "relationship": relation})
+    human_conditions = human_summary.get("conditions", {})
+    simulator_conditions = sim_payload.get("conditions", {}) if isinstance(sim_payload, dict) else {}
+    condition_differences = []
+    for key in ("mode", "kit", "pattern"):
+        hv = human_conditions.get(key)
+        sv = simulator_conditions.get(key)
+        if hv is not None and sv is not None and str(hv).lower() != str(sv).lower():
+            condition_differences.append({
+                "field": key,
+                "human": hv,
+                "simulator": sv,
+            })
+
     return {
         "schemaVersion": 1,
-        "conditions": human_summary.get("conditions", {}),
+        "conditions": human_conditions,
+        "simulatorConditions": simulator_conditions,
+        "conditionMatch": not condition_differences,
+        "conditionDifferences": condition_differences,
         "human": human,
         "simulator": sim,
         "gaps": gaps,

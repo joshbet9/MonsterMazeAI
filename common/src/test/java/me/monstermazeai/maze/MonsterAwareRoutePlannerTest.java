@@ -142,6 +142,7 @@ class MonsterAwareRoutePlannerTest {
         raw[10][11] = 0;
         raw[10][13] = 0;
         state.maze = new MazeModel(raw);
+        state.mode = Mode.SPEED;
         state.kit = Kit.MAVERICK;
 
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))

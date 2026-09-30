@@ -52,7 +52,7 @@ class AuthenticStage10SimulationTest {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.MODERN);
-                if (result.maxStage < REQUIRED_STAGE) {
+                if (result.maxStage < MODERN_REQUIRED_STAGE) {
                     failures.add("mode=MODERN pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage
@@ -240,7 +240,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (maxStage >= requiredStage(mode)) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -274,6 +274,10 @@ class AuthenticStage10SimulationTest {
 
     private static void syncPadSurfaces(GameState state) {
         new me.monstermazeai.game.GameProgressionModel().syncPadSurfaces(state);
+    }
+
+    private static int requiredStage(Mode mode) {
+        return mode == Mode.SPEED ? SPEED_REQUIRED_STAGE : MODERN_REQUIRED_STAGE;
     }
 
     private static int initialMonsterCount(Mode mode) {

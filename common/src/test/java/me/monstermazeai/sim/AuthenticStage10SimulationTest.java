@@ -102,7 +102,7 @@ class AuthenticStage10SimulationTest {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }
 
-    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -158,6 +158,8 @@ class AuthenticStage10SimulationTest {
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
+        double maxHorizontalSpeed = 0.0;
+        double maxTickDisplacement = 0.0;
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
@@ -186,6 +188,10 @@ class AuthenticStage10SimulationTest {
             }
 
             simulator.tick(state, action.action);
+            maxHorizontalSpeed = Math.max(maxHorizontalSpeed,
+                    Math.hypot(state.player.vx, state.player.vz));
+            maxTickDisplacement = Math.max(maxTickDisplacement,
+                    Math.hypot(state.player.vx, state.player.vz));
 
             if (state.previewPadRequested && state.previewPadRow < 0) {
                 List<Cell> avoid = currentPadAvoidance(state);
@@ -239,7 +245,8 @@ class AuthenticStage10SimulationTest {
                 firstFallPreX, firstFallPreY, firstFallPreZ,
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
-                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
+                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail(),
+                maxHorizontalSpeed, maxTickDisplacement);
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -351,7 +358,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,
@@ -370,5 +377,7 @@ class AuthenticStage10SimulationTest {
             double firstFallVx,
             double firstFallVz,
             String firstFallDecision,
-            String decision) {}
+            String decision,
+            double maxHorizontalSpeed,
+            double maxTickDisplacement) {}
 }

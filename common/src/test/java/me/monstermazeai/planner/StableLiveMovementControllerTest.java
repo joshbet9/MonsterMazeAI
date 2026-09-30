@@ -93,14 +93,14 @@ class StableLiveMovementControllerTest {
         s.alive = true;
 
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
-        raw[59][49] = 1;
-        raw[60][49] = 1;
-        raw[61][49] = 1;
+        // Connected source-like corridor: (50,49) -> (82,74), with a turn
+        // beyond the boundary position used below.
+        for (int row = 50; row <= 61; row++) raw[row][49] = 1;
+        for (int col = 49; col <= 74; col++) raw[61][col] = 1;
+        for (int row = 61; row <= 82; row++) raw[row][74] = 1;
+        raw[59][50] = 1;
+        raw[60][50] = 1;
         raw[61][50] = 1;
-        raw[62][50] = 1;
-        for (int row = 78; row <= 82; row++) {
-            for (int col = 72; col <= 74; col++) raw[row][col] = 1;
-        }
         s.maze = new MazeModel(raw);
         s.activePadRow = 82;
         s.activePadColumn = 74;

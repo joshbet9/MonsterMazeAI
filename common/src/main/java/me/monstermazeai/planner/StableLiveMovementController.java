@@ -116,6 +116,8 @@ public final class StableLiveMovementController {
      */
     private static final long MOB_HIT_RECOVERY_TICKS = 40L;
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
+    private static final long NON_JUMPER_JUMP_CADENCE_TICKS = 4L;
+    private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
     /**
@@ -527,10 +529,10 @@ public final class StableLiveMovementController {
                 else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
                 boolean sprint = forward >= 0.95 && absError <= 15.0;
-                // Baseline Jumper does not spend a charge during ordinary
-                // corridor traversal. Jump input is a terrain decision:
-                // committed gaps/pad entries own it explicitly below.
-                boolean jump = false;
+                // Non-Jumpers use the source Jump -10 + sprint-jump interaction
+                // as their normal speed mechanic. Jumper vertical jumps remain
+                // reserved for explicit terrain decisions.
+                boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
             } else if (distance <= 1.05 && Math.abs(yawError) < 135.0F) {
@@ -556,10 +558,7 @@ public final class StableLiveMovementController {
             boolean brake = distance < WAYPOINT_BRAKE
                     && closingSpeed(state, dx, dz) > 0.04;
             double forward = brake ? 0.0 : 1.0;
-            // Do not convert "Jumper is available" into unconditional
-            // jump-spam. Ordinary route traversal stays grounded; gap
-            // execution owns the actual jump timing.
-            boolean jump = false;
+            boolean jump = shouldSpeedJump(state, allowJump);
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 
@@ -603,6 +602,7 @@ public final class StableLiveMovementController {
         clearPadEntryCommitment();
         clearGapCommitment();
         clearPadTransitionFacing();
+        lastSpeedJumpInputTick = Long.MIN_VALUE;
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;
@@ -889,6 +889,18 @@ public final class StableLiveMovementController {
 
         return currentRowDirection == plannedRowDirection
                 && currentColumnDirection == plannedColumnDirection;
+    }
+
+    private boolean shouldSpeedJump(GameState state, boolean allowJump) {
+        if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
+            return false;
+        }
+        if (lastSpeedJumpInputTick != Long.MIN_VALUE
+                && state.tick - lastSpeedJumpInputTick < NON_JUMPER_JUMP_CADENCE_TICKS) {
+            return false;
+        }
+        lastSpeedJumpInputTick = state.tick;
+        return true;
     }
 
     private static float cardinalYaw(int rowDirection, int columnDirection) {

@@ -21,7 +21,7 @@ class SpeedFullRunDiagnosticTest {
                         AuthenticStage10SimulationTest.runToEnd(
                                 pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
 
-                boolean naturallyTerminated = result.firstFallTick() >= 0 || result.ticks() < 100_000;
+                boolean naturallyTerminated = result.terminalTick() >= 0;
                 System.out.printf(
                         "SPEED_FULL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%s pos=%.3f,%.3f "
                                 + "firstFallTick=%d terminalTick=%d terminalStage=%d phaseTicks=%d "

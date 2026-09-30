@@ -52,6 +52,8 @@ public final class HumanRunRecorder implements Closeable {
     private float previousYaw = Float.NaN;
     private long previousWorldTick = Long.MIN_VALUE;
     private long records;
+    private int lastMazeHash;
+    private int lastFloorHash;
 
     public HumanRunRecorder(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -84,7 +86,7 @@ public final class HumanRunRecorder implements Closeable {
         inputForward = input.moveForward;
         inputStrafe = input.moveStrafe;
         inputJump = input.jump;
-        inputSprint = minecraft.thePlayer != null && minecraft.thePlayer.isSprinting();
+        inputSprint = minecraft.gameSettings.keyBindSprint.isKeyDown();
     }
 
     @SubscribeEvent
@@ -128,6 +130,8 @@ public final class HumanRunRecorder implements Closeable {
                     StandardOpenOption.WRITE);
             inRun = true;
             records = 0L;
+            lastMazeHash = 0;
+            lastFloorHash = 0;
             previousYaw = Float.NaN;
             previousWorldTick = Long.MIN_VALUE;
             System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER started: " + currentPath.toAbsolutePath());
@@ -155,8 +159,8 @@ public final class HumanRunRecorder implements Closeable {
 
             writer.write(toJson(state, yawDelta, dt));
             writer.newLine();
-            writer.flush();
             records++;
+            if (records % 20L == 0L) writer.flush();
             previousYaw = state.player.yaw;
             previousWorldTick = state.worldTick;
             rightClickPulse = false;
@@ -238,8 +242,16 @@ public final class HumanRunRecorder implements Closeable {
         }
         b.append("]");
 
-        b.append(",\"maze\":").append(intMatrix(s.maze));
-        b.append(",\"physicalFloor\":").append(booleanMatrix(s.physicalFloor));
+        int mazeHash = matrixHash(s.maze);
+        int floorHash = matrixHash(s.physicalFloor);
+        if (records == 0L || mazeHash != lastMazeHash) {
+            b.append(",\"maze\":").append(intMatrix(s.maze));
+            lastMazeHash = mazeHash;
+        }
+        if (records == 0L || floorHash != lastFloorHash) {
+            b.append(",\"physicalFloor\":").append(booleanMatrix(s.physicalFloor));
+            lastFloorHash = floorHash;
+        }
 
         b.append(",\"derived\":{\"currentCell\":")
                 .append(cellFor(s))
@@ -290,6 +302,22 @@ public final class HumanRunRecorder implements Closeable {
             b.append("]");
         }
         return b.append("]").toString();
+    }
+
+    private static int matrixHash(int[][] matrix) {
+        int hash = 1;
+        for (int[] row : matrix) {
+            for (int value : row) hash = 31 * hash + value;
+        }
+        return hash;
+    }
+
+    private static int matrixHash(boolean[][] matrix) {
+        int hash = 1;
+        for (boolean[] row : matrix) {
+            for (boolean value : row) hash = 31 * hash + (value ? 1 : 0);
+        }
+        return hash;
     }
 
     private static float wrapDegrees(float degrees) {

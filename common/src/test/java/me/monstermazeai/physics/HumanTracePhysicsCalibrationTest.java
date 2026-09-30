@@ -46,15 +46,15 @@ class HumanTracePhysicsCalibrationTest {
     };
 
     private static final Pattern FIELD_LONG = Pattern.compile(
-            "\\"%s\\":(-?\\d+)");
+            "\"%s\":(-?\\d+)");
     private static final Pattern FIELD_DOUBLE = Pattern.compile(
-            "\\"%s\\":(-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)");
+            "\"%s\":(-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)");
     private static final Pattern FIELD_BOOLEAN = Pattern.compile(
-            "\\"%s\\":(true|false)");
+            "\"%s\":(true|false)");
     private static final Pattern ACTIVE_PAD = Pattern.compile(
-            "\\"activePad\\":\\{\\"row\\":(-?\\d+),\\"column\\":(-?\\d+)");
+            "\"activePad\":\\{\"row\":(-?\\d+),\"column\":(-?\\d+)");
     private static final Pattern CENTER = Pattern.compile(
-            "\\"center\\":\\{\\"x\\":(-?\\d+),\\"y\\":(-?\\d+),\\"z\\":(-?\\d+)");
+            "\"center\":\\{\"x\":(-?\\d+),\"y\":(-?\\d+),\"z\":(-?\\d+)");
 
     @Test
     void humanTraceResidualsStayWithinCalibratedMovementTolerance() throws IOException {

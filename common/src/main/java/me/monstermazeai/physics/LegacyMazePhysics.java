@@ -24,4 +24,10 @@ public final class LegacyMazePhysics implements PhysicsModel {
     public void tick(PlayerState p, Action action) {
         movement.tick(p, action);
     }
+
+    /** Maze-aware variant used by the closed-loop simulator. */
+    public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
+                     int jumpAmplifier) {
+        movement.tick(p, action, maze, jumpAmplifier);
+    }
 }

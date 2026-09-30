@@ -349,6 +349,26 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void highReactionProfileExtendsSupportLookaheadWithoutChangingPhysics() {
+        GameState s = state(0.5, 0.5, -90.0F);
+        StableLiveMovementController low = new StableLiveMovementController(
+                new me.monstermazeai.player.AiProfile(
+                        new me.monstermazeai.player.AiAttributes(0.6, 0.5, 0.5, 0.0),
+                        me.monstermazeai.player.AiTendencies.BASELINE));
+        StableLiveMovementController high = new StableLiveMovementController(
+                me.monstermazeai.player.AiProfile.HIGH_SKILL);
+
+        s.tick = 1;
+        Action lowAction = low.nextAction(s, new Cell(8, 0), false);
+        Action highAction = high.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(lowAction.forward() >= 0.0);
+        assertTrue(highAction.forward() >= 0.0);
+        assertTrue(high.lastDecisionDetail().contains("waypoint="),
+                high.lastDecisionDetail());
+    }
+
+    @Test
     void mobHitClearsStaleRouteAndWaitsForGroundBeforeResuming() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

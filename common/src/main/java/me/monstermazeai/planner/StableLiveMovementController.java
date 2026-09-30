@@ -343,7 +343,8 @@ public final class StableLiveMovementController {
         } else {
             long threat = threatSignature(state);
             boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
+                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION)
+                    || (!gapExecutionActive && currentSegmentDeviation(state, route, waypointIndex) > 0.95D);
 
             if (routeInvalid) {
                 /*
@@ -1084,6 +1085,30 @@ public final class StableLiveMovementController {
                 toRow + 0.5D, toColumn + 0.5D,
                 dirRow, dirColumn);
         return Math.abs(lateral) <= 0.65D;
+    }
+
+    /**
+     * Distance from the active route segment, unlike the global corridor metric.
+     * A player can land near a later parallel segment after an edge recovery;
+     * treating that unrelated segment as valid hides the fact that the current
+     * waypoint is more than a block away and leaves the motor following stale
+     * geometry.
+     */
+    private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
+        if (route == null || route.size() < 2
+                || targetIndex <= 0 || targetIndex >= route.size()) return 0.0;
+
+        Cell from = route.cells().get(targetIndex - 1);
+        Cell to = route.cells().get(targetIndex);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (dirRow == 0) {
+            return Math.abs(state.player.x - (from.row() + 0.5D));
+        }
+        if (dirColumn == 0) {
+            return Math.abs(state.player.z - (from.column() + 0.5D));
+        }
+        return Double.POSITIVE_INFINITY;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {

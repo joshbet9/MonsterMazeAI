@@ -47,7 +47,7 @@ public final class StableLiveMovementController {
      */
 
     /** Minecraft 1.8 yaw is allowed to turn at most 12 degrees per tick. */
-    private static final float MAX_TURN_PER_TICK = 12.0F;
+    private static final float MAX_TURN_PER_TICK = 30.0F;
     /** Once inside this error, forward + steering is safe for the corridor. */
     private static final float HEADING_TOLERANCE = 2.0F;
     /**
@@ -533,6 +533,19 @@ public final class StableLiveMovementController {
                 boolean jump = false;
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
+            } else if (distance <= 1.05 && Math.abs(yawError) < 135.0F) {
+                /*
+                 * At a tight 90-degree corner a real player can keep moving
+                 * through the turn with A/D while rotating the camera. Pure
+                 * yaw acquisition here unnecessarily leaves the player
+                 * stationary in a mob-filled maze. Use one cardinal strafe
+                 * toward the new segment while the camera continues to turn.
+                 */
+                double strafe = yawError > 0.0F ? -1.0 : 1.0;
+                action = new Action(
+                        0.0, strafe, false, false,
+                        turn, false);
+                lastDecisionDetail += " CORNER_STRAFE";
             } else {
                 action = new Action(
                         0.0, 0.0, false, false,

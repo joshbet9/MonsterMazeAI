@@ -89,6 +89,10 @@ class AuthenticStage10SimulationTest {
                             + " health=" + result.health
                             + " pos=(" + result.x + "," + result.z + ")"
                             + " firstFallTick=" + result.firstFallTick
+                            + " firstFallPrePos=" + result.firstFallPreX + "," + result.firstFallPreY + "," + result.firstFallPreZ
+                            + " firstFallPreV=" + result.firstFallPreVx + "," + result.firstFallPreVy + "," + result.firstFallPreVz
+                            + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
+                            + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
                             + " firstFallDecision=" + result.firstFallDecision
                             + " decision=" + result.decision);
                 }

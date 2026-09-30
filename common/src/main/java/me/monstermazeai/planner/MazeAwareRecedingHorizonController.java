@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.AiProfile;
 
 /**
  * Compatibility facade for the live movement layer.
@@ -27,9 +28,14 @@ public final class MazeAwareRecedingHorizonController {
     }
 
     public MazeAwareRecedingHorizonController(int executionTicks) {
+        this(executionTicks, AiProfile.BASELINE);
+    }
+
+    public MazeAwareRecedingHorizonController(int executionTicks, AiProfile profile) {
         if (executionTicks < 1) throw new IllegalArgumentException();
+        if (profile == null) throw new IllegalArgumentException("profile");
         this.executionTicks = executionTicks;
-        this.stableMovement = new StableLiveMovementController();
+        this.stableMovement = new StableLiveMovementController(profile);
     }
 
     public String lastDecisionDetail() {

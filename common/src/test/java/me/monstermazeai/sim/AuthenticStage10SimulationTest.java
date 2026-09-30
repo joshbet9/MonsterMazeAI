@@ -60,6 +60,8 @@ class AuthenticStage10SimulationTest {
                             + " health=" + result.health
                             + " pos=(" + result.x + "," + result.z + ")"
                             + " firstFallTick=" + result.firstFallTick
+                            + " firstFallPrePos=" + result.firstFallPreX + "," + result.firstFallPreY + "," + result.firstFallPreZ
+                            + " firstFallPreV=" + result.firstFallPreVx + "," + result.firstFallPreVy + "," + result.firstFallPreVz
                             + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
                             + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
                             + " firstFallDecision=" + result.firstFallDecision
@@ -123,6 +125,8 @@ class AuthenticStage10SimulationTest {
         double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
         double firstFallVx = Double.NaN, firstFallVz = Double.NaN;
         String firstFallDecision = "NONE";
+        double firstFallPreX = Double.NaN, firstFallPreY = Double.NaN, firstFallPreZ = Double.NaN;
+        double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
@@ -136,6 +140,8 @@ class AuthenticStage10SimulationTest {
                 state.pendingMonsterSpawns -= spawned;
             }
 
+            double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
+            double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
@@ -181,6 +187,8 @@ class AuthenticStage10SimulationTest {
 
             if (firstFallTick < 0L && state.player.y < GameState.PATH_Y - 0.05D) {
                 firstFallTick = state.tick;
+                firstFallPreX = preX; firstFallPreY = preY; firstFallPreZ = preZ;
+                firstFallPreVx = preVx; firstFallPreVy = preVy; firstFallPreVz = preVz;
                 firstFallX = state.player.x;
                 firstFallY = state.player.y;
                 firstFallZ = state.player.z;

@@ -124,10 +124,8 @@ public final class TacticalRouteSimulator {
     }
 
     private void initialiseMissingAbilityState(GameState state) {
-        if (state.ability == null) state.ability = new me.monstermazeai.ability.AbilityState();
-        if (state.ability.charges == 0 && state.kit != me.monstermazeai.kit.Kit.BODY_BUILDER
-                && state.kit != me.monstermazeai.kit.Kit.MAVERICK
-                && state.kit != me.monstermazeai.kit.Kit.SLOWBALLER) {
+        if (state.ability == null) {
+            state.ability = new me.monstermazeai.ability.AbilityState();
             abilities.initialiseForMode(state);
         }
     }
@@ -152,7 +150,7 @@ public final class TacticalRouteSimulator {
         for (int depth = 0; depth < TACTICAL_HORIZON; depth++) {
             List<Node> next = new ArrayList<>();
             for (Node node : beam) {
-                for (Action action : tacticalActions(node.state)) {
+                for (Action action : tacticalActions(node.state, route, wp)) {
                     GameState s = node.state.copyForSimulation();
                     s.tick = source.tick + depth + 1;
                     MonsterSimulator branchMonsters = monsterSimulator(s, source.tick + depth + 1);
@@ -204,30 +202,68 @@ public final class TacticalRouteSimulator {
         return false;
     }
 
-    private List<Action> tacticalActions(GameState state) {
+    private List<Action> tacticalActions(GameState state, PlayerRoute route, int waypoint) {
         /*
          * Preserve the source interaction classes while removing redundant
-         * Cartesian combinations. In particular, keep direct strafe and
-         * forward-strafe contacts because they are part of the speeding/contact
-         * model; StableLiveMovementController remains the normal motor authority.
+         * Cartesian combinations. StableLiveMovementController remains the
+         * normal motor authority.
+         *
+         * Critical kit invariant: Jumper has only three charged jumps in
+         * Modern. A tactical branch must never spend one on ordinary floor,
+         * otherwise the branch can make a route look executable only because it
+         * consumed a resource that the live source player no longer has.
+         * Charged jump inputs are therefore offered only when the currently
+         * executing route edge is an actual one-block gap, or while the player
+         * is already airborne recovering from an interaction.
          */
         List<Action> out = new ArrayList<>(20);
+        boolean jumperGap = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0
+                && !state.player.grounded
+                ? true
+                : state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0
+                && isCurrentGapEdge(state, route, waypoint);
+
         addMovement(out, 1, 0, false, 0);
-        addMovement(out, 1, 0, true, 0);
         addMovement(out, 1, -1, false, 0);
-        addMovement(out, 1, -1, true, 0);
         addMovement(out, 1, 1, false, 0);
-        addMovement(out, 1, 1, true, 0);
         addMovement(out, 0, -1, false, 0);
         addMovement(out, 0, 1, false, 0);
         addMovement(out, -1, 0, false, 0);
         addMovement(out, 1, 0, false, -30);
         addMovement(out, 1, 0, false, 30);
-        addMovement(out, 1, 0, true, -30);
-        addMovement(out, 1, 0, true, 30);
+
+        if (state.kit != me.monstermazeai.kit.Kit.JUMPER || jumperGap) {
+            addMovement(out, 1, 0, true, 0);
+            addMovement(out, 1, -1, true, 0);
+            addMovement(out, 1, 1, true, 0);
+            addMovement(out, 1, 0, true, -30);
+            addMovement(out, 1, 0, true, 30);
+        }
+
+        // Ability activation itself is independent of the Jumper charge budget.
         out.add(new Action(0, 0, false, false, 0, true));
-        out.add(new Action(1, 0, true, true, 0, true));
+        if (state.kit != me.monstermazeai.kit.Kit.JUMPER || jumperGap) {
+            out.add(new Action(1, 0, true, true, 0, true));
+        }
         return out;
+    }
+
+    private static boolean isCurrentGapEdge(GameState state, PlayerRoute route, int waypoint) {
+        if (state.maze == null || route == null || waypoint <= 0 || waypoint >= route.size()) {
+            return false;
+        }
+        Cell from = route.cells().get(waypoint - 1);
+        Cell to = route.cells().get(waypoint);
+        int dr = to.row() - from.row();
+        int dc = to.column() - from.column();
+        if (!((Math.abs(dr) == 2 && dc == 0) || (Math.abs(dc) == 2 && dr == 0))) return false;
+        int middleRow = from.row() + Integer.signum(dr);
+        int middleColumn = from.column() + Integer.signum(dc);
+        return state.maze.isPhysicalFloor(from.row(), from.column())
+                && !state.maze.isPhysicalFloor(middleRow, middleColumn)
+                && state.maze.isPhysicalFloor(to.row(), to.column());
     }
 
     private static void addMovement(List<Action> out, double forward, double strafe,

@@ -42,7 +42,7 @@ class MovementBenchmarkTest {
         GameState s = player();
         s.kit = Kit.MAVERICK;
         s.player.x = 10.5;
-        s.player.z = 10.95;
+        s.player.z = 11.30;
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;

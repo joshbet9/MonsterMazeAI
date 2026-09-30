@@ -82,6 +82,27 @@ class MovementBenchmarkTest {
                 "holding jump must enter the source-style jump cooldown");
     }
 
+    @Test
+    void speedModeStationaryNonJumperJumpDoesNotUseSprintImpulse(){
+        GameState s = player();
+        s.kit = Kit.MAVERICK;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+        physics.tick(
+                s.player,
+                new Action(0, 0, true, true, 0, false),
+                s.maze,
+                -10,
+                true);
+
+        assertEquals(0.0D, s.player.x, 1.0e-12);
+        assertEquals(0.0D, s.player.z, 1.0e-12);
+        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-12);
+        assertTrue(s.player.grounded);
+    }
+
     @Test void movementIsTickDeterministic(){
         assertEquals(run(60,6),run(60,6),1e-12);
         assertEquals(run(60,8),run(60,8),1e-12);

@@ -15,4 +15,10 @@ class AabbTest {
         Aabb player=new Aabb(0.4,0,2,1.0,1.8,2.6);
         assertEquals(2.0,wall.clipX(player,2.0),1e-9);
     }
+
+    @Test void clipsDownwardMovementToBlockTop() {
+        Aabb floor = new Aabb(0,-1,0,1,0,1);
+        Aabb player = new Aabb(0.2,0.2,0.2,0.8,2.0,0.8);
+        assertEquals(-0.2, floor.clipY(player,-0.5), 1e-9);
+    }
 }

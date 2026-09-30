@@ -145,7 +145,9 @@ public final class StableLiveMovementController {
     private static final double PAD_ENTRY_COMMIT_DISTANCE = 1.25;
     private static final double PAD_ENTRY_RELEASE_DISTANCE = 2.75;
     private static final long PAD_ENTRY_MAX_TICKS = 18L;
-    private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.35D;
+    private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.10D;
+    /** Press jump only once the player is at the actual source-block edge. */
+    private static final double GAP_JUMP_PROGRESS = 0.45D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -1794,7 +1796,7 @@ public final class StableLiveMovementController {
             gapExecutionActive = true;
             // Commit early enough that a single-tick physics/replan boundary
             // cannot make us miss the jump input at the block edge.
-            gapTakeoffStarted = progress >= 0.35D;
+            gapTakeoffStarted = progress >= GAP_JUMP_PROGRESS;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
             return executeCommittedGap(state, allowJump);
@@ -1828,7 +1830,7 @@ public final class StableLiveMovementController {
             return null;
         }
         double progress = currentGapProgress(state, gapExecutionRouteIndex);
-        if (!gapTakeoffStarted && progress >= 0.35D) {
+        if (!gapTakeoffStarted && progress >= GAP_JUMP_PROGRESS) {
             gapTakeoffStarted = true;
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText() + " progress=" + format(progress);
         }
@@ -1847,7 +1849,7 @@ public final class StableLiveMovementController {
         } else {
             gapLandingConfirmTicks = 0;
         }
-        if (progress > 1.65D || state.player.y < GameState.PATH_Y - 3.0D) {
+        if (progress > 2.45D || state.player.y < GameState.PATH_Y - 3.0D) {
             lastDecisionDetail = "GAP_LANDING_FAILED edge=" + gapEdgeText() + " progress=" + format(progress);
             clearGapCommitment();
             return null;
@@ -1866,7 +1868,7 @@ public final class StableLiveMovementController {
          * intentionally requested for the committed gap regardless of that
          * permission; the server-side jump lock suppresses the actual jump.
          */
-        boolean jumpInput = state.player.grounded;
+        boolean jumpInput = state.player.grounded && progress >= GAP_JUMP_PROGRESS;
         lastDecisionDetail = "GAP_EXECUTE edge=" + gapEdgeText() + " progress=" + format(progress)
                 + " takeoff=" + gapTakeoffStarted + " jumpInput=" + jumpInput
                 + " allowJump=" + allowJump;

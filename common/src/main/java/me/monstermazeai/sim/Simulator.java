@@ -9,6 +9,7 @@ import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.physics.PhysicsModel;
 import me.monstermazeai.physics.LegacyMovementModel;
+import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.physics.MonsterMazeBumpModel;
 
 public final class Simulator {
@@ -31,9 +32,11 @@ public final class Simulator {
     public void tick(GameState state, Action action) {
         if(!state.alive) return;
         if(action.useAbility()) abilities.activate(state);
+        int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0 ? 0 : -10;
         if (physics instanceof LegacyMovementModel legacy) {
-            int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0 ? 0 : -10;
             legacy.tick(state.player, action, state.maze, jumpAmplifier);
+        } else if (physics instanceof LegacyMazePhysics legacyMaze) {
+            legacyMaze.tick(state.player, action, state.maze, jumpAmplifier);
         } else {
             physics.tick(state.player, action);
         }

@@ -44,6 +44,7 @@ import java.util.Locale;
  *   movement.jsonl     player kinematics and vanilla movement flags
  *   input.jsonl        aggregate + raw keyboard/mouse input
  *   world.jsonl        stage/timer/scoreboard/kit/charges/game state
+ *   objectives.jsonl   active + preview SafePad beacon states near transitions
  *   navigation.jsonl   logical cell/pad geometry and derived movement facts
  *   monsters.jsonl     local monster state every tick
  *   maze.jsonl         logical + physical maze snapshots only when changed
@@ -782,8 +783,6 @@ public final class HumanRunRecorder implements Closeable {
 
         if (mouseLeftPulse) writeEvent(state.worldTick, records, "MOUSE_LEFT", "");
         if (mouseRightPulse) writeEvent(state.worldTick, records, "MOUSE_RIGHT", "");
-        if (inputJump) writeEvent(state.worldTick, records, "JUMP_INPUT", "");
-        if (inputSprint) writeEvent(state.worldTick, records, "SPRINT_INPUT", "");
     }
 
     private void writeEvent(long tick, long recordIndex, String event, String detail) throws IOException {
@@ -952,6 +951,7 @@ public final class HumanRunRecorder implements Closeable {
             movementWriter = null;
             inputWriter = null;
             worldWriter = null;
+            objectiveWriter = null;
             navigationWriter = null;
             monsterWriter = null;
             mazeWriter = null;
@@ -971,6 +971,7 @@ public final class HumanRunRecorder implements Closeable {
         closeWriter(movementWriter);
         closeWriter(inputWriter);
         closeWriter(worldWriter);
+        closeWriter(objectiveWriter);
         closeWriter(navigationWriter);
         closeWriter(monsterWriter);
         closeWriter(mazeWriter);

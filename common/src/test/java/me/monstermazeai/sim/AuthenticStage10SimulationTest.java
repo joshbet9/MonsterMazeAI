@@ -3,6 +3,7 @@ package me.monstermazeai.sim;
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.Mode;
+import me.monstermazeai.game.PadModel;
 import me.monstermazeai.game.SourcePadSpawner;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.player.AiProfile;

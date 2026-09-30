@@ -31,6 +31,36 @@ class MovementBenchmarkTest {
         for(int interval=4;interval<=12;interval++){double d=run(60,interval);assertTrue(d>0);best=Math.max(best,d);}
         assertTrue(best>sprint*1.05);
     }
+    
+    @Test
+    void nonJumperSpeedingUsesHorizontalSprintJumpImpulseAcrossOneBlockGap() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = player();
+        s.kit = Kit.MAVERICK;
+        s.player.x = 10.5;
+        s.player.z = 10.95;
+        s.player.y = GameState.PATH_Y;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.player.vz = 0.39;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+        physics.tick(s.player, new Action(0, 1, true, true, 0, false), maze, -10);
+
+        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
+                "Jump -10 must suppress vertical lift for non-Jumper speeding");
+        assertTrue(s.player.z > 11.70,
+                "the source sprint-jump horizontal impulse must carry the player AABB onto the destination side");
+        assertTrue(s.player.grounded,
+                "a successful speeding gap crossing must retain physical support on the destination block");
+        assertTrue(s.player.vz > 0.0,
+                "the successful crossing must preserve forward momentum");
+    }
+
     @Test void movementIsTickDeterministic(){
         assertEquals(run(60,6),run(60,6),1e-12);
         assertEquals(run(60,8),run(60,8),1e-12);

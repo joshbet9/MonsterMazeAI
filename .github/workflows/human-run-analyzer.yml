@@ -31,9 +31,11 @@ jobs:
         run: |
           git fetch --depth=1 origin data/human-run-pattern3
           git archive FETCH_HEAD human-runs | tar -x
-      - name: Analyze recorded run
-        run: python tools/human_run_analyzer.py human-runs --output-dir /tmp/human-run-analysis
-      - name: Verify resolved run identity
+      - name: Build deterministic simulator comparison summary
+        run: mvn -B -ntp -pl common -am -Dtest=HumanRunSimulatorExportTest -Dsurefire.failIfNoSpecifiedTests=false -DhumanRunSimulatorSummary=$GITHUB_WORKSPACE/simulator-summary.json test
+      - name: Analyze recorded run against simulator
+        run: python tools/human_run_analyzer.py human-runs --output-dir /tmp/human-run-analysis --sim-summary simulator-summary.json
+      - name: Verify human-vs-simulator comparison
         run: |
           python - <<'PY'
           import json
@@ -46,6 +48,8 @@ jobs:
           assert summary["conditions"]["mode"] == "speed", summary["conditions"]
           assert summary["conditions"]["kit"] in {"MAVERICK", "REPULSOR", "JUMPER", "SLOWBALLER", "BODY_BUILDER"}, summary["conditions"]
           assert summary["conditions"]["pattern"] == 3, summary["conditions"]
+          comparison = json.loads(Path("/tmp/human-run-analysis/analysis/simulator-comparison.json").read_text())
+          assert comparison["gaps"], comparison
           assert any(a["type"] == "KIT_CONFLICT" for a in anomalies), anomalies
           assert any(a["type"] == "WORLD_STAGE_CONFLICT" for a in anomalies), anomalies
           print(json.dumps({
@@ -54,5 +58,18 @@ jobs:
               "kit": summary["conditions"]["kit"],
               "pattern": summary["conditions"]["pattern"],
               "anomalyTypes": sorted({a["type"] for a in anomalies}),
+              "comparisonMetrics": [g["metric"] for g in comparison["gaps"]],
           }, indent=2))
           PY
+
+
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-vs-simulator-report
+          path: |
+            simulator-summary.json
+            /tmp/human-run-analysis/analysis/summary.json
+            /tmp/human-run-analysis/analysis/anomalies.json
+            /tmp/human-run-analysis/analysis/simulator-comparison.json
+            /tmp/human-run-analysis/normalized/*.jsonl

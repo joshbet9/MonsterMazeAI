@@ -514,6 +514,34 @@ public final class StableLiveMovementController {
         }
 
         float desiredYaw = cardinalYaw(dirRow, dirColumn);
+
+        /*
+         * Begin a 90-degree turn before the route waypoint is reached. Waiting
+         * for the waypoint transition changes the desired heading from the old
+         * cardinal direction directly to the new one on the next observation;
+         * with vanilla momentum that is already too late and produces the
+         * characteristic 178/148/118-degree turn traces seen in the failures.
+         *
+         * Anticipation is deliberately limited to the final part of the current
+         * cell and only when the following route segment actually changes
+         * direction. The target heading is interpolated rather than snapped, so
+         * the motor begins an ordinary player-like arc while the edge guard still
+         * owns physical-support safety.
+         */
+        if (distance < 1.25D && waypointIndex + 1 < route.size()) {
+            Cell nextCell = route.cells().get(waypointIndex + 1);
+            int nextDirRow = Integer.signum(nextCell.row() - targetCellRow);
+            int nextDirColumn = Integer.signum(nextCell.column() - targetCellColumn);
+            if (Math.abs(nextDirRow) + Math.abs(nextDirColumn) == 1
+                    && (nextDirRow != dirRow || nextDirColumn != dirColumn)) {
+                double turnFraction = clamp((1.25D - distance) / 0.90D, 0.0D, 1.0D);
+                float nextYaw = cardinalYaw(nextDirRow, nextDirColumn);
+                float deltaToNext = normalise(nextYaw - desiredYaw);
+                desiredYaw = normalise(desiredYaw + deltaToNext * (float) turnFraction);
+                lastDecisionDetail += " CORNER_ANTICIPATE fraction=" + format(turnFraction);
+            }
+        }
+
         float yawError = normalise(desiredYaw - state.player.yaw);
         double speed = Math.hypot(state.player.vx, state.player.vz);
 

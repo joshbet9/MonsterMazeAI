@@ -130,17 +130,21 @@ public final class MonsterAwareRoutePlanner {
     private static List<PlayerRoute> restrictJumperGapBudget(GameState state,
                                                                List<PlayerRoute> candidates) {
         int budget = jumperGapBudget(state);
-        if (budget < 0 || candidates.isEmpty()) return candidates;
+        if (candidates.isEmpty()) return candidates;
 
         ArrayList<PlayerRoute> executable = new ArrayList<>();
         for (PlayerRoute candidate : candidates) {
-            if (gapCount(candidate) <= budget) executable.add(candidate);
+            if (budget < 0 || gapCount(candidate) <= budget) executable.add(candidate);
         }
-        return executable.isEmpty() ? candidates : List.copyOf(executable);
+        return List.copyOf(executable);
     }
 
     private static int jumperGapBudget(GameState state) {
-        if (state == null || state.kit != me.monstermazeai.kit.Kit.JUMPER) return -1;
+        if (state == null) return 0;
+        // Monster Maze applies Jump -10 to every non-Jumper. They cannot clear
+        // a void block with a vertical jump, so a gap edge is never executable
+        // for those kits. A Jumper can clear at most one gap per charged jump.
+        if (state.kit != me.monstermazeai.kit.Kit.JUMPER) return 0;
         return Math.max(0, state.ability.charges);
     }
 
@@ -281,11 +285,9 @@ public final class MonsterAwareRoutePlanner {
             if (normalAllowed && !gapAllowed) return normal;
             if (gapAllowed && !normalAllowed) return gapAware;
             if (!normalAllowed && !gapAllowed) {
-                // No executable candidate was produced by the fast search.
-                // Preserve the physical route rather than returning null; the
-                // full planner will have a chance to replace it on the next
-                // dynamic observation.
-                return normal != null ? normal : gapAware;
+                // No route in this candidate set is executable with the
+                // source jump capability currently available.
+                return null;
             }
         }
 

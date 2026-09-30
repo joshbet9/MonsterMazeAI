@@ -30,4 +30,9 @@ public final class LegacyMazePhysics implements PhysicsModel {
                      int jumpAmplifier) {
         movement.tick(p, action, maze, jumpAmplifier);
     }
+
+    public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
+                     int jumpAmplifier, boolean speedMode) {
+        movement.tick(p, action, maze, jumpAmplifier, speedMode);
+    }
 }

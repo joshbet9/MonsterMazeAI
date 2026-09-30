@@ -24,17 +24,10 @@ public final class PlayerPathfinder {
             Cell current = queue.removeFirst();
             if (current.equals(goal)) return reconstruct(previous, goal);
 
-            int r = current.row(), c = current.column();
-            add(maze, current, new Cell(r - 1, c), queue, previous);
-            add(maze, current, new Cell(r + 1, c), queue, previous);
-            add(maze, current, new Cell(r, c - 1), queue, previous);
-            add(maze, current, new Cell(r, c + 1), queue, previous);
-            if (allowGaps) {
-                addMovement(maze, current, new Cell(r - 2, c), queue, previous);
-                addMovement(maze, current, new Cell(r + 2, c), queue, previous);
-                addMovement(maze, current, new Cell(r, c - 2), queue, previous);
-                addMovement(maze, current, new Cell(r, c + 2), queue, previous);
-            }
+            List<Cell> neighbours = allowGaps
+                    ? maze.physicalMovementNeighbours(current)
+                    : maze.physicalCardinalNeighbours(current);
+            for (Cell next : neighbours) add(maze, current, next, queue, previous);
         }
         return List.of();
     }
@@ -75,16 +68,11 @@ public final class PlayerPathfinder {
                 continue;
             }
 
-            int r = current.row(), c = current.column();
-            add(maze, current, new Cell(r - 1, c), queue, previous, distance, currentDistance + 1);
-            add(maze, current, new Cell(r + 1, c), queue, previous, distance, currentDistance + 1);
-            add(maze, current, new Cell(r, c - 1), queue, previous, distance, currentDistance + 1);
-            add(maze, current, new Cell(r, c + 1), queue, previous, distance, currentDistance + 1);
-            if (allowGaps) {
-                addMovement(maze, current, new Cell(r - 2, c), queue, previous, distance, currentDistance + 1);
-                addMovement(maze, current, new Cell(r + 2, c), queue, previous, distance, currentDistance + 1);
-                addMovement(maze, current, new Cell(r, c - 2), queue, previous, distance, currentDistance + 1);
-                addMovement(maze, current, new Cell(r, c + 2), queue, previous, distance, currentDistance + 1);
+            List<Cell> neighbours = allowGaps
+                    ? maze.physicalMovementNeighbours(current)
+                    : maze.physicalCardinalNeighbours(current);
+            for (Cell next : neighbours) {
+                add(maze, current, next, queue, previous, distance, currentDistance + 1);
             }
         }
         return bestGoal == null ? List.of() : reconstruct(previous, bestGoal);

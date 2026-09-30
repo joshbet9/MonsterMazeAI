@@ -727,15 +727,7 @@ public final class FirstPadSpeedrunController {
             return new LegacyAction(0.0f, 0.0f, false, false, 0.0f, false);
         }
 
-        /*
-         * Maintain a physical momentum qualification before any gap commit.
-         * The accumulator follows the current route direction, so a mob replan
-         * that preserves the same heading does not throw away useful momentum,
-         * while a meaningful turn immediately invalidates the straight-run
-         * qualification.
-         */
-        updateGapMomentum(state, desiredYaw, yawError);
-
+        
         /*
          * Normal speedrun movement uses jump spam. A one-block gap gets a
          * special edge-timed pulse: press jump while grounded just before the
@@ -1818,7 +1810,7 @@ public final class FirstPadSpeedrunController {
          * baseline controller now requires the same physical momentum gate as
          * an ordinary gap approach.
          */
-        if (progress >= 0.15D && progress <= 1.65D && hasQualifiedGapMomentum()) {
+        if (progress >= 0.15D && progress <= 1.65D ) {
             gapExecutionActive = true;
             gapTakeoffStarted = progress >= 0.15D;
             gapExecutionRouteIndex = routeIndex;
@@ -1849,24 +1841,13 @@ public final class FirstPadSpeedrunController {
          * route on the next observation. This is preferable to knowingly
          * committing the player to unsupported space.
          */
-        if (!hasQualifiedGapMomentum()) {
-            log(state.worldTick, "[MonsterMazeAI/1.8] GAP MOMENTUM INSUFFICIENT"
-                    + " tick=" + state.worldTick
-                    + " edge=" + routeRows[routeIndex] + "," + routeColumns[routeIndex]
-                    + "->" + routeRows[routeIndex + 1] + "," + routeColumns[routeIndex + 1]
-                    + " progress=" + format(progress)
-                    + " momentum=" + format(gapQualifiedMomentumDistance)
-                    + "/" + format(GAP_MOMENTUM_DISTANCE_REQUIRED)
-                    + " action=ABORT_ROUTE");
-            gapExecutionActive = false;
-            gapTakeoffStarted = false;
-            gapExecutionRouteIndex = -1;
-            gapLandingConfirmTicks = 0;
-            routeLength = 0;
-            routeIndex = 0;
-            return LegacyAction.IDLE;
-        }
-
+        /*
+         * The takeoff window is source-timed. Once the route has brought the
+         * player to the edge with the correct heading, commit the gap motor
+         * rather than waiting for an artificial multi-block qualification.
+         * The source Maverick/Speed movement model gets its horizontal speed
+         * from the same W+sprint+jump input that executeCommittedGap emits.
+         */
         gapExecutionActive = true;
         gapTakeoffStarted = false;
         gapExecutionRouteIndex = routeIndex;

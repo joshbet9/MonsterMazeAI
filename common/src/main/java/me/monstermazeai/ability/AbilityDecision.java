@@ -179,21 +179,30 @@ public final class AbilityDecision {
 
     private static boolean bodyRushImmediateThreat(GameState state) {
         /*
-         * Body Rush has only two activations. A stationary mob inside two blocks
-         * is not, by itself, enough reason to spend one. Prefer genuine closing
-         * contact, or preserve the resource for a low-health approach.
+         * Recorded Body Builder play uses Body Rush proactively once the run is
+         * deep enough that monster density becomes the dominant route cost. Both
+         * observed activations occurred at stages 33/40 with ~6-7 seconds left,
+         * 31-58 nearby monsters, and the nearest monster roughly 2.0-3.8 blocks
+         * away. The old policy explicitly rejected intentional bumps and
+         * therefore missed both human uses.
          */
-        if (MobInteractionDecision.chooseIntentionalBump(state) != null) return false;
-
-        int close = 0;
+        int nearby = 0;
+        double nearest = Double.POSITIVE_INFINITY;
         for (MonsterState monster : state.monsters) {
             if (!activeMonster(state, monster)) continue;
             double distance = Math.sqrt(distanceSq(state, monster));
-            if (distance > 3.5) continue;
-            if (imminentClosingContact(state, monster)) return true;
-            if (distance <= 2.0) close++;
+            if (distance <= 8.0) nearby++;
+            nearest = Math.min(nearest, distance);
+            if (distance <= 3.5 && imminentClosingContact(state, monster)) return true;
         }
-        return state.player.health <= 12.0 && close >= 1;
+
+        boolean humanLikeDenseLateRun = state.stage >= 30
+                && state.phaseTicksRemaining > 0
+                && state.phaseTicksRemaining <= 10 * 20
+                && nearby >= 20
+                && nearest <= 4.0;
+        return humanLikeDenseLateRun
+                || (state.player.health <= 12.0 && nearest <= 2.0);
     }
 
     private static boolean cryoImmediateThreat(GameState state) {

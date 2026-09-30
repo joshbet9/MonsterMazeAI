@@ -13,7 +13,8 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
-    private static final double SPRINT_JUMP_IMPULSE = 0.2D;
+    private static final double SPRINT_JUMP_IMPULSE = 0.20D;
+    private static final int NON_JUMPER_JUMP_COOLDOWN_TICKS = 10;
 
     @Override
     public void tick(PlayerState p, Action action) {
@@ -37,6 +38,16 @@ public final class LegacyMovementModel implements PhysicsModel {
      */
     public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
                      int jumpAmplifier) {
+        tick(p, action, maze, jumpAmplifier, true);
+    }
+
+    /**
+     * Source jump-lock physics with mode-specific Speed technique enabled
+     * only when requested. Human traces calibrate the horizontal non-Jumper
+     * impulse in Speed mode; Modern-mode acceptance must remain unchanged.
+     */
+    public void tick(PlayerState p, Action action, me.monstermazeai.maze.MazeModel maze,
+                     int jumpAmplifier, boolean speedMode) {
         p.yaw += action.yawDelta();
         while (p.yaw >= 180.0F) p.yaw -= 360.0F;
         while (p.yaw < -180.0F) p.yaw += 360.0F;
@@ -46,20 +57,44 @@ public final class LegacyMovementModel implements PhysicsModel {
 
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
-                // Monster Maze applies Jump -10 to non-Jumpers. That blocks the
-                // vertical impulse but the sprint-jump's horizontal impulse is
-                // still applied by the source jump routine.
-                p.vy = 0.0D;
-                if (action.sprint()) {
-                    float yaw = p.yaw * 0.017453292F;
-                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                /*
+                 * Speed mode uses the human-observed "jump press" cadence:
+                 * suppress vertical lift, apply one horizontal sprint-jump
+                 * impulse, then suppress repeats while Space remains held.
+                 *
+                 * Non-Speed modes retain the legacy simulator semantics that
+                 * existing Modern acceptance tests were built around.
+                 */
+                if (speedMode) {
+                    // Sprint-jump momentum is tied to actual forward sprint
+                    // state, not merely the sprint key being held. Human
+                    // traces contain stationary jump takeoffs with rawSprint
+                    // true and zero horizontal impulse.
+                    if (action.sprint() && action.forward() > 0.0F) {
+                        float yaw = p.yaw * 0.017453292F;
+                        p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                        p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                    }
+                    p.jumpTicks = NON_JUMPER_JUMP_COOLDOWN_TICKS;
+                } else {
+                    p.vy = 0.0D;
+                    if (action.sprint()) {
+                        float yaw = p.yaw * 0.017453292F;
+                        p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                        p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                    }
+                    p.jumpTicks = 0;
                 }
-                p.jumpTicks = 0;
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;
-                if (action.sprint()) {
+                /*
+                 * In Speed mode, the sprint-jump impulse follows actual
+                 * forward sprint state. A held sprint key with zero forward
+                 * input does not produce horizontal jump impulse in the human
+                 * traces. Non-Speed behavior remains source-compatible.
+                 */
+                if (action.sprint() && (!speedMode || action.forward() > 0.0F)) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;

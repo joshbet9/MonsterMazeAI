@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.physics.LegacyMazePhysics;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
 
@@ -219,6 +220,141 @@ class StableLiveMovementControllerTest {
         // The committed edge is now owned by the gap motor; the live
         // controller must issue the edge-timed jump before the source block
         // boundary rather than relying on ordinary jump-spam cadence.
+    }
+
+    @Test
+    void mobAvoidanceStaysForwardDrivenInsteadOfBecomingEdgeGuardIdle() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.BODY_BUILDER;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        // Bootstrap the cardinal route first. On the following observation a
+        // monster enters the controller's immediate lane while a side floor
+        // exists. Human recordings show W remains the dominant avoidance input.
+        s.tick = 1;
+        Action bootstrap = controller.nextAction(s, new Cell(0, 8), true);
+        assertTrue(bootstrap.forward() > 0.0 || Math.abs(bootstrap.yawDelta()) > 0.0);
+
+        me.monstermazeai.monster.MonsterState monster =
+                new me.monstermazeai.monster.MonsterState(99, 0.5, 0.0, 2.1);
+        monster.vz = -0.10;
+        s.monsters.add(monster);
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), true);
+
+        assertTrue(action.forward() > 0.0,
+                "a supported mob dodge must not collapse to stationary EDGE_GUARD output");
+        assertTrue(action.sprint());
+        assertTrue(controller.lastDecisionDetail().contains("MOB_DODGE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("guarded=f=0.000,s=0.000"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
+    void monsterCannotInterruptCommittedGapCrossing() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        for (int column = 13; column <= 30; column++) raw[10][column] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = maze;
+        s.kit = me.monstermazeai.kit.Kit.BODY_BUILDER;
+        s.activePadRow = 10;
+        s.activePadColumn = 30;
+        s.player.x = 10.5;
+        s.player.z = 9.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+        controller.nextAction(s, new Cell(10, 30), true);
+
+        s.player.z = 10.99;
+        s.tick = 2;
+        Action committed = controller.nextAction(s, new Cell(10, 30), true);
+        assertTrue(committed.forward() > 0.0);
+        assertTrue(committed.jump());
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"),
+                controller.lastDecisionDetail());
+
+        MonsterState monster = new MonsterState(100, 10.5, 0.0, 11.6);
+        monster.vz = -0.10;
+        s.monsters.add(monster);
+        s.tick = 3;
+
+        Action afterThreat = controller.nextAction(s, new Cell(10, 30), true);
+        assertTrue(afterThreat.forward() > 0.0);
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"),
+                "a committed gap crossing must retain motor ownership during mob proximity: "
+                        + controller.lastDecisionDetail());
+    }
+
+    @Test
+    void nonJumperSpeedMechanicPhysicallyClearsOneBlockGap() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int column = 6; column <= 10; column++) raw[10][column] = 1;
+        for (int column = 12; column <= 30; column++) raw[10][column] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.mode = me.monstermazeai.game.Mode.SPEED;
+        s.maze = new MazeModel(raw);
+        s.kit = me.monstermazeai.kit.Kit.BODY_BUILDER;
+        s.activePadRow = 10;
+        s.activePadColumn = 30;
+        s.player.x = 10.5;
+        s.player.z = 6.5;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        boolean crossed = false;
+        java.util.ArrayDeque<String> trace = new java.util.ArrayDeque<>();
+        for (int tick = 1; tick <= 120; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(10, 30), true);
+            String detail = controller.lastDecisionDetail();
+            double preZ = s.player.z;
+            double preY = s.player.y;
+            double preVz = s.player.vz;
+            boolean preGrounded = s.player.grounded;
+            physics.tick(s.player, action, s.maze, -10, true);
+            trace.addLast("tick=" + tick
+                    + " preZ=" + String.format(java.util.Locale.ROOT, "%.3f", preZ)
+                    + " preY=" + String.format(java.util.Locale.ROOT, "%.3f", preY)
+                    + " preVz=" + String.format(java.util.Locale.ROOT, "%.3f", preVz)
+                    + " grounded=" + preGrounded
+                    + " action=" + action
+                    + " postZ=" + String.format(java.util.Locale.ROOT, "%.3f", s.player.z)
+                    + " postY=" + String.format(java.util.Locale.ROOT, "%.3f", s.player.y)
+                    + " postVz=" + String.format(java.util.Locale.ROOT, "%.3f", s.player.vz)
+                    + " detail=" + detail);
+            while (trace.size() > 20) trace.removeFirst();
+
+            if (s.player.z > 11.70) {
+                crossed = true;
+                break;
+            }
+            if (s.player.y <= -2.5) {
+                fail("non-Jumper fell through the one-block gap at tick " + tick
+                        + System.lineSeparator() + String.join(System.lineSeparator(), trace));
+            }
+        }
+
+        assertTrue(crossed,
+                "source-valid non-Jumper Speed movement did not clear the one-block gap"
+                        + System.lineSeparator() + String.join(System.lineSeparator(), trace));
     }
 
     @Test
@@ -445,6 +581,49 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
         assertFalse(controller.lastDecisionDetail().contains("REACHED"),
                 controller.lastDecisionDetail());
+    }
+
+    @Test
+    void cornerAnticipationOverridesOldLaneRecoveryDuringTurnEntry() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        raw[2][1] = 1;
+        raw[2][2] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 2;
+        s.activePadColumn = 2;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.player.yaw = -90.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+        controller.nextAction(s, new Cell(2, 2), false);
+
+        // Near the end of the first (+row) segment, the player is slightly
+        // off its old centreline while the next segment turns +column. The
+        // controller should begin the corner arc rather than let old-segment
+        // lane recovery suppress the turn.
+        s.player.x = 1.70;
+        s.player.z = 0.90;
+        s.player.yaw = -60.0F;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(2, 2), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("CORNER_ANTICIPATE"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("LANE_RECOVERY"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0,
+                "corner anticipation must retain forward drive while the old lane is still offset");
     }
 
 }

@@ -145,8 +145,13 @@ public final class StableLiveMovementController {
      */
     private static final long MOB_HIT_RECOVERY_TICKS = 40L;
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
-    /** Keep a non-Jumper grounded long enough to enter a source gap cleanly. */
-    private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 1.80D;
+    /*
+     * Non-Jumper Jump -10 leaves a ten-tick jump lock even though the vertical
+     * impulse is suppressed. Reserve more than that travel distance before a
+     * gap so a normal speed-jump cannot consume the only usable horizontal
+     * impulse immediately before the source-timed gap takeoff.
+     */
+    private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 3.20D;
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
@@ -165,8 +170,22 @@ public final class StableLiveMovementController {
     /** Press jump only once the player is at the actual source-block edge. */
     /** Strong players begin the jump before the source block centre so the vanilla arc lands inside the destination. */
     private static final double GAP_JUMP_PROGRESS = -0.80D;
-    /** Begin the committed gap window slightly before the actual jump impulse. */
+    /** Begin the committed gap window slightly before the actual Jump-class takeoff. */
     private static final double GAP_COMMIT_PROGRESS = -1.80D;
+    /*
+     * Non-Jumpers are different: Jump -10 suppresses vertical lift but still
+     * imposes a ten-tick jump lock. Human Speed runs repeatedly cross one-block
+     * gaps using the same horizontal speeding mechanic, so the first committed
+     * pulse must have enough runway for a second source-valid pulse to become
+     * available before the player leaves the source AABB.
+     */
+    private static final double NONJUMPER_GAP_COMMIT_PROGRESS = -4.40D;
+    /*
+     * Human Speed traces use discrete Jump -10 presses rather than holding the
+     * key for the whole gap. Two-tick spacing permits a release/reset tick
+     * between horizontal impulse writes in the source-faithful movement model.
+     */
+    private static final long NONJUMPER_GAP_PULSE_TICKS = 2L;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -207,7 +226,8 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
-        boolean mobHit = detectLiveMobHit(state);
+        boolean speedMode = state.mode == me.monstermazeai.game.Mode.SPEED;
+        boolean mobHit = speedMode && detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(
                     mobHitRecoveryUntilTick,
@@ -223,17 +243,33 @@ public final class StableLiveMovementController {
                     + " recoveryUntil=" + mobHitRecoveryUntilTick
                     + " grounded=" + state.player.grounded;
             /*
-             * While airborne, the server's bump velocity is authoritative.
-             * Do not inject a jump, strafe, or stale route turn into it.
-             * Once grounded, route construction below uses the new position.
+             * Speed-mode human calibration includes source monster knockback.
+             * Modern/Original retain their pre-human-run movement contract.
              */
             if (!state.player.grounded) {
                 return airborneMobRecoveryAction(state, goal);
             }
         }
 
-        if (state.tick <= mobHitRecoveryUntilTick && !state.player.grounded) {
+        if (speedMode && state.tick <= mobHitRecoveryUntilTick && !state.player.grounded) {
             return airborneMobRecoveryAction(state, goal);
+        }
+
+        /*
+         * Speed-mode human calibration requires an existing gap/pad commitment
+         * to retain motor ownership before tactical mob handling. Keep that
+         * ordering isolated to Speed so Modern/Original preserve their previous
+         * tactical ordering.
+         */
+        if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+            if (padEntryCommitment) {
+                Action committed = executePadEntryCommitment(state, goal, allowJump);
+                if (committed != null) return committed;
+            }
+            if (gapExecutionActive) {
+                Action committed = executeCommittedGap(state, allowJump);
+                if (committed != null) return committed;
+            }
         }
 
         /*
@@ -242,14 +278,32 @@ public final class StableLiveMovementController {
          * a nearby monster can be used as a source-faithful bump toward the
          * active pad. MobInteractionDecision refuses this at <= 2 hearts.
          */
-        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
-        if (intentionalBump != null) {
-            Action bumpAction = steerIntoMonster(state, intentionalBump);
-            if (bumpAction != null) return bumpAction;
+        if (speedMode) {
+            MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(state);
+            if (intentionalBump != null) {
+                Action bumpAction = steerIntoMonster(state, intentionalBump);
+                if (bumpAction != null) return bumpAction;
+            }
+
+            Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+            if (mobAvoidance != null) return mobAvoidance;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
+        /*
+         * Restore the original pre-calibration commitment position for
+         * Modern/Original. Those modes must let tactical monster policy run
+         * first; only Speed claims the motor-level commitment before it.
+         */
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) {
+            if (padEntryCommitment) {
+                Action committed = executePadEntryCommitment(state, goal, allowJump);
+                if (committed != null) return committed;
+            }
+            if (gapExecutionActive) {
+                Action committed = executeCommittedGap(state, allowJump);
+                if (committed != null) return committed;
+            }
+        }
 
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
@@ -272,18 +326,6 @@ public final class StableLiveMovementController {
             goalRow = goal.row();
             goalColumn = goal.column();
             goalRadius = regionRadius;
-        }
-
-        // Once a pad-edge crossing is committed, a newer strategic route is
-        // not allowed to replace it. The only authoritative exits are landing
-        // on the pad, losing the edge, or a bounded timeout/recovery condition.
-        if (padEntryCommitment) {
-            Action committed = executePadEntryCommitment(state, goal, allowJump);
-            if (committed != null) return committed;
-        }
-        if (gapExecutionActive) {
-            Action committed = executeCommittedGap(state, allowJump);
-            if (committed != null) return committed;
         }
 
         GameState routingState = transitionRoutingState(
@@ -472,6 +514,37 @@ public final class StableLiveMovementController {
         }
 
         float desiredYaw = cardinalYaw(dirRow, dirColumn);
+
+        /*
+         * Begin a 90-degree turn before the route waypoint is reached. Waiting
+         * for the waypoint transition changes the desired heading from the old
+         * cardinal direction directly to the new one on the next observation;
+         * with vanilla momentum that is already too late and produces the
+         * characteristic 178/148/118-degree turn traces seen in the failures.
+         *
+         * Anticipation is deliberately limited to the final part of the current
+         * cell and only when the following route segment actually changes
+         * direction. The target heading is interpolated rather than snapped, so
+         * the motor begins an ordinary player-like arc while the edge guard still
+         * owns physical-support safety.
+         */
+        boolean cornerAnticipating = false;
+        if (distance < 1.25D && waypointIndex + 1 < route.size()) {
+            Cell nextCell = route.cells().get(waypointIndex + 1);
+            int nextDirRow = Integer.signum(nextCell.row() - targetCellRow);
+            int nextDirColumn = Integer.signum(nextCell.column() - targetCellColumn);
+            if (Math.abs(nextDirRow) + Math.abs(nextDirColumn) == 1
+                    && (nextDirRow != dirRow || nextDirColumn != dirColumn)) {
+                float turnFraction = (float) ((1.25D - distance) / 0.90D);
+                turnFraction = Math.max(0.0F, Math.min(1.0F, turnFraction));
+                float nextYaw = cardinalYaw(nextDirRow, nextDirColumn);
+                float deltaToNext = normalise(nextYaw - desiredYaw);
+                desiredYaw = normalise(desiredYaw + deltaToNext * (float) turnFraction);
+                cornerAnticipating = true;
+                lastDecisionDetail += " CORNER_ANTICIPATE fraction=" + format(turnFraction);
+            }
+        }
+
         float yawError = normalise(desiredYaw - state.player.yaw);
         double speed = Math.hypot(state.player.vx, state.player.vz);
 
@@ -513,7 +586,38 @@ public final class StableLiveMovementController {
 
         Action action;
 
-        if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+        /*
+         * Corner acquisition has priority over lane recovery. The old ordering
+         * let a cross-track error (>0.28) suppress the turn at exactly the
+         * moment a 90-degree route corner needed the camera to acquire the new
+         * cardinal heading. That produced the recurring CORNER_VECTOR ->
+         * LANE_RECOVERY -> near-zero-speed -> overshoot loop seen in the
+         * deterministic Speed traces.
+         *
+         * Human runs do not stop to perfectly centre before every corner: they
+         * keep a bounded movement vector active while turning. Preserve that
+         * behaviour whenever the desired heading is substantially different,
+         * then return to lane correction once the new corridor is acquired.
+         */
+        double absYawError = Math.abs(yawError);
+        if (absYawError > MAX_DRIVE_STEER_ERROR && absYawError < 135.0F) {
+            double errorRad = Math.toRadians(yawError);
+            double turnForward = Math.cos(errorRad) * 0.65D;
+            double turnStrafe = -Math.sin(errorRad) * 0.65D;
+            boolean jump = shouldSpeedJump(state, allowJump);
+            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            action = new Action(turnForward, turnStrafe, jump, false, turn, false);
+            lastDecisionDetail += " CORNER_ACQUIRE";
+        } else if (absYawError >= 135.0F) {
+            /*
+             * A near-reverse heading cannot be safely driven through a one-cell
+             * corridor. Acquire the heading first, but do not wait for the
+             * player to become completely stationary before turning.
+             */
+            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            action = new Action(0.0, 0.0, false, false, turn, false);
+            lastDecisionDetail += " REVERSE_TURN";
+        } else if (!cornerAnticipating && Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
              * A player can remain physically supported while the block
              * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
@@ -960,14 +1064,41 @@ public final class StableLiveMovementController {
                 && currentColumnDirection == plannedColumnDirection;
     }
 
+    private static final long HUMAN_SPEED_NONJUMPER_JUMP_CADENCE_TICKS = 6L;
+
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {
-        if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
+            return false;
+        }
+
+        /*
+         * The recorded non-Jumper humans press Jump continuously as a movement
+         * technique even though their kit has zero normal jump charges. Across
+         * Maverick, Repulsor, Body Builder and Slowballer the observed rate is
+         * ~16-18 presses/100 ticks, i.e. roughly one press every six ticks.
+         *
+         * This is distinct from a real jump: the -10 kit lock suppresses
+         * vertical lift and converts the press into the source horizontal
+         * sprint-jump impulse. The old allowJump gate accidentally disabled this
+         * entire speed technique for the AI.
+         */
+        if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+            if (allowJump && isApproachingGap(state)) {
+                // Gap execution has its own edge cadence; do not double-submit.
+                return false;
+            }
+            if (lastSpeedJumpInputTick != Long.MIN_VALUE
+                    && state.tick - lastSpeedJumpInputTick < HUMAN_SPEED_NONJUMPER_JUMP_CADENCE_TICKS) {
+                return false;
+            }
+            lastSpeedJumpInputTick = state.tick;
+            return true;
+        }
+
+        if (!allowJump) {
             return false;
         }
         if (isApproachingGap(state)) {
-            // The source speed mechanic can request frequent jump inputs, but a
-            // jump already in progress cannot be retimed when the player reaches
-            // a one-block void. Preserve the grounded takeoff state instead.
             return false;
         }
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
@@ -1227,12 +1358,35 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
-        Action[] alternatives = {
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
-        };
+        /*
+         * Preserve forward intent before falling all the way back to IDLE.
+         * The human traces overwhelmingly retain W during mob avoidance, while
+         * the previous guard could turn a valid A/D dodge into a stationary
+         * command when the one-tick diagonal projection crossed a fractional
+         * edge. A forward-only projection keeps the source-safe action moving
+         * whenever the route lane itself remains supported.
+         */
+        Action forwardPreserving = new Action(
+                action.forward(), 0.0, action.jump(), action.sprint(),
+                action.yawDelta(), false);
+        Action softenedDodge = new Action(
+                action.forward(), action.strafe() * 0.5D, action.jump(), action.sprint(),
+                action.yawDelta(), false);
+        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? new Action[]{
+                    forwardPreserving,
+                    softenedDodge,
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                }
+                : new Action[]{
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
@@ -1584,12 +1738,30 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            /*
+             * Human-run calibration shows that mob avoidance remains
+             * overwhelmingly forward-driven (~83-94% forward across the six
+             * recordings), with jump presses common and lateral input sparse.
+             * Prefer full forward sprint, using A/D as a correction rather than
+             * replacing W with a mostly-lateral dodge.
+             *
+             * For non-Jumpers, Jump -10 is source-valid horizontal speeding and
+             * is already cadence-limited by Max Speed. This gives the controller
+             * the same forward + occasional jump response seen repeatedly in the
+             * recorded runs without inventing a new physics mechanic.
+             */
+            boolean speedMode = state.mode == me.monstermazeai.game.Mode.SPEED;
+            boolean speedJump = speedMode
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                    && shouldSpeedJump(state, allowJump);
+            double dodgeForward = speedMode ? 1.0D : 0.65D;
+            Action dodge = new Action(dodgeForward, strafe, speedJump, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
                     + " strafe=" + format(strafe)
+                    + " jump=" + speedJump
                     + (guarded == dodge ? "" : " EDGE_GUARD");
             return guarded;
         }
@@ -1926,7 +2098,12 @@ public final class StableLiveMovementController {
         int gapIndex = waypointIndex - 1;
         double progress = currentGapProgress(state, gapIndex);
         double distanceToTakeoff = GAP_JUMP_PROGRESS - progress;
-        if (progress >= GAP_COMMIT_PROGRESS && progress <= 1.65D) {
+        double commitProgress = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                ? GAP_COMMIT_PROGRESS
+                : state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? NONJUMPER_GAP_COMMIT_PROGRESS
+                    : GAP_COMMIT_PROGRESS;
+        if (progress >= commitProgress && progress <= 1.65D) {
             gapExecutionActive = true;
             // Commit early enough that a single-tick physics/replan boundary
             // cannot make us miss the jump input at the block edge.
@@ -1968,15 +2145,25 @@ public final class StableLiveMovementController {
         boolean jumpThisTick = false;
 
         /*
-         * Non-Jumper speeding is a deliberate repeated jump input while
-         * remaining grounded. The source Jump -10 removes the vertical impulse,
-         * but the sprint-jump routine still writes the horizontal 0.2 impulse.
-         * Let Max Speed control this pre-gap cadence while the gap motor owns
-         * the timing window, so tactical replanning cannot steal the inputs.
+         * The source-faithful non-Jumper Speed mechanic is a discrete Jump -10
+         * pulse. The released tick resets jumpTicks, allowing the next pulse to
+         * write another horizontal impulse. Do not use destination AABB overlap
+         * as the cutoff: the player's AABB can touch the far block while the
+         * feet are already unsupported, which was the exact observed failure.
+         * Restrict the calibrated edge pulses to the last ~1 block of the source
+         * crossing; normal steering owns the earlier run-up.
          */
-        boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
+        boolean destinationOverlapping = playerAabbOverlapsCell(state, toRow, toColumn);
+        boolean nonJumperSpeedPulse = state.mode == me.monstermazeai.game.Mode.SPEED
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
-                && progress < GAP_JUMP_PROGRESS
+                && progress < 1.05D
+                && (lastSpeedJumpInputTick == Long.MIN_VALUE
+                    || state.tick - lastSpeedJumpInputTick >= NONJUMPER_GAP_PULSE_TICKS);
+        boolean nonJumperLegacyPulse = state.mode != me.monstermazeai.game.Mode.SPEED
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded
+                && !destinationOverlapping
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
         if (nonJumperSpeedPulse) {
@@ -1984,12 +2171,22 @@ public final class StableLiveMovementController {
             lastSpeedJumpInputTick = state.tick;
             lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
                     + " progress=" + format(progress)
+                    + " cadence=" + NONJUMPER_GAP_PULSE_TICKS;
+        } else if (nonJumperLegacyPulse) {
+            jumpThisTick = true;
+            lastSpeedJumpInputTick = state.tick;
+            lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
+                    + " progress=" + format(progress)
                     + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
         } else if (!gapTakeoffStarted && state.player.grounded && progress >= GAP_JUMP_PROGRESS) {
-            jumpThisTick = true;
             gapTakeoffStarted = true;
+            if (!(state.mode == me.monstermazeai.game.Mode.SPEED
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER)) {
+                jumpThisTick = true;
+            }
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText()
-                    + " progress=" + format(progress);
+                    + " progress=" + format(progress)
+                    + (jumpThisTick ? "" : " pulse_pending=true");
         }
         if (gapTakeoffStarted && state.player.grounded && !jumpThisTick && progress > 0.90D
                 && playerAabbOverlapsCell(state, toRow, toColumn)) {
@@ -2017,17 +2214,10 @@ public final class StableLiveMovementController {
         }
         /*
          * The critical edge tick is the last grounded tick on the source
-         * block. Do not make the jump input depend on a narrow exact progress
-         * threshold or on whether the previous observation happened to mark
-         * takeoff as started. Once committed, keep jump held/pulsed whenever
-         * grounded until the landing is confirmed. This removes the observed
-         * "ran off the end without pressing space" failure caused by a one-tick
-         * observation boundary.
-         *
-         * allowJump means a charged/real jump is available. Non-Jumper
-         * speeding still benefits from the jump input, so the motor input is
-         * intentionally requested for the committed gap regardless of that
-         * permission; the server-side jump lock suppresses the actual jump.
+         * block. Speed-mode non-Jumpers use the calibrated two-tick pulse
+         * cadence above, while Modern/Original retain the legacy takeoff rule.
+         * allowJump still governs the normal Jumper ability path; the Speed
+         * non-Jumper pulse is an ordinary source input and has no vertical lift.
          */
         boolean jumpInput = jumpThisTick;
         boolean sprintInput = !jumpInput || state.kit != me.monstermazeai.kit.Kit.JUMPER;

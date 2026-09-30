@@ -1,0 +1,6 @@
+{
+  "runId": "20260930-174746-835",
+  "source": "human-confirmed",
+  "kit": "MAVERICK",
+  "notes": "Human-confirmed kit. The recorder inventory contains no unique Maverick item signature, so the observer's legacy JUMPER fallback is not used as kit truth."
+}

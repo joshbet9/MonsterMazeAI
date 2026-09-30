@@ -291,6 +291,16 @@ public final class MonsterAwareRoutePlanner {
 
         if (normal == null) return gapAware;
         if (gapAware == null) return normal;
+
+        /*
+         * A zero-cost gap policy means gap traversal has no risk premium. In
+         * that mode the pathfinder's graph distance is authoritative, so use
+         * its shortest physical route directly. This keeps the configurable
+         * policy deterministic and avoids allowing the ordinary-floor route
+         * to win a cost tie through unrelated candidate ordering.
+         */
+        if (gapJumpPolicy.riskCostPerGap() == 0.0) return gapAware;
+
         return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
     }
 

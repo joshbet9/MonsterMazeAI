@@ -135,12 +135,18 @@ class MonsterAwareRoutePlannerTest {
         // This test exercises only the configurable gap-cost policy.
         // Non-Jumper kits can still use the source-faithful horizontal
         // sprint-jump ("speeding") technique across a one-block void.
+        state.kit = Kit.MAVERICK;
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r < MazeModel.SIZE; r++)
             for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
         raw[10][11] = 0;
         raw[10][13] = 0;
         state.maze = new MazeModel(raw);
+
+        PlayerPathfinder pathfinder = new PlayerPathfinder();
+        assertEquals(
+                List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)),
+                pathfinder.shortestPath(state.maze, new Cell(10, 10), new Cell(10, 14)));
 
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));

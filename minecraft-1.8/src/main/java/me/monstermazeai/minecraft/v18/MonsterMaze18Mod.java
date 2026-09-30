@@ -3,6 +3,7 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.LegacyAction;
 import me.monstermazeai.adapter.LegacyWorldObservation;
 import me.monstermazeai.adapter.LiveMovementValidator;
+import me.monstermazeai.kit.Kit;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
@@ -28,7 +29,10 @@ public final class MonsterMaze18Mod {
     private Minecraft18AiRuntime runtime;
     private FirstPadSpeedrunController firstPadSpeedrun;
     private GameRunSummaryRecorder gameSummary;
+    private HumanRunRecorder humanRunRecorder;
     private net.minecraft.client.settings.KeyBinding toggleAi;
+    private net.minecraft.client.settings.KeyBinding toggleHumanRecorder;
+    private net.minecraft.client.settings.KeyBinding cycleHumanKit;
     private boolean aiEnabled;
     private boolean runEndedLatch;
     private boolean fullRoutingMode;
@@ -44,10 +48,17 @@ public final class MonsterMaze18Mod {
         firstPadSpeedrun = new FirstPadSpeedrunController();
         gameSummary = new GameRunSummaryRecorder();
         firstPadSpeedrun.setTelemetry(gameSummary);
+        humanRunRecorder = new HumanRunRecorder(Minecraft.getMinecraft(), observer);
 
         toggleAi = new net.minecraft.client.settings.KeyBinding(
                 "key.monstermazeai.toggle", Keyboard.KEY_F8, "key.categories.monstermazeai");
         ClientRegistry.registerKeyBinding(toggleAi);
+        toggleHumanRecorder = new net.minecraft.client.settings.KeyBinding(
+                "key.monstermazeai.humanRecorder", Keyboard.KEY_F7, "key.categories.monstermazeai");
+        ClientRegistry.registerKeyBinding(toggleHumanRecorder);
+        cycleHumanKit = new net.minecraft.client.settings.KeyBinding(
+                "key.monstermazeai.humanKit", Keyboard.KEY_F6, "key.categories.monstermazeai");
+        ClientRegistry.registerKeyBinding(cycleHumanKit);
 
         aiEnabled = false;
         runEndedLatch = false;
@@ -59,6 +70,9 @@ public final class MonsterMaze18Mod {
         MinecraftForge.EVENT_BUS.register(this);
 
         System.out.println("[MonsterMazeAI/1.8] HYBRID mode ready (F8)");
+        System.out.println("[MonsterMazeAI/1.8] Human run recorder ready (F7): records actual keyboard/mouse input + live observation to human-runs/*.jsonl");
+        System.out.println("[MonsterMazeAI/1.8] Human kit declaration ready (F6): " +
+                (humanRunRecorder.getDeclaredKit() == null ? "NONE" : humanRunRecorder.getDeclaredKit().name()));
         System.out.println("[MonsterMazeAI/1.8] First pad uses synchronous optimal speedrun; subsequent pads use normal live AI runtime");
         System.out.println("[MonsterMazeAI/1.8] Per-game GPT summary telemetry enabled");
     }
@@ -69,6 +83,27 @@ public final class MonsterMaze18Mod {
 
         if (event.phase != TickEvent.Phase.START || observer == null) {
             return;
+        }
+
+        if (cycleHumanKit != null && cycleHumanKit.isPressed()) {
+            if (humanRunRecorder.isActive()) {
+                System.out.println("[MonsterMazeAI/1.8] HUMAN KIT locked during active run: " +
+                        (humanRunRecorder.getDeclaredKit() == null ? "NONE" : humanRunRecorder.getDeclaredKit().name()));
+            } else {
+                Kit selectedKit = humanRunRecorder.cycleDeclaredKit();
+                System.out.println("[MonsterMazeAI/1.8] HUMAN KIT set to " +
+                        (selectedKit == null ? "NONE (clear)" : selectedKit.name()));
+            }
+        }
+
+        if (toggleHumanRecorder != null && toggleHumanRecorder.isPressed()) {
+            boolean enabled = !humanRunRecorder.isEnabled();
+            humanRunRecorder.setEnabled(enabled);
+            System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER "
+                    + (enabled ? "enabled (will begin when a Monster Maze round is detected)"
+                    : "disabled")
+                    + (humanRunRecorder.currentPath() == null ? ""
+                    : " file=" + humanRunRecorder.currentPath()));
         }
 
         if (minecraft.theWorld == null || minecraft.thePlayer == null) {
@@ -85,6 +120,7 @@ public final class MonsterMaze18Mod {
             observationLogCount = 0L;
             controlledPlayer = null;
             movementValidator.reset();
+            if (humanRunRecorder != null) humanRunRecorder.finish("WORLD_LEFT");
             return;
         }
 
@@ -138,8 +174,20 @@ public final class MonsterMaze18Mod {
                     + " monsters=" + state.monsters.size());
         }
 
-        if (state.inMonsterMaze && !gameSummary.isActive()) {
+        if (Minecraft18RunBoundary.isGameStart(state) && !gameSummary.isActive()) {
             gameSummary.begin(state.worldTick);
+        }
+        if (gameSummary.isActive() && Minecraft18RunBoundary.isGameEnd(state)) {
+            printGameSummary(gameSummary.finish(state.worldTick,
+                    state.completed ? "COMPLETED" : (state.alive ? "LEFT_MAZE" : "PLAYER_DEAD")));
+            runEndedLatch = true;
+            executor.releaseAll();
+            executor.setAiEnabled(false);
+            aiEnabled = false;
+            fullRoutingMode = false;
+            firstPadSpeedrun.reset();
+            movementValidator.reset();
+            return;
         }
 
         LegacyAction action;
@@ -203,9 +251,7 @@ public final class MonsterMaze18Mod {
         if (!aiEnabled || event == null || event.message == null) return;
         String text = event.message.getUnformattedText();
         if (text == null) return;
-        String lower = text.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("fell off the maze") || lower.contains("solo run over")
-                || lower.contains("you weren't on the safe pad")) {
+        if (Minecraft18RunBoundary.isTerminalChat(text)) {
             runEndedLatch = true;
 
             if (gameSummary != null && gameSummary.isActive()) {

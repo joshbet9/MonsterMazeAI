@@ -1,0 +1,212 @@
+name: Human run analyzer
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/human-run-analysis
+      - feature/human-run-recorder
+
+jobs:
+  analyzer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run human-run analyzer tests
+        working-directory: tools
+        run: |
+          python -m unittest -v test_human_run_analyzer.py
+          python -m unittest -v test_human_run_dataset_analyzer.py
+
+  dataset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Analyze all recorded human runs
+        run: |
+          python tools/human_run_dataset_analyzer.py human-runs --output-dir /tmp/human-run-dataset-analysis
+      - name: Verify human dataset coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path("/tmp/human-run-dataset-analysis/dataset-summary.json").read_text())
+          expected = {
+              "20260930-174746-835": ("MAVERICK", 3, 49),
+              "20260930-181006-247": ("REPULSOR", 2, 26),
+              "20260930-195111-185": ("JUMPER", 1, 38),
+              "20260930-195904-165": ("SLOWBALLER", 3, 1),
+              "20260930-195916-359": ("SLOWBALLER", 1, 21),
+              "20260930-200313-358": ("BODY_BUILDER", 3, 41),
+          }
+
+          assert summary["dataset"]["runCount"] == len(expected), summary["dataset"]
+          seen = {}
+          for run in summary["runs"]:
+              run_id = run["runId"]
+              seen[run_id] = (
+                  run["conditions"].get("kit"),
+                  run["conditions"].get("pattern"),
+                  run["run"].get("stageReached"),
+              )
+              assert "MISSING_KIT_METADATA" not in run["anomalyTypes"], run
+
+          assert seen == expected, {"expected": expected, "seen": seen}
+          print(json.dumps(summary["dataset"], indent=2, sort_keys=True))
+          PY
+      - name: Upload human dataset analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-run-dataset-analysis
+          path: |
+            /tmp/human-run-dataset-analysis/dataset-summary.json
+            /tmp/human-run-dataset-analysis/runs.jsonl
+            /tmp/human-run-dataset-analysis/runs/**/*.jsonl
+            /tmp/human-run-dataset-analysis/runs/**/analysis/*.json
+
+  calibration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run tick-level human trace physics calibration
+        run: |
+          mvn -B -ntp -pl common -am             -Dtest=HumanTracePhysicsCalibrationTest             -Dsurefire.failIfNoSpecifiedTests=false             test
+      - name: Upload calibration residual report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-trace-physics-calibration
+          path: |
+            common/target/surefire-reports/me.monstermazeai.physics.HumanTracePhysicsCalibrationTest.txt
+            common/target/surefire-reports/TEST-me.monstermazeai.physics.HumanTracePhysicsCalibrationTest.xml
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve all human runs
+        run: |
+          python tools/human_run_dataset_analyzer.py human-runs --output-dir /tmp/human-run-dataset-analysis
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path("/tmp/human-run-dataset-analysis/dataset-summary.json").read_text())
+          rows = []
+          for run in summary["runs"]:
+              conditions = run["conditions"]
+              run_id = run["runId"]
+              manifests = sorted(Path("human-runs").glob(f"*{run_id}-manifest.json"))
+              if len(manifests) != 1:
+                  raise SystemExit(f"{run_id}: expected exactly one manifest, found {manifests}")
+              for key in ("mode", "kit", "pattern"):
+                  if conditions.get(key) is None:
+                      raise SystemExit(f"{run_id}: missing simulator condition {key}")
+              rows.append((
+                  run_id,
+                  str(conditions["mode"]).upper(),
+                  str(conditions["kit"]).upper(),
+                  int(conditions["pattern"]),
+                  str(manifests[0]),
+              ))
+
+          out = Path("/tmp/human-run-conditions.tsv")
+          out.write_text(
+              "".join(
+                  f"{run_id}\t{mode}\t{kit}\t{pattern}\t{manifest}\n"
+                  for run_id, mode, kit, pattern, manifest in rows
+              ),
+              encoding="utf-8",
+          )
+          print(out.read_text(), end="")
+          PY
+
+      - name: Build all matching long-horizon simulator comparisons
+        run: |
+          rm -rf /tmp/human-run-comparisons
+          mkdir -p /tmp/human-run-comparisons
+          while IFS=$'\t' read -r run_id mode kit pattern manifest; do
+            test -n "$run_id"
+            out="/tmp/human-run-comparisons/$run_id"
+            mkdir -p "$out"
+            echo "===== $run_id mode=$mode kit=$kit pattern=$pattern ====="
+            mvn -B -ntp -pl common -am \
+              -Dtest=HumanRunSimulatorExportTest \
+              -Dsurefire.failIfNoSpecifiedTests=false \
+              -DhumanRunMode="$mode" \
+              -DhumanRunKit="$kit" \
+              -DhumanRunPattern="$pattern" \
+              -DhumanRunProfile=HIGH_SKILL \
+              -DhumanRunComparison=true \
+              -DhumanRunSimulatorSummary="$out/simulator-summary.json" \
+              test
+            python tools/human_run_analyzer.py human-runs \
+              --manifest "$manifest" \
+              --output-dir "$out/analysis" \
+              --sim-summary "$out/simulator-summary.json"
+          done < /tmp/human-run-conditions.tsv
+
+      - name: Verify all human-vs-simulator comparisons
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/human-run-comparisons")
+          records = []
+          dirs = sorted(p for p in root.iterdir() if p.is_dir())
+          assert dirs, "no human-run comparison directories were produced"
+
+          for directory in dirs:
+              simulator = json.loads((directory / "simulator-summary.json").read_text())
+              analysis_root = directory / "analysis" / "analysis"
+              human = json.loads((analysis_root / "summary.json").read_text())
+              comparison = json.loads((analysis_root / "simulator-comparison.json").read_text())
+
+              assert comparison["conditionMatch"] is True, comparison
+              assert comparison["gaps"], comparison
+              for key in ("mode", "kit", "pattern"):
+                  assert simulator["conditions"][key] == human["conditions"][key], (
+                      directory.name, key, simulator["conditions"], human["conditions"]
+                  )
+              assert simulator["conditions"]["profile"] == "HIGH_SKILL"
+              assert simulator["simulator"]["durationTicks"] > 0
+
+              records.append({
+                  "runId": directory.name,
+                  "humanStage": human["run"]["stageReached"],
+                  "simulatorStage": simulator["simulator"]["stageReached"],
+                  "humanDamagePerStage": human["metrics"].get("damagePerStage"),
+                  "simulatorDamagePerStage": simulator["simulator"].get("damagePerStage"),
+                  "metrics": [gap["metric"] for gap in comparison["gaps"]],
+              })
+
+          Path(root / "comparison-index.json").write_text(
+              json.dumps({"runCount": len(records), "runs": records}, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({"runCount": len(records), "runs": records}, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-vs-simulator-report
+          path: /tmp/human-run-comparisons/**

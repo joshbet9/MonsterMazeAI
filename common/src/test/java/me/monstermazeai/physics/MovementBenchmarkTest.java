@@ -42,7 +42,7 @@ class MovementBenchmarkTest {
         GameState s = player();
         s.kit = Kit.MAVERICK;
         s.player.x = 10.5;
-        s.player.z = 10.95;
+        s.player.z = 10.99;
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
@@ -59,6 +59,68 @@ class MovementBenchmarkTest {
                 "a successful speeding gap crossing must retain physical support on the destination block");
         assertTrue(s.player.vz > 0.0,
                 "the successful crossing must preserve forward momentum");
+    }
+
+    @Test
+    void nonJumperHeldJumpUsesOneImpulsePerJumpPress() {
+        GameState s = player();
+        s.kit = Kit.MAVERICK;
+        s.player.yaw = 0.0F;
+        s.player.vz = 0.30;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+        Action jump = new Action(1, 0, true, true, 0, false);
+
+        physics.tick(s.player, jump, s.maze, -10);
+        double firstVz = s.player.vz;
+        physics.tick(s.player, jump, s.maze, -10);
+        double secondVz = s.player.vz;
+
+        assertTrue(firstVz > secondVz,
+                "the first non-Jumper jump press adds the sprint-jump impulse");
+        assertEquals(9, s.player.jumpTicks,
+                "holding jump must enter the source-style jump cooldown");
+    }
+
+    @Test
+    void speedModeStationaryNonJumperJumpDoesNotUseSprintImpulse(){
+        GameState s = player();
+        s.kit = Kit.MAVERICK;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+        physics.tick(
+                s.player,
+                new Action(0, 0, true, true, 0, false),
+                s.maze,
+                -10,
+                true);
+
+        assertEquals(0.0D, s.player.x, 1.0e-12);
+        assertEquals(0.0D, s.player.z, 1.0e-12);
+        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-12);
+        assertTrue(s.player.grounded);
+    }
+
+    @Test
+    void speedModeStationaryJumperDoesNotUseSprintImpulse(){
+        GameState s = player();
+        s.kit = Kit.JUMPER;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+        physics.tick(
+                s.player,
+                new Action(0, 0, true, true, 0, false),
+                s.maze,
+                0,
+                true);
+
+        assertEquals(0.0D, s.player.vx, 1.0e-12);
+        assertEquals(0.0D, s.player.vz, 1.0e-12);
+        assertTrue(s.player.y > GameState.PATH_Y);
     }
 
     @Test void movementIsTickDeterministic(){

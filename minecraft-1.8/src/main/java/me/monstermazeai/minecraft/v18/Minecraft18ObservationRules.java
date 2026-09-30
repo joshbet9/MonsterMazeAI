@@ -35,33 +35,25 @@ public final class Minecraft18ObservationRules {
 
             if (lower.contains("safe pad")) {
                 Integer value = timeSeconds(line);
-                if (value == null && i + 1 < cleanLines.size()) {
-                    value = timeSeconds(cleanLines.get(i + 1));
-                }
-                if (value != null) {
-                    safePadSeconds = value;
-                }
+                if (value == null) value = previousNonEmptyValue(cleanLines, i);
+                if (value == null) value = nextNonEmptyValue(cleanLines, i);
+                if (value != null) safePadSeconds = value;
             }
 
             if (lower.equals("stage") || lower.startsWith("stage ") || lower.startsWith("stage:")) {
                 Integer value = firstInteger(line);
-                if (value == null && i + 1 < cleanLines.size()) {
-                    value = firstInteger(cleanLines.get(i + 1));
-                }
-                if (value != null) {
-                    stage = Math.max(1, value);
-                }
+                if (value == null) value = nextStageValue(cleanLines, i);
+                if (value == null) value = previousNonEmptyValue(cleanLines, i);
+                if (value != null) stage = Math.max(1, value);
             }
         }
 
         return new ScoreboardData(cleanTitle, safePadSeconds, stage, completed, cleanLines);
     }
 
-    public static Kit detectKit(List<String> displayNames) {
+    public static Kit detectKitEvidence(List<String> displayNames) {
         for (String displayName : displayNames) {
-            if (displayName == null) {
-                continue;
-            }
+            if (displayName == null) continue;
             String name = stripFormatting(displayName).toLowerCase(Locale.ROOT);
             if (name.contains("jumps remaining")) return Kit.JUMPER;
             if (name.contains("repulse")) return Kit.REPULSOR;
@@ -69,7 +61,16 @@ public final class Minecraft18ObservationRules {
             if (name.contains("body rush") || name.contains("body builder")) return Kit.BODY_BUILDER;
             if (name.contains("maverick")) return Kit.MAVERICK;
         }
-        return Kit.JUMPER;
+        return null;
+    }
+
+    /**
+     * Legacy live-observer detector. Human telemetry must use
+     * detectKitEvidence() so an unknown inventory never becomes JUMPER truth.
+     */
+    public static Kit detectKit(List<String> displayNames) {
+        Kit evidence = detectKitEvidence(displayNames);
+        return evidence == null ? Kit.JUMPER : evidence;
     }
 
     public static int detectJumpCharges(List<String> displayNames, Kit kit, List<Integer> stackSizes) {
@@ -98,6 +99,35 @@ public final class Minecraft18ObservationRules {
             }
         }
         return false;
+    }
+
+    private static Integer previousNonEmptyValue(List<String> lines, int index) {
+        for (int i = index - 1; i >= 0; i--) {
+            String candidate = lines.get(i);
+            if (candidate.trim().length() == 0) continue;
+            return timeSeconds(candidate);
+        }
+        return null;
+    }
+
+    private static Integer nextNonEmptyValue(List<String> lines, int index) {
+        for (int i = index + 1; i < lines.size(); i++) {
+            String candidate = lines.get(i);
+            if (candidate.trim().length() == 0) continue;
+            return timeSeconds(candidate);
+        }
+        return null;
+    }
+
+    private static Integer nextStageValue(List<String> lines, int index) {
+        for (int i = index + 1; i < lines.size() && i <= index + 3; i++) {
+            String candidate = lines.get(i);
+            if (candidate.trim().length() == 0) continue;
+            String lower = candidate.toLowerCase(Locale.ROOT);
+            if (lower.contains("second") || lower.contains("player")) return null;
+            return firstInteger(candidate);
+        }
+        return null;
     }
 
     private static Integer timeSeconds(String text) {

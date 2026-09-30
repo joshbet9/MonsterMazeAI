@@ -582,7 +582,9 @@ public final class StableLiveMovementController {
                 else if (absError <= 35.0) steeringForward = 0.80;
                 else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
-                boolean sprint = forward > 0.05;
+                boolean sprint = state.mode == me.monstermazeai.game.Mode.SPEED
+                        ? forward > 0.05
+                        : forward >= 0.95 && absError <= 15.0;
                 // Non-Jumpers use the source Jump -10 + sprint-jump interaction
                 // as their normal speed mechanic. Jumper vertical jumps remain
                 // reserved for explicit terrain decisions.
@@ -600,21 +602,22 @@ public final class StableLiveMovementController {
                 double forward = Math.cos(errorRad) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
-                boolean sprint = forward > 0.05;
+                boolean sprint = state.mode == me.monstermazeai.game.Mode.SPEED
+                        && forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
                 /*
-                 * Camera control remains available while vanilla horizontal
-                 * momentum is decaying. Waiting for speed <= 0.035 before
-                 * rotating was producing long zero-input stalls at real corners
-                 * (the traces repeatedly showed ~0.15-0.25 speed and no yaw
-                 * change). Keep the turn active and let the projected-support
-                 * guard decide whether the residual momentum remains safe.
+                 * Speed mode benefits from continuing the camera turn while
+                 * residual vanilla momentum decays. Modern keeps the original
+                 * conservative in-place-turn gate.
                  */
+                float yawCommand = state.mode == me.monstermazeai.game.Mode.SPEED
+                        ? turn
+                        : (speed <= MAX_TURNING_SPEED ? turn : 0.0F);
                 action = new Action(
                         0.0, 0.0, false, false,
-                        turn,
+                        yawCommand,
                         false);
             }
         } else {
@@ -1258,18 +1261,25 @@ public final class StableLiveMovementController {
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
         double supportScale = 0.20D + (0.50D * profile.attributes.handling);
-        Action[] alternatives = {
-                new Action(action.forward() * supportScale,
-                        action.strafe() * supportScale,
-                        action.jump(),
-                        action.sprint(),
-                        action.yawDelta(),
-                        false),
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
-        };
+        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? new Action[] {
+                    new Action(action.forward() * supportScale,
+                            action.strafe() * supportScale,
+                            action.jump(),
+                            action.sprint(),
+                            action.yawDelta(),
+                            false),
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                }
+                : new Action[] {
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
@@ -1552,11 +1562,13 @@ public final class StableLiveMovementController {
 
         double correctionForward = forward * magnitude;
         double correctionStrafe = strafe * magnitude;
+        boolean correctionSprint = state.mode == me.monstermazeai.game.Mode.SPEED
+                && correctionForward > 0.05;
         Action correction = new Action(
                 correctionForward,
                 correctionStrafe,
                 false,
-                correctionForward > 0.05,
+                correctionSprint,
                 yawDelta,
                 false);
         return guardLaneCorrectionSupport(state, correction);

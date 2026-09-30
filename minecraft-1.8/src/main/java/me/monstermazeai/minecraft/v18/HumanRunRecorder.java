@@ -41,6 +41,11 @@ public final class HumanRunRecorder implements Closeable {
 
     private final Minecraft minecraft;
     private BufferedWriter writer;
+    private BufferedWriter movementWriter;
+    private BufferedWriter worldWriter;
+    private BufferedWriter monsterWriter;
+    private BufferedWriter inputWriter;
+    private BufferedWriter eventWriter;
     private Path currentPath;
     private boolean enabled;
     private boolean inRun;
@@ -124,10 +129,20 @@ public final class HumanRunRecorder implements Closeable {
             Path directory = Paths.get(DIRECTORY);
             Files.createDirectories(directory);
             String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
-            currentPath = directory.resolve("human-speed-run-" + timestamp + ".jsonl");
+            currentPath = directory.resolve("human-speed-run-" + timestamp + "-manifest.json");
+            Path movementPath = directory.resolve("human-speed-run-" + timestamp + "-movement.jsonl");
+            Path worldPath = directory.resolve("human-speed-run-" + timestamp + "-world.jsonl");
+            Path monsterPath = directory.resolve("human-speed-run-" + timestamp + "-monsters.jsonl");
+            Path inputPath = directory.resolve("human-speed-run-" + timestamp + "-input.jsonl");
+            Path eventPath = directory.resolve("human-speed-run-" + timestamp + "-events.jsonl");
             writer = Files.newBufferedWriter(currentPath, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
+            movementWriter = open(directory, movementPath);
+            worldWriter = open(directory, worldPath);
+            monsterWriter = open(directory, monsterPath);
+            inputWriter = open(directory, inputPath);
+            eventWriter = open(directory, eventPath);
             inRun = true;
             records = 0L;
             lastMazeHash = 0;
@@ -137,7 +152,7 @@ public final class HumanRunRecorder implements Closeable {
             System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER started: " + currentPath.toAbsolutePath());
             writeHeader(state);
         } catch (IOException e) {
-            writer = null;
+            writer = null; movementWriter = null; worldWriter = null; monsterWriter = null; inputWriter = null; eventWriter = null;
             currentPath = null;
             inRun = false;
             System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER failed to open: " + e);
@@ -154,21 +169,26 @@ public final class HumanRunRecorder implements Closeable {
     private void write(LegacyWorldObservation state) {
         try {
             float yawDelta = Float.isNaN(previousYaw) ? 0.0f : wrapDegrees(state.player.yaw - previousYaw);
-            long dt = previousWorldTick == Long.MIN_VALUE ? 1L
-                    : Math.max(1L, state.worldTick - previousWorldTick);
+            long dt = previousWorldTick == Long.MIN_VALUE ? 1L : Math.max(1L, state.worldTick - previousWorldTick);
+            String prefix = "{\\"tick\\":" + state.worldTick + ",\\"stage\\":" + state.stage + ",\\"recordIndex\\":" + records;
 
-            writer.write(toJson(state, yawDelta, dt));
-            writer.newLine();
-            records++;
-            if (records % 20L == 0L) writer.flush();
-            previousYaw = state.player.yaw;
-            previousWorldTick = state.worldTick;
-            rightClickPulse = false;
-        } catch (IOException e) {
-            System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER write failed: " + e);
-            finish("WRITE_ERROR");
-        }
+            writeLine(movementWriter, prefix + ",\\"x\\":" + state.player.x + ",\\"y\\":" + state.player.y + ",\\"z\\":" + state.player.z + ",\\"vx\\":" + state.player.vx + ",\\"vy\\":" + state.player.vy + ",\\"vz\\":" + state.player.vz + ",\\"yaw\\":" + state.player.yaw + ",\\"pitch\\":" + state.player.pitch + ",\\"grounded\\":" + state.player.grounded + "}");
+            writeLine(inputWriter, prefix + ",\\"forward\\":" + inputForward + ",\\"strafe\\":" + inputStrafe + ",\\"jump\\":" + inputJump + ",\\"sprintKey\\":" + inputSprint + ",\\"yawDelta\\":" + yawDelta + ",\\"yawDeltaWithin30\\":" + (Math.abs(yawDelta) <= 30.0001f) + ",\\"useAbility\\":" + rightClickPulse + "}");
+            writeLine(worldWriter, prefix + ",\\"dt\\":" + dt + ",\\"phaseTimerSeconds\\":" + state.safePadSeconds + ",\\"liveSeconds\\":" + state.liveSeconds + ",\\"inMaze\\":" + state.inMonsterMaze + ",\\"alive\\":" + state.alive + ",\\"completed\\":" + state.completed + ",\\"mazeDetected\\":" + state.mazeDetected + ",\\"mazePattern\\":\\"" + escape(state.mazePattern) + "\\",\\"kit\\":\\"" + escape(state.kit == null ? "" : state.kit.name()) + "\\",\\"jumpCharges\\":" + state.jumpCharges + ",\\"abilityCharges\\":" + state.abilityCharges + ",\\"currentCell\\":" + cellFor(state) + ",\\"activePad\\":" + padJson(state) + "}");
+            writeMonsters(state, prefix);
+            if (state.pad != null && state.pad.reached) writeLine(eventWriter, prefix + ",\\"event\\":\\"PAD_REACHED\\",\\"padRow\\":" + state.pad.row + ",\\"padColumn\\":" + state.pad.column + "}");
+            if (state.stage != 0 && (records == 0 || state.stage != lastStage)) writeLine(eventWriter, prefix + ",\\"event\\":\\"STAGE_CHANGED\\",\\"stage\\":" + state.stage + "}");
+            if (records % 20L == 0L) flushAll();
+            records++; previousYaw = state.player.yaw; previousWorldTick = state.worldTick; rightClickPulse = false; lastStage = state.stage;
+        } catch (IOException e) { System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER write failed: " + e); finish("WRITE_ERROR"); }
     }
+
+    private int lastStage = Integer.MIN_VALUE;
+    private BufferedWriter open(Path directory, Path path) throws IOException { return Files.newBufferedWriter(path, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE); }
+    private static void writeLine(BufferedWriter w, String line) throws IOException { w.write(line); w.newLine(); }
+    private void flushAll() throws IOException { writer.flush(); movementWriter.flush(); worldWriter.flush(); monsterWriter.flush(); inputWriter.flush(); eventWriter.flush(); }
+    private String padJson(LegacyWorldObservation s) { if (s.pad == null) return "null"; return "{\\"row\\":"+s.pad.row+",\\"column\\":"+s.pad.column+",\\"distanceSq\\":"+s.pad.distanceSq+",\\"reached\\":"+s.pad.reached+"}"; }
+    private void writeMonsters(LegacyWorldObservation s, String prefix) throws IOException { for (LegacyWorldObservation.Monster m : s.monsters) writeLine(monsterWriter, prefix + ",\\"id\\":"+m.id+",\\"gameplayType\\":\\""+escape(m.gameplayType)+"\\",\\"visualType\\":\\""+escape(m.visualType)+"\\",\\"x\\":"+m.x+",\\"y\\":"+m.y+",\\"z\\":"+m.z+",\\"vx\\":"+m.vx+",\\"vy\\":"+m.vy+",\\"vz\\":"+m.vz+",\\"removed\\":"+m.removed+"}"); }
 
     private String toJson(LegacyWorldObservation s, float yawDelta, long dt) {
         StringBuilder b = new StringBuilder(8192);
@@ -343,7 +363,8 @@ public final class HumanRunRecorder implements Closeable {
                     + escape(reason) + "\",\"records\":" + records + "}");
             writer.newLine();
             writer.flush();
-            writer.close();
+            flushAll();
+            writer.close(); movementWriter.close(); worldWriter.close(); monsterWriter.close(); inputWriter.close(); eventWriter.close();
         } catch (IOException e) {
             System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER close failed: " + e);
         } finally {

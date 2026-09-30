@@ -1400,17 +1400,23 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
+            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
-                    + " strafe=" + format(strafe);
-            return new Action(0.65, strafe, false, true, 0.0F, false);
+                    + " strafe=" + format(strafe)
+                    + (guarded == dodge ? "" : " EDGE_GUARD");
+            return guarded;
         }
 
+        Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
+        Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
         lastDecisionDetail = "MOB_YIELD"
                 + " monster=" + threat.id
-                + " distance=" + format(bestDistance);
-        return new Action(-0.65, 0.0, false, false, 0.0F, false);
+                + " distance=" + format(bestDistance)
+                + (guarded == yield ? "" : " EDGE_GUARD");
+        return guarded;
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

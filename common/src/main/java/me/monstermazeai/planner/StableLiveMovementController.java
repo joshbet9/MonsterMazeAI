@@ -238,22 +238,25 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * Emergency contact is deliberately separate from ordinary tactical
-         * avoidance. If the deadline is already unattainable by normal travel,
-         * a nearby monster can be used as a source-faithful bump toward the
-         * active pad. MobInteractionDecision refuses this at <= 2 hearts.
+         * Emergency contact and local avoidance must not steal control from a
+         * source-timed gap motor. On the last approach window a mob can occupy
+         * the destination lane, but the correct response is to execute the
+         * committed crossing rather than enter the old MOB_YIELD_GAP_HOLD
+         * deadlock and burn the stage timer.
          */
-        MonsterState intentionalBump = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? MobInteractionDecision.chooseIntentionalBump(
-                        state, profile.tendencies.positiveMobKnockback)
-                : MobInteractionDecision.chooseIntentionalBump(state);
-        if (intentionalBump != null) {
-            Action bumpAction = steerIntoMonster(state, intentionalBump);
-            if (bumpAction != null) return bumpAction;
-        }
+        if (!gapApproachHasPriority(state)) {
+            MonsterState intentionalBump = state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? MobInteractionDecision.chooseIntentionalBump(
+                            state, profile.tendencies.positiveMobKnockback)
+                    : MobInteractionDecision.chooseIntentionalBump(state);
+            if (intentionalBump != null) {
+                Action bumpAction = steerIntoMonster(state, intentionalBump);
+                if (bumpAction != null) return bumpAction;
+            }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
+            Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+            if (mobAvoidance != null) return mobAvoidance;
+        }
 
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
@@ -294,6 +297,10 @@ public final class StableLiveMovementController {
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
         Cell supportedStart = resolveSupportedStartCell(state);
         if (supportedStart == null || !inBounds(goal.row(), goal.column())) {
+            // The old lane anchor may now describe a segment the player is no
+            // longer physically supported on. Re-anchor on the next grounded
+            // observation instead of repeatedly steering against stale geometry.
+            anchoredSegmentIndex = -1;
             Action recovery = unsupportedEdgeRecoveryAction(state, goal, allowJump);
             lastDecisionDetail = "NO_PHYSICAL_SUPPORT player=" + format(state.player.x) + "," + format(state.player.z)
                     + " y=" + format(state.player.y) + " goal=" + goal.row() + "," + goal.column()
@@ -1235,22 +1242,19 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
-        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? new Action[] {
-                    new Action(action.forward() * (0.20D + (0.50D * profile.attributes.handling)),
-                            action.strafe() * (0.20D + (0.50D * profile.attributes.handling)),
-                            false, action.sprint(), action.yawDelta(), false),
-                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                    new Action(0.0, counter, false, false, action.yawDelta(), false),
-                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
-                }
-                : new Action[] {
-                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                    new Action(0.0, counter, false, false, action.yawDelta(), false),
-                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
-                };
+        double supportScale = 0.20D + (0.50D * profile.attributes.handling);
+        Action[] alternatives = {
+                new Action(action.forward() * supportScale,
+                        action.strafe() * supportScale,
+                        action.jump(),
+                        action.sprint(),
+                        action.yawDelta(),
+                        false),
+                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                new Action(0.0, counter, false, false, action.yawDelta(), false),
+                new Action(0.0, -counter, false, false, action.yawDelta(), false)
+        };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
@@ -1511,6 +1515,25 @@ public final class StableLiveMovementController {
      * which is physically supported. This keeps the behaviour source-valid and
      * leaves genuine unavoidable contacts to MonsterManager.bump().
      */
+    /**
+     * True while the current route edge is a gap that is close enough to its
+     * source timing window that the gap motor must retain command authority.
+     *
+     * This prevents an approaching monster from turning an executable gap into
+     * the old zero-input MOB_YIELD_GAP_HOLD state.
+     */
+    private boolean gapApproachHasPriority(GameState state) {
+        if (gapExecutionActive) return true;
+        if (route == null || waypointIndex <= 0 || waypointIndex >= route.size()) return false;
+
+        Cell from = route.cells().get(waypointIndex - 1);
+        Cell to = route.cells().get(waypointIndex);
+        if (!isGapEdge(state, from.row(), from.column(), to.row(), to.column())) return false;
+
+        double progress = currentGapProgress(state, waypointIndex - 1);
+        return progress >= GAP_COMMIT_PROGRESS && progress <= 1.65D;
+    }
+
     private Action avoidIncomingMonster(GameState state, boolean allowJump) {
         if (!state.player.grounded || state.maze == null) return null;
 
@@ -1641,11 +1664,11 @@ public final class StableLiveMovementController {
                         -routeDirRow, -routeDirColumn);
                 float yawError = normalise(desiredYaw - state.player.yaw);
                 float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                lastDecisionDetail = "MOB_YIELD_GAP_HOLD"
+                lastDecisionDetail = "MOB_YIELD_GAP_HOLD_SUPPRESSED"
                         + " monster=" + threat.id
                         + " distance=" + format(bestDistance)
                         + " yawError=" + format(yawError);
-                return new Action(0.0, 0.0, false, false, yawDelta, false);
+                return null;
             }
 
             float desiredYaw = cardinalYaw(-routeDirRow, -routeDirColumn);

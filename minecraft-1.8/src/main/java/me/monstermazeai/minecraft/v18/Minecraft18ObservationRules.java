@@ -51,11 +51,9 @@ public final class Minecraft18ObservationRules {
         return new ScoreboardData(cleanTitle, safePadSeconds, stage, completed, cleanLines);
     }
 
-    public static Kit detectKit(List<String> displayNames) {
+    public static Kit detectKitEvidence(List<String> displayNames) {
         for (String displayName : displayNames) {
-            if (displayName == null) {
-                continue;
-            }
+            if (displayName == null) continue;
             String name = stripFormatting(displayName).toLowerCase(Locale.ROOT);
             if (name.contains("jumps remaining")) return Kit.JUMPER;
             if (name.contains("repulse")) return Kit.REPULSOR;
@@ -63,7 +61,16 @@ public final class Minecraft18ObservationRules {
             if (name.contains("body rush") || name.contains("body builder")) return Kit.BODY_BUILDER;
             if (name.contains("maverick")) return Kit.MAVERICK;
         }
-        return Kit.JUMPER;
+        return null;
+    }
+
+    /**
+     * Legacy live-observer detector. Human telemetry must use
+     * detectKitEvidence() so an unknown inventory never becomes JUMPER truth.
+     */
+    public static Kit detectKit(List<String> displayNames) {
+        Kit evidence = detectKitEvidence(displayNames);
+        return evidence == null ? Kit.JUMPER : evidence;
     }
 
     public static int detectJumpCharges(List<String> displayNames, Kit kit, List<Integer> stackSizes) {

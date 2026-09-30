@@ -106,13 +106,20 @@ class StableLiveMovementControllerTest {
         GameState s = state(0.5, 0.5, 90.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
-        // Establish the segment/lane anchor at the route centreline.
+        // Establish the segment/lane anchor at the route centreline and
+        // allow the asynchronous initial route to be applied deterministically.
         s.tick = 1;
         Action first = controller.nextAction(s, new Cell(8, 0), false);
         assertTrue(Math.abs(first.yawDelta()) > 0.0 || first.forward() > 0.0);
 
-        // Reproduce the observed ~0.383 block supported lateral drift.
         s.tick = 2;
+        controller.nextAction(s, new Cell(8, 0), false);
+        s.tick = 3;
+        controller.nextAction(s, new Cell(8, 0), false);
+
+        // Reproduce the observed ~0.383 block supported lateral drift after
+        // the route/lane anchor is already established.
+        s.tick = 4;
         s.player.z = 0.883;
         s.player.yaw = 90.0F;
 

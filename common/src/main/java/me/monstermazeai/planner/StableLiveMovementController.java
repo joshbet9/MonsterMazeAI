@@ -1002,20 +1002,41 @@ public final class StableLiveMovementController {
                 && currentColumnDirection == plannedColumnDirection;
     }
 
+    private static final long HUMAN_SPEED_NONJUMPER_JUMP_CADENCE_TICKS = 6L;
+
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {
-        if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
+            return false;
+        }
+
+        /*
+         * The recorded non-Jumper humans press Jump continuously as a movement
+         * technique even though their kit has zero normal jump charges. Across
+         * Maverick, Repulsor, Body Builder and Slowballer the observed rate is
+         * ~16-18 presses/100 ticks, i.e. roughly one press every six ticks.
+         *
+         * This is distinct from a real jump: the -10 kit lock suppresses
+         * vertical lift and converts the press into the source horizontal
+         * sprint-jump impulse. The old allowJump gate accidentally disabled this
+         * entire speed technique for the AI.
+         */
+        if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+            if (allowJump && isApproachingGap(state)) {
+                // Gap execution has its own edge cadence; do not double-submit.
+                return false;
+            }
+            if (lastSpeedJumpInputTick != Long.MIN_VALUE
+                    && state.tick - lastSpeedJumpInputTick < HUMAN_SPEED_NONJUMPER_JUMP_CADENCE_TICKS) {
+                return false;
+            }
+            lastSpeedJumpInputTick = state.tick;
+            return true;
+        }
+
+        if (!allowJump) {
             return false;
         }
         if (isApproachingGap(state)) {
-            if (state.mode == me.monstermazeai.game.Mode.SPEED) {
-                if (lastSpeedJumpInputTick == Long.MIN_VALUE
-                        || state.tick - lastSpeedJumpInputTick >= NONJUMPER_GAP_PULSE_TICKS) {
-                    lastSpeedJumpInputTick = state.tick;
-                    return true;
-                }
-                return false;
-            }
-            // Preserve the pre-calibration Modern/Original behaviour.
             return false;
         }
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();

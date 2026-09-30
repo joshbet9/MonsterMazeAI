@@ -67,8 +67,8 @@ public final class StableLiveMovementController {
      * one-block lane edge. The projection never changes physics; it only chooses
      * an earlier source-valid input.
      */
-    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
-    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
+    private static final int MIN_supportLookaheadTicks() = 1;
+    private static final int MAX_supportLookaheadTicks() = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -1229,7 +1229,7 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks())) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
@@ -1244,7 +1244,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks())) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1267,8 +1267,8 @@ public final class StableLiveMovementController {
 
     private int supportLookaheadTicks() {
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
-        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
-                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
+        return Math.max(MIN_supportLookaheadTicks(),
+                Math.min(MAX_supportLookaheadTicks(), MIN_supportLookaheadTicks() + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {

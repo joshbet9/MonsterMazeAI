@@ -575,6 +575,15 @@ public final class StableLiveMovementController {
             action = guarded;
         }
 
+        if (!gapExecutionActive && action.forward() > 0.0
+                && !hasPredictedPhysicalSupport(state, action)) {
+            float desired = cardinalYaw(dirRow, dirColumn);
+            float correction = clamp(normalise(desired - state.player.yaw),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            action = new Action(0.0, 0.0, false, false, correction, false);
+            lastDecisionDetail += " EDGE_GUARD";
+        }
+
         lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)
                 + " target=" + targetX + "," + targetZ
                 + " dist=" + format(distance)
@@ -1069,6 +1078,40 @@ public final class StableLiveMovementController {
      * tactical yaw/forward command is not allowed to replace the motor's
      * corridor-safe steering every time a nearby mob changes position.
      */
+    private boolean hasPredictedPhysicalSupport(GameState state, Action action) {
+        if (state.maze == null) return true;
+        double yaw = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        double inputX = forwardX * action.forward() + strafeX * action.strafe();
+        double inputZ = forwardZ * action.forward() + strafeZ * action.strafe();
+        double inputLength = Math.hypot(inputX, inputZ);
+        if (inputLength < 1.0E-9) return true;
+
+        double currentSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double lookahead = Math.min(0.75D, Math.max(0.55D, currentSpeed + 0.18D));
+        double px = state.player.x + inputX / inputLength * lookahead;
+        double pz = state.player.z + inputZ / inputLength * lookahead;
+        return hasPhysicalFloorFootprint(state.maze, px, pz);
+    }
+
+    private static boolean hasPhysicalFloorFootprint(me.monstermazeai.maze.MazeModel maze,
+                                                       double x, double z) {
+        final double halfWidth = 0.30D;
+        int minRow = (int) Math.floor(x - halfWidth);
+        int maxRow = (int) Math.floor(Math.nextDown(x + halfWidth));
+        int minColumn = (int) Math.floor(z - halfWidth);
+        int maxColumn = (int) Math.floor(Math.nextDown(z + halfWidth));
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (maze.isPhysicalFloor(row, column)) return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
         return action.useAbility() || (allowJump && action.jump());
     }

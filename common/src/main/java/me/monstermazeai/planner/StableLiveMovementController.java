@@ -67,8 +67,8 @@ public final class StableLiveMovementController {
      * one-block lane edge. The projection never changes physics; it only chooses
      * an earlier source-valid input.
      */
-    private static final int MIN_supportLookaheadTicks() = 1;
-    private static final int MAX_supportLookaheadTicks() = 3;
+    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -1267,8 +1267,8 @@ public final class StableLiveMovementController {
 
     private int supportLookaheadTicks() {
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
-        return Math.max(MIN_supportLookaheadTicks(),
-                Math.min(MAX_supportLookaheadTicks(), MIN_supportLookaheadTicks() + extension));
+        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
+                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {

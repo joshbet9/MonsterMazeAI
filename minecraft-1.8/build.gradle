@@ -50,6 +50,8 @@ def commonRuntimeJar = file("../common/target/common-0.1.0-SNAPSHOT-runtime.jar"
 dependencies {
     compile files(commonApiJar)
     testCompile "junit:junit:4.13.2"
+
+// Keep the deterministic maze progression simulator visible in CI logs.\ntestLogging {\n    showStandardStreams = true\n    exceptionFormat = "full"\n}
 }
 
 runClient {

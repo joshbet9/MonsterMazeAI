@@ -53,6 +53,15 @@ public final class MazePatternStage10SimulationTest {
     private static final double PLAYER_HALF_WIDTH = 0.30D;
     // Movement is mirrored from the common 1.8.9 model used by the AI runtime.
 
+    @Test
+    public void stageTenMatrixCoversEveryKitEveryPatternAndSeed() {
+        assertEquals("Expected five playable kits in the stage matrix", 5, TEST_KITS.length);
+        assertEquals("Expected Maze 1/2/3", 3, 3);
+        assertEquals("Expected four deterministic seeds per pattern", 4, SEEDS_PER_PATTERN);
+        assertEquals("Expected 60 Stage-10 cases", 60,
+                TEST_KITS.length * 3 * SEEDS_PER_PATTERN);
+    }
+
     @Test(timeout = 180000)
     public void stageTenAllPatternsJumper() { runKitGate(Kit.JUMPER); }
 

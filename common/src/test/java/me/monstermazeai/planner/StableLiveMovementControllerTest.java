@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.physics.LegacyMazePhysics;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
 

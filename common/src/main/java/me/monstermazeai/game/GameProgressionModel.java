@@ -1,5 +1,7 @@
 package me.monstermazeai.game;
 
+import me.monstermazeai.maze.Cell;
+
 import me.monstermazeai.ability.AbilityModel;
 
 /**

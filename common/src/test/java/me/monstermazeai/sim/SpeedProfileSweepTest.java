@@ -20,7 +20,7 @@ import java.util.List;
 class SpeedProfileSweepTest {
     private static final Kit[][] CASES = {
             {Kit.JUMPER, Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK},
-            {Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK},
+            {Kit.JUMPER, Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK},
             {Kit.JUMPER, Kit.SLOWBALLER, Kit.BODY_BUILDER, Kit.REPULSOR, Kit.MAVERICK}
     };
 
@@ -55,7 +55,7 @@ class SpeedProfileSweepTest {
                 }
             }
 
-            double average = totalStage / 14.0;
+            double average = totalStage / 15.0;
             rows.add(new Row(handling, average, stage10, stage15, minStage, maxStage));
         }
 
@@ -67,7 +67,7 @@ class SpeedProfileSweepTest {
         System.out.println("===== SPEED PROFILE SWEEP SUMMARY =====");
         for (Row row : rows) {
             System.out.printf(
-                    "handling=%.2f average=%.3f stage10=%d/14 stage15=%d/14 min=%d max=%d%n",
+                    "handling=%.2f average=%.3f stage10=%d/15 stage15=%d/15 min=%d max=%d%n",
                     row.handling(), row.average(), row.stage10(), row.stage15(),
                     row.minStage(), row.maxStage());
         }

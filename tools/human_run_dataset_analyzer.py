@@ -22,6 +22,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 NUMERIC_METRICS = (
     "meanStageTimeSeconds",
     "medianStageTimeSeconds",
+    "meanPadTravelTimeSeconds",
+    "medianPadTravelTimeSeconds",
+    "padTravelDirectExcessRatioMean",
     "directExcessRatioMean",
     "stationaryFraction",
     "forwardFraction",

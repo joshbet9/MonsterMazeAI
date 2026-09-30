@@ -65,6 +65,26 @@ public final class MonsterSimulator {
                 continue;
             }
 
+            /*
+             * Source MonsterManager.move() teleports a snowman back to the
+             * nearest path when its real entity has fallen below its current
+             * waypoint Y. Snowmen are real 0.7-wide entities, so a diagonal
+             * ControllerMove turn can briefly leave the one-block path and
+             * enter the void. The old simulator kept normal mobs at y=0 forever,
+             * which let them cut corners and remain able to bump the player from
+             * positions the real entity could not occupy.
+             */
+            if (m.y < 0.0D) {
+                Cell recovery = nearestCell(m.x, m.z);
+                if (recovery != null) {
+                    m.x = recovery.row() + CELL_CENTER_OFFSET;
+                    m.z = recovery.column() + CELL_CENTER_OFFSET;
+                    m.y = 0.0D;
+                    m.vx = 0.0D;
+                    m.vz = 0.0D;
+                }
+            }
+
             if (m.waypointRow < 0 || atWaypoint(m, m.waypointRow + 0.5, m.waypointColumn + 0.5)) {
                 Cell current = nearestCell(m.x, m.z);
                 if (current != null) chooseNextWaypoint(m, current);
@@ -97,12 +117,23 @@ public final class MonsterSimulator {
             double stepSq = m.vx * m.vx + m.vz * m.vz;
             double distance = Math.hypot(dx, dz);
             if (stepSq > 0.0D) {
-                // Entity.move() can stop a mob at an edge; the tactical simulator
-                // does not own the block AABB, so retain the velocity and leave
-                // floor/edge death to the caller's physical model.
                 m.x += m.vx;
                 m.z += m.vz;
             }
+
+            /*
+             * EntitySnowman is 0.7 blocks wide in 1.8.9. On the source maze's
+             * one-block floating path, support exists while any part of that
+             * horizontal AABB overlaps a physical path block. Lose support and
+             * the entity falls; MonsterManager's next move tick then performs
+             * the nearest-path teleport above.
+             */
+            if (!hasPhysicalSupport(m.x, m.z)) {
+                m.y = -0.08D;
+            } else {
+                m.y = 0.0D;
+            }
+
             m.vx *= GROUND_FRICTION;
             m.vz *= GROUND_FRICTION;
         }
@@ -173,6 +204,25 @@ public final class MonsterSimulator {
         } else if (state.tick - m.launchedAtTick >= 30) {
             m.removed = true;
         }
+    }
+
+    private boolean hasPhysicalSupport(double x, double z) {
+        final double halfWidth = 0.35D;
+        double minX = x - halfWidth;
+        double maxX = x + halfWidth;
+        double minZ = z - halfWidth;
+        double maxZ = z + halfWidth;
+        int minRow = (int) Math.floor(minX);
+        int maxRow = (int) Math.floor(Math.nextDown(maxX));
+        int minColumn = (int) Math.floor(minZ);
+        int maxColumn = (int) Math.floor(Math.nextDown(maxZ));
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (maze.isTraversable(row, column)) return true;
+            }
+        }
+        return false;
     }
 
     private Cell nearestCell(double x, double z) {

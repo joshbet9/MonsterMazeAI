@@ -25,12 +25,18 @@ class SpeedFullRunDiagnosticTest {
                 System.out.printf(
                         "SPEED_FULL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%s pos=%.3f,%.3f "
                                 + "firstFallTick=%d terminalTick=%d terminalStage=%d phaseTicks=%d "
-                                + "terminalPad=%d,%d terminalOnPad=%s naturalEnd=%s%n",
+                                + "terminalPad=%d,%d terminalOnPad=%s naturalEnd=%s "
+                                + "moveShare=%.3f zeroShare=%.3f stationaryShare=%.3f avgSpeed=%.3f "
+                                + "lane=%d edge=%d corner=%d steer=%d recovery=%d%n",
                         pattern + 1, kit, result.maxStage(), result.ticks(),
                         Double.toString(result.health()), result.x(), result.z(), result.firstFallTick(),
                         result.terminalTick(), result.terminalStage(), result.terminalPhaseTicksRemaining(),
                         result.terminalPadRow(), result.terminalPadColumn(), result.terminalOnPad(),
-                        naturallyTerminated); 
+                        naturallyTerminated, result.movementInputShare(), result.zeroInputShare(),
+                        result.stationaryShare(), result.averageHorizontalSpeed(),
+                        result.laneRecoveryTicks(), result.edgeGuardTicks(),
+                        result.cornerVectorTicks(), result.steerDriveTicks(),
+                        result.fastRecoveryRouteTicks()); 
                 System.out.println("TERMINAL_DECISION " + result.terminalDecision().replace(' ', '_'));
             }
         }

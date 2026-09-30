@@ -80,9 +80,9 @@ public final class MonsterSimulator {
             // Source UtilEnt.CreatureMoveFast -> ControllerMove.c(): command
             // speed is multiplied by the Snowman's 0.2 movement attribute,
             // and the entity turns toward the waypoint by at most 30 degrees.
-            double command = speed;
-            if (horizontalSq < 4.0D) command = Math.min(command, 1.0D);
-            double movementInput = command * SNOWMAN_MOVEMENT_SPEED;
+            // ControllerMove passes the command speed unchanged; it is
+            // multiplied only by GenericAttributes.MOVEMENT_SPEED.
+            double movementInput = speed * SNOWMAN_MOVEMENT_SPEED;
             float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
 
@@ -92,8 +92,8 @@ public final class MonsterSimulator {
             double yaw = Math.toRadians(m.yaw);
             double forwardX = -Math.sin(yaw);
             double forwardZ = Math.cos(yaw);
-            m.vx += forwardX * movementInput * 0.98D;
-            m.vz += forwardZ * movementInput * 0.98D;
+            m.vx += forwardX * movementInput;
+            m.vz += forwardZ * movementInput;
             double stepSq = m.vx * m.vx + m.vz * m.vz;
             double distance = Math.hypot(dx, dz);
             if (stepSq > 0.0D) {

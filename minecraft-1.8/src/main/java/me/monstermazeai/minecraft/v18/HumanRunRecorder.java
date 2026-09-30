@@ -503,7 +503,7 @@ public final class HumanRunRecorder implements Closeable {
                 .append(",\"kit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\"")
                 .append(",\"observerKit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\"")
                 .append(",\"declaredKit\":\"").append(escape(declaredKit == null ? "" : declaredKit.name())).append("\"")
-                .append(",\"inventoryKitEvidence\":\"").append(escape(inventoryKitEvidence == null ? "" : inventoryKitEvidence.name())).append("\""
+                .append(",\"inventoryKitEvidence\":\"").append(escape(inventoryKitEvidence == null ? "" : inventoryKitEvidence.name())).append("\"")
                 .append(",\"jumpCharges\":").append(state.jumpCharges)
                 .append(",\"abilityCharges\":").append(state.abilityCharges)
                 .append(",\"health\":").append(state.player.health)

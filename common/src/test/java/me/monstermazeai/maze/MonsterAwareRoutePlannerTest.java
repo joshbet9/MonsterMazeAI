@@ -130,6 +130,27 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void nonJumperNeverSelectsGapShortcutWhenGroundRouteExists() {
+        GameState state = new GameState();
+        state.kit = me.monstermazeai.kit.Kit.REPULSOR;
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int col = 0; col < MazeModel.SIZE; col++) raw[r][col] = 1;
+        raw[10][11] = 0;
+        state.maze = new MazeModel(raw);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
+                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
+
+        for (int i = 0; i + 1 < route.size(); i++) {
+            int dr = Math.abs(route.cells().get(i + 1).row() - route.cells().get(i).row());
+            int dc = Math.abs(route.cells().get(i + 1).column() - route.cells().get(i).column());
+            assertFalse((dr == 2 && dc == 0) || (dc == 2 && dr == 0),
+                    "non-Jumper route must not contain a jump edge: " + route.cells());
+        }
+    }
+
+    @Test
     void gapRiskCanPreferAnOrdinaryRouteOverAValuableShortcut() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

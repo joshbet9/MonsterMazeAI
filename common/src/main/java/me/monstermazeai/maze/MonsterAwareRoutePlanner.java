@@ -44,8 +44,9 @@ public final class MonsterAwareRoutePlanner {
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
         PlayerRoute chosen = chooseByGapRisk(
-                pathfinder.shortestPathWithoutGaps(state.maze, start, goal),
-                pathfinder.shortestPath(state.maze, start, goal));
+                state,
+                toRoute(pathfinder.shortestPathWithoutGaps(state.maze, start, goal)),
+                toRoute(pathfinder.shortestPath(state.maze, start, goal)));
         if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
         return chosen;
     }
@@ -65,14 +66,18 @@ public final class MonsterAwareRoutePlanner {
         if (hasRelevantMonster(state)) {
             ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
             chosen = chooseByGapRisk(
+                    state,
                     toRoute(threatAware.shortestPathToRegion(
                             state, start, regionCenter, radius, false)),
                     toRoute(threatAware.shortestPathToRegion(
                             state, start, regionCenter, radius, true)));
         } else {
             chosen = chooseByGapRisk(
-                    pathfinder.shortestPathToRegionWithoutGaps(state.maze, start, regionCenter, radius),
-                    pathfinder.shortestPathToRegion(state.maze, start, regionCenter, radius));
+                    state,
+                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                            state.maze, start, regionCenter, radius)),
+                    toRoute(pathfinder.shortestPathToRegion(
+                            state.maze, start, regionCenter, radius)));
         }
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
@@ -96,7 +101,7 @@ public final class MonsterAwareRoutePlanner {
 
         List<PlayerRoute> candidates = cachedCandidatesFor(
                 state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
-        return choose(state, candidates, goal, false, 0);
+        return choose(state, restrictJumperGapBudget(state, candidates), goal, false, 0);
     }
 
     public PlayerRoute routeToRegion(GameState state, Cell start, Cell regionCenter, int radius) {
@@ -111,7 +116,32 @@ public final class MonsterAwareRoutePlanner {
 
         List<PlayerRoute> candidates = cachedCandidatesFor(
                 state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
-        return choose(state, candidates, regionCenter, true, radius);
+        return choose(state, restrictJumperGapBudget(state, candidates),
+                regionCenter, true, radius);
+    }
+
+    /**
+     * Jumper's remaining charged jumps are a real finite resource. A route with
+     * more gap edges than remaining charges cannot be executed under the source
+     * jump lock. This filter is intentionally applied after candidate caching so
+     * the cache remains topology-only and reacts immediately when a charge is
+     * consumed.
+     */
+    private static List<PlayerRoute> restrictJumperGapBudget(GameState state,
+                                                               List<PlayerRoute> candidates) {
+        int budget = jumperGapBudget(state);
+        if (budget < 0 || candidates.isEmpty()) return candidates;
+
+        ArrayList<PlayerRoute> executable = new ArrayList<>();
+        for (PlayerRoute candidate : candidates) {
+            if (gapCount(candidate) <= budget) executable.add(candidate);
+        }
+        return executable.isEmpty() ? candidates : List.copyOf(executable);
+    }
+
+    private static int jumperGapBudget(GameState state) {
+        if (state == null || state.kit != me.monstermazeai.kit.Kit.JUMPER) return -1;
+        return Math.max(0, state.ability.charges);
     }
 
     private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,
@@ -239,9 +269,26 @@ public final class MonsterAwareRoutePlanner {
         return candidateRoute.size() < incumbentRoute.size();
     }
 
-    private PlayerRoute chooseByGapRisk(List<Cell> normalPath, List<Cell> gapAwarePath) {
+    private PlayerRoute chooseByGapRisk(GameState state,
+                                         List<Cell> normalPath, List<Cell> gapAwarePath) {
         PlayerRoute normal = normalPath.isEmpty() ? null : new PlayerRoute(normalPath);
         PlayerRoute gapAware = gapAwarePath.isEmpty() ? null : new PlayerRoute(gapAwarePath);
+        int budget = jumperGapBudget(state);
+
+        if (budget >= 0) {
+            boolean normalAllowed = normal != null && gapCount(normal) <= budget;
+            boolean gapAllowed = gapAware != null && gapCount(gapAware) <= budget;
+            if (normalAllowed && !gapAllowed) return normal;
+            if (gapAllowed && !normalAllowed) return gapAware;
+            if (!normalAllowed && !gapAllowed) {
+                // No executable candidate was produced by the fast search.
+                // Preserve the physical route rather than returning null; the
+                // full planner will have a chance to replace it on the next
+                // dynamic observation.
+                return normal != null ? normal : gapAware;
+            }
+        }
+
         if (normal == null) return gapAware;
         if (gapAware == null) return normal;
         return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;

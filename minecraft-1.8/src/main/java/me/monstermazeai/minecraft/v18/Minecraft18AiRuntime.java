@@ -35,8 +35,13 @@ import java.util.regex.Pattern;
 public final class Minecraft18AiRuntime {
     private static final String EMBEDDED_RUNTIME_RESOURCE =
             "/runtime/monster-maze-ai-runtime.jar";
-    /** Movement-only branch: a decision is valid only for the exact observation tick it was planned from. */
-    private static final long MAX_ACTION_AGE_TICKS = 0L;
+    /** Moveme/**
+     * The sidecar is a one-tick closed-loop controller: an observation sampled
+     * on tick T may complete during the following client tick. Accept exactly
+     * one tick of age, while the executor still expires commands rather than
+     * holding an older decision indefinitely.
+     */
+    private static final long MAX_ACTION_AGE_TICKS = 1L;
 
     private volatile Process process;
     private volatile DataInputStream input;

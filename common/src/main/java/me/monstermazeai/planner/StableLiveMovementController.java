@@ -528,6 +528,7 @@ public final class StableLiveMovementController {
          * the motor begins an ordinary player-like arc while the edge guard still
          * owns physical-support safety.
          */
+        boolean cornerAnticipating = false;
         if (distance < 1.25D && waypointIndex + 1 < route.size()) {
             Cell nextCell = route.cells().get(waypointIndex + 1);
             int nextDirRow = Integer.signum(nextCell.row() - targetCellRow);
@@ -538,6 +539,7 @@ public final class StableLiveMovementController {
                 float nextYaw = cardinalYaw(nextDirRow, nextDirColumn);
                 float deltaToNext = normalise(nextYaw - desiredYaw);
                 desiredYaw = normalise(desiredYaw + deltaToNext * (float) turnFraction);
+                cornerAnticipating = true;
                 lastDecisionDetail += " CORNER_ANTICIPATE fraction=" + format(turnFraction);
             }
         }
@@ -614,7 +616,7 @@ public final class StableLiveMovementController {
             float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             action = new Action(0.0, 0.0, false, false, turn, false);
             lastDecisionDetail += " REVERSE_TURN";
-        } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+        } else if (!cornerAnticipating && Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
              * A player can remain physically supported while the block
              * containing floor(x,z) is air. Stopping forever at a 0.3-0.5

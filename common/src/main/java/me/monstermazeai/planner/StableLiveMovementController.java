@@ -1333,6 +1333,24 @@ public final class StableLiveMovementController {
     }
 
     private int supportLookaheadTicks() {
+        /*
+         * Speed mode is explicitly trying to maximise continuous traversal.
+         * The previous reaction-based 2-3 tick support forecast was repeatedly
+         * converting valid present-tick W/A/D inputs into reduced or zero input
+         * because it anticipated a future edge before the player had actually
+         * reached it. That safety policy costs substantial elapsed time on the
+         * source's one-block corridors.
+         *
+         * Keep the physical support check itself unchanged, but in Speed mode
+         * only require the immediately-following tick to remain supported. This
+         * is still a source-valid controller decision: the next observation can
+         * re-evaluate the new position, while vanilla physics remains entirely
+         * authoritative.
+         */
+        if (profile.attributes != null
+                && profile.mode == me.monstermazeai.game.Mode.SPEED) {
+            return MIN_SUPPORT_LOOKAHEAD_TICKS;
+        }
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
         return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
                 Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));

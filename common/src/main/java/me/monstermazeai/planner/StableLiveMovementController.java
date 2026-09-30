@@ -149,8 +149,10 @@ public final class StableLiveMovementController {
     private static final long PAD_ENTRY_MAX_TICKS = 18L;
     private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.10D;
     /** Press jump only once the player is at the actual source-block edge. */
-    /** The void begins after the middle air cell; jump just before the edge. */
-    private static final double GAP_JUMP_PROGRESS = 0.20D;
+    /** Strong players begin the jump before the source block centre so the vanilla arc lands inside the destination. */
+    private static final double GAP_JUMP_PROGRESS = -0.80D;
+    /** Begin the committed gap window slightly before the actual jump impulse. */
+    private static final double GAP_COMMIT_PROGRESS = -0.95D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -1838,8 +1840,8 @@ public final class StableLiveMovementController {
         }
         int gapIndex = waypointIndex - 1;
         double progress = currentGapProgress(state, gapIndex);
-        double distanceToTakeoff = 0.50D - progress;
-        if (progress >= 0.15D && progress <= 1.65D) {
+        double distanceToTakeoff = GAP_JUMP_PROGRESS - progress;
+        if (progress >= GAP_COMMIT_PROGRESS && progress <= 1.65D) {
             gapExecutionActive = true;
             // Commit early enough that a single-tick physics/replan boundary
             // cannot make us miss the jump input at the block edge.

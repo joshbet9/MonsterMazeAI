@@ -65,6 +65,7 @@ class MovementBenchmarkTest {
 
         physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
         physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
+        physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
 
         assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
                 "the landing tick must restore the path height");

@@ -971,12 +971,11 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        if (isApproachingGap(state)) {
-            // The source speed mechanic can request frequent jump inputs, but a
-            // jump already in progress cannot be retimed when the player reaches
-            // a one-block void. Preserve the grounded takeoff state instead.
-            return false;
-        }
+        // For non-Jumpers, Jump -10 suppresses vertical lift while the source
+        // sprint-jump routine still supplies its horizontal impulse. Therefore
+        // the speeding cadence remains useful during the approach to a gap.
+        // Once the waypoint becomes an actual gap edge, executeCommittedGap()
+        // takes ownership of the timing and inputs.
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < cadenceTicks) {

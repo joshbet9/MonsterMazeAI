@@ -189,6 +189,8 @@ class StableLiveMovementControllerTest {
         s.inMonsterMaze = true;
         s.alive = true;
         s.maze = maze;
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.ability.charges = 3;
         s.activePadRow = 10;
         s.activePadColumn = 30;
         s.player.x = 10.5;

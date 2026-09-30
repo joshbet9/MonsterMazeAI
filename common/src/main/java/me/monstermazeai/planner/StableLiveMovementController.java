@@ -1614,7 +1614,16 @@ public final class StableLiveMovementController {
             }
 
             Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
-            Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
+            /*
+             * This is an immediate contact-avoidance manoeuvre, not ordinary
+             * route steering. A long support forecast can turn a valid lateral
+             * escape into IDLE and leave the mob in the lane for the next tick.
+             * Commit only the immediate source-valid dodge here; subsequent
+             * observations can correct the lane again.
+             */
+            Action guarded = hasPredictedPhysicalSupport(state, dodge, 1)
+                    ? dodge
+                    : guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)

@@ -2013,6 +2013,29 @@ public final class StableLiveMovementController {
         } else {
             gapLandingConfirmTicks = 0;
         }
+
+        /*
+         * Non-Jumper speeding has no vertical landing event: the Jump -10 lock
+         * leaves the player grounded throughout the horizontal crossing. A fast
+         * player can therefore pass the destination-side AABB before the exact
+         * overlap check above gets sampled. Once grounded, supported, and beyond
+         * the gap boundary, the edge is physically complete and the motor must
+         * release it rather than continuing indefinitely along the old edge.
+         * This is controller state only; the vanilla physics/collision model is
+         * unchanged.
+         */
+        if (gapExecutionActive
+                && state.player.grounded
+                && progress > GAP_LANDING_PROGRESS
+                && hasPhysicalFloorFootprint(state.maze, state.player.x, state.player.z)) {
+            int completedIndex = waypointIndex;
+            clearGapCommitment();
+            waypointIndex = nextTurnWaypoint(route, completedIndex);
+            anchoredSegmentIndex = -1;
+            lastDecisionDetail = "GAP_CROSSED_CONFIRMED edge=" + fromRow + "," + fromColumn + "->"
+                    + toRow + "," + toColumn + " progress=" + format(progress);
+            return new Action(1.0, 0.0, false, true, 0.0F, false);
+        }
         // Never fail a committed jump solely because its centre passed the
         // endpoint: the player's 0.6-wide AABB can still overlap the destination
         // block while vanilla gravity is bringing the feet down onto it.

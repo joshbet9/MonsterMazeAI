@@ -494,7 +494,7 @@ public final class MazePatternStage10SimulationTest {
     private static void spawnMonsters(GameState state, int[][] raw, int count, Random random, int idBase) {
         List<Cell> spawns = new ArrayList<Cell>();
         for (int r = 0; r < SIZE; r++) for (int c = 0; c < SIZE; c++)
-            if (raw[r][c] == 2) spawns.add(new Cell(r, c));
+            if (raw[r][c] == 2 && state.maze != null && state.maze.isTraversable(r, c)) spawns.add(new Cell(r, c));
         if (spawns.isEmpty()) throw new AssertionError("Maze has no MonsterMaze spawn cells");
         for (int i = 0; i < count; i++) {
             Cell spawn = spawns.get(random.nextInt(spawns.size()));

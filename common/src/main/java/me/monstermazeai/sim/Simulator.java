@@ -32,7 +32,8 @@ public final class Simulator {
         if(!state.alive) return;
         if(action.useAbility()) abilities.activate(state);
         if (physics instanceof LegacyMovementModel legacy) {
-            legacy.tick(state.player, action, state.maze);
+            int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER && state.player.jumpCharges > 0 ? 0 : -10;
+            legacy.tick(state.player, action, state.maze, jumpAmplifier);
         } else {
             physics.tick(state.player, action);
         }

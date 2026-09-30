@@ -535,7 +535,11 @@ public final class StableLiveMovementController {
                     : crossSign * Math.signum(dirRow);
             float correctionYaw = cardinalYaw(dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
+            // A moderate residual velocity is still compatible with rotating
+            // the camera while applying A/D correction. Waiting for the player
+            // to become almost stationary turns a lateral recovery into a
+            // multi-tick slide toward the edge.
+            float yawDelta = speed <= 0.25D
                     ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
                     : 0.0F;
             action = new Action(0.0, strafe, false, false, yawDelta, false);
@@ -612,10 +616,24 @@ public final class StableLiveMovementController {
                 action = new Action(forward, strafe, jump, false, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
+                /*
+                 * Large corner acquisition used to stop all translation while
+                 * the camera turned. On a one-cell floating corridor, vanilla
+                 * momentum continues during that turn, so the player can drift
+                 * beyond the supported AABB before the next observation. Use a
+                 * bounded backward input to bleed that momentum while preserving
+                 * the required 30-degree/tick camera limit. At near-zero speed we
+                 * retain the original pure in-place turn.
+                 */
+                double brakingForward = speed > MAX_TURNING_SPEED
+                        ? -Math.min(0.65D, speed * 2.5D)
+                        : 0.0D;
                 action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED ? turn : 0.0F,
-                        false);
+                        brakingForward, 0.0, false, false,
+                        turn, false);
+                lastDecisionDetail += brakingForward < 0.0
+                        ? " CORNER_BRAKE=" + format(brakingForward)
+                        : "";
             }
         } else {
             boolean brake = distance < waypointBrakeDistance()

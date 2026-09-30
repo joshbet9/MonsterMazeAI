@@ -548,7 +548,63 @@ public final class StableLiveMovementController {
                     Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
             float correctionError = normalise(correctionYaw - state.player.yaw);
 
-            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
+            /*
+             * Speed mode can afford a more continuous lane correction because
+             * the motor is re-evaluated every tick. For modest cross-track error
+             * while the camera is already broadly facing the segment, keep the
+             * cardinal drive active and add only the world-space lateral
+             * correction needed to return to the corridor. This removes the
+             * repeated stop-turn-start cycle visible in early Speed runs.
+             *
+             * The threshold deliberately ends at MAX_SAFE_LANE_ERROR. Larger
+             * offsets still use the established conservative recovery branch,
+             * and Modern keeps the existing behaviour unchanged.
+             */
+            if (state.mode == me.monstermazeai.game.Mode.SPEED
+                    && Math.abs(crossTrack) <= MAX_SAFE_LANE_ERROR
+                    && Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
+                double lateralWeight = Math.min(0.30D,
+                        Math.abs(crossTrack) / Math.max(MAX_SAFE_LANE_ERROR, 1.0E-6D) * 0.30D);
+                double desiredWorldX = dirRow;
+                double desiredWorldZ = dirColumn;
+                double crossSign = Math.signum(crossTrack);
+                if (dirRow == 0) {
+                    desiredWorldX += -crossSign * lateralWeight;
+                } else {
+                    desiredWorldZ += -crossSign * lateralWeight;
+                }
+
+                double desiredLength = Math.hypot(desiredWorldX, desiredWorldZ);
+                if (desiredLength > 1.0E-9D) {
+                    desiredWorldX /= desiredLength;
+                    desiredWorldZ /= desiredLength;
+                }
+
+                float turn = clamp((float) (yawError * turnResponseGain()),
+                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                double postYaw = Math.toRadians(state.player.yaw + turn);
+                double forwardWorldX = -Math.sin(postYaw);
+                double forwardWorldZ = Math.cos(postYaw);
+                double strafeWorldX = Math.cos(postYaw);
+                double strafeWorldZ = Math.sin(postYaw);
+
+                double forward = desiredWorldX * forwardWorldX
+                        + desiredWorldZ * forwardWorldZ;
+                double strafe = desiredWorldX * strafeWorldX
+                        + desiredWorldZ * strafeWorldZ;
+                double inputLength = Math.hypot(forward, strafe);
+                if (inputLength > 1.0D) {
+                    forward /= inputLength;
+                    strafe /= inputLength;
+                }
+
+                boolean jump = shouldSpeedJump(state, allowJump);
+                boolean sprint = state.player.grounded
+                        && forward > 0.75D
+                        && Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR;
+                action = new Action(forward, strafe, jump, sprint, turn, false);
+                lastDecisionDetail += " SPEED_LANE_DRIVE";
+            } else if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
                 action = new Action(
                         0.0, 0.0, false, false,
                         speed <= MAX_TURNING_SPEED

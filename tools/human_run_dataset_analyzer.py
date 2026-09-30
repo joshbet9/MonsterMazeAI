@@ -48,7 +48,17 @@ NUMERIC_METRICS = (
 
 
 def load_json(path: Path) -> Dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    # Recorder manifests contain a manifest record followed by a footer record.
+    # The dataset analyzer only needs the manifest object here.
+    with path.open("r", encoding="utf-8") as handle:
+        for raw in handle:
+            raw = raw.strip()
+            if not raw:
+                continue
+            value = json.loads(raw)
+            if isinstance(value, dict) and value.get("recordType") == "manifest":
+                return value
+    return {}
 
 
 def quantile(values: Sequence[float], fraction: float) -> Optional[float]:

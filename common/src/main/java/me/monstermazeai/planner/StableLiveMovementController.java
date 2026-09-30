@@ -511,6 +511,7 @@ public final class StableLiveMovementController {
                 double forward = brake ? 0.0 : steeringForward;
                 boolean sprint = forward >= 0.95 && absError <= 15.0;
                 boolean jump = allowJump
+                        && state.kit != me.monstermazeai.kit.Kit.JUMPER
                         && state.player.grounded
                         && forward > 0.0
                         && distance > WAYPOINT_ARRIVAL
@@ -528,6 +529,7 @@ public final class StableLiveMovementController {
                     && closingSpeed(state, dx, dz) > 0.04;
             double forward = brake ? 0.0 : 1.0;
             boolean jump = allowJump
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER
                     && state.player.grounded
                     && forward > 0.0
                     && distance > WAYPOINT_ARRIVAL;

@@ -540,6 +540,12 @@ def normalize_run(
 
     normalized_ticks: List[Dict[str, Any]] = []
     derived_events: List[Dict[str, Any]] = []
+    raw_stage_values = [
+        int(w.get("stage"))
+        for w in world.values()
+        if isinstance(w.get("stage"), (int, float))
+    ]
+    raw_stage_progression_valid = len(set(raw_stage_values)) > 1
     previous: Optional[Dict[str, Any]] = None
     jump_previous = False
     last_pad: Optional[Tuple[int, int]] = None
@@ -552,18 +558,24 @@ def normalize_run(
         raw_stage = w.get("stage") if isinstance(w.get("stage"), (int, float)) else None
         scoreboard_stage = scoreboard.get("stage") if isinstance(scoreboard.get("stage"), int) else None
         reconstructed_stage = reconstructed.get(tick)
-        if raw_stage is not None:
+        if raw_stage is not None and raw_stage_progression_valid:
             stage = int(raw_stage)
-            stage_source = "observer"
-        elif scoreboard_stage is not None:
-            stage = scoreboard_stage
-            stage_source = "scoreboard"
+            stage_source = "observer_progression"
         elif reconstructed_stage is not None:
             stage = reconstructed_stage
             stage_source = "pad_reconstruction"
+        elif scoreboard_stage is not None:
+            stage = scoreboard_stage
+            stage_source = "scoreboard"
+        elif raw_stage is not None:
+            stage = int(raw_stage)
+            stage_source = "observer_static"
         else:
             stage = None
             stage_source = None
+
+        analysis_stage = stage
+        analysis_stage_source = stage_source
 
         px, py, pz = float(m.get("x", 0.0)), float(m.get("y", 0.0)), float(m.get("z", 0.0))
         nearest, nearby = nearest_monster(mon, px, py, pz)
@@ -579,9 +591,11 @@ def normalize_run(
         row = {
             "tick": tick,
             "stage": stage,
+            "analysisStage": analysis_stage,
             "rawStage": int(raw_stage) if raw_stage is not None else None,
             "reconstructedStage": reconstructed_stage,
             "stageSource": stage_source,
+            "analysisStageSource": analysis_stage_source,
             "position": {"x": px, "y": py, "z": pz},
             "velocity": {
                 "x": float(m.get("vx", 0.0) or 0.0),
@@ -632,33 +646,33 @@ def normalize_run(
         pad = (target_pad.get("row"), target_pad.get("column")) if isinstance(target_pad, dict) else None
         if row["stage"] is not None and not any(e.get("type") == "STAGE_START" and e.get("stage") == row["stage"] for e in derived_events[-3:]):
             if previous is None or previous.get("stage") != row["stage"]:
-                derived_events.append({"tick": tick, "stage": row["stage"], "type": "STAGE_START", "source": "derived"})
+                derived_events.append({"tick": tick, "stage": row["analysisStage"], "type": "STAGE_START", "source": "derived"})
         if isinstance(pad, tuple) and len(pad) == 2 and all(isinstance(x, int) for x in pad) and pad != last_pad:
             derived_events.append({
-                "tick": tick, "stage": row["stage"], "type": "PAD_TARGET_CHANGED",
+                "tick": tick, "stage": row["analysisStage"], "type": "PAD_TARGET_CHANGED",
                 "source": "derived", "row": pad[0], "column": pad[1],
             })
             last_pad = pad
         if previous and bool(row.get("grounded")) != bool(previous.get("grounded")):
             derived_events.append({
-                "tick": tick, "stage": row["stage"],
+                "tick": tick, "stage": row["analysisStage"],
                 "type": "AIRBORNE_END" if row.get("grounded") else "AIRBORNE_START",
                 "source": "derived",
             })
         if external and not (previous and previous.get("externalImpulse")):
             derived_events.append({
-                "tick": tick, "stage": row["stage"], "type": "KNOCKBACK_CANDIDATE",
+                "tick": tick, "stage": row["analysisStage"], "type": "KNOCKBACK_CANDIDATE",
                 "source": "derived", "horizontalSpeed": row["horizontalSpeed"],
                 "healthDelta": row["healthDelta"],
             })
         if health_delta < -1e-6:
             derived_events.append({
-                "tick": tick, "stage": row["stage"], "type": "DAMAGE",
+                "tick": tick, "stage": row["analysisStage"], "type": "DAMAGE",
                 "source": "derived", "amount": -health_delta,
             })
         jump = bool(row["inputs"]["jump"])
         if jump and not jump_previous:
-            derived_events.append({"tick": tick, "stage": row["stage"], "type": "JUMP_PRESS", "source": "derived"})
+            derived_events.append({"tick": tick, "stage": row["analysisStage"], "type": "JUMP_PRESS", "source": "derived"})
         jump_previous = jump
         previous = row
 
@@ -705,8 +719,14 @@ def normalize_run(
 
     by_stage: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
     for row in normalized_ticks:
-        if isinstance(row["stage"], int):
-            by_stage[row["stage"]].append(row)
+        if isinstance(row["analysisStage"], int):
+            by_stage[row["analysisStage"]].append(row)
+
+    analysis_stage_by_tick = {
+        row["tick"]: row["analysisStage"]
+        for row in normalized_ticks
+        if isinstance(row.get("analysisStage"), int)
+    }
 
     stages: List[Dict[str, Any]] = []
     for stage_number in sorted(by_stage):
@@ -727,14 +747,26 @@ def normalize_run(
             "directExcessRatio": actual_distance / max(direct_distance, 1e-9) if direct_distance else None,
             "stationaryTicks": sum(1 for r in rows if float(r["displacement"] or 0.0) < 0.01),
             "sprintTicks": sum(1 for r in rows if r["inputs"]["sprint"]),
-            "jumpPresses": sum(1 for e in all_events if e.get("stage") == stage_number and e.get("type") == "JUMP_PRESS"),
+            "jumpPresses": sum(
+                1 for e in all_events
+                if analysis_stage_by_tick.get(int(e.get("tick", -1))) == stage_number
+                and e.get("type") == "JUMP_PRESS"
+            ),
             "yawRotationDegrees": sum(abs(float(r["yawDelta"] or 0.0)) for r in rows),
-            "damageEvents": sum(1 for e in all_events if e.get("stage") == stage_number and e.get("type") == "DAMAGE"),
-            "knockbackEvents": sum(1 for e in all_events if e.get("stage") == stage_number and e.get("type") == "KNOCKBACK_CANDIDATE"),
+            "damageEvents": sum(
+                1 for e in all_events
+                if analysis_stage_by_tick.get(int(e.get("tick", -1))) == stage_number
+                and e.get("type") == "DAMAGE"
+            ),
+            "knockbackEvents": sum(
+                1 for e in all_events
+                if analysis_stage_by_tick.get(int(e.get("tick", -1))) == stage_number
+                and e.get("type") == "KNOCKBACK_CANDIDATE"
+            ),
             "abilityUses": sum(
                 1 for e in raw_events
                 if e.get("event", "").startswith("ABILITY")
-                and first["tick"] <= int(e.get("tick", -1)) <= last["tick"]
+                and analysis_stage_by_tick.get(int(e.get("tick", -1))) == stage_number
             ),
         })
 

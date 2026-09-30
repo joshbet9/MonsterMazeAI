@@ -298,6 +298,47 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void nonJumperSpeedMechanicPhysicallyClearsOneBlockGap() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int column = 6; column <= 10; column++) raw[10][column] = 1;
+        for (int column = 12; column <= 30; column++) raw[10][column] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.mode = me.monstermazeai.game.Mode.SPEED;
+        s.maze = new MazeModel(raw);
+        s.kit = me.monstermazeai.kit.Kit.BODY_BUILDER;
+        s.activePadRow = 10;
+        s.activePadColumn = 30;
+        s.player.x = 10.5;
+        s.player.z = 6.5;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        boolean crossed = false;
+        for (int tick = 1; tick <= 120; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(10, 30), true);
+            physics.tick(s.player, action, s.maze, -10, true);
+            if (s.player.z > 11.70) {
+                crossed = true;
+                break;
+            }
+            assertTrue(s.player.y > -2.5,
+                    "non-Jumper fell through the one-block gap at tick " + tick
+                            + " detail=" + controller.lastDecisionDetail());
+        }
+
+        assertTrue(crossed,
+                "source-valid non-Jumper Speed movement did not clear the one-block gap; "
+                        + controller.lastDecisionDetail());
+    }
+
+    @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

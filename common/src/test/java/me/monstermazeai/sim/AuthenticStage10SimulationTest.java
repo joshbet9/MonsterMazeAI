@@ -492,12 +492,5 @@ class AuthenticStage10SimulationTest {
             double zeroInputShare,
             double stationaryShare,
             double averageHorizontalSpeed,
-            double averageCommandedInput) {
-        double totalTicks = Math.max(1L, ticks);
-        double movementInputShare = movementInputTicks / totalTicks;
-        double zeroInputShare = zeroInputTicks / totalTicks;
-        double stationaryShare = stationaryTicks / totalTicks;
-        double averageHorizontalSpeed = actualHorizontalDistance / totalTicks;
-        double averageCommandedInput = commandedInputSum / totalTicks;
-    }
+            double averageCommandedInput) {}
 }

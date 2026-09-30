@@ -202,21 +202,21 @@ class AuthenticStage10SimulationTest {
         new me.monstermazeai.game.GameProgressionModel().syncPadSurfaces(state);
     }
 
-    private static void spawnInitial(GameState state, Random random, int[] nextId) {
+    private static int spawnInitialBatch(GameState state, Random random, int[] nextId, int count) {
         List<Cell> paths = pathCells(state.maze);
         Cell center = new Cell(49, 49);
         int spawned = 0;
         int guard = 0;
-        while (spawned < INITIAL_MONSTERS && guard++ < INITIAL_MONSTERS * 5) {
+        while (spawned < count && guard++ < count * 5) {
             Cell pos = paths.get(random.nextInt(paths.size()));
             if (distanceSq(pos, center) < 7.5 * 7.5) continue;
-            MonsterState monster = new MonsterState(
-                    nextId[0]++, pos.row() + 0.5, GameState.PATH_Y, pos.column() + 0.5);
-            state.monsters.add(monster);
+            state.monsters.add(new MonsterState(
+                    nextId[0]++, pos.row() + 0.5, GameState.PATH_Y, pos.column() + 0.5));
             spawned++;
         }
-        assertTrue(spawned == INITIAL_MONSTERS,
-                "source starter spawn pool could not produce " + INITIAL_MONSTERS + " mobs");
+        assertTrue(spawned == count,
+                "source starter spawn pool could not produce batch of " + count + " mobs");
+        return spawned;
     }
 
     private static int spawnAdditional(GameState state, Random random, int[] nextId, int count) {

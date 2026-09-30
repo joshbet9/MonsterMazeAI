@@ -94,6 +94,7 @@ jobs:
           assert simulator["conditions"]["pattern"] == summary["conditions"]["pattern"]
           assert simulator["conditions"]["profile"] == "HIGH_SKILL"
           assert simulator["simulator"]["durationTicks"] > 0
+          assert comparison["conditionMatch"] is True, comparison
           assert comparison["gaps"], comparison
           assert any(a["type"] == "KIT_CONFLICT" for a in anomalies), anomalies
           assert any(a["type"] == "WORLD_STAGE_CONFLICT" for a in anomalies), anomalies

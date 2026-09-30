@@ -103,3 +103,21 @@ jobs:
 
       - name: Run Speed profile sweep
         run: mvn -B -ntp -pl common -am -Dtest=SpeedProfileSweepTest -Dsurefire.failIfNoSpecifiedTests=false test
+
+  speed-avoidance-tuning:
+    name: Speed avoidance tuning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run Speed avoidance tuning cases
+        run: mvn -B -ntp -pl common -am -Dtest=SpeedAvoidanceTuningTest -Dsurefire.failIfNoSpecifiedTests=false test

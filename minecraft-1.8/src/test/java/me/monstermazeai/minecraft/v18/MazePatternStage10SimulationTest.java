@@ -267,6 +267,22 @@ public final class MazePatternStage10SimulationTest {
                 setPadPhysicalFloor(monsterMaze, raw, previewPad, true);
             }
 
+            // The source's final centre deterioration pass occurs at roughly
+            // live second 29: centre 3/4 clay disappears while 5/6 path cells
+            // become ordinary monster-routing cells. Reapply pad overlays
+            // afterward because SafePads remain physical and monster-disabled.
+            applyCentreDeterioration(monsterMaze, raw, ticks);
+            setPadDisabled(monsterMaze, activePad, true);
+            setPadPhysicalFloor(monsterMaze, raw, activePad, true);
+            if (previewPad != null) {
+                setPadDisabled(monsterMaze, previewPad, true);
+                setPadPhysicalFloor(monsterMaze, raw, previewPad, true);
+            }
+            if (oldPad != null && oldPadTicksRemaining > 0) {
+                setPadDisabled(monsterMaze, oldPad, true);
+                setPadPhysicalFloor(monsterMaze, raw, oldPad, true);
+            }
+
             boolean[][] physical = physicalFloor(
                     raw, activePad, oldPad, oldPadTicksRemaining, previewPad);
             syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
@@ -742,6 +758,29 @@ public final class MazePatternStage10SimulationTest {
         double dr = a.row - b.row;
         double dc = a.column - b.column;
         return dr * dr + dc * dc;
+    }
+
+    private static void applyCentreDeterioration(MazeModel maze, int[][] raw, int ticks) {
+        if (maze == null || raw == null) return;
+
+        int liveSeconds = ticks / 20;
+        boolean deteriorated = liveSeconds >= 29;
+        for (int row = 49 - 6; row <= 49 + 6; row++) {
+            for (int column = 49 - 6; column <= 49 + 6; column++) {
+                if (!inBounds(row, column)) continue;
+                int value = raw[row][column];
+                if (value < 3 || value > 6) continue;
+
+                if (value == 3 || value == 4) {
+                    maze.setPhysicalFloor(row, column, !deteriorated);
+                } else {
+                    // Source centre path cells remain physical throughout and
+                    // re-enter the monster waypoint graph only on the final pass.
+                    maze.setPhysicalFloor(row, column, true);
+                }
+                maze.setDisabled(row, column, !deteriorated || value == 3 || value == 4);
+            }
+        }
     }
 
     private static void setPadPhysicalFloor(

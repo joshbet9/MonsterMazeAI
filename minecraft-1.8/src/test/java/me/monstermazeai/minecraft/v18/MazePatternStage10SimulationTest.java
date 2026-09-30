@@ -6,6 +6,7 @@ import me.monstermazeai.ability.AbilityDecision;
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.Mode;
+import me.monstermazeai.game.TimerModel;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterMazeBumpModel;
@@ -206,7 +207,7 @@ public final class MazePatternStage10SimulationTest {
          */
         MazeModel monsterMaze = new MazeModel(raw);
         GameState tacticalState = new GameState();
-        tacticalState.mode = Mode.ORIGINAL;
+        tacticalState.mode = Mode.MODERN;
         tacticalState.maze = monsterMaze;
         tacticalState.kit = kit;
         tacticalState.alive = true;
@@ -386,13 +387,10 @@ public final class MazePatternStage10SimulationTest {
 
     private static int stageTimeTicks(int stage) {
         /*
-         * The 1.8 Speed/Original game uses the original phase pacing:
-         * 60 seconds at stage 1, minus 2 seconds per completed stage,
-         * with a 15-second floor. This must match MonsterMaze GameManager
-         * stageTimer() rather than the Modern 35 -> 15 second schedule.
+         * Modern Monster Maze timing comes from the common source-derived
+         * TimerModel, not a simulator-specific approximation.
          */
-        int seconds = Math.max(15, 60 - ((stage - 1) * 2));
-        return seconds * 20;
+        return new TimerModel().initialTicks(Mode.MODERN, stage);
     }
 
     private static LegacyWorldObservation observation(
@@ -465,12 +463,12 @@ public final class MazePatternStage10SimulationTest {
 
     private static void spawnInitialMonsters(GameState state, int[][] raw, int seed) {
         Random random = new Random(0x6D4D0000L + seed * 31337L);
-        spawnMonsters(state, raw, 150, random, 100000);
+        spawnMonsters(state, raw, 225, random, 100000);
     }
 
     private static void spawnStageMonsters(GameState state, int[][] raw, int seed, int stage) {
         Random random = new Random(0x7D4D0000L + seed * 31337L + stage * 7919L);
-        spawnMonsters(state, raw, 15, random, 100000 + stage * 1000);
+        spawnMonsters(state, raw, 30, random, 100000 + stage * 1000);
     }
 
     private static void spawnMonsters(GameState state, int[][] raw, int count, Random random, int idBase) {

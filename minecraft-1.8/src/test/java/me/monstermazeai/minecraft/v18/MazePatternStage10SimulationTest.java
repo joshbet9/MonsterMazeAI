@@ -347,7 +347,7 @@ public final class MazePatternStage10SimulationTest {
                 syncTacticalState(tacticalState, player, activePad, stage, stageTicksRemaining, ticks);
                 // Delegate pad healing/recharge to the common source model.
                 // Solo progression then shortens the phase to four seconds.
-                abilities.onReachedPad(tacticalState, true);
+                abilities.onReachedPad(tacticalState, stage == 1);
                 player.health = tacticalState.player.health;
                 player.maxHealth = tacticalState.player.maxHealth;
                 player.jumpCharges = tacticalState.ability.charges;

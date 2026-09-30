@@ -199,7 +199,12 @@ def pad_key(record: Optional[Dict[str, Any]]) -> Optional[Tuple[int, int]]:
     return None
 
 
-def reconstruct_stages(ticks: Sequence[int], worlds: Dict[int, Dict[str, Any]], navigations: Dict[int, Dict[str, Any]]) -> Dict[int, int]:
+def reconstruct_stages(
+    ticks: Sequence[int],
+    worlds: Dict[int, Dict[str, Any]],
+    navigations: Dict[int, Dict[str, Any]],
+) -> Dict[int, int]:
+    """Reconstruct stage progression from objective/pad transitions only."""
     reconstructed: Dict[int, int] = {}
     stage_from_pad = 0
     last_pad: Optional[Tuple[int, int]] = None
@@ -210,11 +215,7 @@ def reconstruct_stages(ticks: Sequence[int], worlds: Dict[int, Dict[str, Any]], 
         if key is not None and key != last_pad:
             stage_from_pad += 1
             last_pad = key
-        lines = world.get("scoreboardLines")
-        info = scoreboard_info(lines) if isinstance(lines, list) else {}
-        if isinstance(info.get("stage"), int):
-            reconstructed[tick] = info["stage"]
-        elif stage_from_pad:
+        if stage_from_pad:
             reconstructed[tick] = stage_from_pad
     return reconstructed
 
@@ -467,9 +468,16 @@ def death_chain(events: Sequence[Dict[str, Any]]) -> List[str]:
     return result[-12:]
 
 
-def normalize_run(run_dir: Path, output_dir: Path) -> Dict[str, Any]:
+def normalize_run(
+    run_dir: Path,
+    output_dir: Path,
+    manifest_path: Optional[Path] = None,
+) -> Dict[str, Any]:
     errors: List[Dict[str, Any]] = []
-    manifest, manifest_files, end_reason = load_manifest(run_dir)
+    manifest, manifest_files, end_reason, resolved_manifest_path = load_manifest(
+        run_dir, manifest_path
+    )
+    annotation = load_annotation(run_dir, manifest, resolved_manifest_path)
     streams = load_streams(run_dir, manifest_files, errors)
 
     world = by_tick(streams["world"])
@@ -488,7 +496,13 @@ def normalize_run(run_dir: Path, output_dir: Path) -> Dict[str, Any]:
 
     ticks = sorted(set(world) | set(movement) | set(inputs) | set(navigation) | set(monsters))
     reconstructed = reconstruct_stages(ticks, world, navigation)
-    metadata = infer_metadata(manifest, world, end_reason)
+    metadata = infer_metadata(
+        manifest,
+        world,
+        end_reason,
+        streams["inventory"],
+        annotation,
+    )
 
     normalized_ticks: List[Dict[str, Any]] = []
     derived_events: List[Dict[str, Any]] = []

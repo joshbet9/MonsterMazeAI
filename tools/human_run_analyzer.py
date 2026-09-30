@@ -515,9 +515,21 @@ def normalize_run(
     for tick in ticks:
         m, i, w, n, mon = movement.get(tick, {}), inputs.get(tick, {}), world.get(tick, {}), navigation.get(tick, {}), monsters.get(tick, {})
         scoreboard = scoreboard_info(w.get("scoreboardLines", [])) if isinstance(w.get("scoreboardLines"), list) else {}
-        stage = w.get("stage") if isinstance(w.get("stage"), (int, float)) else (
-            scoreboard.get("stage") or reconstructed.get(tick)
-        )
+        raw_stage = w.get("stage") if isinstance(w.get("stage"), (int, float)) else None
+        scoreboard_stage = scoreboard.get("stage") if isinstance(scoreboard.get("stage"), int) else None
+        reconstructed_stage = reconstructed.get(tick)
+        if raw_stage is not None:
+            stage = int(raw_stage)
+            stage_source = "observer"
+        elif scoreboard_stage is not None:
+            stage = scoreboard_stage
+            stage_source = "scoreboard"
+        elif reconstructed_stage is not None:
+            stage = reconstructed_stage
+            stage_source = "pad_reconstruction"
+        else:
+            stage = None
+            stage_source = None
 
         px, py, pz = float(m.get("x", 0.0)), float(m.get("y", 0.0)), float(m.get("z", 0.0))
         nearest, nearby = nearest_monster(mon, px, py, pz)
@@ -532,12 +544,10 @@ def normalize_run(
         target_pad = n.get("activePad") if isinstance(n.get("activePad"), dict) else w.get("activePad")
         row = {
             "tick": tick,
-            "stage": int(stage) if isinstance(stage, (int, float)) else None,
-            "stageSource": (
-                "scoreboard" if isinstance(scoreboard.get("stage"), int)
-                else "pad_reconstruction" if tick in reconstructed
-                else "observer"
-            ),
+            "stage": stage,
+            "rawStage": int(raw_stage) if raw_stage is not None else None,
+            "reconstructedStage": reconstructed_stage,
+            "stageSource": stage_source,
             "position": {"x": px, "y": py, "z": pz},
             "velocity": {
                 "x": float(m.get("vx", 0.0) or 0.0),
@@ -576,7 +586,9 @@ def normalize_run(
             "nearbyMonsterCount": nearby,
             "safePadSeconds": scoreboard.get("safePadSeconds", w.get("phaseTimerSeconds")),
             "mode": scoreboard.get("mode"),
-            "kit": scoreboard.get("kit"),
+            "kit": metadata.get("kit"),
+            "observerKit": clean_text(w.get("observerKit", w.get("kit"))).upper() or None,
+            "scoreboardKitCandidate": scoreboard.get("kit"),
             "abilityCharges": w.get("abilityCharges"),
             "jumpCharges": w.get("jumpCharges"),
             "recordedEvents": events_by_tick.get(tick, []),

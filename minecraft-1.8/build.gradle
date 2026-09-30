@@ -50,6 +50,9 @@ def commonRuntimeJar = file("../common/target/common-0.1.0-SNAPSHOT-runtime.jar"
 dependencies {
     compile files(commonApiJar)
     testCompile "junit:junit:4.13.2"
+    // The deterministic simulator tests exercise the Java-17 common mechanics,
+    // but remain test-only so the Forge production adapter stays Java-8/API-only.
+    testCompile files(commonRuntimeJar)
 
 // Keep the deterministic maze progression simulator visible in CI logs.\ntestLogging {\n    showStandardStreams = true\n    exceptionFormat = "full"\n}
 }
@@ -97,5 +100,24 @@ processResources {
 
     from(sourceSets.main.resources.srcDirs) {
         exclude "mcmod.info"
+    }
+}
+
+
+// Simulator tests consume the Java-17 common runtime. Keep this dependency
+// completely out of the Forge production classpath and run/compile those tests
+// with the same Java level as the common module.
+compileTestJava {
+    options.fork = true
+    def java17Home = System.getenv("JAVA_HOME_17_X64")
+    if (java17Home != null) {
+        options.forkOptions.executable = new File(java17Home, "bin/javac").absolutePath
+    }
+}
+
+test {
+    def java17Home = System.getenv("JAVA_HOME_17_X64")
+    if (java17Home != null) {
+        executable = new File(java17Home, "bin/java").absolutePath
     }
 }

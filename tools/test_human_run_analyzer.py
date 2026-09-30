@@ -19,7 +19,7 @@ class HumanRunAnalyzerTest(unittest.TestCase):
         self.assertEqual(info["safePadSeconds"], 28)
         self.assertEqual(info["mode"], "speed")
 
-    def test_observer_kit_and_stage_are_authoritative_over_scoreboard_conflicts(self):
+    def test_declared_kit_survives_observer_and_scoreboard_conflicts(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "human-speed-run-test-manifest.json").write_text(
@@ -27,6 +27,7 @@ class HumanRunAnalyzerTest(unittest.TestCase):
                     "recordType": "manifest",
                     "jsonVersion": 2,
                     "minecraftVersion": "1.8.9",
+                    "declaredKit": "MAVERICK",
                     "files": [
                         "human-speed-run-test-world.jsonl",
                         "human-speed-run-test-movement.jsonl",

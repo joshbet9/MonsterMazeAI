@@ -20,27 +20,35 @@ human-runs/<run-id>/
 
 Raw recordings are evidence and are never rewritten. Ingestion may map recorder filenames into this layout.
 
+## 1.1 Flat recorder ingestion and curated annotations
+
+The current recorder output is stored as a flat set of timestamped files. The dataset analyzer discovers each `*-manifest.json` and passes that exact manifest to normalization; it never relies on latest-filename selection when several runs coexist.
+
+Raw files are immutable. Human-confirmed corrections that are not present in recorder evidence live under `human-runs/annotations/<runId>.json`. The Stage 49 Maverick run uses this mechanism because its inventory has no unique Maverick item signature while the observer falls back to JUMPER.
+
+
 ## 2. Manifest
 
 Required identity/provenance fields:
 
     schemaVersion, runId, source, recordedAt, playerLabel, mode, pattern, kit, mazeSeed, recorderVersion, gameVersion, sourceCommit, quality, notes
 
-Metadata resolution priority:
-1. Explicit raw game/scoreboard state.
-2. Explicit recorder event.
-3. Deterministic reconstruction from objective transitions.
-4. Normalized observer fields.
-5. Filename/folder metadata.
+Metadata resolution is field-specific. For human kit identity, the priority is:
+1. Explicit recorder declaration (`manifest.declaredKit`).
+2. Curated sidecar annotation.
+3. A uniquely identifying inventory signature.
+4. Otherwise unresolved.
 
-Conflicts are recorded in anomalies.json; they are never silently overwritten. This is important because the current recorder has already demonstrated that normalized kit/stage fields can disagree with the raw scoreboard.
+The scoreboard kit candidate is corroborating evidence only and is never selected as the human kit automatically. The live observer's kit is retained separately as `observerKit`; its legacy unknown-kit fallback is not calibration truth.
+
+For stage identity, the raw observer stage and an independent pad-transition reconstruction are retained as separate fields. Conflicts are recorded in anomalies.json; they are never silently overwritten.
 
 ## 3. Canonical tick state
 
 ticks.jsonl is one normalized object per sampled tick:
 
     {
-      tick, stage, stageTick,
+      tick, stage, rawStage, reconstructedStage, stageSource,
       position: {x, y, z},
       velocity: {x, y, z},
       yaw, pitch, grounded,
@@ -109,6 +117,15 @@ CONTINUE_PAD_ROUTE, CORRECT_HEADING, AVOID_MOB, COMMIT_AROUND_MOB, RECOVER_KNOCK
 Intent is a derived classification, not a claim about conscious thought.
 
 ## 7. Human behavioural metrics
+
+In addition to route/hazard measurements, the current extractor records:
+- forward, strafe, and reverse fractions
+- sprint and stationary fractions
+- continuous forward-run lengths
+- jump rate and yaw-rate distributions
+- target-heading error and heading-correction fraction
+- raw movement input change count
+
 
 Route efficiency:
 - pad-to-pad path distance
@@ -214,10 +231,10 @@ Partial datasets may still be analyzed, but affected fields cannot be used as ca
 
 1. Play Minecraft run.
 2. Stop recording.
-3. Copy recorder output into human-runs/inbox/<run-id>/.
-4. Run human-run ingest.
-5. Validate and reconstruct metadata/stages/events.
-6. Emit normalized JSONL and summary.
+3. Copy the recorder output into the dataset.
+4. Run the dataset analyzer; each manifest is normalized independently.
+5. Validate metadata, ticks, stage reconstruction, and events.
+6. Emit normalized JSONL plus aggregate behavioural distributions.
 7. Resolve the simulator mode, kit, and recorder-facing pattern from the normalized human run; choose the AI profile explicitly.
 8. Run the matching long-horizon simulator condition without the old Stage-10 stop gate.
 9. Normalize simulator output to the same metric vocabulary.
@@ -225,6 +242,8 @@ Partial datasets may still be analyzed, but affected fields cannot be used as ca
 11. Aggregate repeated strong human decisions into calibration distributions.
 12. Tune attributes/tendencies and rerun simulator regression tests.
 13. Validate the resulting logic in Minecraft.
+
+During calibration, do not modify the movement controller merely to fit one recorded run. Repeated human state→action relationships and simulator agreement are the gates for controller changes.
 
 ## 14. Key principle
 

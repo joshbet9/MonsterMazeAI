@@ -166,7 +166,7 @@ public final class StableLiveMovementController {
     /** Strong players begin the jump before the source block centre so the vanilla arc lands inside the destination. */
     private static final double GAP_JUMP_PROGRESS = -0.80D;
     /** Begin the committed gap window slightly before the actual jump impulse. */
-    private static final double GAP_COMMIT_PROGRESS = -0.95D;
+    private static final double GAP_COMMIT_PROGRESS = -1.80D;
     private static final double GAP_JUMP_LATE_TOLERANCE = 0.08D;
     private static final double GAP_LANDING_PROGRESS = 1.20D;
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
@@ -1959,7 +1959,26 @@ public final class StableLiveMovementController {
         }
         double progress = currentGapProgress(state, gapExecutionRouteIndex);
         boolean jumpThisTick = false;
-        if (!gapTakeoffStarted && state.player.grounded && progress >= GAP_JUMP_PROGRESS) {
+
+        /*
+         * Non-Jumper speeding is a deliberate repeated jump input while
+         * remaining grounded. The source Jump -10 removes the vertical impulse,
+         * but the sprint-jump routine still writes the horizontal 0.2 impulse.
+         * Let Max Speed control this pre-gap cadence while the gap motor owns
+         * the timing window, so tactical replanning cannot steal the inputs.
+         */
+        boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded
+                && progress < GAP_JUMP_PROGRESS
+                && (lastSpeedJumpInputTick == Long.MIN_VALUE
+                    || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
+        if (nonJumperSpeedPulse) {
+            jumpThisTick = true;
+            lastSpeedJumpInputTick = state.tick;
+            lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
+                    + " progress=" + format(progress)
+                    + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
+        } else if (!gapTakeoffStarted && state.player.grounded && progress >= GAP_JUMP_PROGRESS) {
             jumpThisTick = true;
             gapTakeoffStarted = true;
             lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText()

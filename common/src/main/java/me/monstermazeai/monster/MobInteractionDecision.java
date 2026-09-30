@@ -11,7 +11,7 @@ import me.monstermazeai.game.PadModel;
  * ordinary travel time and the resulting source bump points toward the pad.
  */
 public final class MobInteractionDecision {
-    private static final double MIN_SAFE_HEALTH = 4.0; // 2 hearts: never intentionally contact.
+    private static final double MIN_SAFE_HEALTH = 8.0; // 2 hearts: never intentionally contact.
     private static final double CONTACT_RANGE = 2.75;
     private static final double CONTACT_RANGE_SQ = CONTACT_RANGE * CONTACT_RANGE;
     private static final double PAD_RADIUS = 2.5;

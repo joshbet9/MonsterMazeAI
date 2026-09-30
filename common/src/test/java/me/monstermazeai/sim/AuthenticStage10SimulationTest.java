@@ -191,7 +191,7 @@ class AuthenticStage10SimulationTest {
             maxHorizontalSpeed = Math.max(maxHorizontalSpeed,
                     Math.hypot(state.player.vx, state.player.vz));
             maxTickDisplacement = Math.max(maxTickDisplacement,
-                    Math.hypot(state.player.vx, state.player.vz));
+                    Math.hypot(state.player.x - preX, state.player.z - preZ));
 
             if (state.previewPadRequested && state.previewPadRow < 0) {
                 List<Cell> avoid = currentPadAvoidance(state);

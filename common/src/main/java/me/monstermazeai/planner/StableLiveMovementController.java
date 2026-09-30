@@ -62,7 +62,8 @@ public final class StableLiveMovementController {
     private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
     private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
     /** One-tick safety horizon matches the live observe -> decide -> move cadence. */
-    private static final int SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -527,7 +528,8 @@ public final class StableLiveMovementController {
                     : crossSign * Math.signum(dirRow);
             float correctionYaw = cardinalYaw(dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
+            float yawDelta = (state.mode == me.monstermazeai.game.Mode.SPEED && speed <= 0.25D)
+                    || (state.mode != me.monstermazeai.game.Mode.SPEED && speed <= MAX_TURNING_SPEED)
                     ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
                     : 0.0F;
             action = new Action(0.0, strafe, false, false, yawDelta, false);
@@ -564,7 +566,10 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            double turnGain = state.mode == me.monstermazeai.game.Mode.SPEED
+                    ? turnResponseGain() : 0.5D;
+            float turn = clamp((float) (yawError * turnGain),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < waypointBrakeDistance()
@@ -619,7 +624,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -964,10 +969,10 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        if (isApproachingGap(state)) {
-            // The source speed mechanic can request frequent jump inputs, but a
-            // jump already in progress cannot be retimed when the player reaches
-            // a one-block void. Preserve the grounded takeoff state instead.
+        if (state.mode != me.monstermazeai.game.Mode.SPEED && isApproachingGap(state)) {
+            // In Modern mode preserve the conservative pre-gap cadence. Speed
+            // mode uses the source repeated Jump -10 + sprint-jump interaction
+            // and must be allowed to prime the horizontal impulse window.
             return false;
         }
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
@@ -1222,12 +1227,20 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
+        double retain = state.mode == me.monstermazeai.game.Mode.SPEED
+                ? 0.20D + (0.50D * profile.attributes.handling) : 0.0D;
         Action[] alternatives = {
+                ...(state.mode == me.monstermazeai.game.Mode.SPEED
+                        ? new Action[] {
+                            new Action(action.forward() * retain, action.strafe() * retain,
+                                    false, action.sprint(), action.yawDelta(), false)
+                        }
+                        : new Action[0]),
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),
@@ -1237,7 +1250,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks(state))) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;
@@ -1250,6 +1263,17 @@ public final class StableLiveMovementController {
         float correction = clamp(normalise(desired - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         return new Action(0.0, 0.0, false, false, correction, false);
+    }
+
+    private double turnResponseGain() {
+        return 0.25D + profile.attributes.agility * 0.50D;
+    }
+
+    private int supportLookaheadTicks(GameState state) {
+        if (state.mode != me.monstermazeai.game.Mode.SPEED) return MIN_SUPPORT_LOOKAHEAD_TICKS;
+        int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
+        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
+                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {
@@ -1934,6 +1958,10 @@ public final class StableLiveMovementController {
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
+            if (state.mode == me.monstermazeai.game.Mode.SPEED
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+                lastSpeedJumpInputTick = Long.MIN_VALUE;
+            }
             return executeCommittedGap(state, allowJump);
         }
         if (distanceToTakeoff > GAP_JUMP_TRIGGER_DISTANCE) {
@@ -1974,7 +2002,8 @@ public final class StableLiveMovementController {
          * Let Max Speed control this pre-gap cadence while the gap motor owns
          * the timing window, so tactical replanning cannot steal the inputs.
          */
-        boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
+        boolean nonJumperSpeedPulse = state.mode == me.monstermazeai.game.Mode.SPEED
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
                 && progress < GAP_JUMP_PROGRESS
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE

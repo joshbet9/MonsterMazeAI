@@ -2,6 +2,7 @@ package me.monstermazeai.game;
 
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.kit.Kit;
+import me.monstermazeai.maze.MazeModel;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

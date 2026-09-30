@@ -112,8 +112,14 @@ class AuthenticStage10SimulationTest {
     }
 
     static RunResult runDiagnostic(int pattern, Kit kit, AiProfile profile, Mode mode, int targetStage) {
-        if (targetStage < 1) throw new IllegalArgumentException("targetStage");
+        if (targetStage <= 0) {
+            return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
+        }
         return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, targetStage);
+    }
+
+    static RunResult runToEnd(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
     }
 
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {

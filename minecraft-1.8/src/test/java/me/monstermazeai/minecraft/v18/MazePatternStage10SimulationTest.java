@@ -12,6 +12,9 @@ import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterMazeBumpModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.physics.LegacyMovementModel;
+import me.monstermazeai.player.Action;
+import me.monstermazeai.player.PlayerState;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -491,94 +494,63 @@ public final class MazePatternStage10SimulationTest {
     private static void step(
             SimPlayer p, LegacyAction action, boolean[][] physical, Result result) {
         /*
-         * Centered-world equivalent of the common 1.8.9 movement model used by
-         * MonsterMazeAI. The ordering is intentionally the same as the runtime:
-         * yaw -> jump cooldown -> jump impulse -> 0.98 input damping ->
-         * moveFlying -> position -> gravity/vertical drag -> physical AABB
-         * support -> horizontal friction.
-         *
-         * The numerical envelope is checked against the tick-level v18 OBS
-         * traces collected from real Minecraft runs; those traces are our
-         * empirical calibration source for normal displacement/velocity and
-         * heading behaviour.
+         * The simulator gate deliberately delegates player movement to the same
+         * common LegacyMovementModel used by the AI runtime. The only adapter
+         * work here is converting the centered Minecraft coordinate frame to the
+         * common Monster Maze frame and exposing the dynamic physical floor
+         * (SafePads + source maze surface) for collision support.
          */
-        p.yaw = wrap(p.yaw + action.yawDelta);
-        boolean groundedAtStart = p.grounded;
-        double friction = groundedAtStart ? 0.60D * 0.91D : 0.91D;
+        PlayerState commonPlayer = new PlayerState();
+        commonPlayer.x = p.x + HALF;
+        commonPlayer.y = p.y;
+        commonPlayer.z = p.z + HALF;
+        commonPlayer.vx = p.vx;
+        commonPlayer.vy = p.vy;
+        commonPlayer.vz = p.vz;
+        commonPlayer.yaw = p.yaw;
+        commonPlayer.pitch = 0.0F;
+        commonPlayer.grounded = p.grounded;
+        commonPlayer.pendingAirborne = p.pendingAirborne;
+        commonPlayer.health = p.health;
+        commonPlayer.maxHealth = 20.0D;
+        commonPlayer.jumpCharges = p.jumpCharges;
+        commonPlayer.jumpTicks = p.jumpTicks;
 
-        if (p.jumpTicks > 0) p.jumpTicks--;
-        if (!action.jump) p.jumpTicks = 0;
+        boolean jumpStarted = action.jump
+                && commonPlayer.grounded
+                && commonPlayer.jumpTicks == 0
+                && commonPlayer.jumpCharges > 0;
 
-        double radians = Math.toRadians(p.yaw);
-        if (action.jump && groundedAtStart && p.jumpTicks == 0) {
-            boolean jumper = p.kit == Kit.JUMPER && p.jumpCharges > 0;
-            p.vy = jumper ? 0.42D : -0.48D;
-            if (jumper) p.jumpCharges--;
-            // MonsterMaze non-Jumpers carry Jump amplifier -10. The vanilla
-            // jump therefore cannot produce positive Y movement, but the
-            // sprint-jump horizontal impulse remains and is the legacy
-            // speeding mechanic. Keep this tick-level interaction intact.
-            p.grounded = false;
-            if (action.sprint) {
-                p.vx -= Math.sin(radians) * 0.20D;
-                p.vz += Math.cos(radians) * 0.20D;
-            }
-            p.jumpTicks = 10;
-        }
-
-        double inputForward = action.forward * 0.98D;
-        double inputStrafe = action.strafe * 0.98D;
-        double magnitude = inputForward * inputForward + inputStrafe * inputStrafe;
-        if (magnitude >= 1.0E-4D) {
-            magnitude = Math.sqrt(magnitude);
-            double factor;
-            if (groundedAtStart) {
-                double groundMoveFactor = 0.10D * (action.sprint ? 1.30D : 1.0D);
-                factor = groundMoveFactor * (0.16277136D / Math.pow(friction, 3.0D));
-            } else {
-                factor = 0.02D * (action.sprint ? 1.30D : 1.0D);
-            }
-            double scale = factor / Math.max(1.0D, magnitude);
-            inputStrafe *= scale;
-            inputForward *= scale;
-            double sin = Math.sin(radians);
-            double cos = Math.cos(radians);
-            p.vx += inputStrafe * cos - inputForward * sin;
-            p.vz += inputForward * cos + inputStrafe * sin;
-        }
-
-        p.x += p.vx;
-        p.z += p.vz;
-        p.y += p.vy;
-
-        if (!groundedAtStart || !p.grounded) {
-            p.vy -= 0.08D;
-            p.vy *= 0.9800000190734863D;
-        }
-
-        boolean supported = footprintSupported(p.x, p.z, physical);
-        if (p.y <= 0.0D && p.vy <= 0.0D && supported) {
-            p.y = 0.0D;
-            p.vy = 0.0D;
-            p.grounded = true;
-        } else if (!supported) {
-            /*
-             * LegacyMovementModel drops the player immediately when a grounded
-             * body leaves physical support; it does not grant one extra
-             * zero-gravity tick. This matters at gap takeoff and maze edges.
-             */
-            p.grounded = false;
-            if (groundedAtStart && p.vy >= 0.0D) {
-                p.vy -= 0.08D;
-                p.vy *= 0.9800000190734863D;
+        int[][] floorRaw = new int[SIZE][SIZE];
+        for (int r = 0; r < SIZE; r++) {
+            for (int col = 0; col < SIZE; col++) {
+                floorRaw[r][col] = physical[r][col] ? 1 : 0;
             }
         }
+        MazeModel movementMaze = new MazeModel(floorRaw);
 
-        p.vx *= friction;
-        p.vz *= friction;
-        if (Math.abs(p.vx) < 0.005D) p.vx = 0.0D;
-        if (Math.abs(p.vy) < 0.005D) p.vy = 0.0D;
-        if (Math.abs(p.vz) < 0.005D) p.vz = 0.0D;
+        Action commonAction = new Action(
+                action.forward,
+                action.strafe,
+                action.jump,
+                action.sprint,
+                action.yawDelta,
+                action.useAbility);
+        new LegacyMovementModel().tick(commonPlayer, commonAction, movementMaze);
+
+        p.x = commonPlayer.x - HALF;
+        p.y = commonPlayer.y;
+        p.z = commonPlayer.z - HALF;
+        p.vx = commonPlayer.vx;
+        p.vy = commonPlayer.vy;
+        p.vz = commonPlayer.vz;
+        p.yaw = commonPlayer.yaw;
+        p.grounded = commonPlayer.grounded;
+        p.pendingAirborne = commonPlayer.pendingAirborne;
+        p.jumpTicks = commonPlayer.jumpTicks;
+        p.health = commonPlayer.health;
+        if (jumpStarted) p.jumpCharges--;
+        if (action.forward > 0.01D) result.movementTicks++;
 
         result.maxSpeed = Math.max(result.maxSpeed, Math.hypot(p.vx, p.vz));
         if (p.y < -2.0D) p.alive = false;
@@ -863,6 +835,7 @@ public final class MazePatternStage10SimulationTest {
         float yaw;
         boolean grounded;
         boolean alive = true;
+        boolean pendingAirborne;
         int jumpTicks;
         Kit kit;
         int jumpCharges;

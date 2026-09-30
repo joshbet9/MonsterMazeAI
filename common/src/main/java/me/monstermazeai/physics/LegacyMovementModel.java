@@ -57,7 +57,7 @@ public final class LegacyMovementModel implements PhysicsModel {
                 }
                 p.jumpTicks = 0;
             } else {
-                p.vy = JUMP_VELOCITY + ((jumpAmplifier + 1) * 0.1D);
+                p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;
                 if (action.sprint()) {
                     float yaw = p.yaw * 0.017453292F;

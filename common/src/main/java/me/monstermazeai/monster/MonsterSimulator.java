@@ -230,7 +230,7 @@ public final class MonsterSimulator {
         double bestDistance = Double.POSITIVE_INFINITY;
         for (int row = 0; row < MazeModel.SIZE; row++) {
             for (int column = 0; column < MazeModel.SIZE; column++) {
-                if (!maze.isTraversable(row, column)) continue;
+                if (!maze.isRawPath(row, column)) continue;
                 double dx = (row + CELL_CENTER_OFFSET) - x;
                 double dz = (column + CELL_CENTER_OFFSET) - z;
                 double distance = dx * dx + dz * dz;

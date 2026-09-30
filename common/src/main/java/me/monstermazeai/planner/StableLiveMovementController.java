@@ -391,6 +391,18 @@ public final class StableLiveMovementController {
             if (facing != null) return facing;
         }
 
+        /*
+         * Gap edges need a slightly different commitment boundary from ordinary
+         * turn waypoints. A skilled player starts building the source-speed
+         * cadence before reaching the source block centre. Commit the landing
+         * waypoint while still in the preceding segment once the player enters
+         * the bounded source-progress window. This preserves the real physics:
+         * the input is issued earlier, but the Jump -10/sprint-jump mechanics do
+         * all acceleration and collision work normally.
+         */
+        Action preGap = maybePreCommitGap(state, allowJump);
+        if (preGap != null) return preGap;
+
         // A route waypoint is a turn cell. Once its centre is reached, switch
         // to the next segment. Never skip over a corner and then turn back.
         while (waypointIndex < route.size() - 1
@@ -1933,6 +1945,50 @@ public final class StableLiveMovementController {
         return Math.hypot(dx, dz);
     }
 
+    private Action maybePreCommitGap(GameState state, boolean allowJump) {
+        if (gapExecutionActive || route == null || waypointIndex < 0
+                || waypointIndex >= route.size() - 1 || !state.player.grounded) {
+            return null;
+        }
+
+        Cell from = route.cells().get(waypointIndex);
+        Cell to = route.cells().get(waypointIndex + 1);
+        if (!isGapEdge(state, from.row(), from.column(), to.row(), to.column())) {
+            return null;
+        }
+
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        double progress = gapProgress(state, from, to);
+        double lateral = crossTrackError(
+                state.player.x, state.player.z,
+                from.row() + 0.5D, from.column() + 0.5D,
+                dirRow, dirColumn);
+
+        if (Math.abs(lateral) > 0.75D
+                || progress < GAP_COMMIT_PROGRESS
+                || progress > GAP_JUMP_PROGRESS) {
+            return null;
+        }
+
+        // The committed gap's waypoint is its landing cell, while the motor's
+        // source index remains the current route cell.
+        waypointIndex++;
+        gapExecutionActive = true;
+        gapTakeoffStarted = false;
+        gapExecutionRouteIndex = waypointIndex - 1;
+        gapLandingConfirmTicks = 0;
+
+        if (state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+            lastSpeedJumpInputTick = Long.MIN_VALUE;
+        }
+
+        lastDecisionDetail = "GAP_PRECOMMIT edge=" + from.row() + "," + from.column()
+                + "->" + to.row() + "," + to.column()
+                + " progress=" + format(progress);
+        return executeCommittedGap(state, allowJump);
+    }
+
     private Action prepareOrStartGap(GameState state, int dirRow, int dirColumn, boolean allowJump) {
         if (gapExecutionActive && gapExecutionRouteIndex == waypointIndex - 1) {
             return executeCommittedGap(state, allowJump);
@@ -2106,15 +2162,22 @@ public final class StableLiveMovementController {
     }
 
     private double currentGapProgress(GameState state, int gapIndex) {
-        int fromRow = route.cells().get(gapIndex).row();
-        int fromColumn = route.cells().get(gapIndex).column();
-        int toRow = route.cells().get(waypointIndex).row();
-        int toColumn = route.cells().get(waypointIndex).column();
-        double fromX = fromRow + 0.5, fromZ = fromColumn + 0.5;
-        double edgeX = toRow - fromRow, edgeZ = toColumn - fromColumn;
+        return gapProgress(
+                state,
+                route.cells().get(gapIndex),
+                route.cells().get(waypointIndex));
+    }
+
+    private double gapProgress(GameState state, Cell from, Cell to) {
+        double fromX = from.row() + 0.5D;
+        double fromZ = from.column() + 0.5D;
+        double edgeX = to.row() - from.row();
+        double edgeZ = to.column() - from.column();
         double length = Math.hypot(edgeX, edgeZ);
-        edgeX /= length; edgeZ /= length;
-        return (state.player.x - fromX) * edgeX + (state.player.z - fromZ) * edgeZ;
+        edgeX /= length;
+        edgeZ /= length;
+        return (state.player.x - fromX) * edgeX
+                + (state.player.z - fromZ) * edgeZ;
     }
 
     private boolean playerAabbOverlapsCell(GameState state, int row, int column) {

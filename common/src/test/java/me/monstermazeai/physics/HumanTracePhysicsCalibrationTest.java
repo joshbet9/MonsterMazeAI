@@ -62,7 +62,7 @@ class HumanTracePhysicsCalibrationTest {
         Aggregate aggregate = new Aggregate();
 
         for (RunSpec spec : RUNS) {
-            String prefix = "human-speed-run-20260930-" + spec.id;
+            String prefix = "human-speed-run-" + spec.id;
             TreeMap<Long, Motion> motion = loadMotion(humanRuns.resolve(prefix + "-movement.jsonl"));
             TreeMap<Long, Input> input = loadInput(humanRuns.resolve(prefix + "-input.jsonl"));
             TreeMap<Long, World> world = loadWorld(humanRuns.resolve(prefix + "-world.jsonl"));

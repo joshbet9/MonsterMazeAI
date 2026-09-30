@@ -42,11 +42,13 @@ class MovementBenchmarkTest {
         GameState s = player();
         s.kit = Kit.MAVERICK;
         s.player.x = 10.5;
-        s.player.z = 10.95;
+        s.player.z = 11.30;
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        s.player.vz = 0.39;
+        // Start close enough to the source edge that one measured source
+        // sprint-jump impulse can physically overlap the destination AABB.
+        s.player.vz = 0.42;
 
         LegacyMovementModel physics = new LegacyMovementModel();
         physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);

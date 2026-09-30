@@ -66,7 +66,11 @@ public final class LegacyMovementModel implements PhysicsModel {
                  * existing Modern acceptance tests were built around.
                  */
                 if (speedMode) {
-                    if (action.sprint()) {
+                    // Sprint-jump momentum is tied to actual forward sprint
+                    // state, not merely the sprint key being held. Human
+                    // traces contain stationary jump takeoffs with rawSprint
+                    // true and zero horizontal impulse.
+                    if (action.sprint() && action.forward() > 0.0F) {
                         float yaw = p.yaw * 0.017453292F;
                         p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                         p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;

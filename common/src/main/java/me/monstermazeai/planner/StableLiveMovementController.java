@@ -625,7 +625,9 @@ public final class StableLiveMovementController {
                  * the required 30-degree/tick camera limit. At near-zero speed we
                  * retain the original pure in-place turn.
                  */
-                double brakingForward = speed > MAX_TURNING_SPEED
+                boolean aggressiveCornerBrake = state.mode == me.monstermazeai.game.Mode.SPEED
+                        && state.kit == me.monstermazeai.kit.Kit.BODY_BUILDER;
+                double brakingForward = aggressiveCornerBrake && speed > MAX_TURNING_SPEED
                         ? -Math.min(0.65D, speed * 2.5D)
                         : 0.0D;
                 action = new Action(

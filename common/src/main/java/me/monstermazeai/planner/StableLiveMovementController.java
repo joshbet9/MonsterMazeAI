@@ -550,12 +550,21 @@ public final class StableLiveMovementController {
                     Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
             float correctionError = normalise(correctionYaw - state.player.yaw);
 
-            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
+            if (speed > MAX_TURNING_SPEED) {
+                /*
+                 * Momentum should be allowed to decay before lateral correction,
+                 * but the camera can still turn while braking. The old branch
+                 * suppressed both yaw and movement whenever speed exceeded the
+                 * turning threshold, wasting deadline-critical ticks.
+                 */
+                float turn = clamp(
+                        (float) (correctionError * turnResponseGain()),
+                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                action = new Action(0.0, 0.0, false, false, turn, false);
+            } else if (Math.abs(correctionError) > HEADING_TOLERANCE) {
                 action = new Action(
                         0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED
-                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                                : 0.0F,
+                        clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
                         false);
             } else {
                 action = new Action(1.0, 0.0, false, true, 0.0F, false);

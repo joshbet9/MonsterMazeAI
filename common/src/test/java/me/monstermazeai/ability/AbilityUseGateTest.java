@@ -36,7 +36,7 @@ class AbilityUseGateTest {
         s.tick = 599;
         assertFalse(gate.allow(s, "ROUTE_OPENING", "monster blocks efficient route"));
         s.tick = 600;
-        assertTrue(gate.allow(s));
+        assertTrue(gate.allow(s, "ROUTE_OPENING", "monster blocks efficient route"));
     }
 
     @Test

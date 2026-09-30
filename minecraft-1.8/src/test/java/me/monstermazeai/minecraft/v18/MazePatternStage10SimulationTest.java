@@ -248,8 +248,14 @@ public final class MazePatternStage10SimulationTest {
              * - when the phase expires, the active pad becomes an old pad with
              *   an 11-second decay lifetime and the preview becomes active.
              */
+            if (oldPad != null && oldPadTicksRemaining <= 0) {
+                setPadDisabled(monsterMaze, oldPad, false);
+                oldPad = null;
+            }
+
             if (stageTicksRemaining == 40 && previewPad == null && padIndex + 1 < pads.size()) {
                 previewPad = pads.get(padIndex + 1);
+                setPadDisabled(monsterMaze, previewPad, true);
             }
 
             boolean[][] physical = physicalFloor(
@@ -378,6 +384,7 @@ public final class MazePatternStage10SimulationTest {
 
                 oldPad = activePad;
                 oldPadTicksRemaining = OLD_PAD_LIFETIME_TICKS;
+                setPadDisabled(monsterMaze, oldPad, true);
                 padIndex++;
                 if (padIndex >= pads.size()) {
                     result.stage = stage;
@@ -386,7 +393,8 @@ public final class MazePatternStage10SimulationTest {
                     return result;
                 }
 
-                setPadDisabled(monsterMaze, oldPad, false);
+                oldPadTicksRemaining = OLD_PAD_LIFETIME_TICKS;
+                setPadDisabled(monsterMaze, oldPad, true);
                 activePad = previewPad != null ? previewPad : pads.get(padIndex);
                 setPadDisabled(monsterMaze, activePad, true);
                 previewPad = null;

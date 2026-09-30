@@ -86,6 +86,26 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void tacticalActionSpacePreservesCardinalMotorContract() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 1.5;
+        state.player.grounded = true;
+        state.monsters.add(new MonsterState(7, 1.5, 0.0, 1.5));
+
+        PlayerRoute route = new PlayerRoute(
+                List.of(new Cell(0, 1), new Cell(1, 1), new Cell(2, 1)));
+
+        Action tactical = new MonsterAwareRoutePlanner()
+                .tacticalAction(state, route, new Cell(2, 1), 0);
+
+        assertNotNull(tactical);
+        assertEquals(0.0, tactical.strafe(), 1e-9);
+        assertTrue(tactical.forward() >= 0.0);
+    }
+
+    @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();

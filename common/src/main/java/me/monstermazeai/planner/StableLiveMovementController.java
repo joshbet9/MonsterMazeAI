@@ -8,6 +8,7 @@ import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.AiProfile;
 import me.monstermazeai.physics.LegacyMovementModel;
 
 import java.util.List;
@@ -38,6 +39,20 @@ import java.util.concurrent.Future;
  * remains the shortest cardinal route selected by the planner.
  */
 public final class StableLiveMovementController {
+    private final AiProfile profile;
+
+    public StableLiveMovementController() {
+        this(AiProfile.BASELINE);
+    }
+
+    public StableLiveMovementController(AiProfile profile) {
+        if (profile == null) throw new IllegalArgumentException("profile");
+        this.profile = profile;
+    }
+
+    public AiProfile profile() {
+        return profile;
+    }
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
     private static final double ROUTE_DEVIATION = 0.55;
@@ -130,7 +145,6 @@ public final class StableLiveMovementController {
      */
     private static final long MOB_HIT_RECOVERY_TICKS = 40L;
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
-    private static final long NON_JUMPER_JUMP_CADENCE_TICKS = 4L;
     /** Keep a non-Jumper grounded long enough to enter a source gap cleanly. */
     private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 1.80D;
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
@@ -956,8 +970,9 @@ public final class StableLiveMovementController {
             // a one-block void. Preserve the grounded takeoff state instead.
             return false;
         }
+        long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
-                && state.tick - lastSpeedJumpInputTick < NON_JUMPER_JUMP_CADENCE_TICKS) {
+                && state.tick - lastSpeedJumpInputTick < cadenceTicks) {
             return false;
         }
         lastSpeedJumpInputTick = state.tick;

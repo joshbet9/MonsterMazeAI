@@ -40,6 +40,12 @@ public final class StableLiveMovementController {
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
     private static final double ROUTE_DEVIATION = 0.55;
+    private static final double PHYSICS_SLIPPERINESS = 0.6D;
+    private static final double PHYSICS_GROUND_FRICTION = 0.91D;
+    private static final double PHYSICS_WALK_SPEED = 0.10D;
+    private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
+    private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
+    private static final int SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -570,13 +576,16 @@ public final class StableLiveMovementController {
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
 
-        if (!gapExecutionActive && action.forward() > 0.0
-                && !hasPredictedPhysicalSupport(state, action)) {
-            float desired = cardinalYaw(dirRow, dirColumn);
-            float correction = clamp(normalise(desired - state.player.yaw),
-                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            action = new Action(0.0, 0.0, false, false, correction, false);
-            lastDecisionDetail += " EDGE_GUARD";
+        if (!gapExecutionActive) {
+            Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
+            if (guarded != action) {
+                lastDecisionDetail += " EDGE_GUARD"
+                        + " raw=f=" + format(action.forward())
+                        + ",s=" + format(action.strafe())
+                        + " guarded=f=" + format(guarded.forward())
+                        + ",s=" + format(guarded.strafe());
+                action = guarded;
+            }
         }
 
         lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)
@@ -1073,25 +1082,95 @@ public final class StableLiveMovementController {
      * tactical yaw/forward command is not allowed to replace the motor's
      * corridor-safe steering every time a nearby mob changes position.
      */
-    private boolean hasPredictedPhysicalSupport(GameState state, Action action) {
+    /**
+     * Predict three repeated motor ticks using the same 1.8 ground acceleration
+     * and friction constants as LegacyMovementModel. This is deliberately only
+     * an input guard: it never changes the simulator's collision/physics result.
+     */
+    private Action guardProjectedSupport(GameState state, Action action,
+                                         int dirRow, int dirColumn) {
+        if (state.maze == null || !state.player.grounded) return action;
+        if (hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)) return action;
+
+        double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
+        double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
+
+        Action[] alternatives = {
+                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                new Action(0.0, counter, false, false, action.yawDelta(), false),
+                new Action(0.0, -counter, false, false, action.yawDelta(), false)
+        };
+
+        Action best = null;
+        double bestProgress = Double.NEGATIVE_INFINITY;
+        for (Action candidate : alternatives) {
+            if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+            double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
+            if (progress > bestProgress) {
+                bestProgress = progress;
+                best = candidate;
+            }
+        }
+        if (best != null) return best;
+
+        float desired = cardinalYaw(dirRow, dirColumn);
+        float correction = clamp(normalise(desired - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        return new Action(0.0, 0.0, false, false, correction, false);
+    }
+
+    private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {
         if (state.maze == null) return true;
-        // Minecraft applies the camera/yaw change before the movement
-        // integrator consumes this tick's forward/strafe inputs.
+
+        double x = state.player.x;
+        double z = state.player.z;
+        double vx = state.player.vx;
+        double vz = state.player.vz;
+        float yawDegrees = state.player.yaw + action.yawDelta();
+        double friction = PHYSICS_SLIPPERINESS * PHYSICS_GROUND_FRICTION;
+        double factor = PHYSICS_WALK_SPEED
+                * (action.sprint() ? PHYSICS_SPRINT_MULTIPLIER : 1.0D)
+                * (PHYSICS_GROUND_FACTOR / (friction * friction * friction));
+        double magnitude = Math.hypot(action.forward(), action.strafe());
+        if (magnitude >= 1.0E-4D) {
+            double scale = factor / Math.max(1.0D, magnitude);
+            double yaw = Math.toRadians(yawDegrees);
+            double sin = Math.sin(yaw);
+            double cos = Math.cos(yaw);
+            vx += action.strafe() * scale * cos - action.forward() * scale * sin;
+            vz += action.forward() * scale * cos + action.strafe() * scale * sin;
+        }
+
+        for (int tick = 0; tick < Math.max(1, ticks); tick++) {
+            x += vx;
+            z += vz;
+            if (!hasPhysicalFloorFootprint(state.maze, x, z)) return false;
+            vx *= friction;
+            vz *= friction;
+        }
+        return true;
+    }
+
+    private double projectedRouteProgress(GameState state, Action action,
+                                          int dirRow, int dirColumn) {
         double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
         double strafeX = Math.cos(yaw);
         double strafeZ = Math.sin(yaw);
-        double inputX = forwardX * action.forward() + strafeX * action.strafe();
-        double inputZ = forwardZ * action.forward() + strafeZ * action.strafe();
-        double inputLength = Math.hypot(inputX, inputZ);
-        if (inputLength < 1.0E-9) return true;
+        double movementX = forwardX * action.forward() + strafeX * action.strafe();
+        double movementZ = forwardZ * action.forward() + strafeZ * action.strafe();
+        double length = Math.hypot(movementX, movementZ);
+        if (length < 1.0E-9) return 0.0;
+        double routeX = dirRow;
+        double routeZ = dirColumn;
+        return (movementX / length) * routeX + (movementZ / length) * routeZ;
+    }
 
-        double currentSpeed = Math.hypot(state.player.vx, state.player.vz);
-        double lookahead = Math.min(0.75D, Math.max(0.55D, currentSpeed + 0.18D));
-        double px = state.player.x + inputX / inputLength * lookahead;
-        double pz = state.player.z + inputZ / inputLength * lookahead;
-        return hasPhysicalFloorFootprint(state.maze, px, pz);
+    private double routeLateralVelocity(GameState state, int dirRow, int dirColumn) {
+        if (dirRow == 0) return state.player.vx;
+        return state.player.vz;
     }
 
     private static boolean hasPhysicalFloorFootprint(me.monstermazeai.maze.MazeModel maze,

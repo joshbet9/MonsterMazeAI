@@ -1,9 +1,14 @@
 package me.monstermazeai.minecraft.v18;
 
 import me.monstermazeai.adapter.LegacyWorldObservation;
+import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.settings.MovementInput;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.BlockPos;
+import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.InputUpdateEvent;
 import net.minecraftforge.common.MinecraftForge;
@@ -13,56 +18,112 @@ import org.lwjgl.input.Mouse;
 
 import java.io.BufferedWriter;
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
- * Optional human-run recorder for Minecraft 1.8.9.
+ * Full-fidelity 1.8.9 human Monster Maze telemetry recorder.
  *
- * F7 toggles recording. Once enabled, a file is opened when a Monster Maze
- * round is detected and one JSON object is written per client tick at END.
- * Movement input is captured from Forge's InputUpdateEvent, which is the
- * point where vanilla has assembled the player's actual keyboard input.
+ * The recorder never drives input. It observes the same Minecraft18Observer
+ * used by the AI and uses Minecraft18RunBoundary for game boundaries.
  *
- * The recorder is deliberately independent of the AI runtime: recording a
- * human run must not install or alter movement input and must remain usable
- * with the AI disabled.
+ * F7 toggles recording. When enabled, each detected game is split into
+ * focused files under <.minecraft>/human-runs:
+ *
+ *   manifest.json      run metadata and schema
+ *   movement.jsonl     player kinematics and vanilla movement flags
+ *   input.jsonl        aggregate + raw keyboard/mouse input
+ *   world.jsonl        stage/timer/scoreboard/kit/charges/game state
+ *   navigation.jsonl   logical cell/pad geometry and derived movement facts
+ *   monsters.jsonl     local monster state every tick
+ *   maze.jsonl         logical + physical maze snapshots only when changed
+ *   inventory.jsonl    inventory/hotbar snapshots only when changed
+ *   collision.jsonl    local block collision context only when changed
+ *   events.jsonl       sparse causal transitions and terminal reasons
+ *
+ * No player name, UUID, chat history, or other identity data is recorded.
+ * Terminal chat is recorded only when it matches the shared AI run-end rule.
  */
 public final class HumanRunRecorder implements Closeable {
     private static final String DIRECTORY = "human-runs";
-    private static final int JSON_VERSION = 1;
+    private static final int JSON_VERSION = 2;
+    private static final double MONSTER_LOCAL_RADIUS = 32.0D;
+    private static final int COLLISION_RADIUS = 2;
+    private static final int COLLISION_Y_BELOW = 1;
+    private static final int COLLISION_Y_ABOVE = 2;
 
     private final Minecraft minecraft;
-    private BufferedWriter writer;
+    private final Minecraft18Observer observer;
+
+    private BufferedWriter manifestWriter;
     private BufferedWriter movementWriter;
-    private BufferedWriter worldWriter;
-    private BufferedWriter monsterWriter;
     private BufferedWriter inputWriter;
+    private BufferedWriter worldWriter;
+    private BufferedWriter navigationWriter;
+    private BufferedWriter monsterWriter;
+    private BufferedWriter mazeWriter;
+    private BufferedWriter inventoryWriter;
+    private BufferedWriter collisionWriter;
     private BufferedWriter eventWriter;
-    private Path currentPath;
+
+    private Path currentManifest;
+    private String runStamp;
     private boolean enabled;
     private boolean inRun;
-    private boolean rightClickPulse;
+    private String pendingEndReason;
+
     private float inputForward;
     private float inputStrafe;
     private boolean inputJump;
     private boolean inputSprint;
+    private boolean rawForward;
+    private boolean rawBack;
+    private boolean rawLeft;
+    private boolean rawRight;
+    private boolean rawJump;
+    private boolean rawSprint;
+    private boolean rawSneak;
+    private boolean rawAttack;
+    private boolean rawUseItem;
+    private boolean mouseLeftPulse;
+    private boolean mouseRightPulse;
+
     private float previousYaw = Float.NaN;
     private long previousWorldTick = Long.MIN_VALUE;
-    private long records;
-    private int lastMazeHash;
-    private int lastFloorHash;
+    private double previousX = Double.NaN;
+    private double previousZ = Double.NaN;
+    private double previousHealth = Double.NaN;
+    private int previousStage = Integer.MIN_VALUE;
+    private int previousPadRow = Integer.MIN_VALUE;
+    private int previousPadColumn = Integer.MIN_VALUE;
+    private boolean previousPadReached;
+    private boolean previousGrounded;
+    private int previousJumpCharges = Integer.MIN_VALUE;
+    private int previousAbilityCharges = Integer.MIN_VALUE;
+    private int previousSelectedSlot = Integer.MIN_VALUE;
+    private String previousInventorySignature = "";
+    private int previousCollisionHash;
+    private int previousMazeHash;
+    private int previousPhysicalFloorHash;
+    private int previousMonsterIdsHash;
+    private boolean previousAlive = true;
 
-    public HumanRunRecorder(Minecraft minecraft) {
+    private long records;
+
+    public HumanRunRecorder(Minecraft minecraft, Minecraft18Observer observer) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
+        if (observer == null) throw new IllegalArgumentException("observer");
         this.minecraft = minecraft;
+        this.observer = observer;
         MinecraftForge.EVENT_BUS.register(this);
     }
 
@@ -76,179 +137,367 @@ public final class HumanRunRecorder implements Closeable {
     }
 
     public boolean isActive() {
-        return writer != null;
+        return inRun && manifestWriter != null;
     }
 
     public Path currentPath() {
-        return currentPath;
+        return currentManifest;
     }
 
     @SubscribeEvent
     public void onInputUpdate(InputUpdateEvent event) {
         if (!enabled || event == null || event.entityPlayer != minecraft.thePlayer) return;
         MovementInput input = event.movementInput;
-        if (input == null) return;
+        EntityPlayerSP player = minecraft.thePlayer;
+        if (input == null || player == null) return;
+
         inputForward = input.moveForward;
         inputStrafe = input.moveStrafe;
         inputJump = input.jump;
         inputSprint = minecraft.gameSettings.keyBindSprint.isKeyDown();
+
+        rawForward = minecraft.gameSettings.keyBindForward.isKeyDown();
+        rawBack = minecraft.gameSettings.keyBindBack.isKeyDown();
+        rawLeft = minecraft.gameSettings.keyBindLeft.isKeyDown();
+        rawRight = minecraft.gameSettings.keyBindRight.isKeyDown();
+        rawJump = minecraft.gameSettings.keyBindJump.isKeyDown();
+        rawSprint = minecraft.gameSettings.keyBindSprint.isKeyDown();
+        rawSneak = minecraft.gameSettings.keyBindSneak.isKeyDown();
+        rawAttack = minecraft.gameSettings.keyBindAttack.isKeyDown();
+        rawUseItem = minecraft.gameSettings.keyBindUseItem.isKeyDown();
     }
 
     @SubscribeEvent
     public void onMouseInput(InputEvent.MouseInputEvent event) {
         if (!enabled || event == null) return;
-        if (Mouse.getEventButton() == 1 && Mouse.getEventButtonState()) {
-            rightClickPulse = true;
-        }
+        int button = Mouse.getEventButton();
+        if (button == 0 && Mouse.getEventButtonState()) mouseLeftPulse = true;
+        if (button == 1 && Mouse.getEventButtonState()) mouseRightPulse = true;
+    }
+
+    @SubscribeEvent
+    public void onClientChat(ClientChatReceivedEvent event) {
+        if (!enabled || event == null || event.message == null || !inRun) return;
+        String text = event.message.getUnformattedText();
+        if (!Minecraft18RunBoundary.isTerminalChat(text)) return;
+        pendingEndReason = "CHAT:" + sanitizeTerminalChat(text);
     }
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !enabled) return;
+
         if (minecraft.theWorld == null || minecraft.thePlayer == null) {
             finish("WORLD_LEFT");
             resetInput();
             return;
         }
 
-        LegacyWorldObservation state = new Minecraft18Observer().observe().state;
-        if (!state.inMonsterMaze) {
-            if (inRun) finish(state.completed ? "COMPLETED" : "LEFT_MAZE");
-            resetInput();
-            return;
-        }
+        LegacyWorldObservation state = observer.observe().state;
 
         if (!inRun) {
-            begin(state);
+            if (Minecraft18RunBoundary.isGameStart(state)) begin(state);
+            else {
+                resetInput();
+                return;
+            }
         }
+
         write(state);
-    }
 
-    private void begin(LegacyWorldObservation state) {
-        try {
-            Path directory = Paths.get(DIRECTORY);
-            Files.createDirectories(directory);
-            String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
-            currentPath = directory.resolve("human-speed-run-" + timestamp + "-manifest.json");
-            Path movementPath = directory.resolve("human-speed-run-" + timestamp + "-movement.jsonl");
-            Path worldPath = directory.resolve("human-speed-run-" + timestamp + "-world.jsonl");
-            Path monsterPath = directory.resolve("human-speed-run-" + timestamp + "-monsters.jsonl");
-            Path inputPath = directory.resolve("human-speed-run-" + timestamp + "-input.jsonl");
-            Path eventPath = directory.resolve("human-speed-run-" + timestamp + "-events.jsonl");
-            writer = Files.newBufferedWriter(currentPath, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
-            movementWriter = open(directory, movementPath);
-            worldWriter = open(directory, worldPath);
-            monsterWriter = open(directory, monsterPath);
-            inputWriter = open(directory, inputPath);
-            eventWriter = open(directory, eventPath);
-            inRun = true;
-            records = 0L;
-            lastMazeHash = 0;
-            lastFloorHash = 0;
-            previousYaw = Float.NaN;
-            previousWorldTick = Long.MIN_VALUE;
-            System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER started: " + currentPath.toAbsolutePath());
-            writeHeader(state);
-        } catch (IOException e) {
-            writer = null; movementWriter = null; worldWriter = null; monsterWriter = null; inputWriter = null; eventWriter = null;
-            currentPath = null;
-            inRun = false;
-            System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER failed to open: " + e);
+        if (pendingEndReason != null) {
+            finish(pendingEndReason);
+            pendingEndReason = null;
+        } else if (Minecraft18RunBoundary.isGameEnd(state)) {
+            String reason;
+            if (state.completed) reason = "COMPLETED";
+            else if (!state.alive) reason = "PLAYER_DEAD";
+            else reason = "LEFT_MAZE";
+            finish(reason);
         }
     }
 
-    private void writeHeader(LegacyWorldObservation state) throws IOException {
-        writer.write("{\"recordType\":\"manifest\",\"jsonVersion\":" + JSON_VERSION
-                + ",\"minecraftVersion\":\"1.8.9\",\"mode\":\"human\",\"startedWorldTick\":"
-                + state.worldTick + ",\"files\":[\"movement.jsonl\",\"world.jsonl\",\"monsters.jsonl\",\"input.jsonl\",\"events.jsonl\"],\"note\":\"No player identity or chat data is recorded.\"}");
+    private void begin(LegacyWorldObservation state) throws IOException {
+        File directory = new File(minecraft.mcDataDir, DIRECTORY);
+        if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory()) {
+            throw new IOException("Could not create " + directory.getAbsolutePath());
+        }
+
+        runStamp = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date());
+        currentManifest = new File(directory, "human-speed-run-" + runStamp + "-manifest.json").toPath();
+
+        manifestWriter = open(currentManifest);
+        movementWriter = open(new File(directory, "human-speed-run-" + runStamp + "-movement.jsonl").toPath());
+        inputWriter = open(new File(directory, "human-speed-run-" + runStamp + "-input.jsonl").toPath());
+        worldWriter = open(new File(directory, "human-speed-run-" + runStamp + "-world.jsonl").toPath());
+        navigationWriter = open(new File(directory, "human-speed-run-" + runStamp + "-navigation.jsonl").toPath());
+        monsterWriter = open(new File(directory, "human-speed-run-" + runStamp + "-monsters.jsonl").toPath());
+        mazeWriter = open(new File(directory, "human-speed-run-" + runStamp + "-maze.jsonl").toPath());
+        inventoryWriter = open(new File(directory, "human-speed-run-" + runStamp + "-inventory.jsonl").toPath());
+        collisionWriter = open(new File(directory, "human-speed-run-" + runStamp + "-collision.jsonl").toPath());
+        eventWriter = open(new File(directory, "human-speed-run-" + runStamp + "-events.jsonl").toPath());
+
+        inRun = true;
+        records = 0L;
+        previousYaw = Float.NaN;
+        previousWorldTick = Long.MIN_VALUE;
+        previousX = Double.NaN;
+        previousZ = Double.NaN;
+        previousHealth = Double.NaN;
+        previousStage = Integer.MIN_VALUE;
+        previousPadRow = Integer.MIN_VALUE;
+        previousPadColumn = Integer.MIN_VALUE;
+        previousPadReached = false;
+        previousGrounded = false;
+        previousJumpCharges = Integer.MIN_VALUE;
+        previousAbilityCharges = Integer.MIN_VALUE;
+        previousSelectedSlot = Integer.MIN_VALUE;
+        previousInventorySignature = "";
+        previousCollisionHash = 0;
+        previousMazeHash = 0;
+        previousPhysicalFloorHash = 0;
+        previousMonsterIdsHash = 0;
+        previousAlive = true;
+        pendingEndReason = null;
+
+        writeManifest(state, directory);
+        writeHeader(movementWriter, "movement");
+        writeHeader(inputWriter, "input");
+        writeHeader(worldWriter, "world");
+        writeHeader(navigationWriter, "navigation");
+        writeHeader(monsterWriter, "monsters");
+        writeHeader(mazeWriter, "maze");
+        writeHeader(inventoryWriter, "inventory");
+        writeHeader(collisionWriter, "collision");
+        writeHeader(eventWriter, "events");
+        writeEvent(state.worldTick, 0L, "GAME_START", "");
+        flushAll();
+        System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER started: "
+                + currentManifest.toAbsolutePath());
+    }
+
+    private BufferedWriter open(Path path) throws IOException {
+        return Files.newBufferedWriter(path, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE);
+    }
+
+    private void writeManifest(LegacyWorldObservation state, File directory) throws IOException {
+        manifestWriter.write("{\"recordType\":\"manifest\",\"jsonVersion\":" + JSON_VERSION
+                + ",\"minecraftVersion\":\"1.8.9\",\"worldTick\":" + state.worldTick
+                + ",\"stage\":" + state.stage
+                + ",\"files\":[\""
+                + "human-speed-run-" + runStamp + "-movement.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-input.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-world.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-navigation.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-monsters.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-maze.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-inventory.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-collision.jsonl\",\""
+                + "human-speed-run-" + runStamp + "-events.jsonl\"],"
+                + "\"boundary\":\"Minecraft18RunBoundary + Minecraft18Observer\","
+                + "\"privacy\":\"No player identity, UUID, or ordinary chat transcript\"}");
+        manifestWriter.newLine();
+    }
+
+    private void writeHeader(BufferedWriter writer, String stream) throws IOException {
+        writer.write("{\"recordType\":\"header\",\"jsonVersion\":" + JSON_VERSION
+                + ",\"stream\":\"" + stream + "\"}");
         writer.newLine();
     }
 
-    private void write(LegacyWorldObservation state) {
-        try {
-            float yawDelta = Float.isNaN(previousYaw) ? 0.0f : wrapDegrees(state.player.yaw - previousYaw);
-            long dt = previousWorldTick == Long.MIN_VALUE ? 1L : Math.max(1L, state.worldTick - previousWorldTick);
-            String prefix = "{\\"tick\\":" + state.worldTick + ",\\"stage\\":" + state.stage + ",\\"recordIndex\\":" + records;
+    private void write(LegacyWorldObservation state) throws IOException {
+        long dt = previousWorldTick == Long.MIN_VALUE ? 1L
+                : Math.max(1L, state.worldTick - previousWorldTick);
+        float yawDelta = Float.isNaN(previousYaw) ? 0.0F
+                : wrapDegrees(state.player.yaw - previousYaw);
+        double dx = Double.isNaN(previousX) ? 0.0D : state.player.x - previousX;
+        double dz = Double.isNaN(previousZ) ? 0.0D : state.player.z - previousZ;
+        double displacement = Math.hypot(dx, dz);
+        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double healthDelta = Double.isNaN(previousHealth) ? 0.0D
+                : state.player.health - previousHealth;
 
-            writeLine(movementWriter, prefix + ",\\"x\\":" + state.player.x + ",\\"y\\":" + state.player.y + ",\\"z\\":" + state.player.z + ",\\"vx\\":" + state.player.vx + ",\\"vy\\":" + state.player.vy + ",\\"vz\\":" + state.player.vz + ",\\"yaw\\":" + state.player.yaw + ",\\"pitch\\":" + state.player.pitch + ",\\"grounded\\":" + state.player.grounded + "}");
-            writeLine(inputWriter, prefix + ",\\"forward\\":" + inputForward + ",\\"strafe\\":" + inputStrafe + ",\\"jump\\":" + inputJump + ",\\"sprintKey\\":" + inputSprint + ",\\"yawDelta\\":" + yawDelta + ",\\"yawDeltaWithin30\\":" + (Math.abs(yawDelta) <= 30.0001f) + ",\\"useAbility\\":" + rightClickPulse + "}");
-            writeLine(worldWriter, prefix + ",\\"dt\\":" + dt + ",\\"phaseTimerSeconds\\":" + state.safePadSeconds + ",\\"liveSeconds\\":" + state.liveSeconds + ",\\"inMaze\\":" + state.inMonsterMaze + ",\\"alive\\":" + state.alive + ",\\"completed\\":" + state.completed + ",\\"mazeDetected\\":" + state.mazeDetected + ",\\"mazePattern\\":\\"" + escape(state.mazePattern) + "\\",\\"kit\\":\\"" + escape(state.kit == null ? "" : state.kit.name()) + "\\",\\"jumpCharges\\":" + state.jumpCharges + ",\\"abilityCharges\\":" + state.abilityCharges + ",\\"currentCell\\":" + cellFor(state) + ",\\"activePad\\":" + padJson(state) + "}");
-            writeMonsters(state, prefix);
-            if (state.pad != null && state.pad.reached) writeLine(eventWriter, prefix + ",\\"event\\":\\"PAD_REACHED\\",\\"padRow\\":" + state.pad.row + ",\\"padColumn\\":" + state.pad.column + "}");
-            if (state.stage != 0 && (records == 0 || state.stage != lastStage)) writeLine(eventWriter, prefix + ",\\"event\\":\\"STAGE_CHANGED\\",\\"stage\\":" + state.stage + "}");
-            if (records % 20L == 0L) flushAll();
-            records++; previousYaw = state.player.yaw; previousWorldTick = state.worldTick; rightClickPulse = false; lastStage = state.stage;
-        } catch (IOException e) { System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER write failed: " + e); finish("WRITE_ERROR"); }
+        String prefix = "{\"tick\":" + state.worldTick
+                + ",\"stage\":" + state.stage
+                + ",\"recordIndex\":" + records;
+
+        writeLine(movementWriter, prefix
+                + ",\"x\":" + state.player.x
+                + ",\"y\":" + state.player.y
+                + ",\"z\":" + state.player.z
+                + ",\"vx\":" + state.player.vx
+                + ",\"vy\":" + state.player.vy
+                + ",\"vz\":" + state.player.vz
+                + ",\"yaw\":" + state.player.yaw
+                + ",\"pitch\":" + state.player.pitch
+                + ",\"yawDelta\":" + yawDelta
+                + ",\"grounded\":" + state.player.grounded
+                + ",\"fallDistance\":" + minecraft.thePlayer.fallDistance
+                + ",\"horizontalCollision\":" + minecraft.thePlayer.isCollidedHorizontally
+                + ",\"verticalCollision\":" + minecraft.thePlayer.isCollidedVertically
+                + ",\"collision\":" + minecraft.thePlayer.isCollided
+                + ",\"airborne\":" + minecraft.thePlayer.isAirBorne
+                + ",\"sprinting\":" + minecraft.thePlayer.isSprinting()
+                + ",\"sneaking\":" + minecraft.thePlayer.isSneaking()
+                + ",\"stepHeight\":" + minecraft.thePlayer.stepHeight
+                + ",\"jumpMovementFactor\":" + minecraft.thePlayer.jumpMovementFactor
+                + ",\"walkDistance\":" + minecraft.thePlayer.distanceWalkedModified
+                + ",\"dx\":" + dx
+                + ",\"dz\":" + dz
+                + ",\"displacement\":" + displacement
+                + ",\"horizontalSpeed\":" + horizontalSpeed
+                + ",\"healthDelta\":" + healthDelta
+                + "}");
+
+        writeLine(inputWriter, prefix
+                + ",\"forward\":" + inputForward
+                + ",\"strafe\":" + inputStrafe
+                + ",\"jump\":" + inputJump
+                + ",\"sprintKey\":" + inputSprint
+                + ",\"rawForward\":" + rawForward
+                + ",\"rawBack\":" + rawBack
+                + ",\"rawLeft\":" + rawLeft
+                + ",\"rawRight\":" + rawRight
+                + ",\"rawJump\":" + rawJump
+                + ",\"rawSprint\":" + rawSprint
+                + ",\"rawSneak\":" + rawSneak
+                + ",\"rawAttack\":" + rawAttack
+                + ",\"rawUseItem\":" + rawUseItem
+                + ",\"mouseLeftPulse\":" + mouseLeftPulse
+                + ",\"mouseRightPulse\":" + mouseRightPulse
+                + ",\"yawDelta\":" + yawDelta
+                + ",\"yawDeltaWithin30\":" + (Math.abs(yawDelta) <= 30.0001F)
+                + "}");
+
+        writeWorld(state, prefix, dt, healthDelta);
+        writeNavigation(state, prefix, dx, dz, displacement, horizontalSpeed);
+        writeMonsters(state);
+        writeMazeIfChanged(state);
+        writeInventoryIfChanged(state);
+        writeCollisionIfChanged(state);
+        writeTransitions(state, prefix, healthDelta);
+
+        records++;
+        previousYaw = state.player.yaw;
+        previousWorldTick = state.worldTick;
+        previousX = state.player.x;
+        previousZ = state.player.z;
+        previousHealth = state.player.health;
+        previousStage = state.stage;
+        if (state.pad != null) {
+            previousPadRow = state.pad.row;
+            previousPadColumn = state.pad.column;
+            previousPadReached = state.pad.reached;
+        } else {
+            previousPadRow = Integer.MIN_VALUE;
+            previousPadColumn = Integer.MIN_VALUE;
+            previousPadReached = false;
+        }
+        previousGrounded = state.player.grounded;
+        previousJumpCharges = state.jumpCharges;
+        previousAbilityCharges = state.abilityCharges;
+        previousSelectedSlot = minecraft.thePlayer.inventory.currentItem;
+        previousAlive = state.alive;
+        mouseLeftPulse = false;
+        mouseRightPulse = false;
+
+        if (records % 20L == 0L) flushAll();
     }
 
-    private int lastStage = Integer.MIN_VALUE;
-    private BufferedWriter open(Path directory, Path path) throws IOException { return Files.newBufferedWriter(path, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE); }
-    private static void writeLine(BufferedWriter w, String line) throws IOException { w.write(line); w.newLine(); }
-    private void flushAll() throws IOException { writer.flush(); movementWriter.flush(); worldWriter.flush(); monsterWriter.flush(); inputWriter.flush(); eventWriter.flush(); }
-    private String padJson(LegacyWorldObservation s) { if (s.pad == null) return "null"; return "{\\"row\\":"+s.pad.row+",\\"column\\":"+s.pad.column+",\\"distanceSq\\":"+s.pad.distanceSq+",\\"reached\\":"+s.pad.reached+"}"; }
-    private void writeMonsters(LegacyWorldObservation s, String prefix) throws IOException { for (LegacyWorldObservation.Monster m : s.monsters) writeLine(monsterWriter, prefix + ",\\"id\\":"+m.id+",\\"gameplayType\\":\\""+escape(m.gameplayType)+"\\",\\"visualType\\":\\""+escape(m.visualType)+"\\",\\"x\\":"+m.x+",\\"y\\":"+m.y+",\\"z\\":"+m.z+",\\"vx\\":"+m.vx+",\\"vy\\":"+m.vy+",\\"vz\\":"+m.vz+",\\"removed\\":"+m.removed+"}"); }
-
-    private String toJson(LegacyWorldObservation s, float yawDelta, long dt) {
-        StringBuilder b = new StringBuilder(8192);
-        b.append("{\"recordType\":\"tick\",\"jsonVersion\":").append(JSON_VERSION)
-                .append(",\"tick\":").append(s.worldTick)
-                .append(",\"dt\":").append(dt)
-                .append(",\"stage\":").append(s.stage)
-                .append(",\"phaseTimerSeconds\":").append(s.safePadSeconds)
-                .append(",\"liveSeconds\":").append(s.liveSeconds)
-                .append(",\"inMaze\":").append(s.inMonsterMaze)
-                .append(",\"alive\":").append(s.alive)
-                .append(",\"completed\":").append(s.completed)
-                .append(",\"mazeDetected\":").append(s.mazeDetected)
-                .append(",\"mazePattern\":").append(s.mazePattern);
-
-        b.append(",\"player\":{\"x\":").append(s.player.x)
-                .append(",\"y\":").append(s.player.y)
-                .append(",\"z\":").append(s.player.z)
-                .append(",\"vx\":").append(s.player.vx)
-                .append(",\"vy\":").append(s.player.vy)
-                .append(",\"vz\":").append(s.player.vz)
-                .append(",\"yaw\":").append(s.player.yaw)
-                .append(",\"pitch\":").append(s.player.pitch)
-                .append(",\"grounded\":").append(s.player.grounded)
-                .append(",\"health\":").append(s.player.health)
-                .append(",\"maxHealth\":").append(s.player.maxHealth).append("}");
-
-        b.append(",\"input\":{\"forward\":").append(inputForward)
-                .append(",\"strafe\":").append(inputStrafe)
-                .append(",\"jump\":").append(inputJump)
-                .append(",\"sprint\":").append(inputSprint)
-                .append(",\"yawDelta\":").append(yawDelta)
-                .append(",\"yawDeltaWithinActionLimit\":").append(Math.abs(yawDelta) <= 30.0001f)
-                .append(",\"useAbility\":").append(rightClickPulse).append("}");
-
-        b.append(",\"kit\":\"").append(escape(s.kit == null ? "" : s.kit.name()))
-                .append("\",\"jumpCharges\":").append(s.jumpCharges)
-                .append(",\"abilityCharges\":").append(s.abilityCharges);
-
-        if (s.center == null) {
+    private void writeWorld(LegacyWorldObservation state, String prefix,
+                            long dt, double healthDelta) throws IOException {
+        StringBuilder b = new StringBuilder(prefix);
+        b.append(",\"dt\":").append(dt)
+                .append(",\"phaseTimerSeconds\":").append(state.safePadSeconds)
+                .append(",\"liveSeconds\":").append(state.liveSeconds)
+                .append(",\"inMaze\":").append(state.inMonsterMaze)
+                .append(",\"alive\":").append(state.alive)
+                .append(",\"completed\":").append(state.completed)
+                .append(",\"mazeDetected\":").append(state.mazeDetected)
+                .append(",\"mazePattern\":").append(state.mazePattern)
+                .append(",\"kit\":\"").append(escape(state.kit == null ? "" : state.kit.name())).append("\\"")
+                .append(",\"jumpCharges\":").append(state.jumpCharges)
+                .append(",\"abilityCharges\":").append(state.abilityCharges)
+                .append(",\"health\":").append(state.player.health)
+                .append(",\"healthDelta\":").append(healthDelta)
+                .append(",\"selectedHotbarSlot\":").append(minecraft.thePlayer.inventory.currentItem)
+                .append(",\"scoreboardTitle\":\"").append(escape(state.scoreboardTitle)).append("\",\"scoreboardLines\":[");
+        for (int i = 0; i < state.scoreboardLines.size(); i++) {
+            if (i > 0) b.append(",");
+            b.append("\"").append(escape(state.scoreboardLines.get(i))).append("\"");
+        }
+        b.append("]");
+        if (state.center == null) {
             b.append(",\"center\":null");
         } else {
-            b.append(",\"center\":{\"x\":").append(s.center.x)
-                    .append(",\"y\":").append(s.center.y)
-                    .append(",\"z\":").append(s.center.z).append("}");
+            b.append(",\"center\":{\"x\":").append(state.center.x)
+                    .append(",\"y\":").append(state.center.y)
+                    .append(",\"z\":").append(state.center.z).append("}");
         }
+        b.append(",\"activePad\":").append(padJson(state))
+                .append("}");
+        writeLine(worldWriter, b.toString());
+    }
 
-        if (s.pad == null) {
-            b.append(",\"activePad\":null");
-        } else {
-            b.append(",\"activePad\":{\"row\":").append(s.pad.row)
-                    .append(",\"column\":").append(s.pad.column)
-                    .append(",\"distanceSq\":").append(s.pad.distanceSq)
-                    .append(",\"reached\":").append(s.pad.reached).append("}");
+    private void writeNavigation(LegacyWorldObservation state, String prefix,
+                                 double dx, double dz, double displacement,
+                                 double horizontalSpeed) throws IOException {
+        int row = -1;
+        int column = -1;
+        if (state.center != null) {
+            row = (int)Math.floor(state.player.x - (state.center.x - 49));
+            column = (int)Math.floor(state.player.z - (state.center.z - 49));
         }
+        double targetDx = Double.NaN;
+        double targetDz = Double.NaN;
+        double targetDistance = Double.NaN;
+        double targetBearing = Double.NaN;
+        if (state.pad != null && state.center != null && state.pad.row >= 0 && state.pad.column >= 0) {
+            double targetX = state.center.x - 49 + state.pad.row + 0.5D;
+            double targetZ = state.center.z - 49 + state.pad.column + 0.5D;
+            targetDx = targetX - state.player.x;
+            targetDz = targetZ - state.player.z;
+            targetDistance = Math.hypot(targetDx, targetDz);
+            targetBearing = Math.toDegrees(Math.atan2(-targetDx, targetDz));
+        }
+        double movementBearing = displacement < 1.0E-9 ? Double.NaN : Math.toDegrees(Math.atan2(-dx, dz));
+        double velocityBearing = horizontalSpeed < 1.0E-9
+                ? Double.NaN : Math.toDegrees(Math.atan2(-state.player.vx, state.player.vz));
 
-        b.append(",\"monsters\":[");
-        for (int i = 0; i < s.monsters.size(); i++) {
-            if (i > 0) b.append(",");
-            LegacyWorldObservation.Monster m = s.monsters.get(i);
+        writeLine(navigationWriter, prefix
+                + ",\"row\":" + row
+                + ",\"column\":" + column
+                + ",\"activePad\":" + padJson(state)
+                + ",\"targetDx\":" + targetDx
+                + ",\"targetDz\":" + targetDz
+                + ",\"targetDistance\":" + targetDistance
+                + ",\"targetBearing\":" + targetBearing
+                + ",\"movementBearing\":" + movementBearing
+                + ",\"velocityBearing\":" + velocityBearing
+                + ",\"displacement\":" + displacement
+                + ",\"horizontalSpeed\":" + horizontalSpeed
+                + "}");
+    }
+
+    private void writeMonsters(LegacyWorldObservation state) throws IOException {
+        StringBuilder b = new StringBuilder();
+        b.append("{\"tick\":").append(state.worldTick)
+                .append(",\"stage\":").append(state.stage)
+                .append(",\"recordIndex\":").append(records)
+                .append(",\"localRadius\":").append(MONSTER_LOCAL_RADIUS)
+                .append(",\"monsters\":[");
+        int localCount = 0;
+        int idsHash = 1;
+        double radiusSquared = MONSTER_LOCAL_RADIUS * MONSTER_LOCAL_RADIUS;
+        for (LegacyWorldObservation.Monster m : state.monsters) {
+            if (m.removed) continue;
+            double dx = m.x - state.player.x;
+            double dy = m.y - state.player.y;
+            double dz = m.z - state.player.z;
+            if (dx * dx + dy * dy + dz * dz > radiusSquared) continue;
+            if (localCount > 0) b.append(",");
             b.append("{\"id\":").append(m.id)
                     .append(",\"gameplayType\":\"").append(escape(m.gameplayType))
                     .append("\",\"visualType\":\"").append(escape(m.visualType))
@@ -258,122 +507,364 @@ public final class HumanRunRecorder implements Closeable {
                     .append(",\"vx\":").append(m.vx)
                     .append(",\"vy\":").append(m.vy)
                     .append(",\"vz\":").append(m.vz)
-                    .append(",\"removed\":").append(m.removed).append("}");
+                    .append("}");
+            idsHash = 31 * idsHash + m.id;
+            localCount++;
+        }
+        b.append("],\"localCount\":").append(localCount)
+                .append(",\"observedMonsterCount\":").append(state.monsters.size())
+                .append("}");
+        writeLine(monsterWriter, b.toString());
+
+        if (idsHash != previousMonsterIdsHash && previousMonsterIdsHash != 0) {
+            writeEvent(state.worldTick, records, "MONSTER_SET_CHANGED",
+                    "localCount=" + localCount + ",previousHash=" + previousMonsterIdsHash + ",hash=" + idsHash);
+        }
+        previousMonsterIdsHash = idsHash;
+    }
+
+    private void writeMazeIfChanged(LegacyWorldObservation state) throws IOException {
+        int mazeHash = matrixHash(state.maze);
+        int physicalFloorHash = matrixHash(state.physicalFloor);
+        if (mazeHash == previousMazeHash && physicalFloorHash == previousPhysicalFloorHash) return;
+
+        mazeWriter.write("{\"tick\":" + state.worldTick
+                + ",\"stage\":" + state.stage
+                + ",\"logicalHash\":" + mazeHash
+                + ",\"physicalFloorHash\":" + physicalFloorHash
+                + ",\"maze\":" + intRows(state.maze)
+                + ",\"physicalFloor\":" + booleanRows(state.physicalFloor)
+                + "}");
+        mazeWriter.newLine();
+
+        previousMazeHash = mazeHash;
+        previousPhysicalFloorHash = physicalFloorHash;
+    }
+
+    private void writeInventoryIfChanged(LegacyWorldObservation state) throws IOException {
+        EntityPlayerSP player = minecraft.thePlayer;
+        StringBuilder signature = new StringBuilder();
+        StringBuilder b = new StringBuilder();
+        signature.append(player.inventory.currentItem).append("|");
+        b.append("{\"tick\":").append(state.worldTick)
+                .append(",\"stage\":").append(state.stage)
+                .append(",\"selectedSlot\":").append(player.inventory.currentItem)
+                .append(",\"items\":[");
+        boolean first = true;
+        for (int slot = 0; slot < player.inventory.getSizeInventory(); slot++) {
+            ItemStack stack = player.inventory.getStackInSlot(slot);
+            if (stack == null) continue;
+            Item item = stack.getItem();
+            int itemId = Item.getIdFromItem(item);
+            int metadata = stack.getMetadata();
+            String display = stack.hasDisplayName() ? stack.getDisplayName() : "";
+            signature.append(slot).append(":").append(itemId).append(":")
+                    .append(metadata).append(":").append(stack.stackSize).append(":")
+                    .append(display).append("|");
+            if (!first) b.append(",");
+            first = false;
+            b.append("{\"slot\":").append(slot)
+                    .append(",\"itemId\":").append(itemId)
+                    .append(",\"metadata\":").append(metadata)
+                    .append(",\"count\":").append(stack.stackSize)
+                    .append(",\"displayName\":\"").append(escape(display)).append("\\"}");
+        }
+        b.append("]}");
+
+        String nextSignature = signature.toString();
+        if (nextSignature.equals(previousInventorySignature)) return;
+        inventoryWriter.write(b.toString());
+        inventoryWriter.newLine();
+        previousInventorySignature = nextSignature;
+    }
+
+    private void writeCollisionIfChanged(LegacyWorldObservation state) throws IOException {
+        EntityPlayerSP player = minecraft.thePlayer;
+        WorldSnapshot snapshot = buildCollisionSnapshot(player);
+        if (snapshot.hash == previousCollisionHash) return;
+
+        collisionWriter.write("{\"tick\":" + state.worldTick
+                + ",\"stage\":" + state.stage
+                + ",\"playerBlock\":{\"x\":" + snapshot.playerX
+                + ",\"y\":" + snapshot.playerY
+                + ",\"z\":" + snapshot.playerZ + "}"
+                + ",\"blocks\":" + snapshot.json + "}");
+        collisionWriter.newLine();
+        previousCollisionHash = snapshot.hash;
+    }
+
+    private WorldSnapshot buildCollisionSnapshot(EntityPlayerSP player) {
+        int baseX = (int)Math.floor(player.posX);
+        int baseY = (int)Math.floor(player.posY);
+        int baseZ = (int)Math.floor(player.posZ);
+        StringBuilder b = new StringBuilder("[");
+        int hash = 1;
+        boolean first = true;
+
+        for (int dy = -COLLISION_Y_BELOW; dy <= COLLISION_Y_ABOVE; dy++) {
+            for (int dx = -COLLISION_RADIUS; dx <= COLLISION_RADIUS; dx++) {
+                for (int dz = -COLLISION_RADIUS; dz <= COLLISION_RADIUS; dz++) {
+                    int x = baseX + dx;
+                    int y = baseY + dy;
+                    int z = baseZ + dz;
+                    BlockPos pos = new BlockPos(x, y, z);
+                    Block block = minecraft.theWorld.getBlockState(pos).getBlock();
+                    int id = Block.getIdFromBlock(block);
+                    int meta = minecraft.theWorld.getBlockState(pos).getBlock().getMetaFromState(
+                            minecraft.theWorld.getBlockState(pos));
+                    hash = 31 * hash + id;
+                    hash = 31 * hash + meta;
+                    if (!first) b.append(",");
+                    first = false;
+                    b.append("{\"dx\":").append(dx)
+                            .append(",\"dy\":").append(dy)
+                            .append(",\"dz\":").append(dz)
+                            .append(",\"id\":").append(id)
+                            .append(",\"meta\":").append(meta)
+                            .append("}");
+                }
+            }
         }
         b.append("]");
+        return new WorldSnapshot(hash, baseX, baseY, baseZ, b.toString());
+    }
 
-        int mazeHash = matrixHash(s.maze);
-        int floorHash = matrixHash(s.physicalFloor);
-        if (records == 0L || mazeHash != lastMazeHash) {
-            b.append(",\"maze\":").append(intMatrix(s.maze));
-            lastMazeHash = mazeHash;
+    private void writeTransitions(LegacyWorldObservation state, String prefix,
+                                   double healthDelta) throws IOException {
+        if (state.stage != previousStage) {
+            writeEvent(state.worldTick, records, previousStage == Integer.MIN_VALUE
+                    ? "STAGE_START" : "STAGE_CHANGE",
+                    "stage=" + state.stage + ",previousStage=" + previousStage);
         }
-        if (records == 0L || floorHash != lastFloorHash) {
-            b.append(",\"physicalFloor\":").append(booleanMatrix(s.physicalFloor));
-            lastFloorHash = floorHash;
+
+        if (state.pad != null && (state.pad.row != previousPadRow
+                || state.pad.column != previousPadColumn)) {
+            writeEvent(state.worldTick, records, "ACTIVE_PAD_CHANGED",
+                    "row=" + state.pad.row + ",column=" + state.pad.column
+                            + ",previousRow=" + previousPadRow + ",previousColumn=" + previousPadColumn);
         }
 
-        b.append(",\"derived\":{\"currentCell\":")
-                .append(cellFor(s))
-                .append(",\"distanceToActivePad\":")
-                .append(s.pad == null ? "null" : Math.sqrt(Math.max(0.0, s.pad.distanceSq)))
-                .append(",\"recordIndex\":").append(records).append("}");
+        if (state.pad != null && state.pad.reached && !previousPadReached) {
+            writeEvent(state.worldTick, records, "PAD_REACHED",
+                    "row=" + state.pad.row + ",column=" + state.pad.column);
+        }
 
-        b.append("}");
+        if (state.player.grounded != previousGrounded) {
+            writeEvent(state.worldTick, records,
+                    state.player.grounded ? "LANDED_OR_GROUNDED" : "LEFT_GROUND",
+                    "grounded=" + state.player.grounded);
+        }
+
+        if (!Double.isNaN(previousHealth) && healthDelta < -1.0E-6D) {
+            writeEvent(state.worldTick, records, "HEALTH_LOSS",
+                    "delta=" + healthDelta + ",health=" + state.player.health);
+        }
+
+        if (state.jumpCharges != previousJumpCharges) {
+            writeEvent(state.worldTick, records, "JUMP_CHARGES_CHANGED",
+                    "value=" + state.jumpCharges + ",previous=" + previousJumpCharges);
+        }
+
+        if (state.abilityCharges != previousAbilityCharges) {
+            writeEvent(state.worldTick, records, "ABILITY_CHARGES_CHANGED",
+                    "value=" + state.abilityCharges + ",previous=" + previousAbilityCharges);
+        }
+
+        int selected = minecraft.thePlayer.inventory.currentItem;
+        if (selected != previousSelectedSlot) {
+            writeEvent(state.worldTick, records, "HOTBAR_SLOT_CHANGED",
+                    "slot=" + selected + ",previous=" + previousSelectedSlot);
+        }
+
+        if (mouseLeftPulse) writeEvent(state.worldTick, records, "MOUSE_LEFT", "");
+        if (mouseRightPulse) writeEvent(state.worldTick, records, "MOUSE_RIGHT", "");
+        if (inputJump) writeEvent(state.worldTick, records, "JUMP_INPUT", "");
+        if (inputSprint) writeEvent(state.worldTick, records, "SPRINT_INPUT", "");
+    }
+
+    private void writeEvent(long tick, long recordIndex, String event, String detail) throws IOException {
+        eventWriter.write("{\"tick\":" + tick
+                + ",\"recordIndex\":" + recordIndex
+                + ",\"event\":\"" + escape(event)
+                + "\",\"detail\":\"" + escape(detail) + "\"}");
+        eventWriter.newLine();
+    }
+
+    private void writeLine(BufferedWriter writer, String line) throws IOException {
+        writer.write(line);
+        writer.newLine();
+    }
+
+    private void flushAll() throws IOException {
+        if (manifestWriter != null) manifestWriter.flush();
+        if (movementWriter != null) movementWriter.flush();
+        if (inputWriter != null) inputWriter.flush();
+        if (worldWriter != null) worldWriter.flush();
+        if (navigationWriter != null) navigationWriter.flush();
+        if (monsterWriter != null) monsterWriter.flush();
+        if (mazeWriter != null) mazeWriter.flush();
+        if (inventoryWriter != null) inventoryWriter.flush();
+        if (collisionWriter != null) collisionWriter.flush();
+        if (eventWriter != null) eventWriter.flush();
+    }
+
+    private String padJson(LegacyWorldObservation state) {
+        if (state.pad == null) return "null";
+        return "{\"row\":" + state.pad.row
+                + ",\"column\":" + state.pad.column
+                + ",\"distanceSq\":" + state.pad.distanceSq
+                + ",\"reached\":" + state.pad.reached + "}";
+    }
+
+    private static String intRows(int[][] matrix) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < matrix.length; i++) {
+            if (i > 0) b.append(",");
+            b.append("\"").append(intRow(matrix[i])).append("\"");
+        }
+        return b.append("]").toString();
+    }
+
+    private static String booleanRows(boolean[][] matrix) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < matrix.length; i++) {
+            if (i > 0) b.append(",");
+            b.append("\"").append(booleanRow(matrix[i])).append("\"");
+        }
+        return b.append("]").toString();
+    }
+
+    private static String intRow(int[] row) {
+        StringBuilder b = new StringBuilder(row.length);
+        for (int value : row) b.append(value);
         return b.toString();
     }
 
-    private String cellFor(LegacyWorldObservation s) {
-        if (s.center == null) return "null";
-        int row = (int)Math.floor(s.player.x - (s.center.x - 49));
-        int col = (int)Math.floor(s.player.z - (s.center.z - 49));
-        return "{\"row\":" + row + ",\"column\":" + col + "}";
-    }
-
-    private static String intMatrix(int[][] matrix) {
-        StringBuilder b = new StringBuilder("[");
-        for (int i = 0; i < matrix.length; i++) {
-            if (i > 0) b.append(",");
-            b.append("[");
-            for (int j = 0; j < matrix[i].length; j++) {
-                if (j > 0) b.append(",");
-                b.append(matrix[i][j]);
-            }
-            b.append("]");
-        }
-        return b.append("]").toString();
-    }
-
-    private static String booleanMatrix(boolean[][] matrix) {
-        StringBuilder b = new StringBuilder("[");
-        for (int i = 0; i < matrix.length; i++) {
-            if (i > 0) b.append(",");
-            b.append("[");
-            for (int j = 0; j < matrix[i].length; j++) {
-                if (j > 0) b.append(",");
-                b.append(matrix[i][j]);
-            }
-            b.append("]");
-        }
-        return b.append("]").toString();
+    private static String booleanRow(boolean[] row) {
+        StringBuilder b = new StringBuilder(row.length);
+        for (boolean value : row) b.append(value ? '1' : '0');
+        return b.toString();
     }
 
     private static int matrixHash(int[][] matrix) {
         int hash = 1;
-        for (int[] row : matrix) {
-            for (int value : row) hash = 31 * hash + value;
-        }
+        for (int[] row : matrix) for (int value : row) hash = 31 * hash + value;
         return hash;
     }
 
     private static int matrixHash(boolean[][] matrix) {
         int hash = 1;
-        for (boolean[] row : matrix) {
-            for (boolean value : row) hash = 31 * hash + (value ? 1 : 0);
-        }
+        for (boolean[] row : matrix) for (boolean value : row) hash = 31 * hash + (value ? 1 : 0);
         return hash;
     }
 
     private static float wrapDegrees(float degrees) {
-        float wrapped = degrees % 360.0f;
-        if (wrapped >= 180.0f) wrapped -= 360.0f;
-        if (wrapped < -180.0f) wrapped += 360.0f;
+        float wrapped = degrees % 360.0F;
+        if (wrapped >= 180.0F) wrapped -= 360.0F;
+        if (wrapped < -180.0F) wrapped += 360.0F;
         return wrapped;
     }
 
     private static String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\")
-                .replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+        if (value == null) return "";
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+
+    private static String sanitizeTerminalChat(String value) {
+        if (value == null) return "";
+        String clean = value.replace("\n", " ").replace("\r", " ");
+        return clean.length() > 160 ? clean.substring(0, 160) : clean;
+    }
+
+    private static final class WorldSnapshot {
+        final int hash;
+        final int playerX;
+        final int playerY;
+        final int playerZ;
+        final String json;
+
+        WorldSnapshot(int hash, int playerX, int playerY, int playerZ, String json) {
+            this.hash = hash;
+            this.playerX = playerX;
+            this.playerY = playerY;
+            this.playerZ = playerZ;
+            this.json = json;
+        }
     }
 
     private void resetInput() {
-        inputForward = 0.0f;
-        inputStrafe = 0.0f;
+        inputForward = 0.0F;
+        inputStrafe = 0.0F;
         inputJump = false;
         inputSprint = false;
-        rightClickPulse = false;
-        previousYaw = Float.NaN;
-        previousWorldTick = Long.MIN_VALUE;
+        rawForward = false;
+        rawBack = false;
+        rawLeft = false;
+        rawRight = false;
+        rawJump = false;
+        rawSprint = false;
+        rawSneak = false;
+        rawAttack = false;
+        rawUseItem = false;
+        mouseLeftPulse = false;
+        mouseRightPulse = false;
     }
 
     public void finish(String reason) {
-        if (writer == null) return;
+        if (!inRun && manifestWriter == null) return;
+        String finalReason = reason == null || reason.length() == 0 ? "UNKNOWN" : reason;
         try {
-            writer.write("{\"recordType\":\"footer\",\"reason\":\""
-                    + escape(reason) + "\",\"records\":" + records + "}");
-            writer.newLine();
-            writer.flush();
+            long tick = minecraft.theWorld == null ? previousWorldTick : minecraft.theWorld.getTotalWorldTime();
+            writeEvent(tick, records, "GAME_END", finalReason);
+            if (manifestWriter != null) {
+                manifestWriter.write("{\"recordType\":\"footer\",\"records\":" + records
+                        + ",\"reason\":\"" + escape(finalReason) + "\"}");
+                manifestWriter.newLine();
+            }
             flushAll();
-            writer.close(); movementWriter.close(); worldWriter.close(); monsterWriter.close(); inputWriter.close(); eventWriter.close();
         } catch (IOException e) {
             System.err.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER close failed: " + e);
         } finally {
+            closeWriter(manifestWriter);
+            closeWriter(movementWriter);
+            closeWriter(inputWriter);
+            closeWriter(worldWriter);
+            closeWriter(navigationWriter);
+            closeWriter(monsterWriter);
+            closeWriter(mazeWriter);
+            closeWriter(inventoryWriter);
+            closeWriter(collisionWriter);
+            closeWriter(eventWriter);
+
             System.out.println("[MonsterMazeAI/1.8] HUMAN RUN RECORDER finished: "
-                    + currentPath + " records=" + records + " reason=" + reason);
-            writer = null;
-            currentPath = null;
+                    + currentManifest + " records=" + records + " reason=" + finalReason);
+
+            manifestWriter = null;
+            movementWriter = null;
+            inputWriter = null;
+            worldWriter = null;
+            navigationWriter = null;
+            monsterWriter = null;
+            mazeWriter = null;
+            inventoryWriter = null;
+            collisionWriter = null;
+            eventWriter = null;
+            currentManifest = null;
+            runStamp = null;
             inRun = false;
+            pendingEndReason = null;
             resetInput();
+        }
+    }
+
+    private static void closeWriter(BufferedWriter writer) {
+        if (writer == null) return;
+        try {
+            writer.close();
+        } catch (IOException ignored) {
         }
     }
 

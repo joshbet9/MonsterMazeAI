@@ -131,6 +131,8 @@ public final class StableLiveMovementController {
     private static final long MOB_HIT_RECOVERY_TICKS = 40L;
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
     private static final long NON_JUMPER_JUMP_CADENCE_TICKS = 4L;
+    /** Keep a non-Jumper grounded long enough to enter a source gap cleanly. */
+    private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 1.80D;
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
@@ -933,12 +935,56 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
+        if (isApproachingGap(state)) {
+            // The source speed mechanic can request frequent jump inputs, but a
+            // jump already in progress cannot be retimed when the player reaches
+            // a one-block void. Preserve the grounded takeoff state instead.
+            return false;
+        }
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < NON_JUMPER_JUMP_CADENCE_TICKS) {
             return false;
         }
         lastSpeedJumpInputTick = state.tick;
         return true;
+    }
+
+    private boolean isApproachingGap(GameState state) {
+        if (route == null || route.size() < 2) return false;
+
+        int start = Math.max(0, waypointIndex - 2);
+        int end = Math.min(route.size() - 2, waypointIndex + 2);
+        for (int i = start; i <= end; i++) {
+            Cell from = route.cells().get(i);
+            Cell to = route.cells().get(i + 1);
+            if (!isGapEdge(state, from.row(), from.column(), to.row(), to.column())) continue;
+
+            int dirRow = Integer.signum(to.row() - from.row());
+            int dirColumn = Integer.signum(to.column() - from.column());
+            double sourceCenterX = from.row() + 0.5D;
+            double sourceCenterZ = from.column() + 0.5D;
+            double edgeProgress;
+            if (dirRow != 0) {
+                edgeProgress = (state.player.x - sourceCenterX) * dirRow;
+            } else {
+                edgeProgress = (state.player.z - sourceCenterZ) * dirColumn;
+            }
+
+            // Only reserve the pre-gap window, not arbitrary nearby crossing
+            // geometry elsewhere in the local route.
+            double lateral = crossTrackError(
+                    state.player.x, state.player.z,
+                    sourceCenterX, sourceCenterZ,
+                    dirRow, dirColumn);
+            if (Math.abs(lateral) > 0.75D) continue;
+
+            double distanceToTakeoff = GAP_JUMP_PROGRESS - edgeProgress;
+            if (distanceToTakeoff >= -0.10D
+                    && distanceToTakeoff <= GAP_PRE_JUMP_RESERVE_DISTANCE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static float cardinalYaw(int rowDirection, int columnDirection) {

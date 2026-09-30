@@ -550,24 +550,12 @@ public final class StableLiveMovementController {
                     Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
             float correctionError = normalise(correctionYaw - state.player.yaw);
 
-            if (speed > MAX_TURNING_SPEED) {
-                /*
-                 * The player is already moving, so stopping and suppressing yaw
-                 * input is a self-lock: friction only reduces speed while the
-                 * cross-track error remains. Keep a bounded W+A/D correction
-                 * active instead, exactly like the source-valid corner vector.
-                 */
-                double errorRad = Math.toRadians(correctionError);
-                double forward = Math.cos(errorRad) * 0.65D;
-                double strafe = -Math.sin(errorRad) * 0.65D;
-                boolean jump = shouldSpeedJump(state, allowJump);
-                float turn = clamp((float) (correctionError * turnResponseGain()),
-                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                action = new Action(forward, strafe, jump, false, turn, false);
-            } else if (Math.abs(correctionError) > HEADING_TOLERANCE) {
+            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
                 action = new Action(
                         0.0, 0.0, false, false,
-                        clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
+                        speed <= MAX_TURNING_SPEED
+                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                                : 0.0F,
                         false);
             } else {
                 action = new Action(1.0, 0.0, false, true, 0.0F, false);

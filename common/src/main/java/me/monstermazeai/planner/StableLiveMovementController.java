@@ -234,7 +234,7 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state);
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
         if (mobAvoidance != null) return mobAvoidance;
 
         int previousGoalRow = goalRow;

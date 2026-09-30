@@ -66,6 +66,19 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void largeCardinalHeadingErrorTurnsInPlaceBeforeDriving() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action first = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertEquals(0.0, first.forward(), 1.0e-9,
+                "a large cardinal turn must not inject diagonal forward motion");
+        assertFalse(first.sprint());
+        assertTrue(Math.abs(first.yawDelta()) > 0.0F);
+    }
+
+    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

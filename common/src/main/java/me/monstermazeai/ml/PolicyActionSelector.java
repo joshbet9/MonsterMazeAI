@@ -38,9 +38,10 @@ public final class PolicyActionSelector {
         if (explore) {
             double epsilon = clamp01(Double.parseDouble(
                     System.getProperty("monstermaze.ml.policy.epsilon", "0.20")));
-            if (RANDOM.nextDouble() < epsilon || loaded == null) {
+            if (RANDOM.nextDouble() < epsilon) {
                 return candidates.get(RANDOM.nextInt(candidates.size()));
             }
+            if (loaded == null) return baseline;
         }
 
         if (!policyMode || loaded == null) return baseline;
@@ -94,7 +95,12 @@ public final class PolicyActionSelector {
         }
 
         boolean canUseAbility = state.ability != null
-                && (state.ability.charges > 0 || state.kit == Kit.BODY_BUILDER);
+                && ((state.kit == Kit.BODY_BUILDER && state.ability.activations > 0
+                        && state.ability.activeUntilTick <= state.tick)
+                    || (state.kit != Kit.BODY_BUILDER
+                        && state.kit != Kit.JUMPER
+                        && state.ability.charges > 0
+                        && state.tick >= state.ability.cooldownUntilTick));
         if (canUseAbility) {
             add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(), baseline.jump(), baseline.sprint(),
                     baseline.yawDelta(), true));

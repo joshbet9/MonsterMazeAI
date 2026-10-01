@@ -1346,8 +1346,18 @@ public final class StableLiveMovementController {
 
     private int supportLookaheadTicks(GameState state) {
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
+        /*
+         * Normal movement is controlled once per live observation. A three-tick
+         * support projection was repeatedly replacing valid forward/strafe input
+         * with EDGE_GUARD/LANE recovery before the next observation could correct
+         * the path. Keep a two-tick horizon for ordinary movement while the
+         * committed gap motor retains the full three-tick safety budget.
+         */
+        int maxLookahead = gapExecutionActive
+                ? MAX_SUPPORT_LOOKAHEAD_TICKS
+                : MIN_SUPPORT_LOOKAHEAD_TICKS + 1;
         return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
-                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
+                Math.min(maxLookahead, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {

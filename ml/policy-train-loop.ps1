@@ -10,7 +10,7 @@ param(
     [double]$Gamma = 0.995,
     [double]$Exploration = 0.20,
     [int]$CounterfactualStride = 20,
-    [int]$CounterfactualHorizon = 32,
+    [int]$CounterfactualHorizon = 64,
     [int]$SleepSeconds = 0
 )
 
@@ -59,6 +59,7 @@ function Append-File {
 
 function Gate-AgainstBaseline {
     param([string]$Candidate,[int]$Seed,[string]$CycleDir)
+
     $baseline = Join-Path $HoldoutRoot "seed-$Seed-baseline.log"
     if (-not (Test-Path $baseline)) {
         $baselineLog = Join-Path $CycleDir "baseline-seed-$Seed.log"
@@ -68,42 +69,85 @@ function Gate-AgainstBaseline {
         Copy-Item $baselineLog $baseline -Force
     }
 
+    $incumbentLog = Join-Path $CycleDir "incumbent-seed-$Seed.log"
+    $currentModel = Join-Path $CurrentRoot "policy-model.json"
+    if (Test-Path $currentModel) {
+        $code = Invoke-Run $Seed $incumbentLog (Join-Path $CycleDir "ignored-incumbent-$Seed.jsonl") $currentModel $false
+        if ($code -ne 0) { return $false }
+    } else {
+        Copy-Item $baseline $incumbentLog -Force
+    }
+
     $candidateLog = Join-Path $CycleDir "holdout-seed-$Seed.log"
     $code = Invoke-Run $Seed $candidateLog (Join-Path $CycleDir "ignored-$Seed.jsonl") $Candidate $false
     if ($code -ne 0) { return $false }
 
-    $baselineLines = @(Select-String -Path $baseline -Pattern "SPEED_FULL_RUN|MODERN_FULL_RUN" | ForEach-Object { $_.Line })
-    $candidateLines = @(Select-String -Path $candidateLog -Pattern "SPEED_FULL_RUN|MODERN_FULL_RUN" | ForEach-Object { $_.Line })
-    if ($baselineLines.Count -ne 30 -or $candidateLines.Count -ne 30) { return $false }
+    function Read-StageMap([string]$Path) {
+        $lines = @(Select-String -Path $Path -Pattern "SPEED_FULL_RUN|MODERN_FULL_RUN" | ForEach-Object { $_.Line })
+        if ($lines.Count -ne 30) { return @{} }
 
-    $b = @{}
-    foreach ($line in $baselineLines) {
-        if ($line -match "(SPEED|MODERN)_FULL_RUN pattern=(\d) kit=([A-Z_]+) maxStage=(\d+)") {
-            $b["$($matches[1])|$($matches[2])|$($matches[3])"] = [int]$matches[4]
+        $map = @{}
+        foreach ($line in $lines) {
+            if ($line -match "(SPEED|MODERN)_FULL_RUN pattern=(d) kit=([A-Z_]+) maxStage=(d+)") {
+                $map["$($matches[1])|$($matches[2])|$($matches[3])"] = [int]$matches[4]
+            }
         }
+        return $map
     }
-    $c = @{}
-    foreach ($line in $candidateLines) {
-        if ($line -match "(SPEED|MODERN)_FULL_RUN pattern=(\d) kit=([A-Z_]+) maxStage=(\d+)") {
-            $c["$($matches[1])|$($matches[2])|$($matches[3])"] = [int]$matches[4]
-        }
-    }
-    if ($b.Count -ne 30 -or $c.Count -ne 30) { return $false }
 
-    $baseSum=0; $candSum=0; $basePeak=0; $candPeak=0; $improved=0; $worsened=0
+    $b = Read-StageMap $baseline
+    $i = Read-StageMap $incumbentLog
+    $c = Read-StageMap $candidateLog
+    if ($b.Count -ne 30 -or $i.Count -ne 30 -or $c.Count -ne 30) { return $false }
+
+    $baseSum=0; $incSum=0; $candSum=0
+    $basePeak=0; $incPeak=0; $candPeak=0
+    $improved=0; $worsened=0; $same=0; $belowBaseline=0
+
     foreach ($key in $b.Keys) {
-        if (-not $c.ContainsKey($key)) { return $false }
-        $bv=$b[$key]; $cv=$c[$key]
-        $baseSum += $bv; $candSum += $cv
-        $basePeak=[Math]::Max($basePeak,$bv); $candPeak=[Math]::Max($candPeak,$cv)
-        if ($cv -gt $bv) { $improved++ }
-        if ($cv -lt $bv) { $worsened++ }
+        if (-not $i.ContainsKey($key) -or -not $c.ContainsKey($key)) { return $false }
+
+        $bv=$b[$key]; $iv=$i[$key]; $cv=$c[$key]
+        $baseSum += $bv; $incSum += $iv; $candSum += $cv
+        $basePeak=[Math]::Max($basePeak,$bv)
+        $incPeak=[Math]::Max($incPeak,$iv)
+        $candPeak=[Math]::Max($candPeak,$cv)
+
+        if ($cv -gt $iv) { $improved++ }
+        elseif ($cv -lt $iv) { $worsened++ }
+        else { $same++ }
+
+        if ($cv -lt $bv) { $belowBaseline++ }
     }
 
     $count=$b.Count
-    $report=[ordered]@{seed=$Seed;cases=$count;baselineAvg=($baseSum/$count);candidateAvg=($candSum/$count);baselinePeak=$basePeak;candidatePeak=$candPeak;improved=$improved;worsened=$worsened;same=($count-$improved-$worsened);passed=($worsened -eq 0 -and $candSum -ge $baseSum -and $candPeak -ge $basePeak)}
+    $report=[ordered]@{
+        seed=$Seed
+        cases=$count
+        baselineAvg=($baseSum/$count)
+        incumbentAvg=($incSum/$count)
+        candidateAvg=($candSum/$count)
+        baselinePeak=$basePeak
+        incumbentPeak=$incPeak
+        candidatePeak=$candPeak
+        improved=$improved
+        worsened=$worsened
+        same=$same
+        belowBaseline=$belowBaseline
+        passed=(
+            $worsened -eq 0
+            -and $belowBaseline -eq 0
+            -and $candSum -ge $incSum
+            -and $candPeak -ge $incPeak
+            -and $candSum -ge $baseSum
+            -and $candPeak -ge $basePeak
+        )
+    }
     $report | ConvertTo-Json | Set-Content (Join-Path $CycleDir "policy-holdout-seed-$Seed.json") -Encoding utf8
-    Write-Host ("POLICY_GATE seed={0} avg={1:N2}->{2:N2} peak={3}->{4} improved={5} worsened={6} passed={7}" -f $Seed,$report.baselineAvg,$report.candidateAvg,$report.baselinePeak,$report.candidatePeak,$report.improved,$report.worsened,$report.passed)
+    Write-Host ("POLICY_GATE seed={0} baseline={1:N2} incumbent={2:N2} candidate={3:N2} peaks={4}/{5}/{6} improved={7} worsened={8} belowBaseline={9} passed={10}" -f
+        $Seed,$report.baselineAvg,$report.incumbentAvg,$report.candidateAvg,
+        $report.baselinePeak,$report.incumbentPeak,$report.candidatePeak,
+        $report.improved,$report.worsened,$report.belowBaseline,$report.passed)
     return [bool]$report.passed
 }
 

@@ -15,7 +15,7 @@ jobs:
   matrix:
     name: 15 Speed + 15 Modern natural-termination matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -28,11 +28,47 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Run full results matrix
+      - name: Run full results matrix and collect simulator labels
         run: >
           mvn -B -ntp -pl common -am
           -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest
+          -Dmonstermaze.ml.record=true
+          -Dmonstermaze.ml.output=ml-data/route-training.jsonl
           -Dsurefire.useFile=false
           -Dsurefire.redirectTestOutputToFile=false
           -Dsurefire.failIfNoSpecifiedTests=false
           test
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ML trainer dependency
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Inspect simulator training set
+        run: python ml/route_ranker.py inspect --input ml-data/route-training.jsonl
+
+      - name: Train route-value model
+        run: >
+          python ml/route_ranker.py train
+          --input ml-data/route-training.jsonl
+          --output ml-data/route-value-model.json
+          --epochs 250
+          --batch-size 256
+          --hidden1 32
+          --hidden2 16
+          --learning-rate 0.002
+          --validation-fraction 0.20
+          --min-samples 100
+          --seed 1337
+
+      - name: Upload ML dataset and model
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-route-ml-${{ github.sha }}
+          path: |
+            ml-data/route-training.jsonl
+            ml-data/route-value-model.json
+          if-no-files-found: error

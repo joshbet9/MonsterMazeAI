@@ -316,23 +316,24 @@ public final class MonsterAwareRoutePlanner {
         }
         if (!hasRelevantMonster) return shortest(candidates);
 
+        int[] evaluationIndices = simulationCandidateIndices(state, candidates, goal);
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
-        IntStream.range(0, candidates.size()).parallel().forEach(i -> {
+
+        IntStream.of(evaluationIndices).parallel().forEach(i -> {
             results[i] = simulator.simulate(
                     state, candidates.get(i), goal, regionGoal, regionRadius);
         });
 
-        // The authoritative simulator outcome is the training label. Recording is
-        // disabled unless explicitly requested, so normal game/test execution has
-        // no dataset I/O overhead.
-        for (int i = 0; i < candidates.size(); i++) {
+        // Full shadow mode records every candidate. Prefilter mode deliberately
+        // records only the candidates it actually sends through the simulator.
+        for (int i : evaluationIndices) {
             RouteLearningRecorder.record(state, candidates.get(i), goal, results[i]);
         }
 
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
         int simulatorBestIndex = -1;
-        for (int i = 0; i < candidates.size(); i++) {
+        for (int i : evaluationIndices) {
             PlayerRoute candidate = candidates.get(i);
             TacticalRouteSimulator.Result result = results[i];
             if (bestResult == null || better(result, candidate, bestResult, best)) {
@@ -343,31 +344,71 @@ public final class MonsterAwareRoutePlanner {
         }
 
         if (routeValueModel != null && !candidates.isEmpty()) {
-            int predictedBestIndex = 0;
-            double predictedBest = Double.POSITIVE_INFINITY;
-            for (int i = 0; i < candidates.size(); i++) {
-                double prediction = routeValueModel.predict(
-                        state, candidates.get(i), goal);
-                if (prediction < predictedBest) {
-                    predictedBest = prediction;
-                    predictedBestIndex = i;
+            int predictedBestIndex = predictedBestCandidate(state, candidates, goal);
+            if (evaluationIndices.length == candidates.size()) {
+                mlShadowComparisons++;
+                if (predictedBestIndex == simulatorBestIndex) mlShadowAgreements++;
+
+                if (mlShadowComparisons == 1 || mlShadowComparisons % 1000 == 0) {
+                    double agreement = mlShadowAgreements / (double) mlShadowComparisons;
+                    System.out.println("[MonsterMazeAI] ML_SHADOW"
+                            + " comparisons=" + mlShadowComparisons
+                            + " agreement=" + String.format(Locale.ROOT, "%.3f", agreement)
+                            + " predictedIndex=" + predictedBestIndex
+                            + " simulatorIndex=" + simulatorBestIndex
+                            + " predictedCost=" + String.format(
+                                    Locale.ROOT, "%.3f",
+                                    routeValueModel.predict(state, candidates.get(predictedBestIndex), goal)));
                 }
-            }
-
-            mlShadowComparisons++;
-            if (predictedBestIndex == simulatorBestIndex) mlShadowAgreements++;
-
-            if (mlShadowComparisons == 1 || mlShadowComparisons % 1000 == 0) {
-                double agreement = mlShadowAgreements / (double) mlShadowComparisons;
-                System.out.println("[MonsterMazeAI] ML_SHADOW"
-                        + " comparisons=" + mlShadowComparisons
-                        + " agreement=" + String.format(Locale.ROOT, "%.3f", agreement)
-                        + " predictedIndex=" + predictedBestIndex
-                        + " simulatorIndex=" + simulatorBestIndex
-                        + " predictedCost=" + String.format(Locale.ROOT, "%.3f", predictedBest));
             }
         }
 
+        return best;
+    }
+
+    private int[] simulationCandidateIndices(GameState state,
+                                              List<PlayerRoute> candidates,
+                                              Cell goal) {
+        if (routeValueModel == null || !"prefilter".equalsIgnoreCase(
+                System.getProperty("monstermaze.ml.mode", "shadow"))) {
+            return IntStream.range(0, candidates.size()).toArray();
+        }
+
+        int candidateCount = candidates.size();
+        int topCount = Math.min(4, candidateCount);
+        Integer[] order = new Integer[candidateCount];
+        for (int i = 0; i < candidateCount; i++) order[i] = i;
+        Arrays.sort(order, Comparator.comparingDouble(
+                i -> routeValueModel.predict(state, candidates.get(i), goal)));
+
+        LinkedHashSet<Integer> selected = new LinkedHashSet<>();
+        for (int i = 0; i < topCount; i++) selected.add(order[i]);
+
+        // Deterministic hedges keep the learned prefilter from eliminating the
+        // planner's shortest physical candidate solely because a model is wrong.
+        selected.add(0);
+        int shortestIndex = 0;
+        for (int i = 1; i < candidateCount; i++) {
+            if (compareByGapRisk(candidates.get(i), candidates.get(shortestIndex)) < 0) {
+                shortestIndex = i;
+            }
+        }
+        selected.add(shortestIndex);
+
+        return selected.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    private int predictedBestCandidate(GameState state,
+                                        List<PlayerRoute> candidates, Cell goal) {
+        int best = 0;
+        double bestPrediction = routeValueModel.predict(state, candidates.get(0), goal);
+        for (int i = 1; i < candidates.size(); i++) {
+            double prediction = routeValueModel.predict(state, candidates.get(i), goal);
+            if (prediction < bestPrediction) {
+                bestPrediction = prediction;
+                best = i;
+            }
+        }
         return best;
     }
 

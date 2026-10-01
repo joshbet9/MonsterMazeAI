@@ -1755,11 +1755,18 @@ public final class StableLiveMovementController {
         double threatDz = threat.z - state.player.z;
         double threatDistance = Math.max(bestDistance, 1.0E-6D);
         closingSpeed = -(threat.vx * threatDx + threat.vz * threatDz) / threatDistance;
+        /*
+         * A strong Jumper can spend a charge to remove a monster from the
+         * corridor instead of entering a prolonged yield/turn state. The
+         * threshold is deliberately skill-aware: higher Jumper IQ commits the
+         * emergency jump earlier, while the baseline behaviour remains unchanged.
+         */
+        double jumperJumpRange = 1.25D + 0.60D * profile.tendencies.jumperIq;
         boolean urgentJumperJump = allowJump
                 && state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && state.ability.charges > 0
                 && !gapExecutionActive
-                && bestDistance <= 1.25D
+                && bestDistance <= jumperJumpRange
                 && (closingSpeed > 0.03D || !(leftFloor || rightFloor));
         if (urgentJumperJump) {
             float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);

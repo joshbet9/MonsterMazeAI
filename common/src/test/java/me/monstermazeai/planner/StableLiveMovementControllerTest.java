@@ -447,4 +447,50 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void turnsLargeHeadingErrorWhileResidualMomentumIsStillPresent() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.mode = me.monstermazeai.game.Mode.SPEED;
+        s.player.vx = 0.18;
+        s.player.vz = 0.0;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F,
+                "large corner errors must continue turning while residual momentum is present");
+    }
+
+
+    @Test
+    void speedAndModernUseTheSameMovementPolicyForEquivalentState() {
+        GameState speed = state(0.5, 0.5, -20.0F);
+        speed.mode = me.monstermazeai.game.Mode.SPEED;
+        speed.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        GameState modern = state(0.5, 0.5, -20.0F);
+        modern.mode = me.monstermazeai.game.Mode.MODERN;
+        modern.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        StableLiveMovementController speedController = new StableLiveMovementController();
+        StableLiveMovementController modernController = new StableLiveMovementController();
+
+        speed.tick = 1;
+        modern.tick = 1;
+
+        Action speedAction = speedController.nextAction(speed, new Cell(0, 8), true);
+        Action modernAction = modernController.nextAction(modern, new Cell(0, 8), true);
+
+        assertEquals(speedAction.forward(), modernAction.forward(), 1.0e-9);
+        assertEquals(speedAction.strafe(), modernAction.strafe(), 1.0e-9);
+        assertEquals(speedAction.jump(), modernAction.jump());
+        assertEquals(speedAction.sprint(), modernAction.sprint());
+        assertEquals(speedAction.yawDelta(), modernAction.yawDelta(), 1.0e-6);
+        assertEquals(speedAction.useAbility(), modernAction.useAbility());
+    }
+
+
 }

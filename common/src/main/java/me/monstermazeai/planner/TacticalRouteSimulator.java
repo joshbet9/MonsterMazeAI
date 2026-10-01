@@ -234,7 +234,8 @@ public final class TacticalRouteSimulator {
         addMovement(out, 1, 0, false, -30);
         addMovement(out, 1, 0, false, 30);
 
-        if (state.kit != me.monstermazeai.kit.Kit.JUMPER || jumperGap) {
+        boolean nonJumperSpeed = state.kit != me.monstermazeai.kit.Kit.JUMPER;
+        if (jumperGap || nonJumperSpeed) {
             addMovement(out, 1, 0, true, 0);
             addMovement(out, 1, -1, true, 0);
             addMovement(out, 1, 1, true, 0);
@@ -244,7 +245,7 @@ public final class TacticalRouteSimulator {
 
         // Ability activation itself is independent of the Jumper charge budget.
         out.add(new Action(0, 0, false, false, 0, true));
-        if (state.kit != me.monstermazeai.kit.Kit.JUMPER || jumperGap) {
+        if (jumperGap || nonJumperSpeed) {
             out.add(new Action(1, 0, true, true, 0, true));
         }
         return out;

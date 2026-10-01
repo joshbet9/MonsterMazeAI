@@ -140,8 +140,15 @@ public final class MonsterAwareRoutePlanner {
     }
 
     private static int jumperGapBudget(GameState state) {
-        if (state == null || state.kit != me.monstermazeai.kit.Kit.JUMPER) return -1;
-        return Math.max(0, state.ability.charges);
+        if (state == null || state.kit == null) return -1;
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER) {
+            return Math.max(0, state.ability.charges);
+        }
+
+        // Non-Jumper speeding is part of the enhanced non-Original gameplay
+        // mechanics in both Speed and Modern. Treat the source two-cell gap edge
+        // as executable in either environment.
+        return -1;
     }
 
     private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,

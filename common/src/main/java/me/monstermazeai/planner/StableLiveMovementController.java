@@ -623,15 +623,40 @@ public final class StableLiveMovementController {
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
                 /*
-                 * Speed mode benefits from continuing the camera turn while
-                 * residual vanilla momentum decays. Modern keeps the original
-                 * conservative in-place-turn gate.
+                 * A large heading error far from the next corner is not itself
+                 * a reason to stop. Human traces keep forward input active while
+                 * re-acquiring the target bearing. The near-corner branch above
+                 * remains the topology-safe 90-degree turn treatment.
+                 *
+                 * Only accept the far-turn drive if the same physical-support
+                 * predictor confirms the current route corridor remains supported;
+                 * this keeps the shared policy source-valid in every mode.
                  */
                 float yawCommand = turn;
-                action = new Action(
-                        0.0, 0.0, false, false,
-                        yawCommand,
-                        false);
+                if (distance > 4.50D) {
+                    double forward = 0.35D;
+                    boolean jump = shouldSpeedJump(state, allowJump);
+                    Action farTurn = new Action(
+                            forward,
+                            0.0,
+                            jump,
+                            false,
+                            yawCommand,
+                            false);
+                    action = hasPredictedPhysicalSupport(
+                            state, farTurn, supportLookaheadTicks(state))
+                            ? farTurn
+                            : new Action(0.0, 0.0, false, false, yawCommand, false);
+                    lastDecisionDetail += action == farTurn
+                            ? " FAR_TURN_DRIVE"
+                            : " FAR_TURN_SUPPORT_HOLD";
+                } else {
+                    action = new Action(
+                            0.0, 0.0, false, false,
+                            yawCommand,
+                            false);
+                    lastDecisionDetail += " TURN_IN_PLACE";
+                }
             }
         } else {
             boolean brake = distance < waypointBrakeDistance()

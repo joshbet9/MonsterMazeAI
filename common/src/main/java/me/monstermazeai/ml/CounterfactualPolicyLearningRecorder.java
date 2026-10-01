@@ -67,7 +67,7 @@ public final class CounterfactualPolicyLearningRecorder {
         if (state.tick % stride != 0) return;
 
         int horizon = positiveInt(
-                System.getProperty("monstermaze.ml.policy.counterfactual.horizon", "64"),
+                System.getProperty("monstermaze.ml.policy.counterfactual.horizon", "128"),
                 64);
         double gamma = finiteDouble(
                 System.getProperty("monstermaze.ml.policy.counterfactual.gamma", "0.995"),

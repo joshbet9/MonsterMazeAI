@@ -29,7 +29,7 @@ public final class ThreatAwarePathfinder {
                         .thenComparingInt(n -> n.turns)
                         .thenComparingInt(n -> n.state.cell.row())
                         .thenComparingInt(n -> n.state.cell.column())
-                        .thenComparingInt(n -> n.state.direction));
+                        .thenComparingInt(n -> n.state.direction.ordinal()));
 
         Map<StateKey, Best> best = new HashMap<>();
         Map<StateKey, StateKey> previous = new HashMap<>();

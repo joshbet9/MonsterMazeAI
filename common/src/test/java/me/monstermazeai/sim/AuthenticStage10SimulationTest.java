@@ -134,7 +134,9 @@ class AuthenticStage10SimulationTest {
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
         long seedOffset = Long.getLong("monstermaze.sim.seedOffset", 0L);
-        seed = mixSeed(seed ^ seedOffset);
+        if (seedOffset != 0L) {
+            seed = mixSeed(seed ^ seedOffset);
+        }
         Random monsterRandom = new Random(seed ^ 0x6A09E667F3BCC909L);
         Random padRandom = new Random(seed ^ 0xBB67AE8584CAA73BL);
 

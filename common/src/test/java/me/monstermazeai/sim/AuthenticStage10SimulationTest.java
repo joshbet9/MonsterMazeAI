@@ -82,8 +82,9 @@ class AuthenticStage10SimulationTest {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
-                System.out.printf("SPEED pattern=%d kit=%s stage=%d%n",
-                        pattern + 1, kit, result.maxStage);
+                System.out.printf("SPEED pattern=%d kit=%s stage=%d seedOffset=%d%n",
+                        pattern + 1, kit, result.maxStage,
+                        Long.getLong("monstermaze.sim.seedOffset", 0L));
                 if (result.maxStage < SPEED_REQUIRED_STAGE) {
                     failures.add("mode=SPEED pattern=" + (pattern + 1)
                             + " kit=" + kit
@@ -132,6 +133,8 @@ class AuthenticStage10SimulationTest {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
+        long seedOffset = Long.getLong("monstermaze.sim.seedOffset", 0L);
+        seed = mixSeed(seed ^ seedOffset);
         Random monsterRandom = new Random(seed ^ 0x6A09E667F3BCC909L);
         Random padRandom = new Random(seed ^ 0xBB67AE8584CAA73BL);
 
@@ -333,6 +336,15 @@ class AuthenticStage10SimulationTest {
                 stationaryTicks / (double) Math.max(1L, state.tick),
                 actualHorizontalDistance / Math.max(1L, state.tick),
                 commandedInputSum / Math.max(1L, state.tick));
+    }
+
+    private static long mixSeed(long value) {
+        value ^= value >>> 30;
+        value *= 0xBF58476D1CE4E5B9L;
+        value ^= value >>> 27;
+        value *= 0x94D049BB133111EBL;
+        value ^= value >>> 31;
+        return value;
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {

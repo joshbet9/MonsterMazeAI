@@ -3,6 +3,7 @@ package me.monstermazeai.maze;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterRelevance;
 import me.monstermazeai.planner.TacticalRouteSimulator;
+import me.monstermazeai.ml.RouteLearningRecorder;
 import me.monstermazeai.player.Action;
 
 import java.util.*;
@@ -316,6 +317,13 @@ public final class MonsterAwareRoutePlanner {
             results[i] = simulator.simulate(
                     state, candidates.get(i), goal, regionGoal, regionRadius);
         });
+
+        // The authoritative simulator outcome is the training label. Recording is
+        // disabled unless explicitly requested, so normal game/test execution has
+        // no dataset I/O overhead.
+        for (int i = 0; i < candidates.size(); i++) {
+            RouteLearningRecorder.record(state, candidates.get(i), goal, results[i]);
+        }
 
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;

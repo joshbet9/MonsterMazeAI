@@ -110,7 +110,7 @@ def main():
     payload={"version":1,"objective":"long_horizon_policy_return",
       "architecture":[FEATURE_COUNT,a.hidden1,a.hidden2,1],
       "feature_names":["stage_norm","health_ratio","horizontal_speed","forward_speed","lateral_speed","vertical_speed","grounded","phase_ticks_norm","ability_charges_norm","ability_active_norm","pad_distance_norm","pad_direction_cos","pad_direction_sin","old_pad_count_norm","preview_pad_distance_norm","local_floor_north","local_floor_south","local_floor_east","local_floor_west","local_floor_northeast","local_floor_northwest","local_floor_southeast","local_floor_southwest","mode_speed","mode_modern","kit_jumper","kit_maverick","kit_slowballer","kit_repulsor","kit_body_builder","monster_count_12_norm","monster_count_20_norm","nearest_monster_distance_norm","nearest_monster_closing_norm","nearest_monster_forward_norm","nearest_monster_lateral_norm","max_monster_closing_norm","min_time_to_contact_norm","action_forward","action_strafe","action_jump","action_sprint","action_yaw_delta","action_ability"],
-      "gamma":a.gamma,"input_mean":mean.tolist(),"input_std":std.tolist(),"target_mean":target_mean,"target_std":target_std,
+      "gamma":a.gamma,"input_mean":mean.tolist(),"input_std":std.tolist(),"target_mean":target_mean,"target_std":target_std,\n      "target_min":float(ty.min()),"target_max":float(ty.max()),
       "w1":model.w1.tolist(),"b1":model.b1.tolist(),"w2":model.w2.tolist(),"b2":model.b2.tolist(),"w3":model.w3[:,0].tolist(),"b3":model.b3.tolist(),
       "metrics":{"rows":len(rows),"episodes":len({str(r["episode"]) for r in rows}),"train_rows":len(train),"validation_rows":len(valid),
       "train_mae":float(np.mean(np.abs(ty-trp))),"validation_mae":float(np.mean(np.abs(vy-vap))),

@@ -101,7 +101,7 @@ public final class PolicyLearningRecorder {
             out.append(number(values[i]));
         }
         out.append(']');
-        return out.append(']').toString();
+        return out.toString();
     }
 
     private static String number(double value) {

@@ -234,8 +234,7 @@ public final class TacticalRouteSimulator {
         addMovement(out, 1, 0, false, -30);
         addMovement(out, 1, 0, false, 30);
 
-        boolean nonJumperSpeed = state.mode == me.monstermazeai.game.Mode.SPEED
-                && state.kit != me.monstermazeai.kit.Kit.JUMPER;
+        boolean nonJumperSpeed = state.kit != me.monstermazeai.kit.Kit.JUMPER;
         if (jumperGap || nonJumperSpeed) {
             addMovement(out, 1, 0, true, 0);
             addMovement(out, 1, -1, true, 0);

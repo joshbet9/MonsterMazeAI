@@ -14,10 +14,15 @@ package me.monstermazeai.maze;
  */
 public final class GapJumpPolicy {
     /**
-     * Baseline: a gap carries a positive risk cost, while an equal-length
-     * route is deterministically preferred when the physical route lengths tie.
+     * Baseline: source-valid one-block gaps are throughput shortcuts, so the
+     * planner does not add an artificial cost that can cancel their one-edge
+     * saving. Finite Jumper charge availability is handled separately by
+     * MonsterAwareRoutePlanner.restrictJumperGapBudget().
+     *
+     * Custom positive costs remain available for controlled experiments where a
+     * consumer explicitly wants to trade route length for gap avoidance.
      */
-    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(1.0);
+    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(0.0);
 
     private final double riskCostPerGap;
 

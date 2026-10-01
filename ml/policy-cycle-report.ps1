@@ -35,6 +35,11 @@ if(Test-Path $candidate){
   Write-Host "validation_rows=$($m.metrics.validation_rows)"
   Write-Host ("train_mae={0:N3}" -f $m.metrics.train_mae)
   Write-Host ("validation_mae={0:N3}" -f $m.metrics.validation_mae)
+  if($null -ne $m.metrics.validation_pairwise_accuracy){
+    Write-Host ("validation_pairwise_accuracy={0:P1}" -f $m.metrics.validation_pairwise_accuracy)
+    Write-Host ("validation_top1_accuracy={0:P1}" -f $m.metrics.validation_top1_accuracy)
+    Write-Host ("validation_decision_points={0}" -f $m.metrics.validation_decision_points)
+  }
 }
 
 Write-Host ""

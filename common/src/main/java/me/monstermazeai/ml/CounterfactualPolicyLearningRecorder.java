@@ -35,6 +35,21 @@ public final class CounterfactualPolicyLearningRecorder {
     private static Path writerPath;
     private static long rowCount;
 
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            synchronized (LOCK) {
+                if (writer == null) return;
+                try {
+                    writer.flush();
+                    writer.close();
+                } catch (IOException ignored) {
+                    // The JVM is already shutting down; there is no useful
+                    // recovery action available here.
+                }
+            }
+        }, "monstermaze-counterfactual-flush"));
+    }
+
     private CounterfactualPolicyLearningRecorder() {}
 
     public static boolean enabled() {

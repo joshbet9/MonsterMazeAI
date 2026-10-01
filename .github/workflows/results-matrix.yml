@@ -136,7 +136,7 @@ jobs:
               break
             fi
 
-            echo "===== SELF-TRAIN GENERATION \${generation} ====="
+            echo "===== SELF-TRAIN GENERATION ${generation} ====="
             set -o pipefail
             mvn -B -ntp -pl common -am \
               -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
@@ -147,17 +147,17 @@ jobs:
               -Dsurefire.useFile=false \
               -Dsurefire.redirectTestOutputToFile=false \
               -Dsurefire.failIfNoSpecifiedTests=false \
-              test 2>&1 | tee ml-data/prefilter-generation-\${generation}.log
+              test 2>&1 | tee ml-data/prefilter-generation-${generation}.log
 
             if [ -s ml-data/baseline-matrix.log ]; then
               python ml/compare_matrix.py \
                 --baseline ml-data/baseline-matrix.log \
-                --ml ml-data/prefilter-generation-\${generation}.log || true
+                --ml ml-data/prefilter-generation-${generation}.log || true
             fi
 
             python ml/route_ranker.py train \
               --input ml-data/route-training.jsonl \
-              --output ml-data/route-value-model-\${generation}.json \
+              --output ml-data/route-value-model-${generation}.json \
               --epochs 250 \
               --batch-size 256 \
               --hidden1 32 \
@@ -167,10 +167,10 @@ jobs:
               --min-samples 100 \
               --seed $((1337 + generation))
 
-            if [ -s ml-data/route-value-model-\${generation}.json ]; then
-              cp ml-data/route-value-model-\${generation}.json ml-data/route-value-model.json
+            if [ -s ml-data/route-value-model-${generation}.json ]; then
+              cp ml-data/route-value-model-${generation}.json ml-data/route-value-model.json
             else
-              echo "Generation \${generation} did not produce a model; stopping"
+              echo "Generation ${generation} did not produce a model; stopping"
               break
             fi
           done

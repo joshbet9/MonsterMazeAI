@@ -152,7 +152,8 @@ jobs:
             if [ -s ml-data/baseline-matrix.log ]; then
               python ml/compare_matrix.py \
                 --baseline ml-data/baseline-matrix.log \
-                --ml ml-data/prefilter-generation-${generation}.log || true
+                --ml ml-data/prefilter-generation-${generation}.log \
+                | tee -a ml-data/ml-comparison.txt || true
             fi
 
             python ml/route_ranker.py train \
@@ -186,7 +187,9 @@ jobs:
             ml-data/route-value-model-1.json
             ml-data/route-value-model-2.json
             ml-data/baseline-matrix.log
-            ml-data/prefilter-matrix.log
+            ml-data/prefilter-generation-1.log
+            ml-data/prefilter-generation-2.log
+            ml-data/ml-comparison.txt
             ml-data/human-behavior.jsonl
             ml-data/human-policy-model.json
           if-no-files-found: warn

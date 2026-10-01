@@ -379,7 +379,8 @@ def pairwise_logloss_from_rows(rows: list[dict], predictions: np.ndarray) -> flo
                 if target_i == target_j:
                     continue
                 sign = 1.0 if target_i < target_j else -1.0
-                # The preferred route should receive the lower score.\n                margin = sign * (score_j - score_i)
+                # The preferred route should receive the lower score.
+                margin = sign * (score_j - score_i)
                 z = -margin
                 losses.append(float(max(0.0, z) + math.log1p(math.exp(-abs(z)))))
     return sum(losses) / len(losses) if losses else float("nan")

@@ -122,11 +122,9 @@ public final class PolicyActionSelector {
                 clamp(baseline.forward() + 0.25), baseline.strafe(),
                 baseline.jump(), baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
 
-        if (allowJump) {
+        if (allowJump && !baseline.jump()) {
             add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
                     true, baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
-            add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
-                    false, baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
         }
 
         boolean canUseAbility = state.ability != null

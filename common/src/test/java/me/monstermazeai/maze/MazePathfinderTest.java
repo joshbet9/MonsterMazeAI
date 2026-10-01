@@ -33,6 +33,32 @@ class MazePathfinderTest {
     }
 
     @Test
+    void equalLengthRoutesPreferFewerHeadingChanges() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+
+        // Route A: E,E,E,E,S,S,S,S — 8 edges, 1 turn.
+        for (int c = 10; c <= 14; c++) raw[10][c] = 1;
+        for (int r = 10; r <= 14; r++) raw[r][14] = 1;
+
+        // Route B: S,S,E,E,S,S,E,E — 8 edges, 3 turns.
+        raw[11][10] = 1;
+        raw[12][10] = 1;
+        raw[12][11] = 1;
+        raw[12][12] = 1;
+        raw[13][12] = 1;
+        raw[14][12] = 1;
+        raw[14][13] = 1;
+
+        MazeModel maze = new MazeModel(raw);
+        List<Cell> path = new PlayerPathfinder().shortestPathWithoutGaps(
+                maze, new Cell(10, 10), new Cell(14, 14));
+
+        assertEquals(9, path.size());
+        assertEquals(new Cell(10, 14), path.get(4));
+        assertEquals(new Cell(14, 14), path.get(8));
+    }
+
+    @Test
     void playerCanCrossDisabledPhysicalFloor() {
         MazeModel maze = openMaze();
         maze.setDisabled(1, 1, true);

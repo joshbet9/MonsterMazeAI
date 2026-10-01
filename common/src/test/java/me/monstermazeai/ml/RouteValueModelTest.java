@@ -1,35 +1,30 @@
 package me.monstermazeai.ml;
 
-import me.monstermazeai.game.GameState;
-import me.monstermazeai.maze.Cell;
-import me.monstermazeai.maze.MazeModel;
-import me.monstermazeai.maze.PlayerRoute;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class RouteValueModelTest {
     @Test
     void generatedModelJsonCanBeLoaded() throws Exception {
-        String json = """
-                {
-                  "input_mean": [0,0],
-                  "input_std": [1,1],
-                  "target_mean": 10,
-                  "target_std": 2,
-                  "w1": [[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0]],
-                  "b1": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                  "w2": [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],
-                  "b2": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                  "w3": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                  "b3": [0]
-                }
-                """;
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        json.append("\"input_mean\":").append(array(34, 0.0)).append(",");
+        json.append("\"input_std\":").append(array(34, 1.0)).append(",");
+        json.append("\"target_mean\":10,");
+        json.append("\"target_std\":2,");
+        json.append("\"w1\":").append(matrix(34, 32)).append(",");
+        json.append("\"b1\":").append(array(32, 0.0)).append(",");
+        json.append("\"w2\":").append(matrix(32, 16)).append(",");
+        json.append("\"b2\":").append(array(16, 0.0)).append(",");
+        json.append("\"w3\":").append(array(16, 0.0)).append(",");
+        json.append("\"b3\":").append(array(1, 0.0));
+        json.append("}");
+
         Path path = Files.createTempFile("monstermaze-model-", ".json");
         Files.writeString(path, json);
         try {
@@ -39,5 +34,25 @@ class RouteValueModelTest {
         } finally {
             Files.deleteIfExists(path);
         }
+    }
+
+    private static String array(int count, double value) {
+        double[] values = new double[count];
+        Arrays.fill(values, value);
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) out.append(',');
+            out.append(values[i]);
+        }
+        return out.append(']').toString();
+    }
+
+    private static String matrix(int rows, int columns) {
+        StringBuilder out = new StringBuilder("[");
+        for (int r = 0; r < rows; r++) {
+            if (r > 0) out.append(',');
+            out.append(array(columns, 0.0));
+        }
+        return out.append(']').toString();
     }
 }

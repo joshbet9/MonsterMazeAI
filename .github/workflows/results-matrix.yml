@@ -182,6 +182,9 @@ jobs:
           path: |
             ml-data/route-training.jsonl
             ml-data/route-value-model.json
+            ml-data/route-value-model-0.json
+            ml-data/route-value-model-1.json
+            ml-data/route-value-model-2.json
             ml-data/baseline-matrix.log
             ml-data/prefilter-matrix.log
             ml-data/human-behavior.jsonl

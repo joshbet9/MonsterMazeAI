@@ -105,53 +105,75 @@ jobs:
         continue-on-error: true
         run: python ml/route_ranker.py inspect --input ml-data/route-training.jsonl
 
-      - name: Train route-value model
-        if: always()
-        continue-on-error: true
-        run: >
-          python ml/route_ranker.py train
-          --input ml-data/route-training.jsonl
-          --output ml-data/route-value-model.json
-          --epochs 250
-          --batch-size 256
-          --hidden1 32
-          --hidden2 16
-          --learning-rate 0.002
-          --validation-fraction 0.20
-          --min-samples 100
-          --seed 1337
-
-      - name: Run ML-prefilter matrix
+      - name: Train initial route-value model
         if: always()
         continue-on-error: true
         run: |
-          set -o pipefail
-          if [ ! -s ml-data/route-value-model.json ]; then
-            echo "No trained model; skipping ML-prefilter matrix"
-            exit 0
-          fi
-          mvn -B -ntp -pl common -am \
-            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
-            -Dmonstermaze.ml.record=false \
-            -Dmonstermaze.ml.model=ml-data/route-value-model.json \
-            -Dmonstermaze.ml.mode=prefilter \
-            -Dsurefire.useFile=false \
-            -Dsurefire.redirectTestOutputToFile=false \
-            -Dsurefire.failIfNoSpecifiedTests=false \
-            test 2>&1 | tee ml-data/prefilter-matrix.log
-
-      - name: Compare baseline and ML-prefilter matrix
-        if: always()
-        continue-on-error: true
-        run: |
-          if [ -s ml-data/baseline-matrix.log ] && [ -s ml-data/prefilter-matrix.log ]; then
-            python ml/compare_matrix.py \
-              --baseline ml-data/baseline-matrix.log \
-              --ml ml-data/prefilter-matrix.log
+          if [ -s ml-data/route-training.jsonl ]; then
+            python ml/route_ranker.py train \
+              --input ml-data/route-training.jsonl \
+              --output ml-data/route-value-model-0.json \
+              --epochs 250 \
+              --batch-size 256 \
+              --hidden1 32 \
+              --hidden2 16 \
+              --learning-rate 0.002 \
+              --validation-fraction 0.20 \
+              --min-samples 100 \
+              --seed 1337
+            cp ml-data/route-value-model-0.json ml-data/route-value-model.json
           else
-            echo "Baseline or ML-prefilter log is unavailable"
+            echo "No simulator labels available"
           fi
 
+      - name: Self-train route model from simulator rollouts
+        if: always()
+        continue-on-error: true
+        run: |
+          for generation in 1 2; do
+            if [ ! -s ml-data/route-value-model.json ]; then
+              echo "No current route model; stopping self-training"
+              break
+            fi
+
+            echo "===== SELF-TRAIN GENERATION \${generation} ====="
+            set -o pipefail
+            mvn -B -ntp -pl common -am \
+              -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+              -Dmonstermaze.ml.record=true \
+              -Dmonstermaze.ml.output=ml-data/route-training.jsonl \
+              -Dmonstermaze.ml.model=ml-data/route-value-model.json \
+              -Dmonstermaze.ml.mode=prefilter \
+              -Dsurefire.useFile=false \
+              -Dsurefire.redirectTestOutputToFile=false \
+              -Dsurefire.failIfNoSpecifiedTests=false \
+              test 2>&1 | tee ml-data/prefilter-generation-\${generation}.log
+
+            if [ -s ml-data/baseline-matrix.log ]; then
+              python ml/compare_matrix.py \
+                --baseline ml-data/baseline-matrix.log \
+                --ml ml-data/prefilter-generation-\${generation}.log || true
+            fi
+
+            python ml/route_ranker.py train \
+              --input ml-data/route-training.jsonl \
+              --output ml-data/route-value-model-\${generation}.json \
+              --epochs 250 \
+              --batch-size 256 \
+              --hidden1 32 \
+              --hidden2 16 \
+              --learning-rate 0.002 \
+              --validation-fraction 0.20 \
+              --min-samples 100 \
+              --seed $((1337 + generation))
+
+            if [ -s ml-data/route-value-model-\${generation}.json ]; then
+              cp ml-data/route-value-model-\${generation}.json ml-data/route-value-model.json
+            else
+              echo "Generation \${generation} did not produce a model; stopping"
+              break
+            fi
+          done
       - name: Upload ML dataset and model
         if: always()
         uses: actions/upload-artifact@v4

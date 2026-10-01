@@ -37,9 +37,7 @@ public final class PolicyActionSelector {
 
         boolean policyMode = "policy".equalsIgnoreCase(
                 System.getProperty("monstermaze.ml.mode", ""));
-        boolean counterfactual = Boolean.parseBoolean(
-                System.getProperty("monstermaze.ml.policy.counterfactual", "false"));
-        boolean explore = !counterfactual && Boolean.parseBoolean(
+        boolean explore = Boolean.parseBoolean(
                 System.getProperty("monstermaze.ml.policy.explore", "false"));
 
         PolicyActionModel loaded = model();

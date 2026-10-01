@@ -36,6 +36,33 @@ class RouteValueModelTest {
         }
     }
 
+    @Test
+    void legacyNestedFinalLayerJsonCanBeLoaded() throws Exception {
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        json.append("\"input_mean\":").append(array(34, 0.0)).append(",");
+        json.append("\"input_std\":").append(array(34, 1.0)).append(",");
+        json.append("\"target_mean\":10,");
+        json.append("\"target_std\":2,");
+        json.append("\"w1\":").append(matrix(34, 32)).append(",");
+        json.append("\"b1\":").append(array(32, 0.0)).append(",");
+        json.append("\"w2\":").append(matrix(32, 16)).append(",");
+        json.append("\"b2\":").append(array(16, 0.0)).append(",");
+        json.append("\"w3\":").append(matrix(16, 1)).append(",");
+        json.append("\"b3\":[0.0]");
+        json.append("}");
+
+        Path path = Files.createTempFile("monstermaze-model-legacy-", ".json");
+        Files.writeString(path, json);
+        try {
+            RouteValueModel model = RouteValueModel.load(path);
+            assertNotNull(model);
+            assertEquals(10.0, model.predict(new double[34]), 1e-9);
+        } finally {
+            Files.deleteIfExists(path);
+        }
+    }
+
     private static String array(int count, double value) {
         double[] values = new double[count];
         Arrays.fill(values, value);

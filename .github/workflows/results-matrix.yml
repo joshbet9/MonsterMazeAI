@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   matrix:
-    name: 15 Speed + 15 Modern natural-termination matrix
+    name: Baseline + ML-prefilter 15 Speed + 15 Modern matrix
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -37,17 +37,19 @@ jobs:
           mkdir -p ml-data
           : > ml-data/route-training.jsonl
 
-      - name: Run full results matrix and collect simulator labels
+      - name: Run baseline matrix and collect simulator labels
         continue-on-error: true
-        run: >
-          mvn -B -ntp -pl common -am
-          -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest
-          -Dmonstermaze.ml.record=true
-          -Dmonstermaze.ml.output=ml-data/route-training.jsonl
-          -Dsurefire.useFile=false
-          -Dsurefire.redirectTestOutputToFile=false
-          -Dsurefire.failIfNoSpecifiedTests=false
-          test
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dmonstermaze.ml.record=true \
+            -Dmonstermaze.ml.output=ml-data/route-training.jsonl \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee ml-data/baseline-matrix.log
+
 
       - name: Set up Python 3
         if: always()
@@ -79,6 +81,37 @@ jobs:
           --validation-fraction 0.20
           --min-samples 100
           --seed 1337
+
+      - name: Run ML-prefilter matrix
+        if: always()
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          if [ ! -s ml-data/route-value-model.json ]; then
+            echo "No trained model; skipping ML-prefilter matrix"
+            exit 0
+          fi
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dmonstermaze.ml.record=false \
+            -Dmonstermaze.ml.model=ml-data/route-value-model.json \
+            -Dmonstermaze.ml.mode=prefilter \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee ml-data/prefilter-matrix.log
+
+      - name: Compare baseline and ML-prefilter matrix
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s ml-data/baseline-matrix.log ] && [ -s ml-data/prefilter-matrix.log ]; then
+            python ml/compare_matrix.py \
+              --baseline ml-data/baseline-matrix.log \
+              --ml ml-data/prefilter-matrix.log
+          else
+            echo "Baseline or ML-prefilter log is unavailable"
+          fi
 
       - name: Upload ML dataset and model
         if: always()

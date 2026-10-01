@@ -15,7 +15,7 @@ class RouteLearningFeaturesTest {
     @Test
     void featureVectorHasStableShapeAndFiniteValues() {
         GameState state = new GameState();
-        state.maze = new MazeModel();
+        state.maze = new MazeModel(filledMaze());
         state.player.x = 10.5;
         state.player.y = GameState.PATH_Y;
         state.player.z = 10.5;
@@ -45,10 +45,18 @@ class RouteLearningFeaturesTest {
         assertEquals(1, RouteLearningFeatures.turnCount(route));
     }
 
+    private static int[][] filledMaze() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++) {
+            java.util.Arrays.fill(raw[r], 1);
+        }
+        return raw;
+    }
+
     @Test
     void reachedOutcomeProducesLowerCostThanADeath() {
         GameState state = new GameState();
-        state.maze = new MazeModel();
+        state.maze = new MazeModel(filledMaze());
 
         PlayerRoute route = new PlayerRoute(List.of(
                 new Cell(10, 10),

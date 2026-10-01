@@ -1,0 +1,187 @@
+param(
+    [int]$MaxCycles = 0,
+    [int]$TrainingSeedsPerCycle = 4,
+    [int]$HoldoutSeeds = 3,
+    [int]$ReplayCycles = 12,
+    [int]$Epochs = 250,
+    [int]$BatchSize = 256,
+    [int]$SleepSeconds = 2
+)
+
+$ErrorActionPreference = "Stop"
+$Repo = Split-Path -Parent $PSScriptRoot
+Set-Location $Repo
+
+$Venv = Join-Path $Repo ".venv"
+$Python = Join-Path $Venv "Scripts\python.exe"
+$DataRoot = Join-Path $Repo "ml-data\local"
+$HoldoutRoot = Join-Path $DataRoot "holdout"
+$ReplayRoot = Join-Path $DataRoot "replay"
+$CheckpointRoot = Join-Path $DataRoot "checkpoints"
+$CurrentRoot = Join-Path $DataRoot "current"
+$RunRoot = Join-Path $DataRoot "runs"
+
+foreach ($dir in @($DataRoot, $HoldoutRoot, $ReplayRoot, $CheckpointRoot, $CurrentRoot, $RunRoot)) {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+}
+
+if (-not (Test-Path $Python)) {
+    py -3.12 -m venv $Venv
+}
+
+& $Python -m pip install --disable-pip-version-check --upgrade pip
+& $Python -m pip install --disable-pip-version-check numpy
+
+function Invoke-Matrix {
+    param(
+        [long]$SeedOffset,
+        [string]$LogPath,
+        [string]$TrainingPath,
+        [string]$ModelPath
+    )
+
+    $args = @(
+        "-B", "-ntp", "-pl", "common", "-am",
+        "-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest",
+        "-Dmonstermaze.sim.seedOffset=$SeedOffset",
+        "-Dmonstermaze.ml.record=true",
+        "-Dmonstermaze.ml.output=$TrainingPath",
+        "-Dsurefire.useFile=false",
+        "-Dsurefire.redirectTestOutputToFile=false",
+        "-Dsurefire.failIfNoSpecifiedTests=false",
+        "test"
+    )
+
+    if ($ModelPath) {
+        $args = @(
+            "-B", "-ntp", "-pl", "common", "-am",
+            "-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest",
+            "-Dmonstermaze.sim.seedOffset=$SeedOffset",
+            "-Dmonstermaze.ml.record=false",
+            "-Dmonstermaze.ml.model=$ModelPath",
+            "-Dmonstermaze.ml.mode=prefilter",
+            "-Dsurefire.useFile=false",
+            "-Dsurefire.redirectTestOutputToFile=false",
+            "-Dsurefire.failIfNoSpecifiedTests=false",
+            "test"
+        )
+    }
+
+    Write-Host "Running seedOffset=$SeedOffset"
+    & mvn.cmd @args 2>&1 | Tee-Object -FilePath $LogPath
+    return $LASTEXITCODE
+}
+
+function Merge-ReplayWindow {
+    param([string]$OutputPath)
+
+    $files = Get-ChildItem $ReplayRoot -Filter "*.jsonl" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First $ReplayCycles
+
+    if (-not $files) {
+        throw "No replay files exist."
+    }
+
+    Remove-Item $OutputPath -ErrorAction SilentlyContinue
+    foreach ($file in ($files | Sort-Object LastWriteTime)) {
+        Get-Content $file.FullName | Add-Content -Path $OutputPath -Encoding utf8
+    }
+}
+
+function Invoke-Gate {
+    param(
+        [string]$Candidate,
+        [string]$CycleDir
+    )
+
+    $ok = $true
+
+    for ($i = 1; $i -le $HoldoutSeeds; $i++) {
+        $baseline = Join-Path $HoldoutRoot "seed-$i-baseline.log"
+        $candidateLog = Join-Path $CycleDir "holdout-seed-$i.log"
+        $report = Join-Path $CycleDir "holdout-seed-$i-gate.json"
+
+        if (-not (Test-Path $baseline)) {
+            Write-Host "Creating fixed holdout baseline seedOffset=$i"
+            $code = Invoke-Matrix $i $baseline (Join-Path $CycleDir "ignored-baseline-$i.jsonl")
+            if ($code -ne 0) {
+                throw "Holdout baseline failed for seed $i."
+            }
+        }
+
+        $code = Invoke-Matrix $i $candidateLog (Join-Path $CycleDir "ignored-candidate-$i.jsonl") $Candidate
+        if ($code -ne 0) {
+            Write-Host "Candidate matrix failed for holdout seed $i."
+            $ok = $false
+            continue
+        }
+
+        & $Python (Join-Path $PSScriptRoot "evaluate_model.py") --baseline $baseline --candidate $candidateLog --json-output $report
+        if ($LASTEXITCODE -ne 0) {
+            $ok = $false
+        }
+    }
+
+    return $ok
+}
+
+$cycle = 0
+
+while ($MaxCycles -eq 0 -or $cycle -lt $MaxCycles) {
+    $cycle++
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
+    $cycleDir = Join-Path $RunRoot "$stamp-cycle-$cycle"
+    New-Item -ItemType Directory -Force -Path $cycleDir | Out-Null
+    $replayFile = Join-Path $ReplayRoot "$stamp-cycle-$cycle.jsonl"
+
+    Write-Host ""
+    Write-Host "================ LOCAL ML CYCLE $cycle ================"
+
+    $rng = [Random]::new()
+
+    for ($s = 1; $s -le $TrainingSeedsPerCycle; $s++) {
+        $offset = $rng.Next(10000, 2000000000)
+        $log = Join-Path $cycleDir "seed-$offset.log"
+        $training = Join-Path $cycleDir "seed-$offset.jsonl"
+
+        $code = Invoke-Matrix $offset $log $training
+        if ($code -ne 0) {
+            Write-Host "Training rollout failed: seedOffset=$offset"
+            continue
+        }
+
+        if (Test-Path $training) {
+            Get-Content $training | Add-Content -Path $replayFile -Encoding utf8
+        }
+    }
+
+    if (-not (Test-Path $replayFile) -or (Get-Item $replayFile).Length -eq 0) {
+        Write-Host "No new simulator labels; skipping this cycle."
+        continue
+    }
+
+    $window = Join-Path $cycleDir "training-window.jsonl"
+    Merge-ReplayWindow $window
+
+    $candidate = Join-Path $cycleDir "route-value-model-candidate.json"
+
+    & $Python (Join-Path $PSScriptRoot "route_ranker.py") train --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --hidden1 32 --hidden2 16 --learning-rate 0.002 --validation-fraction 0.20 --min-samples 100 --seed $cycle
+
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)) {
+        Write-Host "Model training failed; current model remains unchanged."
+        continue
+    }
+
+    if (Invoke-Gate $candidate $cycleDir) {
+        Copy-Item $candidate (Join-Path $CheckpointRoot "route-value-model-$stamp.json") -Force
+        Copy-Item $candidate (Join-Path $CurrentRoot "route-value-model.json") -Force
+        Write-Host "PROMOTED candidate after all fixed holdout gates passed."
+    } else {
+        Write-Host "REJECTED candidate; current model remains unchanged."
+    }
+
+    if ($SleepSeconds -gt 0) {
+        Start-Sleep -Seconds $SleepSeconds
+    }
+}

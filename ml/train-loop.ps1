@@ -3,9 +3,9 @@ param(
     [int]$TrainingSeedsPerCycle = 4,
     [int]$HoldoutSeeds = 3,
     [int]$ReplayCycles = 12,
-    [int]$Epochs = 120,
+    [int]$Epochs = 100,
     [int]$BatchSize = 256,
-    [int]$PairSamplesPerEpoch = 50000,
+    [int]$PairSamplesPerEpoch = 25000,
     [int]$SleepSeconds = 2
 )
 

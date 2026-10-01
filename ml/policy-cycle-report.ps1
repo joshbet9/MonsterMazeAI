@@ -10,8 +10,15 @@ function Read-PolicyJson {
   return $raw | ConvertFrom-Json
 }
 
-$latest=Get-ChildItem .\ml-data\local-policy\runs -Directory -ErrorAction SilentlyContinue |
-  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$runRoots = @(
+  (Join-Path $Repo "ml-data\local-counterfactual-policy\runs"),
+  (Join-Path $Repo "ml-data\local-policy\runs")
+)
+$latest = $runRoots |
+  Where-Object { Test-Path $_ } |
+  ForEach-Object { Get-ChildItem $_ -Directory -ErrorAction SilentlyContinue } |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
 if(-not $latest){Write-Host "No policy cycles found."; exit 0}
 Write-Host "========== MONSTERMAZE POLICY CYCLE REPORT =========="
 Write-Host "Cycle: $($latest.Name)"
@@ -57,5 +64,7 @@ foreach($log in $logs){
 
 Write-Host ""
 Write-Host "========== STATUS =========="
-Write-Host "candidatePromoted=$(Test-Path (Join-Path $Repo "ml-data\local-policy\current\policy-model.json"))"
+$counterfactualCurrent = Test-Path (Join-Path $Repo "ml-data\local-counterfactual-policy\current\policy-model.json")
+$legacyCurrent = Test-Path (Join-Path $Repo "ml-data\local-policy\current\policy-model.json")
+Write-Host "candidatePromoted=$($counterfactualCurrent -or $legacyCurrent)"
 Write-Host "========== END REPORT =========="

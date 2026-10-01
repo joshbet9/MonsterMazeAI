@@ -81,3 +81,27 @@ The eventual live integration is:
 
 This creates a safe path from expensive search to learned decision-making rather
 than replacing the mechanics with a black box.
+
+
+## Human behavior model
+
+The existing human-run recorder produces synchronized input, movement,
+navigation, world and monster streams. The optional CI job pulls the six
+recorded calibration runs from the `feature/human-run-analysis` branch,
+converts them into fixed-size state/action examples, and trains a separate
+behavior-cloning model.
+
+The behavior model learns:
+
+- forward and strafe input
+- jump and sprint decisions
+- yaw correction
+
+while observing movement state, pad direction, velocity, health, kit/mode,
+and nearby monster pressure. It is intentionally separate from the route-value
+model: route choice answers "which physical path is promising?", while the
+behavior model answers "how did a strong human control the player in this
+situation?".
+
+The two models can later be combined behind the deterministic source-faithful
+motor and simulator safety checks.

@@ -73,6 +73,7 @@ public final class RouteLearningRecorder {
     private static String groupKey(GameState state, PlayerRoute route, Cell goal) {
         return state.mode.name() + "|" + state.kit.name()
                 + "|pattern=" + state.mazePattern
+                + "|seedOffset=" + Long.getLong("monstermaze.sim.seedOffset", 0L)
                 + "|stage=" + state.stage
                 + "|tick=" + state.tick
                 + "|start=" + route.cells().get(0).row() + "," + route.cells().get(0).column()

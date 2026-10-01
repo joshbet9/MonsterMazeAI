@@ -250,9 +250,6 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
-
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
         boolean objectiveChanged = goal.row() != goalRow
@@ -398,6 +395,14 @@ public final class StableLiveMovementController {
             lastDecisionDetail = "REACHED routeSize=1";
             return Action.IDLE;
         }
+
+        /*
+         * The route has now been selected against the freshest available
+         * topology/threat snapshot. Ordinary monster avoidance is therefore a
+         * motor refinement of that route, not a competing route planner.
+         */
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+        if (mobAvoidance != null) return mobAvoidance;
 
         /*
          * The next pad has now spawned and a route exists. While the player is
@@ -858,7 +863,8 @@ public final class StableLiveMovementController {
          * producing alternating first headings and left/right oscillation.
          */
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)) {
+                state, planned.route, startRow, startColumn)
+                && !currentRouteThreatenedByMonster(state)) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -1820,215 +1826,144 @@ public final class StableLiveMovementController {
             return jumpOver;
         }
 
-        if (leftFloor || rightFloor) {
-            double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
-            double strafe;
-            if (preferred < 0.0D && leftFloor) {
-                strafe = -1.0D;
-            } else if (preferred > 0.0D && rightFloor) {
-                strafe = 1.0D;
-            } else if (leftFloor) {
-                strafe = -1.0D;
-            } else {
-                strafe = 1.0D;
-            }
+        double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
+        double worldSideX = preferred * routeDirColumn;
+        double worldSideZ = -preferred * routeDirRow;
 
-            double dodgeForward = 0.90D;
-            double dodgeStrafe = 0.55D;
-            Action dodge = new Action(
-                    dodgeForward,
-                    strafe * dodgeStrafe,
-                    shouldSpeedJump(state, allowJump),
+        float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float turn = clamp(yawError * (float) turnResponseGain(),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        /*
+         * Keep the route heading authoritative while adding only the minimum
+         * lateral displacement needed to pass the monster. The dodge is expressed
+         * in world space and converted back into W/A/D after the camera turn, so
+         * a changed heading cannot silently turn the lateral escape into a stall.
+         */
+        double routeWeight = leftFloor || rightFloor ? 1.0D : 0.92D;
+        double sideWeight = leftFloor || rightFloor ? 0.55D : 0.0D;
+        double desiredWorldX = routeDirRow * routeWeight + worldSideX * sideWeight;
+        double desiredWorldZ = routeDirColumn * routeWeight + worldSideZ * sideWeight;
+        double desiredLength = Math.hypot(desiredWorldX, desiredWorldZ);
+        desiredWorldX /= Math.max(desiredLength, 1.0E-9D);
+        desiredWorldZ /= Math.max(desiredLength, 1.0E-9D);
+
+        double postYaw = Math.toRadians(state.player.yaw + turn);
+        double forwardWorldX = -Math.sin(postYaw);
+        double forwardWorldZ = Math.cos(postYaw);
+        double strafeWorldX = Math.cos(postYaw);
+        double strafeWorldZ = Math.sin(postYaw);
+        double forward = desiredWorldX * forwardWorldX + desiredWorldZ * forwardWorldZ;
+        double strafe = desiredWorldX * strafeWorldX + desiredWorldZ * strafeWorldZ;
+
+        /*
+         * A Jumper can clear an unavoidable corridor blocker with its real charged
+         * jump, but this is an emergency action. Otherwise every kit continues
+         * through the current supported corridor instead of yielding backwards.
+         */
+        boolean jump = allowJump
+                && state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0
+                && bestDistance <= jumperJumpRange
+                && closingSpeed > 0.03D
+                && !(leftFloor || rightFloor);
+        if (jump) {
+            forward = routeDirRow * forwardWorldX + routeDirColumn * forwardWorldZ;
+            strafe = routeDirRow * strafeWorldX + routeDirColumn * strafeWorldZ;
+            double length = Math.hypot(forward, strafe);
+            if (length > 1.0D) {
+                forward /= length;
+                strafe /= length;
+            }
+            Action jumpThrough = new Action(
+                    forward * 0.90D,
+                    strafe * 0.90D,
                     true,
-                    0.0F,
-                    false);
-            Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
-            lastDecisionDetail = "MOB_DODGE"
-                    + " monster=" + threat.id
-                    + " distance=" + format(bestDistance)
-                    + " strafe=" + format(strafe)
-                    + (guarded == dodge ? "" : " EDGE_GUARD");
-            return guarded;
-        }
-
-        if (!(leftFloor || rightFloor)
-                && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
-            /*
-             * A one-cell corridor with a monster directly ahead is not a reason
-             * to park the player in place. High-skill human traces overwhelmingly
-             * continue forward with the source's non-Jumper jump input rather than
-             * repeatedly turning/retreating into the same collision window. Keep
-             * the route direction authoritative, rotate and drive concurrently,
-             * and let the normal physics/knockback model resolve the contact.
-             */
-            float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
-            float yawError = normalise(desiredYaw - state.player.yaw);
-            float turn = clamp(yawError * (float) turnResponseGain(),
-                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            double postYaw = Math.toRadians(state.player.yaw + turn);
-            double forwardWorldX = -Math.sin(postYaw);
-            double forwardWorldZ = Math.cos(postYaw);
-            double strafeWorldX = Math.cos(postYaw);
-            double strafeWorldZ = Math.sin(postYaw);
-            double forward = routeDirRow * forwardWorldX + routeDirColumn * forwardWorldZ;
-            double strafe = routeDirRow * strafeWorldX + routeDirColumn * strafeWorldZ;
-            double magnitude = Math.hypot(forward, strafe);
-            if (magnitude > 1.0D) {
-                forward /= magnitude;
-                strafe /= magnitude;
-            }
-            boolean jump = shouldSpeedJump(state, allowJump);
-            Action continueThrough = new Action(
-                    forward * 0.85D,
-                    strafe * 0.85D,
-                    jump,
                     true,
                     turn,
                     false);
-            Action guarded = guardProjectedSupport(
-                    state, continueThrough, routeDirRow, routeDirColumn);
-            lastDecisionDetail = "MOB_CONTINUE_CORRIDOR"
+            Action guarded = guardProjectedSupport(state, jumpThrough, routeDirRow, routeDirColumn);
+            lastDecisionDetail = "MOB_CONTINUE_JUMP"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
-                    + " yawError=" + format(yawError)
-                    + " jump=" + jump
-                    + " output=f=" + format(guarded.forward())
-                    + ",s=" + format(guarded.strafe());
+                    + " closing=" + format(closingSpeed)
+                    + " yawError=" + format(yawError);
             return guarded;
         }
 
-        /*
-         * No side floor exists, so the only source-valid escape is to retreat
-         * along the already-traversed route segment. Backward input is relative
-         * to the camera, not the maze, so first align the camera to the exact
-         * reverse cardinal direction. Never retreat through a gap edge.
-         */
-        if (route != null && waypointIndex > 0 && waypointIndex < route.size()) {
-            Cell current = route.cells().get(waypointIndex - 1);
-            Cell previous = waypointIndex >= 2
-                    ? route.cells().get(waypointIndex - 2) : null;
+        Action continueThrough = new Action(
+                forward * (leftFloor || rightFloor ? 0.95D : 0.85D),
+                strafe * (leftFloor || rightFloor ? 0.95D : 0.85D),
+                shouldSpeedJump(state, allowJump),
+                true,
+                turn,
+                false);
+        Action guarded = guardProjectedSupport(state, continueThrough, routeDirRow, routeDirColumn);
+        lastDecisionDetail = leftFloor || rightFloor ? "MOB_DODGE_CONTINUE" : "MOB_CONTINUE_CORRIDOR";
+        lastDecisionDetail += " monster=" + threat.id
+                + " distance=" + format(bestDistance)
+                + " yawError=" + format(yawError)
+                + " output=f=" + format(guarded.forward())
+                + ",s=" + format(guarded.strafe());
+        return guarded;
+    }
 
-            if (previous != null && isGapEdge(state,
-                    previous.row(), previous.column(),
-                    current.row(), current.column())) {
-                float desiredYaw = cardinalYaw(
-                        -routeDirRow, -routeDirColumn);
-                float yawError = normalise(desiredYaw - state.player.yaw);
-                float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                /*
-                 * The gap that brought us onto the current cell is behind us.
-                 * Holding here while a mob occupies the forward corridor creates
-                 * a fatal stationary loop: there is no safe reverse edge and the
-                 * monster can repeatedly collide with a stationary player.
-                 *
-                 * Commit through the current supported segment instead. This is
-                 * still ordinary Minecraft movement; collision/knockback remain
-                 * authoritative. If the next segment itself is another gap, let
-                 * the dedicated gap motor below own the transition.
-                 */
-                if (waypointIndex < route.size() - 1) {
-                    Cell next = route.cells().get(waypointIndex);
-                    Cell after = route.cells().get(waypointIndex + 1);
-                    if (!isGapEdge(state, next.row(), next.column(), after.row(), after.column())) {
-                        int commitRow = Integer.signum(after.row() - next.row());
-                        int commitColumn = Integer.signum(after.column() - next.column());
-                        float commitYaw = cardinalYaw(commitRow, commitColumn);
-                        float commitError = normalise(commitYaw - state.player.yaw);
-                        float commitTurn = clamp(
-                                commitError * (float) turnResponseGain(),
-                                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-                        double postYaw = Math.toRadians(state.player.yaw + commitTurn);
-                        double worldX = commitRow;
-                        double worldZ = commitColumn;
-                        double forwardWorldX = -Math.sin(postYaw);
-                        double forwardWorldZ = Math.cos(postYaw);
-                        double strafeWorldX = Math.cos(postYaw);
-                        double strafeWorldZ = Math.sin(postYaw);
-                        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
-                        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
-                        double magnitude = Math.hypot(forward, strafe);
-                        if (magnitude > 1.0D) {
-                            forward /= magnitude;
-                            strafe /= magnitude;
-                        }
-                        double drive = 0.78D;
-                        Action commit = new Action(
-                                forward * drive,
-                                strafe * drive,
-                                shouldSpeedJump(state, allowJump),
-                                true,
-                                commitTurn,
-                                false);
-                        Action guarded = guardProjectedSupport(
-                                state, commit, commitRow, commitColumn);
-                        lastDecisionDetail = "MOB_YIELD_GAP_COMMIT"
-                                + " monster=" + threat.id
-                                + " distance=" + format(bestDistance)
-                                + " yawError=" + format(commitError)
-                                + " output=f=" + format(guarded.forward())
-                                + ",s=" + format(guarded.strafe());
-                        return guarded;
-                    }
-                }
+    private boolean currentRouteThreatenedByMonster(GameState state) {
+        if (route == null || route.size() < 2
+                || waypointIndex <= 0 || waypointIndex >= route.size()) return false;
 
-                lastDecisionDetail = "MOB_YIELD_GAP_DEFER"
-                        + " monster=" + threat.id
-                        + " distance=" + format(bestDistance)
-                        + " yawError=" + format(yawError);
-                return null;
-            }
+        int firstSegment = Math.max(0, waypointIndex - 1);
+        int lastSegment = Math.min(route.size() - 2, firstSegment + 8);
+        double playerRouteDistance = 0.0D;
 
-            float desiredYaw = cardinalYaw(-routeDirRow, -routeDirColumn);
-            float yawError = normalise(desiredYaw - state.player.yaw);
-            if (Math.abs(yawError) > GAP_HEADING_TOLERANCE) {
-                float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        for (int i = firstSegment; i <= lastSegment; i++) {
+            Cell a = route.cells().get(i);
+            Cell b = route.cells().get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double sx = bx - ax;
+            double sz = bz - az;
+            double lenSq = sx * sx + sz * sz;
+            if (lenSq <= 1.0E-9D) continue;
 
-                /*
-                 * Keep retreating while the camera aligns. The source player can
-                 * combine backward/strafe movement with camera rotation; pure
-                 * in-place turning leaves a one-cell corridor occupied by the
-                 * approaching monster and was the repeatable Jumper deadlock.
-                 *
-                 * Convert the reverse cardinal world vector into local W/A/D
-                 * input using the post-turn yaw, then run the same support guard
-                 * in the reverse route direction.
-                 */
-                double postYaw = Math.toRadians(state.player.yaw + yawDelta);
-                double forwardWorldX = -Math.sin(postYaw);
-                double forwardWorldZ = Math.cos(postYaw);
-                double strafeWorldX = Math.cos(postYaw);
-                double strafeWorldZ = Math.sin(postYaw);
-                double reverseX = -routeDirRow;
-                double reverseZ = -routeDirColumn;
-                double forward = reverseX * forwardWorldX + reverseZ * forwardWorldZ;
-                double strafe = reverseX * strafeWorldX + reverseZ * strafeWorldZ;
-                double magnitude = Math.hypot(forward, strafe);
-                if (magnitude > 1.0D) {
-                    forward /= magnitude;
-                    strafe /= magnitude;
-                }
-                Action retreat = new Action(
-                        forward * 0.65D, strafe * 0.65D,
-                        false, false, yawDelta, false);
-                Action guarded = guardProjectedSupport(
-                        state, retreat, -routeDirRow, -routeDirColumn);
-                lastDecisionDetail = "MOB_YIELD_ALIGN"
-                        + " monster=" + threat.id
-                        + " distance=" + format(bestDistance)
-                        + " yawError=" + format(yawError)
-                        + " retreat=f=" + format(guarded.forward())
-                        + ",s=" + format(guarded.strafe());
-                return guarded;
+            double px = state.player.x - ax;
+            double pz = state.player.z - az;
+            double projection = Math.max(0.0D, Math.min(1.0D,
+                    (px * sx + pz * sz) / lenSq));
+            double nearestX = ax + projection * sx;
+            double nearestZ = az + projection * sz;
+            double segmentDistance = Math.hypot(
+                    state.player.x - nearestX, state.player.z - nearestZ);
+
+            if (i > firstSegment) playerRouteDistance += Math.sqrt(lenSq);
+
+            for (MonsterState monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+                double mx = monster.x - nearestX;
+                double mz = monster.z - nearestZ;
+                double distanceToRoute = Math.hypot(mx, mz);
+                if (distanceToRoute > 1.45D) continue;
+
+                double playerDx = monster.x - state.player.x;
+                double playerDz = monster.z - state.player.z;
+                double playerDistance = Math.hypot(playerDx, playerDz);
+                if (playerDistance > 2.60D || playerDistance < 0.05D) continue;
+
+                double closing = -(monster.vx * playerDx + monster.vz * playerDz)
+                        / Math.max(playerDistance, 1.0E-6D);
+                double aheadAlong = (monster.x - state.player.x) * sx
+                        + (monster.z - state.player.z) * sz;
+                if (aheadAlong <= -0.25D && i == firstSegment) continue;
+
+                if (closing > 0.0D || playerDistance <= 1.15D) return true;
             }
         }
-
-        Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
-        Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
-        lastDecisionDetail = "MOB_YIELD"
-                + " monster=" + threat.id
-                + " distance=" + format(bestDistance)
-                + (guarded == yield ? "" : " EDGE_GUARD");
-        return guarded;
+        return false;
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

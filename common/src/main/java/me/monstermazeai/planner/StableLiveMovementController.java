@@ -806,7 +806,14 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        long currentThreat = threatSignature(state);
+        /*
+         * Monster positions are intentionally dynamic. Requiring the exact
+         * quantised threat signature from the planning snapshot made otherwise
+         * useful routes expire before they could be applied, especially in dense
+         * encounters where velocity changes every few ticks. The route's physical
+         * topology, objective, and current first heading remain authoritative;
+         * live tactical control handles whatever the monsters are doing now.
+         */
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
@@ -814,7 +821,6 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
                 || state.tick - planned.requestedTick > 10L) {
             fullRouteEvaluationPending = true;
             return;

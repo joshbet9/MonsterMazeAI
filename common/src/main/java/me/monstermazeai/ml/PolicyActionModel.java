@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 /**
  * Dependency-free inference for the long-horizon policy model.
  *
- * Model output is expected return-to-go: higher is better.
+ * Higher predicted return means a better action.
  */
 public final class PolicyActionModel {
     private static final int INPUTS = PolicyLearningFeatures.NAMES.length;
@@ -61,7 +61,9 @@ public final class PolicyActionModel {
     }
 
     public static PolicyActionModel load(Path path) throws IOException {
+        if (path == null) throw new IllegalArgumentException("path");
         String json = Files.readString(path, StandardCharsets.UTF_8);
+
         double[] mean = array(json, "input_mean", INPUTS);
         double[] std = array(json, "input_std", INPUTS);
         double targetMean = scalar(json, "target_mean");
@@ -92,7 +94,7 @@ public final class PolicyActionModel {
 
     public double predict(double[] features) {
         if (features == null || features.length != INPUTS) {
-            throw new IllegalArgumentException("Expected " + INPUTS + " features");
+            throw new IllegalArgumentException("Expected " + INPUTS + " policy features");
         }
 
         double[] a1 = new double[HIDDEN_1];
@@ -115,9 +117,10 @@ public final class PolicyActionModel {
         for (int i = 0; i < HIDDEN_2; i++) output += a2[i] * w3[i];
         return output * targetStd + targetMean;
     }
-    
+
     private static double scalar(String json, String key) {
-        Matcher matcher = Pattern.compile(""" + Pattern.quote(key) + ""\s*:\s*([-+0-9.eE]+)")
+        Matcher matcher = Pattern.compile(
+                "\"" + Pattern.quote(key) + "\"\\s*:\\s*([-+0-9.eE]+)")
                 .matcher(json);
         if (!matcher.find()) throw new IllegalArgumentException("Missing scalar: " + key);
         return Double.parseDouble(matcher.group(1));
@@ -126,15 +129,19 @@ public final class PolicyActionModel {
     private static double[] array(String json, String key, int expected) {
         String body = bracketBody(json, key);
         Matcher matcher = Pattern.compile(
-                "[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?").matcher(body);
+                "[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?")
+                .matcher(body);
         double[] out = new double[expected];
         int count = 0;
         while (matcher.find()) {
-            if (count >= expected) throw new IllegalArgumentException("Field " + key + " has too many values");
+            if (count >= expected) {
+                throw new IllegalArgumentException("Field " + key + " has too many values");
+            }
             out[count++] = Double.parseDouble(matcher.group());
         }
         if (count != expected) {
-            throw new IllegalArgumentException("Field " + key + " expected " + expected + " values, got " + count);
+            throw new IllegalArgumentException("Field " + key + " expected "
+                    + expected + " values, got " + count);
         }
         return out;
     }
@@ -153,7 +160,9 @@ public final class PolicyActionModel {
             } else if (ch == ']') {
                 depth--;
                 if (depth == 0) {
-                    if (row >= rows) throw new IllegalArgumentException("Too many rows in " + key);
+                    if (row >= rows) {
+                        throw new IllegalArgumentException("Too many rows in " + key);
+                    }
                     String[] values = body.substring(start, i).split(",");
                     if (values.length != columns) {
                         throw new IllegalArgumentException("Row " + row + " of " + key
@@ -166,17 +175,20 @@ public final class PolicyActionModel {
                 }
             }
         }
-        if (row != rows) throw new IllegalArgumentException("Field " + key + " expected "
-                + rows + " rows, got " + row);
+        if (row != rows) {
+            throw new IllegalArgumentException("Field " + key + " expected "
+                    + rows + " rows, got " + row);
+        }
         return out;
     }
 
     private static String bracketBody(String json, String key) {
-        String marker = """ + key + """;
+        String marker = "\"" + key + "\"";
         int markerIndex = json.indexOf(marker);
         if (markerIndex < 0) throw new IllegalArgumentException("Missing field: " + key);
         int start = json.indexOf('[', markerIndex);
         if (start < 0) throw new IllegalArgumentException("Missing array: " + key);
+
         int depth = 0;
         for (int i = start; i < json.length(); i++) {
             char ch = json.charAt(i);

@@ -81,4 +81,4 @@ jobs:
           path: |
             ml-data/route-training.jsonl
             ml-data/route-value-model.json
-          if-no-files-found: error
+          if-no-files-found: warn

@@ -28,8 +28,7 @@ public final class PolicyActionSelector {
      * prediction by a real margin after a small regularisation penalty for
      * changing the trusted controller's command.
      */
-    private static final double SWITCH_MARGIN = 3.0;
-    private static final double DEVIATION_PENALTY = 4.0;
+    private static final double SWITCH_MARGIN = 0.5;
 
     private PolicyActionSelector() {}
 
@@ -38,7 +37,9 @@ public final class PolicyActionSelector {
 
         boolean policyMode = "policy".equalsIgnoreCase(
                 System.getProperty("monstermaze.ml.mode", ""));
-        boolean explore = Boolean.parseBoolean(
+        boolean counterfactual = Boolean.parseBoolean(
+                System.getProperty("monstermaze.ml.policy.counterfactual", "false"));
+        boolean explore = !counterfactual && Boolean.parseBoolean(
                 System.getProperty("monstermaze.ml.policy.explore", "false"));
 
         PolicyActionModel loaded = model();
@@ -68,8 +69,7 @@ public final class PolicyActionSelector {
         for (Action candidate : candidates) {
             if (candidate.equals(baseline)) continue;
 
-            double predicted = loaded.predict(state, candidate);
-            double score = predicted - DEVIATION_PENALTY * deviation(candidate, baseline);
+            double score = loaded.predict(state, candidate);
 
             if (score > bestScore + SWITCH_MARGIN) {
                 bestScore = score;
@@ -95,35 +95,52 @@ public final class PolicyActionSelector {
 
     static List<Action> candidates(Action baseline, boolean allowJump, GameState state) {
         LinkedHashSet<String> seen = new LinkedHashSet<>();
-        List<Action> out = new ArrayList<>(16);
+        List<Action> out = new ArrayList<>(24);
 
-        /*
-         * Residual steering: keep the baseline movement intent while allowing
-         * the learned layer to correct heading, lane, momentum and jump timing.
-         */
         add(out, seen, baseline);
+
+        // Heading corrections.
         add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
                 baseline.jump(), baseline.sprint(), -30, baseline.useAbility()));
         add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
                 baseline.jump(), baseline.sprint(), 30, baseline.useAbility()));
 
-        add(out, seen, copy(baseline, baseline.forward(),
-                clamp(baseline.strafe() - 0.35), baseline.jump(), baseline.sprint(),
-                baseline.yawDelta(), baseline.useAbility()));
-        add(out, seen, copy(baseline, baseline.forward(),
-                clamp(baseline.strafe() + 0.35), baseline.jump(), baseline.sprint(),
-                baseline.yawDelta(), baseline.useAbility()));
+        // Lane / momentum corrections.
+        for (double delta : new double[]{-0.75, -0.35, 0.35, 0.75}) {
+            add(out, seen, copy(baseline, baseline.forward(),
+                    clamp(baseline.strafe() + delta), baseline.jump(), baseline.sprint(),
+                    baseline.yawDelta(), baseline.useAbility()));
+        }
+        for (double delta : new double[]{-0.50, -0.25, 0.25, 0.50}) {
+            add(out, seen, copy(baseline, clamp(baseline.forward() + delta),
+                    baseline.strafe(), baseline.jump(), baseline.sprint(),
+                    baseline.yawDelta(), baseline.useAbility()));
+        }
 
-        add(out, seen, copy(baseline,
-                clamp(baseline.forward() - 0.25), baseline.strafe(),
-                baseline.jump(), baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
-        add(out, seen, copy(baseline,
-                clamp(baseline.forward() + 0.25), baseline.strafe(),
-                baseline.jump(), baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        // Explicit alternatives allow the learned policy to discover a
+        // different local lane rather than merely perturbing the baseline.
+        for (double strafe : new double[]{-1.0, -0.75, 0.75, 1.0}) {
+            add(out, seen, copy(baseline, 1.0, strafe, baseline.jump(),
+                    baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        }
+        add(out, seen, copy(baseline, 1.0, 0.0, baseline.jump(),
+                baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        add(out, seen, copy(baseline, 0.0, 0.75, baseline.jump(),
+                baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        add(out, seen, copy(baseline, 0.0, -0.75, baseline.jump(),
+                baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        add(out, seen, copy(baseline, -0.5, 0.0, baseline.jump(),
+                baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
+                baseline.jump(), false, baseline.yawDelta(), baseline.useAbility()));
 
-        if (allowJump && !baseline.jump()) {
+        if (allowJump) {
             add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
                     true, baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+            add(out, seen, copy(baseline, 1.0, 0.75, true,
+                    baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+            add(out, seen, copy(baseline, 1.0, -0.75, true,
+                    baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
         }
 
         boolean canUseAbility = state.ability != null
@@ -151,16 +168,6 @@ public final class PolicyActionSelector {
                 + action.jump() + "|" + action.sprint() + "|"
                 + action.yawDelta() + "|" + action.useAbility();
         if (seen.add(key)) out.add(action);
-    }
-
-    private static double deviation(Action candidate, Action baseline) {
-        double movement = Math.abs(candidate.forward() - baseline.forward())
-                + Math.abs(candidate.strafe() - baseline.strafe());
-        double jump = candidate.jump() == baseline.jump() ? 0.0 : 0.5;
-        double sprint = candidate.sprint() == baseline.sprint() ? 0.0 : 0.25;
-        double yaw = Math.abs(candidate.yawDelta() - baseline.yawDelta()) / 30.0;
-        double ability = candidate.useAbility() == baseline.useAbility() ? 0.0 : 0.75;
-        return movement + jump + sprint + yaw + ability;
     }
 
     private static double clamp(double value) {

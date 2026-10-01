@@ -103,7 +103,13 @@ public final class CounterfactualPolicyLearningRecorder {
             AutonomousMonsterMazeAgent continuation =
                     newPolicyContinuationAgent();
 
-            List<GameState> snapshots = simulator.forecastCounterfactual(
+            String oldExplore = System.getProperty("monstermaze.ml.policy.explore");
+            try {
+                // Counterfactual labels must be deterministic: the rollout
+                // continuation follows the current policy greedily.
+                System.setProperty("monstermaze.ml.policy.explore", "false");
+
+                List<GameState> snapshots = simulator.forecastCounterfactual(
                     state,
                     candidate,
                     horizon,
@@ -112,14 +118,21 @@ public final class CounterfactualPolicyLearningRecorder {
                             continuationState,
                             allowJump));
 
-            double target = discountedReward(state, snapshots, gamma);
+                double target = discountedReward(state, snapshots, gamma);
+                writeRow(
+                        episode,
+                        state.tick,
+                        candidateIndex,
+                        target,
+                        PolicyLearningFeatures.extract(state, candidate));
+            } finally {
+                if (oldExplore == null) {
+                    System.clearProperty("monstermaze.ml.policy.explore");
+                } else {
+                    System.setProperty("monstermaze.ml.policy.explore", oldExplore);
+                }
+            }
 
-            writeRow(
-                    episode,
-                    state.tick,
-                    candidateIndex,
-                    target,
-                    PolicyLearningFeatures.extract(state, candidate));
             candidateIndex++;
         }
     }

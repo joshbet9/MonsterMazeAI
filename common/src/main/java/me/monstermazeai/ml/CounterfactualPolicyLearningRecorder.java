@@ -53,7 +53,7 @@ public final class CounterfactualPolicyLearningRecorder {
         String configured = System.getProperty("monstermaze.ml.policy.output", "").trim();
         if (configured.isEmpty()) return;
 
-        List<Action> candidates = PolicyActionSelector.candidates(state, allowJump);
+        List<Action> candidates = PolicyActionSelector.candidates(baseline, allowJump, state);
         if (candidates.isEmpty()) return;
 
         ensureWriter(Path.of(configured));
@@ -76,8 +76,9 @@ public final class CounterfactualPolicyLearningRecorder {
                     candidate.sprint(), candidate.yawDelta(), false);
             for (int i = 1; i < horizon; i++) actions[i] = continuation;
 
-            GameState end = simulator.forecast(
-                    state, actions, baseSeed + candidateIndex * 0xBF58476D1CE4E5B9L);
+            // All candidates use the same deterministic monster RNG stream so
+            // the label difference comes from the action, not a different mob roll.
+            GameState end = simulator.forecast(state, actions, baseSeed);
             double target = shortHorizonReturn(state, end, actions.length, gamma);
 
             writeRow(episode, state.tick, candidateIndex, target,

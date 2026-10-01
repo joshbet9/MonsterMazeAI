@@ -4,6 +4,7 @@ import me.monstermazeai.ability.AbilityDecision;
 import me.monstermazeai.ability.AbilityUseGate;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.ml.PolicyActionSelector;
 
 /**
  * Stateful safety wrapper around the one-tick objective controller.
@@ -57,8 +58,22 @@ public final class RobustLiveController {
         lastZ = state.player.z;
 
         Action action = objective.nextAction(state, allowJump);
-        boolean useAbility = AbilityDecision.shouldUse(
+        boolean policyExplore = Boolean.parseBoolean(
+                System.getProperty("monstermaze.ml.policy.explore", "false"));
+        boolean policyMode = "policy".equalsIgnoreCase(
+                System.getProperty("monstermaze.ml.mode", ""));
+        if (policyExplore || (policyMode && PolicyActionSelector.loaded())) {
+            Action baseline = action;
+            action = PolicyActionSelector.select(state, baseline, allowJump);
+            if (policyMode) {
+                lastDecisionDetail = "POLICY_SELECT baseline=" + describe(baseline)
+                        + " selected=" + describe(action);
+            }
+        }
+
+        boolean deterministicAbility = AbilityDecision.shouldUse(
                 state, objective.lastDecisionReason(), objective.lastDecisionDetail());
+        boolean useAbility = deterministicAbility || action.useAbility();
 
         /*
          * An ability is allowed to rescue a failed movement objective. In
@@ -68,7 +83,7 @@ public final class RobustLiveController {
          * execute.
          */
         if (action == Action.IDLE) {
-            if (useAbility && abilityGate.allow(state, useAbility)) {
+            if (useAbility && abilityGate.allow(state, true)) {
                 abilityGate.record(state);
                 Action ability = new Action(0.0, 0.0, false, false, 0.0F, true);
                 lastDecisionDetail = "ABILITY_EMERGENCY objective=" + objective.lastDecisionReason()
@@ -95,7 +110,7 @@ public final class RobustLiveController {
             return jump;
         }
 
-        if (useAbility && abilityGate.allow(state)) {
+        if (useAbility && abilityGate.allow(state, true)) {
             abilityGate.record(state);
             Action ability = new Action(action.forward(), action.strafe(), action.jump(),
                     action.sprint(), action.yawDelta(), true);

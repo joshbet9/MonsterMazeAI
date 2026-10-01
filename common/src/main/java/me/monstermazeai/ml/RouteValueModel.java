@@ -133,13 +133,29 @@ public final class RouteValueModel {
 
     private static double[] array(String json, String key, int expected) {
         String body = bracketBody(json, key, '[', ']');
-        String[] values = body.split(",");
-        if (values.length != expected) {
-            throw new IllegalArgumentException("Field " + key + " expected " + expected
-                    + " values, got " + values.length);
-        }
+
+        // Accept both a canonical flat numeric array and the nested [N][1]
+        // representation emitted by older versions of the Python trainer.
+        // Extracting numeric literals instead of splitting on commas also makes
+        // this loader tolerant of pretty-printed JSON.
+        Matcher matcher = Pattern.compile(
+                "[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?")
+                .matcher(body);
+
         double[] out = new double[expected];
-        for (int i = 0; i < expected; i++) out[i] = Double.parseDouble(values[i].trim());
+        int count = 0;
+        while (matcher.find()) {
+            if (count >= expected) {
+                throw new IllegalArgumentException("Field " + key + " expected "
+                        + expected + " values, got more");
+            }
+            out[count++] = Double.parseDouble(matcher.group());
+        }
+
+        if (count != expected) {
+            throw new IllegalArgumentException("Field " + key + " expected " + expected
+                    + " values, got " + count);
+        }
         return out;
     }
 

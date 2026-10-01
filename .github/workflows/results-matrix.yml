@@ -61,6 +61,45 @@ jobs:
         if: always()
         run: python -m pip install --disable-pip-version-check numpy
 
+      - name: Fetch human calibration runs
+        if: always()
+        continue-on-error: true
+        run: |
+          git fetch --depth=1 origin feature/human-run-analysis
+          git archive FETCH_HEAD human-runs | tar -x
+
+      - name: Build human behavior-cloning dataset
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -d human-runs ]; then
+            python ml/human_policy.py convert \
+              --input human-runs \
+              --output ml-data/human-behavior.jsonl
+          else
+            echo "No human-runs directory available"
+          fi
+
+      - name: Train human behavior model
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s ml-data/human-behavior.jsonl ]; then
+            python ml/human_policy.py train \
+              --input ml-data/human-behavior.jsonl \
+              --output ml-data/human-policy-model.json \
+              --epochs 150 \
+              --batch-size 256 \
+              --hidden1 32 \
+              --hidden2 16 \
+              --learning-rate 0.002 \
+              --validation-fraction 0.20 \
+              --min-samples 500 \
+              --seed 1337
+          else
+            echo "No human behavior dataset available"
+          fi
+
       - name: Inspect simulator training set
         if: always()
         continue-on-error: true

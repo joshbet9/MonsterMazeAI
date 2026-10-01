@@ -24,6 +24,8 @@ public final class PolicyActionModel {
     private final double[] inputStd;
     private final double targetMean;
     private final double targetStd;
+    private final double targetMin;
+    private final double targetMax;
     private final double[][] w1;
     private final double[] b1;
     private final double[][] w2;
@@ -33,6 +35,7 @@ public final class PolicyActionModel {
 
     private PolicyActionModel(double[] inputMean, double[] inputStd,
                               double targetMean, double targetStd,
+                              double targetMin, double targetMax,
                               double[][] w1, double[] b1,
                               double[][] w2, double[] b2,
                               double[] w3, double b3) {
@@ -40,6 +43,8 @@ public final class PolicyActionModel {
         this.inputStd = inputStd;
         this.targetMean = targetMean;
         this.targetStd = targetStd;
+        this.targetMin = targetMin;
+        this.targetMax = targetMax;
         this.w1 = w1;
         this.b1 = b1;
         this.w2 = w2;
@@ -85,8 +90,11 @@ public final class PolicyActionModel {
         if (!Double.isFinite(targetStd) || targetStd <= 1.0E-12) {
             throw new IllegalArgumentException("Invalid target standard deviation");
         }
+        if (!Double.isFinite(targetMin) || !Double.isFinite(targetMax) || targetMin > targetMax) {
+            throw new IllegalArgumentException("Invalid target bounds");
+        }
 
-        return new PolicyActionModel(mean, std, targetMean, targetStd,
+        return new PolicyActionModel(mean, std, targetMean, targetStd, targetMin, targetMax,
                 w1, b1, w2, b2, w3, b3);
     }
 

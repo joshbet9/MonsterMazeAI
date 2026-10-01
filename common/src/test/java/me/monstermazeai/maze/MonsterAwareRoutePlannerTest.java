@@ -88,6 +88,23 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void nearbyMonsterDoesNotCauseSafePadGlobalDetour() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 2.5;
+        state.player.z = 2.5;
+        MonsterState monster = new MonsterState(9, 2.5, 0.0, 3.5);
+        state.monsters.add(monster);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeToRegionFast(state, new Cell(2, 2), new Cell(2, 6), 0);
+
+        assertEquals(List.of(
+                new Cell(2, 2), new Cell(2, 3), new Cell(2, 4),
+                new Cell(2, 5), new Cell(2, 6)), route.cells());
+    }
+
+    @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();

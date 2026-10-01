@@ -348,7 +348,8 @@ public final class StableLiveMovementController {
              * repeated FAST_RECOVERY_ROUTE resets.
              */
             boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
+                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION)
+                    || (!gapExecutionActive && currentSegmentDeviation(state, route, waypointIndex) > 0.95D);
 
             if (routeInvalid) {
                 /*
@@ -1103,19 +1104,68 @@ public final class StableLiveMovementController {
      */
     private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
         if (route == null || route.size() < 2
-                || targetIndex <= 0 || targetIndex >= route.size()) return 0.0;
+                || targetIndex <= 0 || targetIndex >= route.size()) return 0.0D;
 
-        Cell from = route.cells().get(targetIndex - 1);
-        Cell to = route.cells().get(targetIndex);
-        int dirRow = Integer.signum(to.row() - from.row());
-        int dirColumn = Integer.signum(to.column() - from.column());
-        if (dirRow == 0) {
-            return Math.abs(state.player.x - (from.row() + 0.5D));
+        List<Cell> cells = route.cells();
+        Cell from = cells.get(targetIndex - 1);
+        Cell to = cells.get(targetIndex);
+        int rowDirection = Integer.signum(to.row() - from.row());
+        int columnDirection = Integer.signum(to.column() - from.column());
+        int segmentLength = Math.abs(to.row() - from.row())
+                + Math.abs(to.column() - from.column());
+        if (Math.abs(rowDirection) + Math.abs(columnDirection) != 1) {
+            return Double.POSITIVE_INFINITY;
         }
-        if (dirColumn == 0) {
-            return Math.abs(state.player.z - (from.column() + 0.5D));
+
+        /*
+         * waypointIndex is the endpoint of the current straight run, not the
+         * single cell immediately before it. Measure against every one-block
+         * edge in that run so a player can legitimately be several blocks away
+         * from the corner without triggering FAST_RECOVERY_ROUTE.
+         *
+         * Gap edges have length two, so the length check also keeps the current
+         * straight-run calculation from crossing a source-faithful gap boundary.
+         */
+        int runStart = targetIndex - 1;
+        while (runStart > 0) {
+            Cell previous = cells.get(runStart - 1);
+            Cell current = cells.get(runStart);
+            int previousRowDirection = Integer.signum(current.row() - previous.row());
+            int previousColumnDirection = Integer.signum(current.column() - previous.column());
+            int previousLength = Math.abs(current.row() - previous.row())
+                    + Math.abs(current.column() - previous.column());
+            if (previousRowDirection != rowDirection
+                    || previousColumnDirection != columnDirection
+                    || previousLength != segmentLength) {
+                break;
+            }
+            runStart--;
         }
-        return Double.POSITIVE_INFINITY;
+
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = runStart; i < targetIndex; i++) {
+            Cell a = cells.get(i);
+            Cell b = cells.get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double dx = bx - ax;
+            double dz = bz - az;
+            double lengthSquared = dx * dx + dz * dz;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double px = state.player.x - ax;
+            double pz = state.player.z - az;
+            double projection = (px * dx + pz * dz) / lengthSquared;
+            projection = Math.max(0.0D, Math.min(1.0D, projection));
+            double nearestX = ax + projection * dx;
+            double nearestZ = az + projection * dz;
+            best = Math.min(best, Math.hypot(
+                    state.player.x - nearestX,
+                    state.player.z - nearestZ));
+        }
+        return best == Double.POSITIVE_INFINITY ? 0.0D : best;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {

@@ -69,12 +69,16 @@ function Gate-AgainstBaseline {
         Copy-Item $baselineLog $baseline -Force
     }
 
+    # Every new candidate is compared with both the original deterministic
+    # baseline and the currently promoted incumbent. This makes policy
+    # iteration monotonic rather than allowing a later cycle to erase gains.
     $incumbentLog = Join-Path $CycleDir "incumbent-seed-$Seed.log"
     $currentModel = Join-Path $CurrentRoot "policy-model.json"
     if (Test-Path $currentModel) {
         $code = Invoke-Run $Seed $incumbentLog (Join-Path $CycleDir "ignored-incumbent-$Seed.jsonl") $currentModel $false
         if ($code -ne 0) { return $false }
-    } else {
+    }
+    else {
         Copy-Item $baseline $incumbentLog -Force
     }
 
@@ -83,12 +87,13 @@ function Gate-AgainstBaseline {
     if ($code -ne 0) { return $false }
 
     function Read-StageMap([string]$Path) {
-        $lines = @(Select-String -Path $Path -Pattern "SPEED_FULL_RUN|MODERN_FULL_RUN" | ForEach-Object { $_.Line })
+        $lines = @(Select-String -Path $Path -Pattern "SPEED_FULL_RUN|MODERN_FULL_RUN" |
+            ForEach-Object { $_.Line })
         if ($lines.Count -ne 30) { return @{} }
 
         $map = @{}
         foreach ($line in $lines) {
-            if ($line -match "(SPEED|MODERN)_FULL_RUN pattern=(d) kit=([A-Z_]+) maxStage=(d+)") {
+            if ($line -match "(SPEED|MODERN)_FULL_RUN pattern=(\d) kit=([A-Z_]+) maxStage=(\d+)") {
                 $map["$($matches[1])|$($matches[2])|$($matches[3])"] = [int]$matches[4]
             }
         }
@@ -100,54 +105,93 @@ function Gate-AgainstBaseline {
     $c = Read-StageMap $candidateLog
     if ($b.Count -ne 30 -or $i.Count -ne 30 -or $c.Count -ne 30) { return $false }
 
-    $baseSum=0; $incSum=0; $candSum=0
-    $basePeak=0; $incPeak=0; $candPeak=0
-    $improved=0; $worsened=0; $same=0; $belowBaseline=0
+    $baseSum = 0
+    $incSum = 0
+    $candSum = 0
+    $basePeak = 0
+    $incPeak = 0
+    $candPeak = 0
+    $improved = 0
+    $worsened = 0
+    $same = 0
+    $belowBaseline = 0
 
     foreach ($key in $b.Keys) {
         if (-not $i.ContainsKey($key) -or -not $c.ContainsKey($key)) { return $false }
 
-        $bv=$b[$key]; $iv=$i[$key]; $cv=$c[$key]
-        $baseSum += $bv; $incSum += $iv; $candSum += $cv
-        $basePeak=[Math]::Max($basePeak,$bv)
-        $incPeak=[Math]::Max($incPeak,$iv)
-        $candPeak=[Math]::Max($candPeak,$cv)
+        $bv = $b[$key]
+        $iv = $i[$key]
+        $cv = $c[$key]
 
-        if ($cv -gt $iv) { $improved++ }
-        elseif ($cv -lt $iv) { $worsened++ }
-        else { $same++ }
+        $baseSum += $bv
+        $incSum += $iv
+        $candSum += $cv
 
-        if ($cv -lt $bv) { $belowBaseline++ }
+        $basePeak = [Math]::Max($basePeak, $bv)
+        $incPeak = [Math]::Max($incPeak, $iv)
+        $candPeak = [Math]::Max($candPeak, $cv)
+
+        if ($cv -gt $iv) {
+            $improved++
+        }
+        elseif ($cv -lt $iv) {
+            $worsened++
+        }
+        else {
+            $same++
+        }
+
+        if ($cv -lt $bv) {
+            $belowBaseline++
+        }
     }
 
-    $count=$b.Count
-    $report=[ordered]@{
-        seed=$Seed
-        cases=$count
-        baselineAvg=($baseSum/$count)
-        incumbentAvg=($incSum/$count)
-        candidateAvg=($candSum/$count)
-        baselinePeak=$basePeak
-        incumbentPeak=$incPeak
-        candidatePeak=$candPeak
-        improved=$improved
-        worsened=$worsened
-        same=$same
-        belowBaseline=$belowBaseline
-        passed=(
-            $worsened -eq 0
-            -and $belowBaseline -eq 0
-            -and $candSum -ge $incSum
-            -and $candPeak -ge $incPeak
-            -and $candSum -ge $baseSum
-            -and $candPeak -ge $basePeak
-        )
+    $count = $b.Count
+    $passed = (
+        $worsened -eq 0 -and
+        $belowBaseline -eq 0 -and
+        $candSum -ge $incSum -and
+        $candPeak -ge $incPeak -and
+        $candSum -ge $baseSum -and
+        $candPeak -ge $basePeak
+    )
+
+    $report = [ordered]@{
+        seed = $Seed
+        cases = $count
+        baselineAvg = ($baseSum / $count)
+        incumbentAvg = ($incSum / $count)
+        candidateAvg = ($candSum / $count)
+        baselinePeak = $basePeak
+        incumbentPeak = $incPeak
+        candidatePeak = $candPeak
+        improved = $improved
+        worsened = $worsened
+        same = $same
+        belowBaseline = $belowBaseline
+        passed = $passed
     }
-    $report | ConvertTo-Json | Set-Content (Join-Path $CycleDir "policy-holdout-seed-$Seed.json") -Encoding utf8
-    Write-Host ("POLICY_GATE seed={0} baseline={1:N2} incumbent={2:N2} candidate={3:N2} peaks={4}/{5}/{6} improved={7} worsened={8} belowBaseline={9} passed={10}" -f
-        $Seed,$report.baselineAvg,$report.incumbentAvg,$report.candidateAvg,
-        $report.baselinePeak,$report.incumbentPeak,$report.candidatePeak,
-        $report.improved,$report.worsened,$report.belowBaseline,$report.passed)
+
+    $report |
+        ConvertTo-Json |
+        Set-Content (Join-Path $CycleDir "policy-holdout-seed-$Seed.json") -Encoding utf8
+
+    Write-Host (
+        "POLICY_GATE seed={0} baseline={1:N2} incumbent={2:N2} candidate={3:N2} " +
+        "peaks={4}/{5}/{6} improved={7} worsened={8} belowBaseline={9} passed={10}" -f
+        $Seed,
+        $report.baselineAvg,
+        $report.incumbentAvg,
+        $report.candidateAvg,
+        $report.baselinePeak,
+        $report.incumbentPeak,
+        $report.candidatePeak,
+        $report.improved,
+        $report.worsened,
+        $report.belowBaseline,
+        $report.passed
+    )
+
     return [bool]$report.passed
 }
 

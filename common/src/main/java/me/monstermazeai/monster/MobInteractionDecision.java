@@ -42,6 +42,42 @@ public final class MobInteractionDecision {
         double padDistance = Math.max(0.0, Math.hypot(padDx, padDz) - PAD_RADIUS);
         double ordinaryTicks = padDistance * ESTIMATED_TICKS_PER_BLOCK;
 
+        /*
+         * Maverick's source mechanic is an intentional propulsion option. Its
+         * decision cannot be gated by the ordinary walking-time test first:
+         * that would make the positive-knockback branch unreachable exactly when
+         * the pad is comfortably reachable by normal movement.
+         */
+        boolean maverickBoost = state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                && state.mode != me.monstermazeai.game.Mode.ORIGINAL;
+
+        if (maverickBoost
+                && state.player.recentMobHitUntilTick <= state.tick
+                && padDistance >= 4.0D + (2.0D * (1.0D - positiveMobKnockback))) {
+            MonsterState bestMaverick = null;
+            double bestMaverickScore = Double.POSITIVE_INFINITY;
+            for (MonsterState monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+                double mx = monster.x - state.player.x;
+                double mz = monster.z - state.player.z;
+                double horizontal = Math.hypot(mx, mz);
+                if (horizontal > CONTACT_RANGE || horizontal < 0.15D) continue;
+
+                double closing = 0.0D;
+                double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
+                if (speedSq > 1.0E-9D) {
+                    closing = -(monster.vx * mx + monster.vz * mz) / horizontal;
+                }
+                double score = horizontal - Math.max(0.0D, closing) * 0.30D;
+                if (score < bestMaverickScore) {
+                    bestMaverickScore = score;
+                    bestMaverick = monster;
+                }
+            }
+            if (bestMaverick != null) return bestMaverick;
+        }
+
         if (ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
             return null;
         }
@@ -59,11 +95,7 @@ public final class MobInteractionDecision {
          * that defines the kit. Respect the normal four-damage/recharge model and
          * the existing health floor; this never changes source physics.
          */
-        boolean maverickBoost = state.kit == me.monstermazeai.kit.Kit.MAVERICK
-                && state.mode != me.monstermazeai.game.Mode.ORIGINAL;
-        if (maverickBoost
-                && state.player.recentMobHitUntilTick <= state.tick
-                && padDistance >= 4.0D + (2.0D * (1.0D - positiveMobKnockback))) {
+        if (false) {
             MonsterState bestMaverick = null;
             double bestMaverickScore = Double.POSITIVE_INFINITY;
             for (MonsterState monster : state.monsters) {

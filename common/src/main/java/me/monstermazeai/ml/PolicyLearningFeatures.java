@@ -32,6 +32,14 @@ public final class PolicyLearningFeatures {
             "pad_direction_sin",
             "old_pad_count_norm",
             "preview_pad_distance_norm",
+            "local_floor_north",
+            "local_floor_south",
+            "local_floor_east",
+            "local_floor_west",
+            "local_floor_northeast",
+            "local_floor_northwest",
+            "local_floor_southeast",
+            "local_floor_southwest",
             "mode_speed",
             "mode_modern",
             "kit_jumper",
@@ -90,8 +98,8 @@ public final class PolicyLearningFeatures {
             double distance = Math.hypot(dx, dz);
             f[10] = clamp(distance / 100.0, 0.0, 2.0);
             if (distance > 1.0E-6) {
-                f[11] = dx / distance;
-                f[12] = dz / distance;
+                f[11] = dx / distance * forwardX + dz / distance * forwardZ;
+                f[12] = dx / distance * strafeX + dz / distance * strafeZ;
             }
         }
 
@@ -100,16 +108,32 @@ public final class PolicyLearningFeatures {
         if (state.previewPadRow >= 0 && state.previewPadColumn >= 0) {
             double dx = state.previewPadRow + 0.5 - state.player.x;
             double dz = state.previewPadColumn + 0.5 - state.player.z;
-            f[14] = clamp(Math.hypot(dx, dz) / 100.0, 0.0, 2.0);
+                f[14] = clamp(Math.hypot(dx, dz) / 100.0, 0.0, 2.0);
         }
 
-        f[15] = state.mode.name().equals("SPEED") ? 1.0 : 0.0;
-        f[16] = state.mode.name().equals("MODERN") ? 1.0 : 0.0;
-        f[17] = kit(state, Kit.JUMPER);
-        f[18] = kit(state, Kit.MAVERICK);
-        f[19] = kit(state, Kit.SLOWBALLER);
-        f[20] = kit(state, Kit.REPULSOR);
-        f[21] = kit(state, Kit.BODY_BUILDER);
+        int playerRow = (int) Math.floor(state.player.x);
+        int playerColumn = (int) Math.floor(state.player.z);
+        int[][] offsets = {
+                {-1, 0}, {1, 0}, {0, 1}, {0, -1},
+                {-1, 1}, {-1, -1}, {1, 1}, {1, -1}
+        };
+        for (int i = 0; i < offsets.length; i++) {
+            int r = playerRow + offsets[i][0];
+            int col = playerColumn + offsets[i][1];
+            boolean floor = state.maze != null
+                    && r >= 0 && r < me.monstermazeai.maze.MazeModel.SIZE
+                    && col >= 0 && col < me.monstermazeai.maze.MazeModel.SIZE
+                    && state.maze.isPhysicalFloor(r, col);
+            f[15 + i] = floor ? 1.0 : 0.0;
+        }
+
+        f[23] = state.mode.name().equals("SPEED") ? 1.0 : 0.0;
+        f[24] = state.mode.name().equals("MODERN") ? 1.0 : 0.0;
+        f[25] = kit(state, Kit.JUMPER);
+        f[26] = kit(state, Kit.MAVERICK);
+        f[27] = kit(state, Kit.SLOWBALLER);
+        f[28] = kit(state, Kit.REPULSOR);
+        f[29] = kit(state, Kit.BODY_BUILDER);
 
         int within12 = 0;
         int within20 = 0;
@@ -144,21 +168,21 @@ public final class PolicyLearningFeatures {
             }
         }
 
-        f[22] = clamp(within12 / 30.0, 0.0, 1.0);
-        f[23] = clamp(within20 / 80.0, 0.0, 1.0);
-        f[24] = Double.isFinite(nearest) ? clamp(nearest / 20.0, 0.0, 2.0) : 2.0;
-        f[25] = clamp(nearestClosing / 0.60, -3.0, 3.0);
-        f[26] = clamp(nearestForward / 20.0, -2.0, 2.0);
-        f[27] = clamp(nearestLateral / 20.0, -2.0, 2.0);
-        f[28] = clamp(maxClosing / 0.60, 0.0, 3.0);
-        f[29] = Double.isFinite(minTtc) ? clamp(minTtc / 20.0, 0.0, 2.0) : 2.0;
+        f[30] = clamp(within12 / 30.0, 0.0, 1.0);
+        f[31] = clamp(within20 / 80.0, 0.0, 1.0);
+        f[32] = Double.isFinite(nearest) ? clamp(nearest / 20.0, 0.0, 2.0) : 2.0;
+        f[33] = clamp(nearestClosing / 0.60, -3.0, 3.0);
+        f[34] = clamp(nearestForward / 20.0, -2.0, 2.0);
+        f[35] = clamp(nearestLateral / 20.0, -2.0, 2.0);
+        f[36] = clamp(maxClosing / 0.60, 0.0, 3.0);
+        f[37] = Double.isFinite(minTtc) ? clamp(minTtc / 20.0, 0.0, 2.0) : 2.0;
 
-        f[30] = action.forward();
-        f[31] = action.strafe();
-        f[32] = action.jump() ? 1.0 : 0.0;
-        f[33] = action.sprint() ? 1.0 : 0.0;
-        f[34] = clamp(action.yawDelta() / 30.0, -1.0, 1.0);
-        f[35] = action.useAbility() ? 1.0 : 0.0;
+        f[38] = action.forward();
+        f[39] = action.strafe();
+        f[40] = action.jump() ? 1.0 : 0.0;
+        f[41] = action.sprint() ? 1.0 : 0.0;
+        f[42] = clamp(action.yawDelta() / 30.0, -1.0, 1.0);
+        f[43] = action.useAbility() ? 1.0 : 0.0;
         return f;
     }
 

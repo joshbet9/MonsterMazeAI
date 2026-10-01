@@ -822,6 +822,9 @@ public final class StableLiveMovementController {
                 PlayerRoute planned = regionRadius > 0
                         ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
                         : backgroundRoutePlanner.route(snapshot, start, goal);
+                if (planned == null || planned.cells().isEmpty()) {
+                    throw new IllegalStateException("Strategic planner returned no route");
+                }
                 completedRoutePlan = new PlannedRoute(
                         planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
                         requestedTick, topology, threatSignature(snapshot));
@@ -846,12 +849,13 @@ public final class StableLiveMovementController {
          * topology, objective, and current first heading remain authoritative;
          * live tactical control handles whatever the monsters are doing now.
          */
-        if (planned.startRow != startRow
+        if (planned.route == null
+                || planned.route.cells().isEmpty()
+                || planned.startRow != startRow
                 || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
-                || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
                 || state.tick - planned.requestedTick > 10L) {
             fullRouteEvaluationPending = true;

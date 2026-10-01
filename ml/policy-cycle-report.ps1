@@ -7,7 +7,7 @@ Write-Host "========== MONSTERMAZE POLICY CYCLE REPORT =========="
 Write-Host "Cycle: $($latest.Name)"
 $candidate=Join-Path $latest.FullName "policy-model-candidate.json"
 if(Test-Path $candidate){
-  $m=Get-Content $candidate -Raw | ConvertFrom-Json
+  $m=Get-Content $candidate -Raw -Encoding utf8 | ConvertFrom-Json
   Write-Host ""
   Write-Host "========== MODEL =========="
   Write-Host "objective=$($m.objective)"
@@ -24,7 +24,7 @@ $reports=@(Get-ChildItem $latest.FullName -Filter "policy-holdout-seed-*.json" -
 if($reports.Count -eq 0){Write-Host "No policy holdout reports found."}
 else{
   foreach($file in $reports){
-    $g=Get-Content $file.FullName -Raw | ConvertFrom-Json
+    $g=Get-Content $file.FullName -Raw -Encoding utf8 | ConvertFrom-Json
     Write-Host ("seed={0} cases={1} baselineAvg={2:N2} candidateAvg={3:N2} baselinePeak={4} candidatePeak={5} improved={6} worsened={7} same={8} passed={9}" -f $g.seed,$g.cases,$g.baselineAvg,$g.candidateAvg,$g.baselinePeak,$g.candidatePeak,$g.improved,$g.worsened,$g.same,$g.passed)
   }
 }

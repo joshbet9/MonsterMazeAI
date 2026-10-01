@@ -9,7 +9,7 @@ FEATURE_COUNT = 44
 
 def load_rows(path: Path):
     out = []
-    with path.open("r", encoding="utf-8") as h:
+    with path.open("r", encoding="utf-8-sig") as h:
         for line in h:
             if not line.strip():
                 continue

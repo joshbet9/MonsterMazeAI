@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterRelevance;
 import me.monstermazeai.planner.TacticalRouteSimulator;
 import me.monstermazeai.ml.RouteLearningRecorder;
+import me.monstermazeai.ml.RouteValueModel;
 import me.monstermazeai.player.Action;
 
 import java.util.*;
@@ -16,6 +17,9 @@ public final class MonsterAwareRoutePlanner {
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
     private final GapJumpPolicy gapJumpPolicy;
+    private final RouteValueModel routeValueModel = RouteValueModel.loadFromProperty();
+    private long mlShadowComparisons;
+    private long mlShadowAgreements;
 
     public MonsterAwareRoutePlanner() {
         this(GapJumpPolicy.BASELINE);
@@ -327,15 +331,58 @@ public final class MonsterAwareRoutePlanner {
 
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
+        int simulatorBestIndex = -1;
         for (int i = 0; i < candidates.size(); i++) {
             PlayerRoute candidate = candidates.get(i);
             TacticalRouteSimulator.Result result = results[i];
             if (bestResult == null || better(result, candidate, bestResult, best)) {
                 best = candidate;
                 bestResult = result;
+                simulatorBestIndex = i;
             }
         }
+
+        if (routeValueModel != null && !candidates.isEmpty()) {
+            int predictedBestIndex = 0;
+            double predictedBest = Double.POSITIVE_INFINITY;
+            for (int i = 0; i < candidates.size(); i++) {
+                double prediction = routeValueModel.predict(
+                        state, candidates.get(i), goal);
+                if (prediction < predictedBest) {
+                    predictedBest = prediction;
+                    predictedBestIndex = i;
+                }
+            }
+
+            mlShadowComparisons++;
+            if (predictedBestIndex == simulatorBestIndex) mlShadowAgreements++;
+
+            if (mlShadowComparisons == 1 || mlShadowComparisons % 1000 == 0) {
+                double agreement = mlShadowAgreements / (double) mlShadowComparisons;
+                System.out.println("[MonsterMazeAI] ML_SHADOW"
+                        + " comparisons=" + mlShadowComparisons
+                        + " agreement=" + String.format(Locale.ROOT, "%.3f", agreement)
+                        + " predictedIndex=" + predictedBestIndex
+                        + " simulatorIndex=" + simulatorBestIndex
+                        + " predictedCost=" + String.format(Locale.ROOT, "%.3f", predictedBest));
+            }
+        }
+
         return best;
+    }
+
+    public long mlShadowComparisons() {
+        return mlShadowComparisons;
+    }
+
+    public long mlShadowAgreements() {
+        return mlShadowAgreements;
+    }
+
+    public double mlShadowAgreementRate() {
+        return mlShadowComparisons == 0
+                ? Double.NaN
+                : mlShadowAgreements / (double) mlShadowComparisons;
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,

@@ -193,7 +193,7 @@ def sigmoid(values: np.ndarray) -> np.ndarray:
 def pairwise_logloss(scores_left: np.ndarray,
                      scores_right: np.ndarray,
                      signs: np.ndarray) -> float:
-    margin = signs * (scores_left - scores_right)
+    margin = signs * (scores_right - scores_left)
     z = -margin
     return float(np.mean(np.maximum(0.0, z) + np.log1p(np.exp(-np.abs(z)))))
 
@@ -282,14 +282,17 @@ def train(args):
             score_left = scores[:half]
             score_right = scores[half:]
 
-            # Lower score is better, so the preferred route must have a lower\n        # score than the other route. Positive margin therefore means\n        # score_right - score_left is positive for the preferred side.\n        margin = signs * (score_right - score_left)
+            # Lower score is better, so the preferred route must have a lower
+            # score than the other route. Positive margin therefore means
+            # score_right - score_left is positive for the preferred side.
+            margin = signs * (score_right - score_left)
             wrong_probability = sigmoid(-margin)
 
             dy = np.empty(scores.shape[0], dtype=np.float64)
             # MLP.gradients divides by the number of duplicated samples (2 * pairs).
             # Multiply pair gradients by 2 so the resulting network gradient is the
             # mean gradient of the pairwise loss.
-            pair_grad = -2.0 * signs * wrong_probability
+            pair_grad = 2.0 * signs * wrong_probability
             dy[:half] = pair_grad
             dy[half:] = -pair_grad
 

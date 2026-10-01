@@ -178,7 +178,18 @@ public final class TacticalRouteSimulator {
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        /*
+         * A Monster Maze bump is normally four health. The old rank put damage
+         * after route progress by twelve orders of magnitude, so a branch that
+         * advanced a single waypoint could be preferred even when that progress
+         * required taking a full bump. Real high-skill runs consistently trade a
+         * tiny amount of route progress for avoiding unnecessary contact; make a
+         * four-damage bump roughly equivalent to one waypoint of tactical debt.
+         * Goal completion still wins unconditionally above, so this cannot make
+         * the planner prefer a safe stall over actually reaching the pad.
+         */
+        long damagePenalty = damage * 250_000_000L;
+        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damagePenalty;
     }
 
     private boolean needsTacticalSearch(GameState state) {

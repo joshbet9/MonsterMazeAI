@@ -347,9 +347,23 @@ public final class StableLiveMovementController {
              * segment made an otherwise-valid player look off-route and caused
              * repeated FAST_RECOVERY_ROUTE resets.
              */
-            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION)
-                    || (!gapExecutionActive && currentSegmentDeviation(state, route, waypointIndex) > 0.95D);
+            Cell supportedCell = new Cell(startRow, startColumn);
+            boolean supportedCellOnRoute = route.cells().contains(supportedCell);
+            /*
+             * Continuous Minecraft momentum can move the player's centre well
+             * away from the exact route centreline while the AABB still overlaps
+             * the intended route cell. Treat the supported logical cell as the
+             * primary topology test; the physical lane/edge guards below remain
+             * responsible for pulling the player back inside the corridor.
+             *
+             * Re-running a whole route from a 0.55-block global corridor miss was
+             * a major source of FAST_RECOVERY_ROUTE churn in the matrix. It also
+             * discarded useful momentum at the exact moments a high-skill player
+             * should be carrying speed through a segment.
+             */
+            boolean routeInvalid = !gapExecutionActive
+                    && (!supportedCellOnRoute
+                        || currentSegmentDeviation(state, route, waypointIndex) > 1.10D);
 
             if (routeInvalid) {
                 /*

@@ -282,7 +282,7 @@ def train(args):
             score_left = scores[:half]
             score_right = scores[half:]
 
-            margin = signs * (score_left - score_right)
+            # Lower score is better, so the preferred route must have a lower\n        # score than the other route. Positive margin therefore means\n        # score_right - score_left is positive for the preferred side.\n        margin = signs * (score_right - score_left)
             wrong_probability = sigmoid(-margin)
 
             dy = np.empty(scores.shape[0], dtype=np.float64)
@@ -376,7 +376,7 @@ def pairwise_logloss_from_rows(rows: list[dict], predictions: np.ndarray) -> flo
                 if target_i == target_j:
                     continue
                 sign = 1.0 if target_i < target_j else -1.0
-                margin = sign * (score_i - score_j)
+                # The preferred route should receive the lower score.\n                margin = sign * (score_j - score_i)
                 z = -margin
                 losses.append(float(max(0.0, z) + math.log1p(math.exp(-abs(z)))))
     return sum(losses) / len(losses) if losses else float("nan")

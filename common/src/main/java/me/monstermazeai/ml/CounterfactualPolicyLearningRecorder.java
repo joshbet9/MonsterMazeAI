@@ -85,7 +85,7 @@ public final class CounterfactualPolicyLearningRecorder {
         int candidateIndex = 0;
         for (Action candidate : candidates) {
             AutonomousMonsterMazeAgent continuation =
-                    newBaselineContinuationAgent();
+                    newPolicyContinuationAgent();
 
             List<GameState> snapshots = simulator.forecastCounterfactual(
                     state,
@@ -108,7 +108,10 @@ public final class CounterfactualPolicyLearningRecorder {
         }
     }
 
-    private static AutonomousMonsterMazeAgent newBaselineContinuationAgent() {
+    private static AutonomousMonsterMazeAgent newPolicyContinuationAgent() {
+        // In later policy-iteration cycles the selector will use the current
+        // promoted model here. During the first cycle it naturally falls back
+        // to the deterministic high-skill controller because no model exists.
         return new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
                         new LiveObjectiveController(

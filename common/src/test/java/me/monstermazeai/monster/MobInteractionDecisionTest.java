@@ -24,6 +24,41 @@ class MobInteractionDecisionTest {
     }
 
     @Test
+    void choosesMaverickMonsterAsPositivePropulsionWhenPadIsStillDistant() {
+        GameState s = new GameState();
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.mode = me.monstermazeai.game.Mode.MODERN;
+        s.activePadRow = 20;
+        s.activePadColumn = 10;
+        s.phaseTicksRemaining = 100;
+        s.player.x = 10.0;
+        s.player.y = 0.0;
+        s.player.z = 10.0;
+        s.player.health = 20.0;
+        MonsterState monster = new MonsterState(42, 8.0, 0.0, 10.0);
+        s.monsters.add(monster);
+
+        assertSame(monster, MobInteractionDecision.chooseIntentionalBump(s, 0.55));
+    }
+
+    @Test
+    void refusesMaverickPropulsionNearPad() {
+        GameState s = new GameState();
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.mode = me.monstermazeai.game.Mode.MODERN;
+        s.activePadRow = 20;
+        s.activePadColumn = 10;
+        s.phaseTicksRemaining = 100;
+        s.player.x = 17.0;
+        s.player.y = 0.0;
+        s.player.z = 10.0;
+        s.player.health = 20.0;
+        s.monsters.add(new MonsterState(42, 16.0, 0.0, 10.0));
+
+        assertNull(MobInteractionDecision.chooseIntentionalBump(s, 0.55));
+    }
+
+    @Test
     void refusesIntentionalBumpAtTwoHearts() {
         GameState s = new GameState();
         s.activePadRow = 20;

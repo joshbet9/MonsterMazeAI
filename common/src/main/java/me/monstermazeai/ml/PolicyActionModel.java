@@ -67,7 +67,7 @@ public final class PolicyActionModel {
         double[] mean = array(json, "input_mean", INPUTS);
         double[] std = array(json, "input_std", INPUTS);
         double targetMean = scalar(json, "target_mean");
-        double targetStd = scalar(json, "target_std");
+        double targetStd = scalar(json, "target_std");\n        double targetMin = scalar(json, "target_min");\n        double targetMax = scalar(json, "target_max");
         double[][] w1 = matrix(json, "w1", INPUTS, HIDDEN_1);
         double[] b1 = array(json, "b1", HIDDEN_1);
         double[][] w2 = matrix(json, "w2", HIDDEN_1, HIDDEN_2);
@@ -115,7 +115,7 @@ public final class PolicyActionModel {
 
         double output = b3;
         for (int i = 0; i < HIDDEN_2; i++) output += a2[i] * w3[i];
-        return output * targetStd + targetMean;
+        double predicted = output * targetStd + targetMean;\n        return Math.max(targetMin, Math.min(targetMax, predicted));
     }
 
     private static double scalar(String json, String key) {

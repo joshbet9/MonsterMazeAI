@@ -320,6 +320,11 @@ public final class MonsterAwareRoutePlanner {
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException(
+                    regionGoal ? "No route candidates to Safe Pad region" : "No route candidates from start to goal");
+        }
+
         boolean hasRelevantMonster = false;
         for (var monster : state.monsters) {
             if (MonsterRelevance.withinPlayerRadius(

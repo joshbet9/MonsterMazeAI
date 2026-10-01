@@ -1795,8 +1795,14 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            double dodgeForward = 0.90D;
-            double dodgeStrafe = 0.55D;
+            /*
+             * Human traces keep the forward drive alive through ordinary mob
+             * approaches; lateral input is a correction, not the primary motor.
+             * The old 0.90/0.55 vector routinely got clipped by the support guard
+             * into strafe-only/zero-input commands, creating avoidable route stalls.
+             */
+            double dodgeForward = 1.00D;
+            double dodgeStrafe = 0.30D;
             Action dodge = new Action(
                     dodgeForward,
                     strafe * dodgeStrafe,
@@ -1805,6 +1811,27 @@ public final class StableLiveMovementController {
                     0.0F,
                     false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
+
+            /*
+             * If support prediction only accepts a stationary/near-stationary
+             * alternative, retain a reduced forward command when that command is
+             * itself source-supported. This mirrors the human "keep going, make a
+             * small correction" pattern without bypassing physical-floor checks.
+             */
+            if (guarded != dodge
+                    && Math.hypot(guarded.forward(), guarded.strafe()) < 0.20D) {
+                Action reduced = new Action(
+                        dodge.forward() * 0.45D,
+                        dodge.strafe() * 0.45D,
+                        dodge.jump(),
+                        dodge.sprint(),
+                        dodge.yawDelta(),
+                        false);
+                if (hasPredictedPhysicalSupport(state, reduced, supportLookaheadTicks(state))) {
+                    guarded = reduced;
+                }
+            }
+
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)

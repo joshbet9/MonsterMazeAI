@@ -105,3 +105,41 @@ situation?".
 
 The two models can later be combined behind the deterministic source-faithful
 motor and simulator safety checks.
+
+## Local continuous training
+
+The repository now includes `ml/train-loop.ps1` for unattended local
+calibration. It keeps a bounded rolling replay window, samples new simulator
+seeds each cycle, trains a fresh route-value candidate, and tests that
+candidate against fixed holdout seeds before promotion.
+
+Persistent state is kept under `ml-data/local/` (which is ignored by Git):
+
+```text
+ml-data/local/
+  holdout/       fixed baseline logs
+  replay/        accumulated per-cycle simulator labels
+  checkpoints/   every promoted model
+  current/       route-value-model.json used by the runtime
+  runs/          cycle logs and gate reports
+```
+
+The holdout is deliberately separate from training data. A candidate is
+promoted only when all holdout cases are present, no individual case regresses,
+the average stage does not regress, and the peak stage does not regress.
+
+Run continuously from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ml\train-loop.ps1
+```
+
+The default loop is continuous. Use `-MaxCycles 1` for a single calibration
+cycle while checking the setup. The trainer does not require a GPU; NumPy is
+sufficient for the current route model.
+
+The simulator's `monstermaze.sim.seedOffset` property preserves the original
+seed when omitted or set to `0`, while non-zero offsets deterministically
+produce different monster/pad trajectories. This gives the local trainer new
+source-faithful rollout variation without changing the default acceptance run.
+

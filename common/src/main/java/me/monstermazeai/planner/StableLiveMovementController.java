@@ -1718,6 +1718,16 @@ public final class StableLiveMovementController {
             if (lateral > 0.95D) continue;
 
             double closing = -(monster.vx * dx + monster.vz * dz) / distance;
+            /*
+             * A nearby but stationary/diverging monster is not automatically a
+             * threat to the route. Human runs routinely pass such mobs with
+             * forward input intact. Only engage the dodge layer when contact is
+             * actually closing, or when the monster is already inside the final
+             * close-contact envelope.
+             */
+            boolean genuinelyThreatening = closing > 0.03D || distance <= 1.10D;
+            if (!genuinelyThreatening) continue;
+
             double score = distance - 0.20D * Math.max(0.0D, closing);
             if (score < bestScore) {
                 bestScore = score;

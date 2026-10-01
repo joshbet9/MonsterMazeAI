@@ -2220,10 +2220,19 @@ public final class StableLiveMovementController {
              * current-segment deviation check build a physical route from the
              * player's actual supported cell.
              */
+            /*
+             * The gap geometry is stale by this point. Do not hand a zero-input
+             * command to RobustLiveController: that creates an artificial
+             * stationary/stuck loop and its generic forced-jump recovery can fire
+             * even though this is a route-bookkeeping failure, not a movement
+             * failure. Preserve a small source-valid drive command and let the
+             * next observation rebuild the route from the actual supported cell.
+             */
             fullRouteEvaluationPending = true;
             lastDecisionDetail = "GAP_MISSED_REPLAN edge=" + gapEdgeText()
                     + " progress=" + format(progress);
-            return new Action(0.0, 0.0, false, false, 0.0F, false);
+            Action continueDrive = new Action(0.55, 0.0, false, true, 0.0F, false);
+            return guardProjectedSupport(state, continueDrive, dirRow, dirColumn);
         }
         gapExecutionActive = true;
         gapTakeoffStarted = false;

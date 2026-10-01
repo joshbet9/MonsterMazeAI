@@ -61,24 +61,21 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
+        /*
+         * Global routing stays geometry-first in every mode. A nearby monster
+         * must not cause the fast planner to detour around the maze before the
+         * live tactical controller has even evaluated the actual encounter.
+         * This matches the observed human pattern: commit to the shortest
+         * executable pad route, then make local A/D/jump corrections around
+         * individual mobs. Source mechanics remain authoritative in the motor.
+         */
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        PlayerRoute chosen;
-        if (hasRelevantMonster(state)) {
-            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
-            chosen = chooseByGapRisk(
-                    state,
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, regionCenter, radius, false)),
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, regionCenter, radius, true)));
-        } else {
-            chosen = chooseByGapRisk(
-                    state,
-                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
-                            state.maze, start, regionCenter, radius)),
-                    toRoute(pathfinder.shortestPathToRegion(
-                            state.maze, start, regionCenter, radius)));
-        }
+        PlayerRoute chosen = chooseByGapRisk(
+                state,
+                toRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                        state.maze, start, regionCenter, radius)),
+                toRoute(pathfinder.shortestPathToRegion(
+                        state.maze, start, regionCenter, radius)));
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
     }

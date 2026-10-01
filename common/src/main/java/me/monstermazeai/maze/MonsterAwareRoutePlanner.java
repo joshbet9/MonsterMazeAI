@@ -14,12 +14,26 @@ public final class MonsterAwareRoutePlanner {
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 
+    /*
+     * The learned model is a guarded candidate prefilter, not a replacement for
+     * source-faithful tactical evaluation. Four learned candidates are retained
+     * plus deterministic physical-route hedges. When the model cannot clearly
+     * separate the candidates, the planner evaluates the complete candidate set.
+     */
+    private static final int ML_PREFILTER_TOP_K = 4;
+    private static final double ML_PREFILTER_AMBIGUITY_RATIO = 0.08;
+
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
     private final GapJumpPolicy gapJumpPolicy;
     private final RouteValueModel routeValueModel = RouteValueModel.loadFromProperty();
     private long mlShadowComparisons;
     private long mlShadowAgreements;
+    private long mlPrefilterCalls;
+    private long mlPrefilterFallbacks;
+    private long mlPrefilterCandidatesSeen;
+    private long mlPrefilterCandidatesSimulated;
+    private boolean mlPrefilterLogged;
 
     public MonsterAwareRoutePlanner() {
         this(GapJumpPolicy.BASELINE);
@@ -375,25 +389,66 @@ public final class MonsterAwareRoutePlanner {
         }
 
         int candidateCount = candidates.size();
-        int topCount = Math.min(4, candidateCount);
+        if (candidateCount <= ML_PREFILTER_TOP_K) {
+            return IntStream.range(0, candidateCount).toArray();
+        }
+
+        double[] predictions = new double[candidateCount];
         Integer[] order = new Integer[candidateCount];
-        for (int i = 0; i < candidateCount; i++) order[i] = i;
-        Arrays.sort(order, Comparator.comparingDouble(
-                i -> routeValueModel.predict(state, candidates.get(i), goal)));
+        for (int i = 0; i < candidateCount; i++) {
+            predictions[i] = routeValueModel.predict(state, candidates.get(i), goal);
+            order[i] = i;
+        }
+        Arrays.sort(order, Comparator.comparingDouble(i -> predictions[i]));
 
-        LinkedHashSet<Integer> selected = new LinkedHashSet<>();
-        for (int i = 0; i < topCount; i++) selected.add(order[i]);
+        double bestPrediction = predictions[order[0]];
+        double kthPrediction = predictions[order[Math.min(
+                ML_PREFILTER_TOP_K - 1, candidateCount - 1)]]);
+        double separation = kthPrediction - bestPrediction;
+        double scale = Math.max(1.0D, Math.abs(bestPrediction));
+        boolean ambiguous = separation / scale < ML_PREFILTER_AMBIGUITY_RATIO;
 
-        // Deterministic hedges keep the learned prefilter from eliminating the
-        // planner's shortest physical candidate solely because a model is wrong.
-        selected.add(0);
         int shortestIndex = 0;
         for (int i = 1; i < candidateCount; i++) {
             if (compareByGapRisk(candidates.get(i), candidates.get(shortestIndex)) < 0) {
                 shortestIndex = i;
             }
         }
-        selected.add(shortestIndex);
+
+        LinkedHashSet<Integer> selected = new LinkedHashSet<>();
+        if (ambiguous) {
+            for (int i = 0; i < candidateCount; i++) selected.add(i);
+            mlPrefilterFallbacks++;
+        } else {
+            for (int i = 0; i < Math.min(ML_PREFILTER_TOP_K, candidateCount); i++) {
+                selected.add(order[i]);
+            }
+
+            /*
+             * Deterministic hedges keep a learned prefilter from eliminating the
+             * first physical candidate or the shortest gap-risk route entirely.
+             * They also make prefilter behaviour robust during early training.
+             */
+            selected.add(0);
+            selected.add(shortestIndex);
+        }
+
+        mlPrefilterCalls++;
+        mlPrefilterCandidatesSeen += candidateCount;
+        mlPrefilterCandidatesSimulated += selected.size();
+
+        if (!mlPrefilterLogged) {
+            mlPrefilterLogged = true;
+            System.out.println("[MonsterMazeAI] ML_PREFILTER"
+                    + " candidates=" + candidateCount
+                    + " selected=" + selected.size()
+                    + " topK=" + Math.min(ML_PREFILTER_TOP_K, candidateCount)
+                    + " ambiguous=" + ambiguous
+                    + " bestPrediction=" + String.format(
+                            Locale.ROOT, "%.3f", bestPrediction)
+                    + " kthPrediction=" + String.format(
+                            Locale.ROOT, "%.3f", kthPrediction));
+        }
 
         return selected.stream().mapToInt(Integer::intValue).toArray();
     }
@@ -424,6 +479,22 @@ public final class MonsterAwareRoutePlanner {
         return mlShadowComparisons == 0
                 ? Double.NaN
                 : mlShadowAgreements / (double) mlShadowComparisons;
+    }
+
+    public long mlPrefilterCalls() {
+        return mlPrefilterCalls;
+    }
+
+    public long mlPrefilterFallbacks() {
+        return mlPrefilterFallbacks;
+    }
+
+    public long mlPrefilterCandidatesSeen() {
+        return mlPrefilterCandidatesSeen;
+    }
+
+    public long mlPrefilterCandidatesSimulated() {
+        return mlPrefilterCandidatesSimulated;
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,

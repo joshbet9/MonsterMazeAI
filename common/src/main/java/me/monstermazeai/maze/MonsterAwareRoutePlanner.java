@@ -61,21 +61,24 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
-        /*
-         * Global routing stays geometry-first in every mode. A nearby monster
-         * must not cause the fast planner to detour around the maze before the
-         * live tactical controller has even evaluated the actual encounter.
-         * This matches the observed human pattern: commit to the shortest
-         * executable pad route, then make local A/D/jump corrections around
-         * individual mobs. Source mechanics remain authoritative in the motor.
-         */
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        PlayerRoute chosen = chooseByGapRisk(
-                state,
-                toRoute(pathfinder.shortestPathToRegionWithoutGaps(
-                        state.maze, start, regionCenter, radius)),
-                toRoute(pathfinder.shortestPathToRegion(
-                        state.maze, start, regionCenter, radius)));
+        PlayerRoute chosen;
+        if (hasRelevantMonster(state)) {
+            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+            chosen = chooseByGapRisk(
+                    state,
+                    toRoute(threatAware.shortestPathToRegion(
+                            state, start, regionCenter, radius, false)),
+                    toRoute(threatAware.shortestPathToRegion(
+                            state, start, regionCenter, radius, true)));
+        } else {
+            chosen = chooseByGapRisk(
+                    state,
+                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                            state.maze, start, regionCenter, radius)),
+                    toRoute(pathfinder.shortestPathToRegion(
+                            state.maze, start, regionCenter, radius)));
+        }
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
     }
@@ -259,20 +262,6 @@ public final class MonsterAwareRoutePlanner {
                     + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
             int timeCompare = Double.compare(candidateTime, incumbentTime);
             if (timeCompare != 0) return timeCompare < 0;
-        } else {
-            /*
-             * When neither candidate reaches the pad inside the tactical
-             * horizon, route efficiency is still the primary objective. The
-             * old ordering picked whichever branch retained more health, which
-             * systematically rewarded long detours around mobs. Prefer the
-             * branch that advances furthest along the actual objective route;
-             * only then use health/damage as tie-breakers.
-             */
-            int candidateProgress = candidate.finalWaypoint();
-            int incumbentProgress = incumbent.finalWaypoint();
-            if (candidateProgress != incumbentProgress) {
-                return candidateProgress > incumbentProgress;
-            }
         }
 
         if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {
@@ -312,45 +301,16 @@ public final class MonsterAwareRoutePlanner {
         return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
     }
 
-    /*
-     * Human-run timing shows that route turns have a real execution cost even
-     * when two paths contain the same number of physical edges. Keep that
-     * cost small enough that an actually shorter route still wins, but use it
-     * to choose smoother routes when lengths are close.
-     */
-    private static final double ROUTE_TURN_COST_TICKS = 2.0D;
-
     private int compareByGapRisk(PlayerRoute a, PlayerRoute b) {
         int cost = Double.compare(routeCost(a), routeCost(b));
         if (cost != 0) return cost;
         int gaps = Integer.compare(gapCount(a), gapCount(b));
         if (gaps != 0) return gaps;
-        int turns = Integer.compare(turnCount(a), turnCount(b));
-        if (turns != 0) return turns;
         return Integer.compare(a.size(), b.size());
     }
 
     private double routeCost(PlayerRoute route) {
-        return gapJumpPolicy.routeCost(route.size(), gapCount(route))
-                + ROUTE_TURN_COST_TICKS * turnCount(route);
-    }
-
-    private static int turnCount(PlayerRoute route) {
-        List<Cell> cells = route.cells();
-        if (cells.size() < 3) return 0;
-
-        int turns = 0;
-        int previousRow = Integer.signum(cells.get(1).row() - cells.get(0).row());
-        int previousColumn = Integer.signum(cells.get(1).column() - cells.get(0).column());
-
-        for (int i = 1; i + 1 < cells.size(); i++) {
-            int nextRow = Integer.signum(cells.get(i + 1).row() - cells.get(i).row());
-            int nextColumn = Integer.signum(cells.get(i + 1).column() - cells.get(i).column());
-            if (nextRow != previousRow || nextColumn != previousColumn) turns++;
-            previousRow = nextRow;
-            previousColumn = nextColumn;
-        }
-        return turns;
+        return gapJumpPolicy.routeCost(route.size(), gapCount(route));
     }
 
     private static int gapCount(PlayerRoute route) {

@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: monstermaze-ml-calibration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   matrix:
     name: 15 Speed + 15 Modern natural-termination matrix

@@ -118,16 +118,41 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void usesInPlaceTurnForLargeHeadingError() {
+    void usesInPlaceTurnForLargeHeadingErrorNearCorner() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
         GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
         StableLiveMovementController controller = new StableLiveMovementController();
 
-        Action action = controller.nextAction(s, new Cell(8, 0), false);
+        Action action = controller.nextAction(s, new Cell(2, 0), false);
 
         assertEquals(0.0, action.forward(), 1.0e-6,
-                "a 90-degree corner acquisition must not cut across the corridor");
+                "a near 90-degree corner acquisition must not cut across the corridor");
         assertEquals(0.0, action.strafe(), 1.0e-6);
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
+    void largeHeadingErrorFarFromCornerKeepsSafeForwardDrive() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r <= 12; r++) raw[r][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(12, 0), false);
+
+        assertTrue(action.forward() > 0.0,
+                "large heading correction far from a corner should retain controlled forward drive");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertEquals(0.0, action.strafe(), 1.0e-6);
     }
 
     @Test

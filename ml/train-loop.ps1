@@ -20,6 +20,21 @@ $ReplayRoot = Join-Path $DataRoot "replay"
 $CheckpointRoot = Join-Path $DataRoot "checkpoints"
 $CurrentRoot = Join-Path $DataRoot "current"
 $RunRoot = Join-Path $DataRoot "runs"
+$Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+function Append-Utf8NoBom {
+    param([string]$Source,[string]$Destination)
+    $reader = [System.IO.StreamReader]::new($Source, $Utf8NoBom, $true)
+    $writer = [System.IO.StreamWriter]::new($Destination, $true, $Utf8NoBom)
+    try {
+        while (($line = $reader.ReadLine()) -ne $null) {
+            $writer.WriteLine($line)
+        }
+    } finally {
+        $reader.Dispose()
+        $writer.Dispose()
+    }
+}
 
 foreach ($dir in @($DataRoot, $HoldoutRoot, $ReplayRoot, $CheckpointRoot, $CurrentRoot, $RunRoot)) {
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -68,8 +83,11 @@ function Invoke-Matrix {
     }
 
     Write-Host "Running seedOffset=$SeedOffset"
-    & mvn.cmd @args 2>&1 | Tee-Object -FilePath $LogPath
-    return $LASTEXITCODE
+    $output = & mvn.cmd @args 2>&1
+    $code = $LASTEXITCODE
+    foreach ($line in $output) { Write-Host $line }
+    [System.IO.File]::WriteAllLines($LogPath, [string[]]$output, $Utf8NoBom)
+    return $code
 }
 
 function Merge-ReplayWindow {
@@ -85,7 +103,7 @@ function Merge-ReplayWindow {
 
     Remove-Item $OutputPath -ErrorAction SilentlyContinue
     foreach ($file in ($files | Sort-Object LastWriteTime)) {
-        Get-Content $file.FullName | Add-Content -Path $OutputPath -Encoding utf8
+        Append-Utf8NoBom -Source $file.FullName -Destination $OutputPath
     }
 }
 
@@ -152,7 +170,7 @@ while ($MaxCycles -eq 0 -or $cycle -lt $MaxCycles) {
         }
 
         if (Test-Path $training) {
-            Get-Content $training | Add-Content -Path $replayFile -Encoding utf8
+            Append-Utf8NoBom -Source $training -Destination $replayFile
         }
     }
 

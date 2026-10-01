@@ -84,19 +84,30 @@ public final class Simulator {
     }
 
     /**
-     * Counterfactual rollout helper. Stops as soon as progression changes
-     * stage so external test-harness responsibilities (next-pad selection and
-     * monster spawning) are never silently omitted from the learned target.
+     * Counterfactual rollout helper. Returns the simulated state after each
+     * tick and stops at the first stage transition so external responsibilities
+     * such as next-pad selection and monster spawning are never silently omitted
+     * from the learned target.
      */
-    public GameState forecastUntilStageChange(GameState source, Action[] actions, long seed) {
+    public java.util.List<GameState> forecastSnapshotsUntilStageChange(
+            GameState source, Action[] actions, long seed) {
         GameState state=source.copy();
         Simulator predictor=new Simulator(physics,monsters.fork(seed),collision,abilities);
+        java.util.ArrayList<GameState> snapshots=new java.util.ArrayList<>(actions.length);
         int startStage=state.stage;
         for(Action action:actions){
             if(!state.alive || state.stage!=startStage) break;
             predictor.tick(state,action);
+            snapshots.add(state.copy());
+            if(state.stage!=startStage) break;
         }
-        return state;
+        return java.util.List.copyOf(snapshots);
+    }
+
+    public GameState forecastUntilStageChange(GameState source, Action[] actions, long seed) {
+        java.util.List<GameState> snapshots =
+                forecastSnapshotsUntilStageChange(source, actions, seed);
+        return snapshots.isEmpty() ? source.copy() : snapshots.get(snapshots.size()-1).copy();
     }
 
     /**

@@ -63,7 +63,7 @@ public final class MobInteractionDecision {
                 && state.mode != me.monstermazeai.game.Mode.ORIGINAL;
         if (maverickBoost
                 && state.player.recentMobHitUntilTick <= state.tick
-                && padDistance >= 6.0D + (10.0D * positiveMobKnockback)) {
+                && padDistance >= 4.0D + (2.0D * (1.0D - positiveMobKnockback))) {
             MonsterState bestMaverick = null;
             double bestMaverickScore = Double.POSITIVE_INFINITY;
             for (MonsterState monster : state.monsters) {
@@ -72,7 +72,7 @@ public final class MobInteractionDecision {
                 double mx = monster.x - state.player.x;
                 double mz = monster.z - state.player.z;
                 double horizontal = Math.hypot(mx, mz);
-                if (horizontal > 2.20D || horizontal < 0.15D) continue;
+                if (horizontal > CONTACT_RANGE || horizontal < 0.15D) continue;
 
                 double closing = 0.0D;
                 double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;

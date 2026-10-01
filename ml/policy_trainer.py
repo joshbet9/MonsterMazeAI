@@ -64,13 +64,6 @@ def build_targets(rows, gamma):
         return out
 
     # Legacy recorder rows still need the original episode return-to-go pass.
-    if rows and all(
-        isinstance(row.get("target_return"), (int, float))
-        and math.isfinite(float(row["target_return"]))
-        for row in rows
-    ):
-        return [dict(row, return_value=float(row["target_return"])) for row in rows]
-
     groups = {}
     for row in rows:
         groups.setdefault(str(row["episode"]), []).append(row)
@@ -85,6 +78,48 @@ def build_targets(rows, gamma):
             copy["return_value"] = running
             out.append(copy)
     return out
+
+
+def ranking_metrics(rows, predictions):
+    groups = {}
+    for index, row in enumerate(rows):
+        key = (str(row["episode"]), int(row.get("t", 0)))
+        groups.setdefault(key, []).append(index)
+
+    pair_total = 0
+    pair_correct = 0
+    top1_total = 0
+    top1_correct = 0
+
+    for indices in groups.values():
+        if len(indices) < 2:
+            continue
+
+        target_best = max(indices, key=lambda i: float(rows[i]["return_value"]))
+        predicted_best = max(indices, key=lambda i: float(predictions[i]))
+        top1_total += 1
+        top1_correct += int(target_best == predicted_best)
+
+        for left_pos in range(len(indices)):
+            left = indices[left_pos]
+            for right_pos in range(left_pos + 1, len(indices)):
+                right = indices[right_pos]
+                target_delta = float(rows[left]["return_value"]) - float(rows[right]["return_value"])
+                if abs(target_delta) < 1e-9:
+                    continue
+                predicted_delta = float(predictions[left]) - float(predictions[right])
+                pair_total += 1
+                pair_correct += int(
+                    (target_delta > 0 and predicted_delta > 0)
+                    or (target_delta < 0 and predicted_delta < 0)
+                )
+
+    return {
+        "pairwise_accuracy": pair_correct / pair_total if pair_total else 0.0,
+        "pairwise_pairs": pair_total,
+        "top1_accuracy": top1_correct / top1_total if top1_total else 0.0,
+        "decision_points": top1_total,
+    }
 
 
 def grouped_split(rows, fraction, seed):
@@ -231,6 +266,8 @@ def main():
     valid_norm, _ = model.forward(valid_x)
     train_pred = train_norm * target_std + target_mean
     valid_pred = valid_norm * target_std + target_mean
+    train_ranking = ranking_metrics(train, train_pred)
+    valid_ranking = ranking_metrics(valid, valid_pred)
 
     feature_names = [
         "stage_norm", "health_ratio", "horizontal_speed", "forward_speed",
@@ -282,6 +319,13 @@ def main():
             "target_std": target_std,
             "target_min": float(train_y.min()),
             "target_max": float(train_y.max()),
+            "train_pairwise_accuracy": train_ranking["pairwise_accuracy"],
+            "validation_pairwise_accuracy": valid_ranking["pairwise_accuracy"],
+            "train_pairwise_pairs": train_ranking["pairwise_pairs"],
+            "validation_pairwise_pairs": valid_ranking["pairwise_pairs"],
+            "train_top1_accuracy": train_ranking["top1_accuracy"],
+            "validation_top1_accuracy": valid_ranking["top1_accuracy"],
+            "validation_decision_points": valid_ranking["decision_points"],
         },
     }
 

@@ -13,8 +13,8 @@ import java.util.*;
  */
 public final class ThreatAwarePathfinder {
     private static final double MONSTER_DANGER_RADIUS = 3.0D;
-    private static final double MAX_DANGER_PENALTY = 8.0D;
-    private static final double MOVING_TOWARD_PENALTY = 3.0D;
+    private static final double MAX_DANGER_PENALTY = 2.5D;
+    private static final double MOVING_TOWARD_PENALTY = 0.75D;
 
     public List<Cell> shortestPathToRegion(GameState state, Cell start, Cell center, int radius,
                                             boolean allowGaps) {

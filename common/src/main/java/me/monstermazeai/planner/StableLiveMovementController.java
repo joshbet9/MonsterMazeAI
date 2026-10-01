@@ -616,16 +616,15 @@ public final class StableLiveMovementController {
                  */
                 double errorRad = Math.toRadians(yawError);
                 /*
-                 * Speed mode matches the recorded 1.8 human traces best with
-                 * the established 0.65/0.65 concurrent corner vector. Modern has
-                 * much denser monster traffic, where the same lateral impulse
-                 * creates more lane-recovery churn, so use the reduced lateral
-                 * correction there without changing Speed-mode movement.
+                 * One shared movement policy across all modes. Mode-specific
+                 * mechanics (monster density, kit rules, etc.) are handled by
+                 * the game model; the player's steering policy must not fork.
+                 * The recorded Speed runs support the established concurrent
+                 * 0.65/0.65 corner vector, so retain that same source-valid
+                 * control law everywhere.
                  */
-                boolean modernCorner = state.mode == me.monstermazeai.game.Mode.MODERN
-                        || state.mode == me.monstermazeai.game.Mode.CLASSIC;
-                double forward = Math.cos(errorRad) * (modernCorner ? 0.85D : 0.65D);
-                double strafe = -Math.sin(errorRad) * (modernCorner ? 0.35D : 0.65D);
+                double forward = Math.cos(errorRad) * 0.65D;
+                double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
                 boolean sprint = forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);

@@ -212,6 +212,22 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void impossibleMonsterAwareRouteFailsExplicitlyInsteadOfReturningNull() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[4][4] = 1;
+        state.maze = new MazeModel(raw);
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.monsters.add(new MonsterState(12, 0.5, 0.0, 1.5));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new MonsterAwareRoutePlanner().route(
+                        state, new Cell(0, 0), new Cell(4, 4)));
+    }
+
+    @Test
     void fullRoutingRetainsAnOrdinaryRouteEvenWhenGapCandidatesExist() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

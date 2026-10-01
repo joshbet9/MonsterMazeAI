@@ -12,11 +12,10 @@ import java.util.Random;
 /**
  * Optional policy layer above the deterministic movement controller.
  *
- * The learned policy is deliberately residual: it can perturb the trusted
- * controller, but it cannot jump to an unrelated idle/reverse/cardinal action
- * until that action space is supported by substantially more training data.
- * Exploration uses the same bounded family so replay remains mechanically
- * executable and close to the baseline distribution.
+ * The learned policy evaluates a bounded but expressive action space around
+ * the trusted controller. The action space is shared with counterfactual
+ * training, so every deployable alternative is first measured by the real
+ * source-faithful simulator.
  */
 public final class PolicyActionSelector {
     private static final Object LOCK = new Object();

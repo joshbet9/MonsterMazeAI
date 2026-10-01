@@ -84,6 +84,22 @@ public final class Simulator {
     }
 
     /**
+     * Counterfactual rollout helper. Stops as soon as progression changes
+     * stage so external test-harness responsibilities (next-pad selection and
+     * monster spawning) are never silently omitted from the learned target.
+     */
+    public GameState forecastUntilStageChange(GameState source, Action[] actions, long seed) {
+        GameState state=source.copy();
+        Simulator predictor=new Simulator(physics,monsters.fork(seed),collision,abilities);
+        int startStage=state.stage;
+        for(Action action:actions){
+            if(!state.alive || state.stage!=startStage) break;
+            predictor.tick(state,action);
+        }
+        return state;
+    }
+
+    /**
      * Returns every observed future state after each simulated tick.
      * This is used by the planner's short-horizon monster predictor so risk is
      * based on the same monster movement implementation as the simulator.

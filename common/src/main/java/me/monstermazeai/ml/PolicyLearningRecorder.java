@@ -5,9 +5,9 @@ import me.monstermazeai.player.Action;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
 import java.util.Locale;
 
@@ -40,13 +40,13 @@ public final class PolicyLearningRecorder {
                         + "|seedOffset=" + Long.getLong("monstermaze.sim.seedOffset", 0L);
 
                 StringBuilder line = new StringBuilder(1400);
-                line.append("{"version":1");
-                line.append(","episode":"").append(escape(episode)).append(""");
-                line.append(","t":").append(before.tick);
-                line.append(","reward":").append(number(reward));
-                line.append(","done":").append(done);
-                line.append(","stage":").append(before.stage);
-                line.append(","features":").append(featuresJson(features));
+                line.append("{\"version\":1");
+                line.append(",\"episode\":\"").append(escape(episode)).append("\"");
+                line.append(",\"t\":").append(before.tick);
+                line.append(",\"reward\":").append(number(reward));
+                line.append(",\"done\":").append(done);
+                line.append(",\"stage\":").append(before.stage);
+                line.append(",\"features\":").append(featuresJson(features));
                 line.append("}\n");
 
                 writer.write(line.toString());
@@ -110,6 +110,6 @@ public final class PolicyLearningRecorder {
     }
 
     private static String escape(String value) {
-        return value.replace("\", "\\").replace(""", "\"");
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

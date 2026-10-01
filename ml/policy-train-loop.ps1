@@ -7,8 +7,10 @@ param(
     [int]$Epochs = 80,
     [int]$BatchSize = 512,
     [int]$SamplesPerEpoch = 50000,
-    [double]$Gamma = 0.9995,
+    [double]$Gamma = 0.995,
     [double]$Exploration = 0.20,
+    [int]$CounterfactualStride = 20,
+    [int]$CounterfactualHorizon = 32,
     [int]$SleepSeconds = 0
 )
 
@@ -37,7 +39,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
 
 function Invoke-Run {
     param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore)
-    $args = @("-B","-ntp","-pl","common","-am","-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=$Explore","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
+    $args = @("-B","-ntp","-pl","common","-am","-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
     if ($ModelPath) {
         $args += "-Dmonstermaze.ml.policy.model=$ModelPath"
         $args += "-Dmonstermaze.ml.mode=policy"
@@ -136,7 +138,7 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     foreach($file in ($files | Sort-Object LastWriteTime)){ Append-File $file.FullName $window }
 
     $candidate=Join-Path $cycleDir "policy-model-candidate.json"
-    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples 500 --seed $cycle
+    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples 500 --seed $cycle --objective counterfactual_short_horizon_return
     if($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)){ Write-Host "Policy training failed; current policy remains unchanged."; continue }
 
     $matrixSeed=(($cycle-1)%$HoldoutSeeds)+1

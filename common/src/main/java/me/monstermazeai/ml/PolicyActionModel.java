@@ -68,7 +68,8 @@ public final class PolicyActionModel {
         double[] std = array(json, "input_std", INPUTS);
         double targetMean = scalar(json, "target_mean");
         double targetStd = scalar(json, "target_std");
-        double targetMin = scalar(json, "target_min");\n        double targetMax = scalar(json, "target_max");
+        double targetMin = scalar(json, "target_min");
+        double targetMax = scalar(json, "target_max");
         double[][] w1 = matrix(json, "w1", INPUTS, HIDDEN_1);
         double[] b1 = array(json, "b1", HIDDEN_1);
         double[][] w2 = matrix(json, "w2", HIDDEN_1, HIDDEN_2);

@@ -66,6 +66,32 @@ jobs:
         run: |
           python -m py_compile ml/policy_trainer.py
 
+      - name: Validate policy PowerShell scripts
+        if: always()
+        run: |
+          pwsh -NoProfile -Command '
+            $errors = $null
+            $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              "ml/policy-train-loop.ps1",
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Host $_.Message }
+              exit 1
+            }
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              "ml/policy-cycle-report.ps1",
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Host $_.Message }
+              exit 1
+            }
+          '
+
       - name: Fetch human calibration runs
         if: always()
         continue-on-error: true

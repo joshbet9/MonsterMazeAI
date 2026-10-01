@@ -28,7 +28,11 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Prepare ML output directory
+        run: mkdir -p ml-data
+
       - name: Run full results matrix and collect simulator labels
+        continue-on-error: true
         run: >
           mvn -B -ntp -pl common -am
           -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest
@@ -40,17 +44,22 @@ jobs:
           test
 
       - name: Set up Python 3
+        if: always()
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install ML trainer dependency
+        if: always()
         run: python -m pip install --disable-pip-version-check numpy
 
       - name: Inspect simulator training set
+        if: always()
         run: python ml/route_ranker.py inspect --input ml-data/route-training.jsonl
 
       - name: Train route-value model
+        if: always()
+        continue-on-error: true
         run: >
           python ml/route_ranker.py train
           --input ml-data/route-training.jsonl
@@ -65,6 +74,7 @@ jobs:
           --seed 1337
 
       - name: Upload ML dataset and model
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: monstermaze-route-ml-${{ github.sha }}

@@ -1813,6 +1813,52 @@ public final class StableLiveMovementController {
             return guarded;
         }
 
+        if (!(leftFloor || rightFloor)
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+            /*
+             * A one-cell corridor with a monster directly ahead is not a reason
+             * to park the player in place. High-skill human traces overwhelmingly
+             * continue forward with the source's non-Jumper jump input rather than
+             * repeatedly turning/retreating into the same collision window. Keep
+             * the route direction authoritative, rotate and drive concurrently,
+             * and let the normal physics/knockback model resolve the contact.
+             */
+            float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
+            float yawError = normalise(desiredYaw - state.player.yaw);
+            float turn = clamp(yawError * (float) turnResponseGain(),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            double postYaw = Math.toRadians(state.player.yaw + turn);
+            double forwardWorldX = -Math.sin(postYaw);
+            double forwardWorldZ = Math.cos(postYaw);
+            double strafeWorldX = Math.cos(postYaw);
+            double strafeWorldZ = Math.sin(postYaw);
+            double forward = routeDirRow * forwardWorldX + routeDirColumn * forwardWorldZ;
+            double strafe = routeDirRow * strafeWorldX + routeDirColumn * strafeWorldZ;
+            double magnitude = Math.hypot(forward, strafe);
+            if (magnitude > 1.0D) {
+                forward /= magnitude;
+                strafe /= magnitude;
+            }
+            boolean jump = shouldSpeedJump(state, allowJump);
+            Action continueThrough = new Action(
+                    forward * 0.85D,
+                    strafe * 0.85D,
+                    jump,
+                    true,
+                    turn,
+                    false);
+            Action guarded = guardProjectedSupport(
+                    state, continueThrough, routeDirRow, routeDirColumn);
+            lastDecisionDetail = "MOB_CONTINUE_CORRIDOR"
+                    + " monster=" + threat.id
+                    + " distance=" + format(bestDistance)
+                    + " yawError=" + format(yawError)
+                    + " jump=" + jump
+                    + " output=f=" + format(guarded.forward())
+                    + ",s=" + format(guarded.strafe());
+            return guarded;
+        }
+
         /*
          * No side floor exists, so the only source-valid escape is to retreat
          * along the already-traversed route segment. Backward input is relative

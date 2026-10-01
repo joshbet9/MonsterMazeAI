@@ -145,13 +145,9 @@ public final class MonsterAwareRoutePlanner {
             return Math.max(0, state.ability.charges);
         }
 
-        // In Modern mode the non-Jumper kits do not have the source Speed-mode
-        // horizontal sprint-jump mechanic. A two-cell route transition therefore
-        // cannot be executed by the live motor and must not be selected.
-        if (state.mode != me.monstermazeai.game.Mode.SPEED) return 0;
-
-        // Speed mode preserves the source-faithful Jump -10 + sprint-jump
-        // horizontal impulse for non-Jumpers, so their gap budget is unlimited.
+        // Non-Jumper speeding is part of the enhanced non-Original gameplay
+        // mechanics in both Speed and Modern. Treat the source two-cell gap edge
+        // as executable in either environment.
         return -1;
     }
 

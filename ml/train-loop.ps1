@@ -41,11 +41,21 @@ foreach ($dir in @($DataRoot, $HoldoutRoot, $ReplayRoot, $CheckpointRoot, $Curre
 }
 
 if (-not (Test-Path $Python)) {
-    py -3.12 -m venv $Venv
+    $HostPython = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $HostPython) {
+        throw "Python is required to create the ML virtual environment. Install Python 3.11+ and ensure 'python' is on PATH."
+    }
+    Write-Host "Creating ML virtual environment with $($HostPython.Source)"
+    & $HostPython.Source -m venv $Venv
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Python)) {
+        throw "Failed to create ML virtual environment at $Venv."
+    }
 }
 
 & $Python -m pip install --disable-pip-version-check --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "Failed to upgrade pip." }
 & $Python -m pip install --disable-pip-version-check numpy
+if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
 
 function Invoke-Matrix {
     param(
@@ -83,8 +93,20 @@ function Invoke-Matrix {
     }
 
     Write-Host "Running seedOffset=$SeedOffset"
-    $output = & mvn.cmd @args 2>&1
-    $code = $LASTEXITCODE
+
+    # Maven/Java tests legitimately write diagnostics to stderr. With the
+    # script-wide ErrorActionPreference=Stop, PowerShell can otherwise promote
+    # those native stderr lines into a terminating NativeCommandError before
+    # we get a chance to inspect Maven's real exit code.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & mvn.cmd @args 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     foreach ($line in $output) { Write-Host $line }
     [System.IO.File]::WriteAllLines($LogPath, [string[]]$output, $Utf8NoBom)
     return $code

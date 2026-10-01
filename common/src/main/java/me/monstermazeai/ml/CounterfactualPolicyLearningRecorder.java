@@ -61,6 +61,7 @@ public final class CounterfactualPolicyLearningRecorder {
         // A phase transition requires the external harness to install/select
         // the next pad. Avoid creating labels from an intentionally incomplete
         // transition state when the actual observed state has no preview pad.
+        if (state.previewPadRequested && state.previewPadRow < 0) return;
         if (state.phaseTicksRemaining <= 40 && state.previewPadRow < 0) return;
 
         String configured = System.getProperty("monstermaze.ml.policy.output", "").trim();

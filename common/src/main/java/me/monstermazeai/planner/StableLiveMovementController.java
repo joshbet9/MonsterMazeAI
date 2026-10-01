@@ -616,15 +616,16 @@ public final class StableLiveMovementController {
                  */
                 double errorRad = Math.toRadians(yawError);
                 /*
-                 * A 0.65/0.65 diagonal was too aggressive for a one-cell
-                 * corridor: at a 90° corner it became a full-strength lateral
-                 * strafe while the camera was still rotating, which explains a
-                 * large portion of the subsequent lane-recovery churn.
-                 * Preserve concurrent corner movement, but make lateral input a
-                 * correction rather than a second full movement axis.
+                 * Speed mode matches the recorded 1.8 human traces best with
+                 * the established 0.65/0.65 concurrent corner vector. Modern has
+                 * much denser monster traffic, where the same lateral impulse
+                 * creates more lane-recovery churn, so use the reduced lateral
+                 * correction there without changing Speed-mode movement.
                  */
-                double forward = Math.cos(errorRad) * 0.85D;
-                double strafe = -Math.sin(errorRad) * 0.35D;
+                boolean modernCorner = state.mode == me.monstermazeai.game.Mode.MODERN
+                        || state.mode == me.monstermazeai.game.Mode.CLASSIC;
+                double forward = Math.cos(errorRad) * (modernCorner ? 0.85D : 0.65D);
+                double strafe = -Math.sin(errorRad) * (modernCorner ? 0.35D : 0.65D);
                 boolean jump = shouldSpeedJump(state, allowJump);
                 boolean sprint = forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);

@@ -51,6 +51,43 @@ public final class MobInteractionDecision {
         double padUx = padDx / padLen;
         double padUz = padDz / padLen;
 
+        /*
+         * Maverick is intentionally different in Speed/Modern: the authoritative
+         * 1.8 plugin redirects the player's mob-hit velocity toward the next Safe
+         * Pad. Treat a nearby monster as a propulsion opportunity when the pad is
+         * still meaningfully distant, rather than routing around the very mechanic
+         * that defines the kit. Respect the normal four-damage/recharge model and
+         * the existing health floor; this never changes source physics.
+         */
+        boolean maverickBoost = state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                && state.mode != me.monstermazeai.game.Mode.ORIGINAL;
+        if (maverickBoost
+                && state.player.recentMobHitUntilTick <= state.tick
+                && padDistance >= 6.0D + (10.0D * positiveMobKnockback)) {
+            MonsterState bestMaverick = null;
+            double bestMaverickScore = Double.POSITIVE_INFINITY;
+            for (MonsterState monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+                double mx = monster.x - state.player.x;
+                double mz = monster.z - state.player.z;
+                double horizontal = Math.hypot(mx, mz);
+                if (horizontal > 2.20D || horizontal < 0.15D) continue;
+
+                double closing = 0.0D;
+                double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
+                if (speedSq > 1.0E-9D) {
+                    closing = -(monster.vx * mx + monster.vz * mz) / horizontal;
+                }
+                double score = horizontal - Math.max(0.0D, closing) * 0.30D;
+                if (score < bestMaverickScore) {
+                    bestMaverickScore = score;
+                    bestMaverick = monster;
+                }
+            }
+            if (bestMaverick != null) return bestMaverick;
+        }
+
         MonsterState best = null;
         double bestScore = Double.POSITIVE_INFINITY;
         for (MonsterState monster : state.monsters) {

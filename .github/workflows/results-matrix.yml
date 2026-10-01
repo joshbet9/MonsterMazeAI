@@ -160,4 +160,8 @@ jobs:
           path: |
             ml-data/route-training.jsonl
             ml-data/route-value-model.json
+            ml-data/baseline-matrix.log
+            ml-data/prefilter-matrix.log
+            ml-data/human-behavior.jsonl
+            ml-data/human-policy-model.json
           if-no-files-found: warn

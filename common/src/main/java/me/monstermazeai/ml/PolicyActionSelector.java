@@ -24,9 +24,9 @@ public final class PolicyActionSelector {
     private static final Random RANDOM = new Random(0x4D4D504FL);
 
     /*
-     * Conservative exploitation guard. A learned action must beat the baseline
-     * prediction by a real margin after a small regularisation penalty for
-     * changing the trusted controller's command.
+     * Conservative deployment guard. The learned action must have a measured
+     * predicted advantage over the trusted controller before it can replace it.
+     * The fixed holdout gate remains the stronger promotion safety check.
      */
     private static final double SWITCH_MARGIN = 0.5;
 

@@ -198,7 +198,12 @@ public final class PolicyLearningFeatures {
         int stageDelta = after.stage - before.stage;
         if (stageDelta > 0) reward += stageDelta * 100.0;
 
-        if (before.activePadRow >= 0 && before.activePadColumn >= 0) {
+        // Do not compare against a newly promoted pad. That coordinate jump
+        // is an environment transition, not player progress.
+        if (after.stage == before.stage
+                && before.activePadRow >= 0 && before.activePadColumn >= 0
+                && before.activePadRow == after.activePadRow
+                && before.activePadColumn == after.activePadColumn) {
             double beforeDx = before.activePadRow + 0.5 - before.player.x;
             double beforeDz = before.activePadColumn + 0.5 - before.player.z;
             double afterDx = after.activePadRow + 0.5 - after.player.x;

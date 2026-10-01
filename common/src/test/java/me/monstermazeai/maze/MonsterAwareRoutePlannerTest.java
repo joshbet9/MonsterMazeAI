@@ -152,6 +152,27 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void baselineRoutePolicyUsesARealGapShortcutWhenItSavesRouteEdges() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        raw[10][11] = 0;
+        raw[10][13] = 0;
+        state.maze = new MazeModel(raw);
+        state.mode = Mode.SPEED;
+        state.kit = Kit.MAVERICK;
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
+
+        assertEquals(List.of(
+                new Cell(10, 10),
+                new Cell(10, 12),
+                new Cell(10, 14)), route.cells());
+    }
+
+    @Test
     void modernNonJumperSharesSpeedGapMechanic() {
         GameState state = new GameState();
         state.mode = Mode.MODERN;

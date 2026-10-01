@@ -2164,12 +2164,6 @@ public final class StableLiveMovementController {
             clearPadEntryCommitment();
             return null;
         }
-            lastDecisionDetail = "PAD_ENTRY_ABORT"
-                    + " outside=" + format(outside)
-                    + " elapsed=" + elapsed;
-            clearPadEntryCommitment();
-            return null;
-        }
 
         float desiredYaw = cardinalYaw(padEntryDirRow, padEntryDirColumn);
         float yawError = normalise(desiredYaw - state.player.yaw);

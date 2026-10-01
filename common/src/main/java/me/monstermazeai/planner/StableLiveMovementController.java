@@ -615,14 +615,6 @@ public final class StableLiveMovementController {
                  * cardinal segment instead of waiting in place or strafing blindly.
                  */
                 double errorRad = Math.toRadians(yawError);
-                /*
-                 * One shared movement policy across all modes. Mode-specific
-                 * mechanics (monster density, kit rules, etc.) are handled by
-                 * the game model; the player's steering policy must not fork.
-                 * The recorded Speed runs support the established concurrent
-                 * 0.65/0.65 corner vector, so retain that same source-valid
-                 * control law everywhere.
-                 */
                 double forward = Math.cos(errorRad) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
@@ -1367,21 +1359,19 @@ public final class StableLiveMovementController {
     }
 
     private int supportLookaheadTicks(GameState state) {
-        /*
-         * Ordinary movement is already closed-loop at every live observation.
-         * Predicting multiple future ticks makes the edge guard reason about a
-         * state that the controller will have re-evaluated before those ticks
-         * occur, and was a major source of unnecessary EDGE_GUARD/LANE recovery.
-         *
-         * Use a one-tick physical-support check for normal driving. A committed
-         * gap crossing retains the longer horizon because its takeoff/landing
-         * window is a source-specific discrete commitment.
-         */
-        if (!gapExecutionActive) return MIN_SUPPORT_LOOKAHEAD_TICKS;
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
+        /*
+         * Normal movement is controlled once per live observation. A three-tick
+         * support projection was repeatedly replacing valid forward/strafe input
+         * with EDGE_GUARD/LANE recovery before the next observation could correct
+         * the path. Keep a two-tick horizon for ordinary movement while the
+         * committed gap motor retains the full three-tick safety budget.
+         */
+        int maxLookahead = gapExecutionActive
+                ? MAX_SUPPORT_LOOKAHEAD_TICKS
+                : MIN_SUPPORT_LOOKAHEAD_TICKS + 1;
         return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
-                Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS,
-                        MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
+                Math.min(maxLookahead, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {
@@ -1805,14 +1795,8 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            /*
-             * Human traces keep the forward drive alive through ordinary mob
-             * approaches; lateral input is a correction, not the primary motor.
-             * The old 0.90/0.55 vector routinely got clipped by the support guard
-             * into strafe-only/zero-input commands, creating avoidable route stalls.
-             */
-            double dodgeForward = 1.00D;
-            double dodgeStrafe = 0.30D;
+            double dodgeForward = 0.90D;
+            double dodgeStrafe = 0.55D;
             Action dodge = new Action(
                     dodgeForward,
                     strafe * dodgeStrafe,
@@ -1821,27 +1805,6 @@ public final class StableLiveMovementController {
                     0.0F,
                     false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
-
-            /*
-             * If support prediction only accepts a stationary/near-stationary
-             * alternative, retain a reduced forward command when that command is
-             * itself source-supported. This mirrors the human "keep going, make a
-             * small correction" pattern without bypassing physical-floor checks.
-             */
-            if (guarded != dodge
-                    && Math.hypot(guarded.forward(), guarded.strafe()) < 0.20D) {
-                Action reduced = new Action(
-                        dodge.forward() * 0.45D,
-                        dodge.strafe() * 0.45D,
-                        dodge.jump(),
-                        dodge.sprint(),
-                        dodge.yawDelta(),
-                        false);
-                if (hasPredictedPhysicalSupport(state, reduced, supportLookaheadTicks(state))) {
-                    guarded = reduced;
-                }
-            }
-
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)

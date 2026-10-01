@@ -93,7 +93,7 @@ public final class PolicyActionSelector {
         }
     }
 
-    private static List<Action> candidates(Action baseline, boolean allowJump, GameState state) {
+    static List<Action> candidates(Action baseline, boolean allowJump, GameState state) {
         LinkedHashSet<String> seen = new LinkedHashSet<>();
         List<Action> out = new ArrayList<>(16);
 

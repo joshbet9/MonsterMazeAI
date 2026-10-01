@@ -78,7 +78,7 @@ public final class CounterfactualPolicyLearningRecorder {
 
             // All candidates use the same deterministic monster RNG stream so
             // the label difference comes from the action, not a different mob roll.
-            GameState end = simulator.forecast(state, actions, baseSeed);
+            GameState end = simulator.forecastUntilStageChange(state, actions, baseSeed);
             double target = shortHorizonReturn(state, end, actions.length, gamma);
 
             writeRow(episode, state.tick, candidateIndex, target,

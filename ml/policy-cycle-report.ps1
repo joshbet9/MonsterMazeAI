@@ -50,8 +50,10 @@ if($reports.Count -eq 0){
 } else {
   foreach($file in $reports){
     $g=Read-PolicyJson $file.FullName
-    Write-Host ("seed={0} cases={1} baselineAvg={2:N2} candidateAvg={3:N2} baselinePeak={4} candidatePeak={5} improved={6} worsened={7} same={8} passed={9}" -f
-      $g.seed,$g.cases,$g.baselineAvg,$g.candidateAvg,$g.baselinePeak,$g.candidatePeak,$g.improved,$g.worsened,$g.same,$g.passed)
+    Write-Host ("seed={0} cases={1} baseline={2:N2} incumbent={3:N2} candidate={4:N2} peaks={5}/{6}/{7} improved={8} worsened={9} belowBaseline={10} passed={11}" -f
+      $g.seed,$g.cases,$g.baselineAvg,$g.incumbentAvg,$g.candidateAvg,
+      $g.baselinePeak,$g.incumbentPeak,$g.candidatePeak,
+      $g.improved,$g.worsened,$g.belowBaseline,$g.passed)
   }
 }
 
@@ -66,6 +68,10 @@ foreach($log in $logs){
   $changed=($lines | Where-Object {$_ -match "POLICY_SELECT.*changed=True"}).Count
   Write-Host "$($log.Name): speedCases=$speed modernCases=$modern policySelections=$policy policyChanges=$changed"
 }
+$dataFiles=@(Get-ChildItem $latest.FullName -Filter "explore-*.jsonl" -ErrorAction SilentlyContinue)
+$totalBytes=0
+foreach($dataFile in $dataFiles){$totalBytes += $dataFile.Length}
+Write-Host "counterfactualFiles=$($dataFiles.Count) counterfactualBytes=$totalBytes"
 
 Write-Host ""
 Write-Host "========== STATUS =========="

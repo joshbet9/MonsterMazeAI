@@ -230,7 +230,9 @@ def train(args):
         "b1": model.b1.tolist(),
         "w2": model.w2.tolist(),
         "b2": model.b2.tolist(),
-        "w3": model.w3.tolist(),
+        # Store the final layer as a flat vector. Java inference accepts this
+        # canonical representation; older nested [16][1] models remain readable.
+        "w3": model.w3[:, 0].tolist(),
         "b3": model.b3.tolist(),
         "metrics": {
             "rows": len(rows),

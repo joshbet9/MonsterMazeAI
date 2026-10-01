@@ -161,6 +161,8 @@ public final class StableLiveMovementController {
      */
     private static final double PAD_ENTRY_COMMIT_DISTANCE = 1.25;
     private static final double PAD_ENTRY_RELEASE_DISTANCE = 2.75;
+    /** Require the player to be reasonably inside the pad's lateral lane before committing a directional crossing. */
+    private static final double PAD_ENTRY_MAX_LATERAL_OFFSET = 1.15D;
     private static final long PAD_ENTRY_MAX_TICKS = 18L;
     private static final double GAP_JUMP_TRIGGER_DISTANCE = 0.10D;
     /** Press jump only once the player is at the actual source-block edge. */
@@ -2112,7 +2114,8 @@ public final class StableLiveMovementController {
         double centerDx = (goal.row() + 0.5) - state.player.x;
         double centerDz = (goal.column() + 0.5) - state.player.z;
         double toward = direction[0] * centerDx + direction[1] * centerDz;
-        if (toward < 0.25) return null;
+        double lateral = Math.abs(-direction[1] * centerDx + direction[0] * centerDz);
+        if (toward < 0.25 || lateral > PAD_ENTRY_MAX_LATERAL_OFFSET) return null;
 
         padEntryCommitment = true;
         padEntryRow = goal.row();
@@ -2144,8 +2147,23 @@ public final class StableLiveMovementController {
         }
 
         double outside = distanceOutsidePad(state, goal);
+        double centerDx = (goal.row() + 0.5) - state.player.x;
+        double centerDz = (goal.column() + 0.5) - state.player.z;
+        double toward = padEntryDirRow * centerDx + padEntryDirColumn * centerDz;
+        double lateral = Math.abs(-padEntryDirColumn * centerDx + padEntryDirRow * centerDz);
         long elapsed = state.tick - padEntryStartTick;
-        if (outside > PAD_ENTRY_RELEASE_DISTANCE || elapsed > PAD_ENTRY_MAX_TICKS) {
+        if (outside > PAD_ENTRY_RELEASE_DISTANCE
+                || elapsed > PAD_ENTRY_MAX_TICKS
+                || lateral > PAD_ENTRY_MAX_LATERAL_OFFSET
+                || toward < -0.25) {
+            lastDecisionDetail = "PAD_ENTRY_ABORT"
+                    + " outside=" + format(outside)
+                    + " lateral=" + format(lateral)
+                    + " toward=" + format(toward)
+                    + " elapsed=" + elapsed;
+            clearPadEntryCommitment();
+            return null;
+        }
             lastDecisionDetail = "PAD_ENTRY_ABORT"
                     + " outside=" + format(outside)
                     + " elapsed=" + elapsed;

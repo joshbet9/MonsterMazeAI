@@ -259,6 +259,20 @@ public final class MonsterAwareRoutePlanner {
                     + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
             int timeCompare = Double.compare(candidateTime, incumbentTime);
             if (timeCompare != 0) return timeCompare < 0;
+        } else {
+            /*
+             * When neither candidate reaches the pad inside the tactical
+             * horizon, route efficiency is still the primary objective. The
+             * old ordering picked whichever branch retained more health, which
+             * systematically rewarded long detours around mobs. Prefer the
+             * branch that advances furthest along the actual objective route;
+             * only then use health/damage as tie-breakers.
+             */
+            int candidateProgress = candidate.finalWaypoint();
+            int incumbentProgress = incumbent.finalWaypoint();
+            if (candidateProgress != incumbentProgress) {
+                return candidateProgress > incumbentProgress;
+            }
         }
 
         if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {

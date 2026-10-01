@@ -403,7 +403,7 @@ public final class MonsterAwareRoutePlanner {
 
         double bestPrediction = predictions[order[0]];
         double kthPrediction = predictions[order[Math.min(
-                ML_PREFILTER_TOP_K - 1, candidateCount - 1)]]);
+                ML_PREFILTER_TOP_K - 1, candidateCount - 1)]];
         double separation = kthPrediction - bestPrediction;
         double scale = Math.max(1.0D, Math.abs(bestPrediction));
         boolean ambiguous = separation / scale < ML_PREFILTER_AMBIGUITY_RATIO;

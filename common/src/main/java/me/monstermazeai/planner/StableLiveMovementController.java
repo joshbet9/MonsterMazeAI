@@ -615,8 +615,16 @@ public final class StableLiveMovementController {
                  * cardinal segment instead of waiting in place or strafing blindly.
                  */
                 double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.65D;
-                double strafe = -Math.sin(errorRad) * 0.65D;
+                /*
+                 * A 0.65/0.65 diagonal was too aggressive for a one-cell
+                 * corridor: at a 90° corner it became a full-strength lateral
+                 * strafe while the camera was still rotating, which explains a
+                 * large portion of the subsequent lane-recovery churn.
+                 * Preserve concurrent corner movement, but make lateral input a
+                 * correction rather than a second full movement axis.
+                 */
+                double forward = Math.cos(errorRad) * 0.85D;
+                double strafe = -Math.sin(errorRad) * 0.35D;
                 boolean jump = shouldSpeedJump(state, allowJump);
                 boolean sprint = forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);

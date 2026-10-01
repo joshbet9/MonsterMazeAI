@@ -88,6 +88,55 @@ This creates a safe path from expensive search to learned decision-making rather
 than replacing the mechanics with a black box.
 
 
+## Long-horizon policy learning
+
+The route-value model above is intentionally retained as a search accelerator, but it is not the source of strategic improvement. The actual self-improvement loop is the long-horizon policy model:
+
+~~~text
+source GameState + candidate action
+        |
+        v
+source-faithful simulator tick
+        |
+        v
+reward + next state
+        |
+        v
+discounted return-to-go
+        |
+        v
+policy_trainer.py
+        |
+        v
+policy-model.json
+        |
+        v
+PolicyActionSelector
+        |
+        v
+next source-faithful simulator/live state
+~~~
+
+The policy model sees the current state plus a bounded executable action and learns its expected long-term return. Training rollouts use controlled epsilon exploration so the model can test alternatives to the deterministic controller instead of only copying its choices.
+
+The fixed holdout remains deterministic and is never used for exploration. A policy candidate is promoted only after its full holdout has no per-case regressions and preserves the baseline aggregate average and peak.
+
+For the first local run:
+
+~~~powershell
+cd C:\MonsterMazeAI
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ml\policy-train-loop.ps1 -MaxCycles 1 -FullGateEveryCycles 1 -Exploration 0.20
+~~~
+
+Run continuous autonomous policy training after the first full-gated cycle:
+
+~~~powershell
+cd C:\MonsterMazeAI
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ml\policy-train-loop.ps1 -MaxCycles 0 -Exploration 0.20
+~~~
+
+The policy model is an optional layer. Existing deterministic behaviour remains the fallback whenever no policy model is configured, the model cannot be loaded, or policy mode is not enabled.
+
 ## Human behavior model
 
 The existing human-run recorder produces synchronized input, movement,

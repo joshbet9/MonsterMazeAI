@@ -22,7 +22,7 @@ public final class GapJumpPolicy {
      * Custom positive costs remain available for controlled experiments where a
      * consumer explicitly wants to trade route length for gap avoidance.
      */
-    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(0.0);
+    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(1.0);
 
     private final double riskCostPerGap;
 

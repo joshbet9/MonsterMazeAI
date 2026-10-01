@@ -53,16 +53,16 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
+    void sourceSafePadIntegerCoordinateKeepsControlledForwardDrive() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action first = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, first.forward(), 1.0e-6);
+        assertTrue(first.forward() > 0.0,
+                "large heading correction from a valid SafePad spawn should retain controlled drive");
         assertEquals(0.0, first.strafe(), 1.0e-6);
-        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
-                "the initial 90-degree heading error must turn in place rather than safety-stop");
+        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F);
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
     }
 
@@ -118,7 +118,7 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void usesInPlaceTurnForLargeHeadingErrorNearCorner() {
+    void usesCornerVectorForLargeHeadingErrorNearCorner() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;
         raw[1][0] = 1;
@@ -132,8 +132,8 @@ class StableLiveMovementControllerTest {
         Action action = controller.nextAction(s, new Cell(2, 0), false);
 
         assertEquals(0.0, action.forward(), 1.0e-6,
-                "a near 90-degree corner acquisition must not cut across the corridor");
-        assertEquals(0.0, action.strafe(), 1.0e-6);
+                "the exact 90-degree corner vector should have no forward component");
+        assertEquals(0.65, action.strafe(), 1.0e-6);
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
     }
 
@@ -271,6 +271,36 @@ class StableLiveMovementControllerTest {
                 "a slow strategic plan must not leave the motor idle");
         assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
                 "unchanged local world state must not start another strategic simulation");
+    }
+
+    @Test
+    void continuesThroughAClosedCorridorMonsterWithoutYielding() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int column = 0; column <= 6; column++) raw[0][column] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        s.player.health = 20.0;
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        // The monster blocks the only physical corridor. There is no side floor,
+        // so local avoidance must preserve forward progress instead of entering
+        // a reverse/yield loop.
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                99, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(0, 6), false);
+
+        assertTrue(action.forward() > 0.0,
+                "a closed one-cell corridor must remain a moving decision");
+        assertTrue(action.forward() >= 0.0,
+                "monster avoidance must not reverse into a yield/stall state");
+        assertTrue(controller.lastDecisionDetail().contains("MOB_CONTINUE"),
+                controller.lastDecisionDetail());
     }
 
     @Test

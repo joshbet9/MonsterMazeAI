@@ -24,9 +24,12 @@ ml/route_ranker.py
 route-value-model.json
 ~~~
 
-The first model predicts a scalar route cost. Lower is better. A failed route
-receives a large cost, while successful routes are primarily ordered by arrival
-time and then penalised for damage, gaps, and unnecessary route length.
+The current route model predicts a scalar score, but it is trained with a direct
+within-state pairwise ranking objective. For two candidates evaluated from the
+same source state, the model is trained to score the simulator-preferred route
+lower. A failed route still receives a large authoritative simulator target,
+while successful routes are ordered primarily by arrival time and then
+penalised for damage, gaps, and unnecessary route length.
 
 The initial model is shadow-only. It does not replace the deterministic planner
 or movement motor yet. This prevents a poorly trained model from changing
@@ -78,6 +81,8 @@ The eventual live integration is:
 3. keep the source-faithful support/collision guard
 4. reserve the full tactical simulator for uncertain/high-risk states
 5. keep a deterministic fallback whenever the model is unavailable or uncertain
+6. condition future models on explicit CPU personality features so different
+   difficulty/behaviour profiles can share the same source-faithful mechanics
 
 This creates a safe path from expensive search to learned decision-making rather
 than replacing the mechanics with a black box.
@@ -143,3 +148,39 @@ seed when omitted or set to `0`, while non-zero offsets deterministically
 produce different monster/pad trajectories. This gives the local trainer new
 source-faithful rollout variation without changing the default acceptance run.
 
+
+
+## Cycle reporting
+
+Each local training cycle now writes `matrix-summary.json` containing the full
+fixed holdout comparison. The summary covers all 30 mode/pattern/kit
+combinations across the configured holdout seeds and records per-case
+baseline/candidate averages, deltas, peaks, and improved/worsened/same counts.
+
+Print a compact report for the newest cycle with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ml\cycle-report.ps1
+```
+
+The report also shows ranking metrics, dataset composition, ML prefilter use,
+and promotion status.
+
+## Configurable CPU direction
+
+The route-ranking model is the shared decision engine for the eventual CPU
+system. The source-faithful physics, collision, monster rules, maze generation,
+and motor remain common to every CPU. A future CPU profile will provide an
+explicit behaviour vector, for example aggressiveness, gap tolerance, monster
+risk tolerance, momentum preference, ability conservation, and recovery
+priority.
+
+Those profile values will become additional model inputs and training
+conditions. Simulator rollouts can then generate training examples for many
+profiles at once. A high-difficulty CPU can be trained toward near-optimal
+route preferences, while easier or more distinctive CPUs can be trained with
+controlled preference weights without changing the underlying game mechanics.
+
+Human-run recordings provide a separate behaviour-cloning signal for the same
+profile system. That allows a future CPU to combine learned route preference
+with a learned execution style while retaining deterministic safety checks.

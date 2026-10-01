@@ -1,13 +1,13 @@
 param(
     [int]$MaxCycles = 0,
-    [int]$TrainingSeedsPerCycle = 2,
+    [int]$TrainingSeedsPerCycle = 1,
     [int]$HoldoutSeeds = 3,
     [int]$FullGateEveryCycles = 5,
     [int]$ReplayCycles = 24,
     [int]$Epochs = 100,
     [int]$BatchSize = 256,
     [int]$PairSamplesPerEpoch = 25000,
-    [int]$SleepSeconds = 2
+    [int]$SleepSeconds = 0
 )
 
 $ErrorActionPreference = "Stop"

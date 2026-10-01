@@ -19,7 +19,7 @@ $Repo = Split-Path -Parent $PSScriptRoot
 Set-Location $Repo
 $Venv = Join-Path $Repo ".venv"
 $Python = Join-Path $Venv "Scripts\python.exe"
-$DataRoot = Join-Path $Repo "ml-data\local-policy"
+$DataRoot = Join-Path $Repo "ml-data\local-counterfactual-policy"
 $HoldoutRoot = Join-Path $DataRoot "holdout"
 $ReplayRoot = Join-Path $DataRoot "replay"
 $CheckpointRoot = Join-Path $DataRoot "checkpoints"

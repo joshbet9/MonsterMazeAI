@@ -40,7 +40,29 @@ def load_rows(path: Path):
 
 
 def build_targets(rows, gamma):
-    # Counterfactual rows already contain a simulator-measured future return.
+    # Counterfactual rows are direct simulator labels. Center them within each
+    # decision point so the network is trained primarily on action advantage:
+    # which candidate is better here, rather than simply which states are valuable.
+    if rows and all(
+        isinstance(row.get("target_return"), (int, float))
+        and math.isfinite(float(row["target_return"]))
+        for row in rows
+    ):
+        groups = {}
+        for row in rows:
+            key = (str(row["episode"]), int(row.get("t", 0)))
+            groups.setdefault(key, []).append(row)
+
+        out = []
+        for group in groups.values():
+            mean_target = sum(float(row["target_return"]) for row in group) / len(group)
+            for row in group:
+                copy = dict(row)
+                copy["raw_target_return"] = float(row["target_return"])
+                copy["return_value"] = float(row["target_return"]) - mean_target
+                out.append(copy)
+        return out
+
     # Legacy recorder rows still need the original episode return-to-go pass.
     if rows and all(
         isinstance(row.get("target_return"), (int, float))
@@ -234,6 +256,7 @@ def main():
         "architecture": [FEATURE_COUNT, args.hidden1, args.hidden2, 1],
         "feature_names": feature_names,
         "gamma": args.gamma,
+        "target_mode": "per_decision_centered_advantage",
         "input_mean": input_mean.tolist(),
         "input_std": input_std.tolist(),
         "target_mean": target_mean,

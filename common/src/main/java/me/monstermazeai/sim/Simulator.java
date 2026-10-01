@@ -137,13 +137,22 @@ public final class Simulator {
         predictor.tick(state, firstAction);
         snapshots.add(state.copy());
 
+        if (needsExternalNextPad(state)) {
+            return java.util.List.copyOf(snapshots);
+        }
+
         for (int i = 1; i < horizon && state.alive && state.stage == startStage; i++) {
             Action next = continuation.apply(state);
             if (next == null) next = Action.IDLE;
             predictor.tick(state, next);
             snapshots.add(state.copy());
+            if (needsExternalNextPad(state)) break;
         }
         return java.util.List.copyOf(snapshots);
+    }
+
+    private static boolean needsExternalNextPad(GameState state) {
+        return state.previewPadRequested && state.previewPadRow < 0;
     }
 
     /**

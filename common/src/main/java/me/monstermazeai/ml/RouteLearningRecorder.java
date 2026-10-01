@@ -130,6 +130,6 @@ public final class RouteLearningRecorder {
     }
 
     private static String escape(String value) {
-        return value.replace("\\", "\\\\").replace(""", "\\"");
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

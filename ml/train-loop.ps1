@@ -3,8 +3,9 @@ param(
     [int]$TrainingSeedsPerCycle = 4,
     [int]$HoldoutSeeds = 3,
     [int]$ReplayCycles = 12,
-    [int]$Epochs = 250,
+    [int]$Epochs = 120,
     [int]$BatchSize = 256,
+    [int]$PairSamplesPerEpoch = 50000,
     [int]$SleepSeconds = 2
 )
 
@@ -206,14 +207,32 @@ while ($MaxCycles -eq 0 -or $cycle -lt $MaxCycles) {
 
     $candidate = Join-Path $cycleDir "route-value-model-candidate.json"
 
-    & $Python (Join-Path $PSScriptRoot "route_ranker.py") train --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --hidden1 32 --hidden2 16 --learning-rate 0.002 --validation-fraction 0.20 --min-samples 100 --seed $cycle
+    & $Python (Join-Path $PSScriptRoot "route_ranker.py") train --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --pair-samples-per-epoch $PairSamplesPerEpoch --hidden1 32 --hidden2 16 --learning-rate 0.002 --validation-fraction 0.20 --min-samples 100 --seed $cycle
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)) {
         Write-Host "Model training failed; current model remains unchanged."
         continue
     }
 
-    if (Invoke-Gate $candidate $cycleDir) {
+    $gatePassed = Invoke-Gate $candidate $cycleDir
+
+    $gateFiles = @(Get-ChildItem $cycleDir -Filter "holdout-seed-*-gate.json" |
+        Sort-Object Name)
+
+    if ($gateFiles.Count -gt 0) {
+        $matrixSummary = Join-Path $cycleDir "matrix-summary.json"
+        & $Python (Join-Path $PSScriptRoot "summarize_matrix.py") `
+            --inputs @($gateFiles.FullName) `
+            --output $matrixSummary
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Matrix summary generation failed."
+        } else {
+            Write-Host "Saved full holdout matrix summary: $matrixSummary"
+        }
+    }
+
+    if ($gatePassed) {
         Copy-Item $candidate (Join-Path $CheckpointRoot "route-value-model-$stamp.json") -Force
         Copy-Item $candidate (Join-Path $CurrentRoot "route-value-model.json") -Force
         Write-Host "PROMOTED candidate after all fixed holdout gates passed."

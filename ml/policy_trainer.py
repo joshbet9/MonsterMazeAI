@@ -115,7 +115,7 @@ def main():
       "metrics":{"rows":len(rows),"episodes":len({str(r["episode"]) for r in rows}),"train_rows":len(train),"validation_rows":len(valid),
       "train_mae":float(np.mean(np.abs(ty-trp))),"validation_mae":float(np.mean(np.abs(vy-vap))),
       "train_mse":float(np.mean((ty-trp)**2)),"validation_mse":float(np.mean((vy-vap)**2))}}
-    Path(a.output).parent.mkdir(parents=True,exist_ok=True); Path(a.output).write_text(json.dumps(payload,indent=2)+"\\n",encoding="utf-8")
+    Path(a.output).parent.mkdir(parents=True,exist_ok=True); Path(a.output).write_text(json.dumps(payload,indent=2)+"\n",encoding="utf-8")
     print(json.dumps(payload["metrics"],indent=2))
 
 if __name__=="__main__": main()

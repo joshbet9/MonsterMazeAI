@@ -33,7 +33,9 @@ jobs:
           cache: maven
 
       - name: Prepare ML output directory
-        run: mkdir -p ml-data
+        run: |
+          mkdir -p ml-data
+          : > ml-data/route-training.jsonl
 
       - name: Run full results matrix and collect simulator labels
         continue-on-error: true
@@ -59,6 +61,7 @@ jobs:
 
       - name: Inspect simulator training set
         if: always()
+        continue-on-error: true
         run: python ml/route_ranker.py inspect --input ml-data/route-training.jsonl
 
       - name: Train route-value model

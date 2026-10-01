@@ -1359,19 +1359,16 @@ public final class StableLiveMovementController {
     }
 
     private int supportLookaheadTicks(GameState state) {
-        int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
         /*
-         * Normal movement is controlled once per live observation. A three-tick
-         * support projection was repeatedly replacing valid forward/strafe input
-         * with EDGE_GUARD/LANE recovery before the next observation could correct
-         * the path. Keep a two-tick horizon for ordinary movement while the
-         * committed gap motor retains the full three-tick safety budget.
+         * Normal driving is re-evaluated every live observation, so a two-tick
+         * support projection is enough to protect the next physical step without
+         * repeatedly braking for a hypothetical future edge state. Committed gap
+         * execution keeps the full three-tick horizon because that action is a
+         * discrete source-specific takeoff/landing sequence.
          */
-        int maxLookahead = gapExecutionActive
+        return gapExecutionActive
                 ? MAX_SUPPORT_LOOKAHEAD_TICKS
-                : MIN_SUPPORT_LOOKAHEAD_TICKS + 1;
-        return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
-                Math.min(maxLookahead, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
+                : Math.min(2, MAX_SUPPORT_LOOKAHEAD_TICKS);
     }
 
     private boolean hasPredictedPhysicalSupport(GameState state, Action action, int ticks) {

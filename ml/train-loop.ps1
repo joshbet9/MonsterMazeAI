@@ -241,7 +241,7 @@ while ($MaxCycles -eq 0 -or $cycle -lt $MaxCycles) {
     # holdout work and protects the currently promoted model.
     $candidateMetrics = Get-Content $candidate -Raw | ConvertFrom-Json
     $validationAccuracy = [double]$candidateMetrics.metrics.validation_pairwise_accuracy
-    if (-not [double]::IsFinite($validationAccuracy) -or $validationAccuracy -lt 0.50) {
+    if ([double]::IsNaN($validationAccuracy) -or [double]::IsInfinity($validationAccuracy) -or $validationAccuracy -lt 0.50) {
         Write-Host ("RANKING_SANITY_REJECTED validation_pairwise_accuracy={0:P2}" -f $validationAccuracy)
         continue
     }

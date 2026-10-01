@@ -340,9 +340,15 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
+            /*
+             * Validate against the complete route corridor, not the segment
+             * belonging to the next turn waypoint. waypointIndex is intentionally
+             * several cells ahead on long straight runs, so checking that future
+             * segment made an otherwise-valid player look off-route and caused
+             * repeated FAST_RECOVERY_ROUTE resets.
+             */
             boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION)
-                    || (!gapExecutionActive && currentSegmentDeviation(state, route, waypointIndex) > 0.95D);
+                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
 
             if (routeInvalid) {
                 /*

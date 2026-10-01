@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: monstermaze-ml-calibration-${{ github.ref }}
+  group: monstermaze-ml-calibration-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

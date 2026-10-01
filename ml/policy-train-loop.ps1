@@ -10,7 +10,7 @@ param(
     [double]$Gamma = 0.995,
     [double]$Exploration = 0.20,
     [int]$CounterfactualStride = 20,
-    [int]$CounterfactualHorizon = 64,
+    [int]$CounterfactualHorizon = 128,
     [int]$SleepSeconds = 0
 )
 

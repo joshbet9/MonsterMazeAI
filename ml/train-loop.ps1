@@ -1,8 +1,9 @@
 param(
     [int]$MaxCycles = 0,
-    [int]$TrainingSeedsPerCycle = 4,
+    [int]$TrainingSeedsPerCycle = 2,
     [int]$HoldoutSeeds = 3,
-    [int]$ReplayCycles = 12,
+    [int]$FullGateEveryCycles = 5,
+    [int]$ReplayCycles = 24,
     [int]$Epochs = 100,
     [int]$BatchSize = 256,
     [int]$PairSamplesPerEpoch = 25000,
@@ -130,36 +131,57 @@ function Merge-ReplayWindow {
     }
 }
 
+function Invoke-CandidateHoldout {
+    param(
+        [string]$Candidate,
+        [string]$CycleDir,
+        [int]$Seed
+    )
+
+    $baseline = Join-Path $HoldoutRoot "seed-$Seed-baseline.log"
+    if (-not (Test-Path $baseline)) {
+        Write-Host "Creating fixed holdout baseline seedOffset=$Seed"
+        $code = Invoke-Matrix $Seed $baseline (Join-Path $CycleDir "ignored-baseline-$Seed.jsonl")
+        if ($code -ne 0) {
+            throw "Holdout baseline failed for seed $Seed."
+        }
+    }
+
+    $candidateLog = Join-Path $CycleDir "holdout-seed-$Seed.log"
+    $report = Join-Path $CycleDir "holdout-seed-$Seed-gate.json"
+
+    $code = Invoke-Matrix $Seed $candidateLog (Join-Path $CycleDir "ignored-candidate-$Seed.jsonl") $Candidate
+    if ($code -ne 0) {
+        Write-Host "Candidate matrix failed for holdout seed $Seed."
+        return $false
+    }
+
+    & $Python (Join-Path $PSScriptRoot "evaluate_model.py") --baseline $baseline --candidate $candidateLog --json-output $report
+
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Invoke-Gate {
     param(
         [string]$Candidate,
-        [string]$CycleDir
+        [string]$CycleDir,
+        [int]$MatrixSeed,
+        [bool]$RunFullGate
     )
 
-    $ok = $true
+    $ok = Invoke-CandidateHoldout $Candidate $CycleDir $MatrixSeed
+
+    if (-not $RunFullGate) {
+        return $false
+    }
 
     for ($i = 1; $i -le $HoldoutSeeds; $i++) {
-        $baseline = Join-Path $HoldoutRoot "seed-$i-baseline.log"
-        $candidateLog = Join-Path $CycleDir "holdout-seed-$i.log"
-        $report = Join-Path $CycleDir "holdout-seed-$i-gate.json"
-
-        if (-not (Test-Path $baseline)) {
-            Write-Host "Creating fixed holdout baseline seedOffset=$i"
-            $code = Invoke-Matrix $i $baseline (Join-Path $CycleDir "ignored-baseline-$i.jsonl")
-            if ($code -ne 0) {
-                throw "Holdout baseline failed for seed $i."
-            }
-        }
-
-        $code = Invoke-Matrix $i $candidateLog (Join-Path $CycleDir "ignored-candidate-$i.jsonl") $Candidate
-        if ($code -ne 0) {
-            Write-Host "Candidate matrix failed for holdout seed $i."
-            $ok = $false
+        if ($i -eq $MatrixSeed) {
             continue
         }
 
-        & $Python (Join-Path $PSScriptRoot "evaluate_model.py") --baseline $baseline --candidate $candidateLog --json-output $report
-        if ($LASTEXITCODE -ne 0) {
+        $seedOk = Invoke-CandidateHoldout $Candidate $CycleDir $i
+        if (-not $seedOk) {
             $ok = $false
         }
     }
@@ -214,7 +236,11 @@ while ($MaxCycles -eq 0 -or $cycle -lt $MaxCycles) {
         continue
     }
 
-    $gatePassed = Invoke-Gate $candidate $cycleDir
+    $matrixSeed = (($cycle - 1) % $HoldoutSeeds) + 1
+    $runFullGate = ($cycle % $FullGateEveryCycles) -eq 0
+    Write-Host "Matrix holdout seed=$matrixSeed fullGate=$runFullGate"
+
+    $gatePassed = Invoke-Gate $candidate $cycleDir $matrixSeed $runFullGate
 
     $gateFiles = @(Get-ChildItem $cycleDir -Filter "holdout-seed-*-gate.json" |
         Sort-Object Name)
@@ -232,12 +258,14 @@ while ($MaxCycles -eq 0 -or $cycle -lt $MaxCycles) {
         }
     }
 
-    if ($gatePassed) {
+    if ($runFullGate -and $gatePassed) {
         Copy-Item $candidate (Join-Path $CheckpointRoot "route-value-model-$stamp.json") -Force
         Copy-Item $candidate (Join-Path $CurrentRoot "route-value-model.json") -Force
         Write-Host "PROMOTED candidate after all fixed holdout gates passed."
-    } else {
+    } elseif ($runFullGate) {
         Write-Host "REJECTED candidate; current model remains unchanged."
+    } else {
+        Write-Host "OBSERVATION ONLY; promotion deferred to full gate cycle $FullGateEveryCycles."
     }
 
     if ($SleepSeconds -gt 0) {

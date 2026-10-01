@@ -61,6 +61,11 @@ jobs:
         if: always()
         run: python -m pip install --disable-pip-version-check numpy
 
+      - name: Validate long-horizon policy trainer
+        if: always()
+        run: |
+          python -m py_compile ml/policy_trainer.py
+
       - name: Fetch human calibration runs
         if: always()
         continue-on-error: true

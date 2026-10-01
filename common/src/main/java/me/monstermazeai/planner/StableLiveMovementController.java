@@ -243,10 +243,8 @@ public final class StableLiveMovementController {
          * a nearby monster can be used as a source-faithful bump toward the
          * active pad. MobInteractionDecision refuses this at <= 2 hearts.
          */
-        MonsterState intentionalBump = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? MobInteractionDecision.chooseIntentionalBump(
-                        state, profile.tendencies.positiveMobKnockback)
-                : MobInteractionDecision.chooseIntentionalBump(state);
+        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(
+                state, profile.tendencies.positiveMobKnockback);
         if (intentionalBump != null) {
             Action bumpAction = steerIntoMonster(state, intentionalBump);
             if (bumpAction != null) return bumpAction;
@@ -561,8 +559,7 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            double turnGain = state.mode == me.monstermazeai.game.Mode.SPEED
-                    ? turnResponseGain() : 0.5D;
+            double turnGain = turnResponseGain();
             float turn = clamp((float) (yawError * turnGain),
                     -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
@@ -582,9 +579,7 @@ public final class StableLiveMovementController {
                 else if (absError <= 35.0) steeringForward = 0.80;
                 else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
-                boolean sprint = state.mode == me.monstermazeai.game.Mode.SPEED
-                        ? forward > 0.05
-                        : forward >= 0.95 && absError <= 15.0;
+                boolean sprint = forward > 0.05;
                 // Non-Jumpers use the source Jump -10 + sprint-jump interaction
                 // as their normal speed mechanic. Jumper vertical jumps remain
                 // reserved for explicit terrain decisions.
@@ -602,8 +597,7 @@ public final class StableLiveMovementController {
                 double forward = Math.cos(errorRad) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
-                boolean sprint = state.mode == me.monstermazeai.game.Mode.SPEED
-                        && forward > 0.05;
+                boolean sprint = forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
@@ -612,9 +606,7 @@ public final class StableLiveMovementController {
                  * residual vanilla momentum decays. Modern keeps the original
                  * conservative in-place-turn gate.
                  */
-                float yawCommand = state.mode == me.monstermazeai.game.Mode.SPEED
-                        ? turn
-                        : (speed <= MAX_TURNING_SPEED ? turn : 0.0F);
+                float yawCommand = turn;
                 action = new Action(
                         0.0, 0.0, false, false,
                         yawCommand,
@@ -978,7 +970,7 @@ public final class StableLiveMovementController {
         }
         // The repeated Jump -10 + sprint-jump acceleration is a Speed-mode
         // mechanic. Modern non-Jumpers must stay on ordinary source movement.
-        if (state.mode != me.monstermazeai.game.Mode.SPEED) return false;
+
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE
                 && state.tick - lastSpeedJumpInputTick < cadenceTicks) {
@@ -1261,20 +1253,13 @@ public final class StableLiveMovementController {
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
         double supportScale = 0.20D + (0.50D * profile.attributes.handling);
-        Action[] alternatives = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? new Action[] {
+        Action[] alternatives = {
                     new Action(action.forward() * supportScale,
                             action.strafe() * supportScale,
                             action.jump(),
                             action.sprint(),
                             action.yawDelta(),
                             false),
-                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                    new Action(0.0, counter, false, false, action.yawDelta(), false),
-                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
-                }
-                : new Action[] {
                     new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                     new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                     new Action(0.0, counter, false, false, action.yawDelta(), false),
@@ -1304,7 +1289,6 @@ public final class StableLiveMovementController {
     }
 
     private int supportLookaheadTicks(GameState state) {
-        if (state.mode != me.monstermazeai.game.Mode.SPEED) return MIN_SUPPORT_LOOKAHEAD_TICKS;
         int extension = (int) Math.round(profile.attributes.reactions * 2.0D);
         return Math.max(MIN_SUPPORT_LOOKAHEAD_TICKS,
                 Math.min(MAX_SUPPORT_LOOKAHEAD_TICKS, MIN_SUPPORT_LOOKAHEAD_TICKS + extension));
@@ -1541,8 +1525,7 @@ public final class StableLiveMovementController {
 
         float desiredYaw = cardinalYaw(dirRow, dirColumn);
         float yawError = normalise(desiredYaw - state.player.yaw);
-        float gain = state.mode == me.monstermazeai.game.Mode.SPEED
-                ? (float) turnResponseGain() : 0.5F;
+        float gain = (float) turnResponseGain();
         float yawDelta = clamp(yawError * gain,
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
@@ -1562,8 +1545,7 @@ public final class StableLiveMovementController {
 
         double correctionForward = forward * magnitude;
         double correctionStrafe = strafe * magnitude;
-        boolean correctionSprint = state.mode == me.monstermazeai.game.Mode.SPEED
-                && correctionForward > 0.05;
+        boolean correctionSprint = correctionForward > 0.05;
         Action correction = new Action(
                 correctionForward,
                 correctionStrafe,
@@ -1726,12 +1708,8 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            double dodgeForward = state.mode == me.monstermazeai.game.Mode.SPEED
-                    ? 0.90D
-                    : 0.65D;
-            double dodgeStrafe = state.mode == me.monstermazeai.game.Mode.SPEED
-                    ? 0.55D
-                    : 1.0D;
+            double dodgeForward = 0.90D;
+            double dodgeStrafe = 0.55D;
             Action dodge = new Action(
                     dodgeForward,
                     strafe * dodgeStrafe,
@@ -1786,8 +1764,7 @@ public final class StableLiveMovementController {
                         float commitYaw = cardinalYaw(commitRow, commitColumn);
                         float commitError = normalise(commitYaw - state.player.yaw);
                         float commitTurn = clamp(
-                                commitError * (state.mode == me.monstermazeai.game.Mode.SPEED
-                                        ? (float) turnResponseGain() : 0.5F),
+                                commitError * (float) turnResponseGain(),
                                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
                         double postYaw = Math.toRadians(state.player.yaw + commitTurn);
                         double worldX = commitRow;
@@ -1808,7 +1785,7 @@ public final class StableLiveMovementController {
                                 forward * drive,
                                 strafe * drive,
                                 shouldSpeedJump(state, allowJump),
-                                state.mode == me.monstermazeai.game.Mode.SPEED,
+                                true,
                                 commitTurn,
                                 false);
                         Action guarded = guardProjectedSupport(
@@ -2145,8 +2122,7 @@ public final class StableLiveMovementController {
             gapTakeoffStarted = false;
             gapExecutionRouteIndex = waypointIndex - 1;
             gapLandingConfirmTicks = 0;
-            if (state.mode == me.monstermazeai.game.Mode.SPEED
-                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+            if (state.kit != me.monstermazeai.kit.Kit.JUMPER) {
                 lastSpeedJumpInputTick = Long.MIN_VALUE;
             }
             return executeCommittedGap(state, allowJump);
@@ -2199,8 +2175,7 @@ public final class StableLiveMovementController {
          * Let Max Speed control this pre-gap cadence while the gap motor owns
          * the timing window, so tactical replanning cannot steal the inputs.
          */
-        boolean nonJumperSpeedPulse = state.mode == me.monstermazeai.game.Mode.SPEED
-                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+        boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
                 && progress < GAP_JUMP_PROGRESS
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE

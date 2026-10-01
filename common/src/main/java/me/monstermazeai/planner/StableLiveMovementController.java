@@ -441,18 +441,7 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            /*
-             * The tactical simulator evaluates ordinary movement/strafe/turn
-             * actions as well as jumps and abilities. Previously we discarded
-             * every non-discrete result here, so the expensive local threat
-             * search could only affect jump/ability ticks while the hand-written
-             * MOB_DODGE/MOB_YIELD policy still owned normal contact handling.
-             *
-             * Accept the simulator's first action for this observation. The
-             * search is already receding-horizon and keyed by a fresh local
-             * threat signature, so this does not replay a stale multi-tick command.
-             */
-            if (tactical != null) {
+            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }

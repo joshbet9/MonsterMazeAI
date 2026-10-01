@@ -137,10 +137,28 @@ public final class PolicyActionSelector {
         if (allowJump) {
             add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
                     true, baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+            if (baseline.jump()) {
+                add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
+                        false, baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+            }
             add(out, seen, copy(baseline, 1.0, 0.75, true,
                     baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
             add(out, seen, copy(baseline, 1.0, -0.75, true,
                     baseline.sprint(), baseline.yawDelta(), baseline.useAbility()));
+        }
+
+        // Sprint is another executable binary decision. Include both directions
+        // so the learner can trade speed against control.
+        add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
+                baseline.jump(), true, baseline.yawDelta(), baseline.useAbility()));
+        add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
+                baseline.jump(), false, baseline.yawDelta(), baseline.useAbility()));
+
+        // If the deterministic controller chose an ability, allow the learner
+        // to explicitly decline it in the counterfactual set.
+        if (baseline.useAbility()) {
+            add(out, seen, copy(baseline, baseline.forward(), baseline.strafe(),
+                    baseline.jump(), baseline.sprint(), baseline.yawDelta(), false));
         }
 
         boolean canUseAbility = state.ability != null

@@ -98,6 +98,11 @@ public final class CounterfactualPolicyLearningRecorder {
                 ^ ((long) state.stage << 32)
                 ^ ((long) state.mazePattern * 0x9E3779B97F4A7C15L));
 
+        System.out.printf(
+                "POLICY_CF_START mode=%s pattern=%d kit=%s tick=%d candidates=%d horizon=%d%n",
+                state.mode, state.mazePattern + 1, state.kit, state.tick,
+                candidates.size(), horizon);
+
         int candidateIndex = 0;
         for (Action candidate : candidates) {
             AutonomousMonsterMazeAgent continuation =
@@ -135,6 +140,11 @@ public final class CounterfactualPolicyLearningRecorder {
 
             candidateIndex++;
         }
+
+        System.out.printf(
+                "POLICY_CF_DONE mode=%s pattern=%d kit=%s tick=%d candidates=%d%n",
+                state.mode, state.mazePattern + 1, state.kit, state.tick,
+                candidates.size());
     }
 
     private static AutonomousMonsterMazeAgent newPolicyContinuationAgent() {

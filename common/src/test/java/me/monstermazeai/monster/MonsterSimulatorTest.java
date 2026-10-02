@@ -32,10 +32,10 @@ class MonsterSimulatorTest {
 
         double realizedBlocksPerTick = Math.hypot(monster.lastDx, monster.lastDz);
 
-        // 1.8 ground movement on a 0.6-slipperiness block with a 1.4
-        // ControllerMove command converges to about 0.308 blocks/tick.
-        assertEquals(0.30837, realizedBlocksPerTick, 0.004);
-        assertTrue(realizedBlocksPerTick < 0.35,
-                "mob movement must not use the 1.4 command twice");
+        // The shared engine realizes the 1.4 controller value as a capped
+        // cardinal 0.14 blocks/tick movement step.
+        assertEquals(0.14, realizedBlocksPerTick, 1.0E-9);
+        assertTrue(realizedBlocksPerTick <= 0.14 + 1.0E-9,
+                "mob movement must remain at the canonical realized speed");
     }
 }

@@ -133,8 +133,10 @@ Write-Host "counterfactualFiles=$($dataFiles.Count) counterfactualBytes=$totalBy
 
 Write-Host ""
 Write-Host "========== STATUS =========="
-$counterfactualCurrent = Test-Path (Join-Path $Repo "ml-data\local-counterfactual-policy-v3\current\policy-model.json")
-  -or Test-Path (Join-Path $Repo "ml-data\local-counterfactual-policy\current\policy-model.json")
+$counterfactualCurrent = (
+  (Test-Path (Join-Path $Repo "ml-data\local-counterfactual-policy-v3\current\policy-model.json")) -or
+  (Test-Path (Join-Path $Repo "ml-data\local-counterfactual-policy\current\policy-model.json"))
+)
 $legacyCurrent = Test-Path (Join-Path $Repo "ml-data\local-policy\current\policy-model.json")
 Write-Host "candidatePromoted=$($counterfactualCurrent -or $legacyCurrent)"
 Write-Host "========== END REPORT =========="

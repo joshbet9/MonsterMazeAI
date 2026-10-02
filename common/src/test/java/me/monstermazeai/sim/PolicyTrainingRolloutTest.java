@@ -22,6 +22,11 @@ class PolicyTrainingRolloutTest {
                 "monstermaze.ml.policy.trainingCasesPerMode", 2);
         int cases = Math.max(1, Math.min(CASES_PER_MODE_LIMIT, requestedCases));
         long seedOffset = Long.getLong("monstermaze.sim.seedOffset", 0L);
+        int maxTrainingTicks = Math.max(
+                60,
+                Integer.getInteger(
+                        "monstermaze.ml.policy.trainingMaxTicks",
+                        DEFAULT_MAX_TRAINING_TICKS));
 
         Kit[] kits = Kit.values();
         int totalCases = 3 * kits.length;

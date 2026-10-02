@@ -1,6 +1,7 @@
 param(
     [int]$MaxCycles = 1,
-    [int]$TrainingMatricesPerCycle = 1,
+    [Alias("TrainingMatricesPerCycle")]
+    [int]$TrainingCasesPerMode = 2,
     [int]$HoldoutSeeds = 3,
     [int]$FullGateEveryCycles = 5,
     [int]$ReplayCycles = 8,
@@ -11,7 +12,8 @@ param(
     [double]$Exploration = 0.20,
     [int]$CounterfactualStride = 20,
     [int]$CounterfactualHorizon = 128,
-    [int]$SleepSeconds = 0
+    [int]$SleepSeconds = 0,
+    [switch]$SkipHoldoutGate
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,8 +40,8 @@ if (-not (Test-Path $Python)) {
 if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
 
 function Invoke-Run {
-    param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore)
-    $args = @("-B","-ntp","-pl","common","-am","-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
+    param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore,[string]$TestClass)
+    $args = @("-B","-ntp","-pl","common","-am","-Dtest=$TestClass","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dmonstermaze.ml.policy.trainingCasesPerMode=$TrainingCasesPerMode","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
     if ($ModelPath) {
         $args += "-Dmonstermaze.ml.policy.model=$ModelPath"
         $args += "-Dmonstermaze.ml.mode=policy"
@@ -64,7 +66,7 @@ function Gate-AgainstBaseline {
     if (-not (Test-Path $baseline)) {
         $baselineLog = Join-Path $CycleDir "baseline-seed-$Seed.log"
         $baselineData = Join-Path $CycleDir "ignored-baseline.jsonl"
-        $code = Invoke-Run $Seed $baselineLog $baselineData $null $false
+        $code = Invoke-Run $Seed $baselineLog $baselineData $null $false "SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"
         if ($code -ne 0) { throw "Policy holdout baseline failed for seed $Seed." }
         Copy-Item $baselineLog $baseline -Force
     }
@@ -75,7 +77,7 @@ function Gate-AgainstBaseline {
     $incumbentLog = Join-Path $CycleDir "incumbent-seed-$Seed.log"
     $currentModel = Join-Path $CurrentRoot "policy-model.json"
     if (Test-Path $currentModel) {
-        $code = Invoke-Run $Seed $incumbentLog (Join-Path $CycleDir "ignored-incumbent-$Seed.jsonl") $currentModel $false
+        $code = Invoke-Run $Seed $incumbentLog (Join-Path $CycleDir "ignored-incumbent-$Seed.jsonl") $currentModel $false "SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"
         if ($code -ne 0) { return $false }
     }
     else {
@@ -83,7 +85,7 @@ function Gate-AgainstBaseline {
     }
 
     $candidateLog = Join-Path $CycleDir "holdout-seed-$Seed.log"
-    $code = Invoke-Run $Seed $candidateLog (Join-Path $CycleDir "ignored-$Seed.jsonl") $Candidate $false
+    $code = Invoke-Run $Seed $candidateLog (Join-Path $CycleDir "ignored-$Seed.jsonl") $Candidate $false "SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"
     if ($code -ne 0) { return $false }
 
     function Read-StageMap([string]$Path) {
@@ -209,12 +211,12 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     $hasCurrent=Test-Path $currentModel
     $rng=[Random]::new()
 
-    for($s=1;$s -le $TrainingMatricesPerCycle;$s++){
+    for($s=1;$s -le 1;$s++){
         $seed=$rng.Next(10000,2000000000)
         $log=Join-Path $cycleDir "explore-$seed.log"
         $data=Join-Path $cycleDir "explore-$seed.jsonl"
         $model=if($hasCurrent){$currentModel}else{$null}
-        $code=Invoke-Run $seed $log $data $model $true
+        $code=Invoke-Run $seed $log $data $model $true "PolicyTrainingRolloutTest"
         if($code -eq 0 -and (Test-Path $data)){ Append-File $data $newReplay }
     }
 
@@ -229,16 +231,22 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples 500 --seed $cycle --objective counterfactual_short_horizon_return
     if($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)){ Write-Host "Policy training failed; current policy remains unchanged."; continue }
 
-    $matrixSeed=(($cycle-1)%$HoldoutSeeds)+1
-    $full=($cycle%$FullGateEveryCycles)-eq 0
-    $ok=Gate-AgainstBaseline $candidate $matrixSeed $cycleDir
+    $full = ($FullGateEveryCycles -gt 0) -and (($cycle % $FullGateEveryCycles) -eq 0)
+    $ok = $false
 
-    if($full){
+    if($SkipHoldoutGate){
+        Write-Host "POLICY GATE SKIPPED (development/training-only cycle)."
+        Copy-Item $candidate (Join-Path $CheckpointRoot "policy-model-training-$stamp.json") -Force
+    } elseif($full){
+        $matrixSeed=(($cycle-1)%$HoldoutSeeds)+1
+        $ok=Gate-AgainstBaseline $candidate $matrixSeed $cycleDir
         for($seed=1;$seed -le $HoldoutSeeds;$seed++){
             if($seed -eq $matrixSeed){continue}
             if(-not (Gate-AgainstBaseline $candidate $seed $cycleDir)){$ok=$false}
         }
-    } else {$ok=$false}
+    } else {
+        Write-Host ("POLICY GATE DEFERRED until cycle {0}." -f $FullGateEveryCycles)
+    }
 
     $reports=Get-ChildItem $cycleDir -Filter "policy-holdout-seed-*.json" | Sort-Object Name
     if($reports.Count -gt 0){

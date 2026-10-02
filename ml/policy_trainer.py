@@ -155,6 +155,56 @@ def grouped_split(rows, fraction, seed):
     return train, valid
 
 
+
+def decision_grouped_split(rows, fraction, seed):
+    """Hold out whole decision points while retaining every gameplay family.
+
+    This is the useful development split when most families have only one
+    recorded episode. It never separates the eight counterfactual candidates
+    belonging to one decision point, so candidate leakage is still avoided.
+    For true new-seed generalisation, use grouped_split once multiple episodes
+    exist per family.
+    """
+    families = {}
+    for row in rows:
+        episode = str(row["episode"])
+        family = episode.split("|seedOffset=", 1)[0]
+        key = (episode, int(row.get("t", 0)))
+        families.setdefault(family, set()).add(key)
+
+    rng = random.Random(seed)
+    valid_keys = set()
+
+    for family in sorted(families):
+        keys = list(families[family])
+        rng.shuffle(keys)
+        if len(keys) < 2:
+            continue
+        take = max(1, int(round(len(keys) * fraction)))
+        take = min(take, len(keys) - 1)
+        valid_keys.update(keys[:take])
+
+    train = []
+    valid = []
+    for row in rows:
+        key = (str(row["episode"]), int(row.get("t", 0)))
+        (valid if key in valid_keys else train).append(row)
+
+    if not valid:
+        keys = sorted({
+            (str(row["episode"]), int(row.get("t", 0)))
+            for row in rows
+        })
+        rng.shuffle(keys)
+        take = max(1, int(len(keys) * fraction))
+        valid_keys = set(keys[:take])
+        train = [row for row in rows
+                 if (str(row["episode"]), int(row.get("t", 0))) not in valid_keys]
+        valid = [row for row in rows
+                 if (str(row["episode"]), int(row.get("t", 0))) in valid_keys]
+
+    return train, valid
+
 def grouped_indices(rows):
     groups = {}
     for index, row in enumerate(rows):

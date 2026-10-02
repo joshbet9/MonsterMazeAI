@@ -86,6 +86,13 @@ public final class CounterfactualPolicyLearningRecorder {
                 baseline, allowJump, state);
         if (candidates.isEmpty()) return;
 
+        int maxCandidates = positiveInt(
+                System.getProperty("monstermaze.ml.policy.counterfactual.maxCandidates", "8"),
+                8);
+        if (candidates.size() > maxCandidates) {
+            candidates = selectCandidateSubset(candidates, maxCandidates);
+        }
+
         ensureWriter(Path.of(configured));
 
         String episode = state.mode.name()

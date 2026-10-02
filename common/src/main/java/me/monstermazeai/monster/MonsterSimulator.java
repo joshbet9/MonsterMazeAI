@@ -67,9 +67,18 @@ public final class MonsterSimulator {
 
     public void tick(GameState state) {
         for (MonsterState m : state.monsters) {
+            m.lastDx = 0.0D;
+            m.lastDy = 0.0D;
+            m.lastDz = 0.0D;
             if (m.removed || m.frozen(state.tick)) continue;
+            double startX = m.x;
+            double startY = m.y;
+            double startZ = m.z;
             if (m.launched(state.tick)) {
                 tickLaunched(state, m);
+                m.lastDx = m.x - startX;
+                m.lastDy = m.y - startY;
+                m.lastDz = m.z - startZ;
                 continue;
             }
 
@@ -146,6 +155,9 @@ public final class MonsterSimulator {
 
             m.vx *= GROUND_FRICTION;
             m.vz *= GROUND_FRICTION;
+            m.lastDx = m.x - startX;
+            m.lastDy = m.y - startY;
+            m.lastDz = m.z - startZ;
         }
     }
 

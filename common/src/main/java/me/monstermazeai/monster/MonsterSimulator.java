@@ -9,21 +9,22 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * Source-derived MonsterManager movement simulator.
+ * Source-aligned MonsterManager movement simulator.
  *
- * MonsterManager chooses a cardinal neighbour, avoids immediately reversing
- * when alternatives exist, then compresses that direction into a waypoint and
- * uses ControllerMove/CreatureMoveFast toward it. The simulator deliberately
- * keeps a deterministic RNG per planning branch.
+ * The common simulator deliberately matches the standalone engine's current
+ * realized controller model: one cardinal step per tick, 0.14 blocks/tick at
+ * the 1.4 Monster Maze controller value, no artificial acceleration, and hard
+ * exclusion of Safe Pad surfaces / non-physical floor.
  */
 public final class MonsterSimulator {
     private static final double WAYPOINT_TOLERANCE = 0.4;
     private static final double CELL_CENTER_OFFSET = 0.5;
     private static final double GRAVITY = 0.08;
     private static final double AIR_DRAG = 0.9800000190734863D;
-    private static final double SNOWMAN_MOVEMENT_SPEED = 0.20000000298023224D;
-    private static final double GROUND_SLIPPERINESS = 0.6D;
-    private static final double GROUND_FRICTION = GROUND_SLIPPERINESS * 0.91D;
+
+    private static final double REALIZED_MOVE_SCALE = 0.10D;
+    private static final double MAX_REALIZED_MOVE_PER_TICK = 0.14D;
+
     private final MazeModel maze;
     private final Random random;
     private final double speed;
@@ -37,9 +38,7 @@ public final class MonsterSimulator {
     }
 
     /**
-     * Live-game constructor that preserves the caller's Random stream. The
-     * source MonsterManager shares one RNG across spawning and movement, so
-     * authentic end-to-end simulation must not consume an extra value here.
+     * Live-game constructor that preserves the caller's Random stream.
      */
     public MonsterSimulator(MazeModel maze, Random random, double speed, long seed) {
         if (maze == null) throw new IllegalArgumentException("maze");
@@ -59,169 +58,256 @@ public final class MonsterSimulator {
 
     public void tick(GameState state) {
         for (MonsterState m : state.monsters) {
+            m.lastDx = 0.0D;
+            m.lastDy = 0.0D;
+            m.lastDz = 0.0D;
+
             if (m.removed || m.frozen(state.tick)) continue;
+
+            double startX = m.x;
+            double startY = m.y;
+            double startZ = m.z;
+
             if (m.launched(state.tick)) {
                 tickLaunched(state, m);
+                recordDelta(m, startX, startY, startZ);
                 continue;
             }
 
-            /*
-             * Source MonsterManager.move() teleports a snowman back to the
-             * nearest path when its real entity has fallen below its current
-             * waypoint Y. Snowmen are real 0.7-wide entities, so a diagonal
-             * ControllerMove turn can briefly leave the one-block path and
-             * enter the void. The old simulator kept normal mobs at y=0 forever,
-             * which let them cut corners and remain able to bump the player from
-             * positions the real entity could not occupy.
-             */
-            if (m.y < 0.0D) {
-                Cell recovery = nearestPathCell(m.x, m.z);
-                if (recovery != null) {
-                    m.x = recovery.row() + CELL_CENTER_OFFSET;
-                    m.z = recovery.column() + CELL_CENTER_OFFSET;
-                    m.y = 0.0D;
+            // Recover mobs that have lost their path support, matching the
+            // standalone engine's nearest-live-path recovery behaviour.
+            if (m.y < GameState.PATH_Y) {
+                int row = nearestRow(m.x);
+                int col = nearestColumn(m.z);
+                if (validCell(row, col) && maze.isRawPath(row, col) && !maze.hasPadSurface(row, col)) {
+                    m.x = row + CELL_CENTER_OFFSET;
+                    m.z = col + CELL_CENTER_OFFSET;
+                    m.y = GameState.PATH_Y;
                     m.vx = 0.0D;
                     m.vz = 0.0D;
-                    m.waypointRow = recovery.row();
-                    m.waypointColumn = recovery.column();
+                    m.waypointRow = row;
+                    m.waypointColumn = col;
                 }
             }
 
-            if (m.waypointRow < 0 || atWaypoint(m, m.waypointRow + 0.5, m.waypointColumn + 0.5)) {
-                Cell current = nearestCell(m.x, m.z);
-                if (current != null) chooseNextWaypoint(m, current);
+            // Safe Pad footprint is a hard exclusion for the mob body.
+            if (overlapsPadSurface(m.x, m.z)) {
+                int row = nearestRow(m.x);
+                int col = nearestColumn(m.z);
+                Cell exit = findPadExit(row, col);
+                if (exit == null) {
+                    m.removed = true;
+                    continue;
+                }
+                m.waypointRow = exit.row();
+                m.waypointColumn = exit.column();
+                m.direction = CardinalDirection.between(
+                        exit.row() - row, exit.column() - col);
             }
 
-            if (m.waypointRow < 0) continue;
-            double tx = m.waypointRow + 0.5;
-            double tz = m.waypointColumn + 0.5;
-            double dx = tx - m.x, dz = tz - m.z;
-            double horizontalSq = dx * dx + dz * dz;
-            if (horizontalSq < 2.500000277905201E-7D) continue;
+            int tr = m.waypointRow;
+            int tc = m.waypointColumn;
 
-            // Source UtilEnt.CreatureMoveFast -> ControllerMove.c(): command
-            // speed is multiplied by the Snowman's 0.2 movement attribute,
-            // and the entity turns toward the waypoint by at most 30 degrees.
-            // ControllerMove passes the command speed unchanged; it is
-            // multiplied only by GenericAttributes.MOVEMENT_SPEED.
-            double movementInput = speed * SNOWMAN_MOVEMENT_SPEED;
-            float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
-            m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
-
-            // EntityLiving.g() receives the controller's forward movement input,
-            // accelerates motX/motZ, moves the bounding box, then applies the
-            // quartz path block's 0.6 slipperiness * 0.91 friction multiplier.
-            double yaw = Math.toRadians(m.yaw);
-            double forwardX = -Math.sin(yaw);
-            double forwardZ = Math.cos(yaw);
-            m.vx += forwardX * movementInput;
-            m.vz += forwardZ * movementInput;
-            double stepSq = m.vx * m.vx + m.vz * m.vz;
-            double distance = Math.hypot(dx, dz);
-            if (stepSq > 0.0D) {
-                m.x += m.vx;
-                m.z += m.vz;
+            // Invalidate stale targets immediately when a Safe Pad / decay
+            // change disables the old waypoint.
+            if (tr >= 0 && tc >= 0 && !maze.isTraversable(tr, tc)) {
+                m.waypointRow = -1;
+                m.waypointColumn = -1;
+                m.direction = CardinalDirection.NONE;
+                tr = -1;
+                tc = -1;
             }
 
-            /*
-             * EntitySnowman is 0.7 blocks wide in 1.8.9. On the source maze's
-             * one-block floating path, support exists while any part of that
-             * horizontal AABB overlaps a physical path block. Lose support and
-             * the entity falls; MonsterManager's next move tick then performs
-             * the nearest-path teleport above.
-             */
-            if (!hasPhysicalSupport(m.x, m.z)) {
-                m.y = -0.08D;
-            } else {
-                m.y = 0.0D;
+            if (tr < 0 || tc < 0) {
+                int row = nearestRow(m.x);
+                int col = nearestColumn(m.z);
+                if (!validCell(row, col) || !maze.isTraversable(row, col)) continue;
+                Cell next = chooseNextWaypoint(m, row, col);
+                if (next == null) continue;
+                tr = next.row();
+                tc = next.column();
+            } else if (atWaypoint(m, tr + CELL_CENTER_OFFSET, tc + CELL_CENTER_OFFSET)) {
+                m.x = tr + CELL_CENTER_OFFSET;
+                m.z = tc + CELL_CENTER_OFFSET;
+                Cell next = chooseNextWaypoint(m, tr, tc);
+                if (next == null) continue;
+                tr = next.row();
+                tc = next.column();
             }
 
-            m.vx *= GROUND_FRICTION;
-            m.vz *= GROUND_FRICTION;
+            CardinalDirection direction = m.direction;
+            if (direction == CardinalDirection.NONE) {
+                direction = CardinalDirection.between(
+                        tr - nearestRow(m.x), tc - nearestColumn(m.z));
+                m.direction = direction;
+            }
+
+            double movementInput = Math.min(
+                    MAX_REALIZED_MOVE_PER_TICK, speed * REALIZED_MOVE_SCALE);
+
+            double vx = 0.0D;
+            double vz = 0.0D;
+            switch (direction) {
+                case NORTH -> vx = -movementInput;
+                case SOUTH -> vx = movementInput;
+                case EAST -> vz = movementInput;
+                case WEST -> vz = -movementInput;
+                default -> {
+                    continue;
+                }
+            }
+
+            double nx = m.x + vx;
+            double nz = m.z + vz;
+
+            int currentRow = nearestRow(m.x);
+            int currentCol = nearestColumn(m.z);
+            int nextRow = nearestRow(nx);
+            int nextCol = nearestColumn(nz);
+
+            if (!validCell(nextRow, nextCol)
+                    || !maze.isTraversable(nextRow, nextCol)
+                    || maze.hasPadSurface(nextRow, nextCol)
+                    || !maze.isPhysicalFloor(nextRow, nextCol)) {
+                m.vx = 0.0D;
+                m.vz = 0.0D;
+                if (nextRow != currentRow || nextCol != currentCol) {
+                    m.waypointRow = -1;
+                    m.waypointColumn = -1;
+                    m.direction = CardinalDirection.NONE;
+                }
+                continue;
+            }
+
+            if (!hasPhysicalSupport(nx, nz)) {
+                m.vx = 0.0D;
+                m.vz = 0.0D;
+                continue;
+            }
+
+            m.vx = vx;
+            m.vz = vz;
+            m.vy = 0.0D;
+            m.x = nx;
+            m.y = GameState.PATH_Y;
+            m.z = nz;
+
+            // Do not allow the full 0.7-wide mob body to occupy a Safe Pad.
+            if (overlapsPadSurface(m.x, m.z)) {
+                m.x -= vx;
+                m.z -= vz;
+                m.vx = 0.0D;
+                m.vz = 0.0D;
+                m.waypointRow = -1;
+                m.waypointColumn = -1;
+                m.direction = CardinalDirection.NONE;
+            }
+
+            recordDelta(m, startX, startY, startZ);
         }
     }
 
-    private void chooseNextWaypoint(MonsterState m, Cell current) {
-        // Exact MonsterManager selection:
-        // 1) collect all cardinal waypoint blocks;
-        // 2) when there is more than one choice, remove the immediate reverse;
-        // 3) choose one with the manager RNG;
-        // 4) walk that direction until getTarget() reaches a branch where more
-        //    than one non-forward waypoint exists.
-        List<Cell> choices = new ArrayList<>(maze.cardinalNeighbours(current));
-        if (choices.size() > 1 && m.direction != CardinalDirection.NONE) {
-            choices.removeIf(c -> CardinalDirection.between(
-                    c.row() - current.row(), c.column() - current.column())
-                    == m.direction.opposite());
+    private Cell chooseNextWaypoint(MonsterState m, int row, int col) {
+        List<Cell> choices = new ArrayList<>(maze.cardinalNeighbours(new Cell(row, col)));
+        CardinalDirection currentDirection = m.direction;
+        if (currentDirection == CardinalDirection.NONE
+                && m.waypointRow >= 0 && m.waypointColumn >= 0) {
+            currentDirection = CardinalDirection.between(
+                    m.waypointRow - row, m.waypointColumn - col);
         }
+
+        if (choices.size() > 1 && currentDirection != CardinalDirection.NONE) {
+            CardinalDirection reverse = currentDirection.opposite();
+            choices.removeIf(c -> CardinalDirection.between(
+                    c.row() - row, c.column() - col) == reverse);
+        }
+
         if (choices.isEmpty()) {
             m.waypointRow = -1;
             m.waypointColumn = -1;
             m.direction = CardinalDirection.NONE;
-            return;
+            return null;
         }
 
         Cell chosen = choices.get(random.nextInt(choices.size()));
         CardinalDirection direction = CardinalDirection.between(
-                chosen.row() - current.row(), chosen.column() - current.column());
+                chosen.row() - row, chosen.column() - col);
 
-        Cell target = chosen;
-        Cell cursor = current;
+        int tr = chosen.row();
+        int tc = chosen.column();
+        int cr = row;
+        int cc = col;
+
         while (true) {
-            Cell next = new Cell(
-                    cursor.row() + direction.dr,
-                    cursor.column() + direction.dc);
-            if (!maze.isTraversable(next.row(), next.column())) break;
+            int nr = cr + direction.dr;
+            int nc = cc + direction.dc;
+            if (!maze.isTraversable(nr, nc)) break;
 
-            target = next;
+            tr = nr;
+            tc = nc;
 
             int alternatives = 0;
-            for (Cell neighbour : maze.cardinalNeighbours(next)) {
-                CardinalDirection candidateDirection = CardinalDirection.between(
-                        neighbour.row() - next.row(), neighbour.column() - next.column());
-                if (candidateDirection != direction) alternatives++;
+            for (Cell n : maze.cardinalNeighbours(new Cell(nr, nc))) {
+                CardinalDirection nd = CardinalDirection.between(
+                        n.row() - nr, n.column() - nc);
+                if (nd != direction) alternatives++;
             }
             if (alternatives > 1) break;
 
-            cursor = next;
+            cr = nr;
+            cc = nc;
         }
 
-        m.waypointRow = target.row();
-        m.waypointColumn = target.column();
+        m.waypointRow = tr;
+        m.waypointColumn = tc;
         m.direction = direction;
+        return new Cell(tr, tc);
     }
 
-    private void tickLaunched(GameState state, MonsterState m) {
-        m.x += m.vx;
-        m.y += m.vy;
-        m.z += m.vz;
-        m.vy -= GRAVITY;
-        m.vy *= AIR_DRAG;
-        m.vx *= AIR_DRAG;
-        m.vz *= AIR_DRAG;
-        if (m.y <= 0.0) {
-            m.y = 0.0;
-            m.vy = 0.0;
-            if (state.tick - m.launchedAtTick >= 10) m.removed = true;
-        } else if (state.tick - m.launchedAtTick >= 30) {
-            m.removed = true;
+    private Cell findPadExit(int row, int col) {
+        if (!validCell(row, col)) return null;
+        List<Cell> exits = maze.cardinalNeighbours(new Cell(row, col));
+        if (exits.isEmpty()) return null;
+
+        Cell best = exits.get(0);
+        int centre = MazeModel.SIZE / 2;
+        int bestDistance = Math.abs(best.row() - centre) + Math.abs(best.column() - centre);
+
+        for (Cell candidate : exits) {
+            int d = Math.abs(candidate.row() - centre) + Math.abs(candidate.column() - centre);
+            if (d > bestDistance) {
+                best = candidate;
+                bestDistance = d;
+            }
         }
+        return best;
+    }
+
+    private boolean overlapsPadSurface(double x, double z) {
+        final double halfWidth = 0.35D;
+        int minRow = nearestRow(x - halfWidth);
+        int maxRow = nearestRow(Math.nextDown(x + halfWidth));
+        int minCol = nearestColumn(z - halfWidth);
+        int maxCol = nearestColumn(Math.nextDown(z + halfWidth));
+
+        for (int r = minRow; r <= maxRow; r++) {
+            for (int c = minCol; c <= maxCol; c++) {
+                if (validCell(r, c) && maze.hasPadSurface(r, c)) return true;
+            }
+        }
+        return false;
     }
 
     private boolean hasPhysicalSupport(double x, double z) {
         final double halfWidth = 0.35D;
-        double minX = x - halfWidth;
-        double maxX = x + halfWidth;
-        double minZ = z - halfWidth;
-        double maxZ = z + halfWidth;
-        int minRow = (int) Math.floor(minX);
-        int maxRow = (int) Math.floor(Math.nextDown(maxX));
-        int minColumn = (int) Math.floor(minZ);
-        int maxColumn = (int) Math.floor(Math.nextDown(maxZ));
+        int minRow = nearestRow(x - halfWidth);
+        int maxRow = nearestRow(Math.nextDown(x + halfWidth));
+        int minCol = nearestColumn(z - halfWidth);
+        int maxCol = nearestColumn(Math.nextDown(z + halfWidth));
 
-        for (int row = minRow; row <= maxRow; row++) {
-            for (int column = minColumn; column <= maxColumn; column++) {
-                if (maze.isTraversable(row, column)) return true;
+        for (int r = minRow; r <= maxRow; r++) {
+            for (int c = minCol; c <= maxCol; c++) {
+                if (maze.isTraversable(r, c)) return true;
             }
         }
         return false;
@@ -232,7 +318,7 @@ public final class MonsterSimulator {
         double bestDistance = Double.POSITIVE_INFINITY;
         for (int row = 0; row < MazeModel.SIZE; row++) {
             for (int column = 0; column < MazeModel.SIZE; column++) {
-                if (!maze.isRawPath(row, column)) continue;
+                if (!maze.isRawPath(row, column) || maze.hasPadSurface(row, column)) continue;
                 double dx = (row + CELL_CENTER_OFFSET) - x;
                 double dz = (column + CELL_CENTER_OFFSET) - z;
                 double distance = dx * dx + dz * dz;
@@ -245,31 +331,49 @@ public final class MonsterSimulator {
         return best;
     }
 
-    private Cell nearestCell(double x, double z) {
-        int row = (int)Math.floor(x);
-        int col = (int)Math.floor(z);
-        if (row < 0 || col < 0 || row >= MazeModel.SIZE || col >= MazeModel.SIZE) return null;
-        return maze.isTraversable(row, col) ? new Cell(row, col) : null;
+    private int nearestRow(double x) {
+        return (int) Math.floor(x);
+    }
+
+    private int nearestColumn(double z) {
+        return (int) Math.floor(z);
+    }
+
+    private boolean validCell(int row, int col) {
+        return row >= 0 && row < MazeModel.SIZE && col >= 0 && col < MazeModel.SIZE;
+    }
+
+    private static void recordDelta(MonsterState m, double startX, double startY, double startZ) {
+        m.lastDx = m.x - startX;
+        m.lastDy = m.y - startY;
+        m.lastDz = m.z - startZ;
+    }
+
+    private static void tickLaunched(GameState state, MonsterState m) {
+        m.x += m.vx;
+        m.y += m.vy;
+        m.z += m.vz;
+        m.vy -= GRAVITY;
+        m.vy *= AIR_DRAG;
+        m.vx *= AIR_DRAG;
+        m.vz *= AIR_DRAG;
+
+        if (m.y <= GameState.PATH_Y) {
+            m.y = GameState.PATH_Y;
+            m.vy = 0.0D;
+            if (state.tick - m.launchedAtTick >= 10) {
+                m.removed = true;
+            } else {
+                m.launchedUntilTick = 0L;
+                m.launchedAtTick = 0L;
+            }
+        } else if (state.tick - m.launchedAtTick >= 30) {
+            m.removed = true;
+        }
     }
 
     private static boolean atWaypoint(MonsterState m, double x, double z) {
         return Math.hypot(m.x - x, m.z - z) < WAYPOINT_TOLERANCE;
-    }
-
-    private static float approachAngle(float current, float target, float maximumDelta) {
-        float delta = normaliseDegrees(target - current);
-        if (delta > maximumDelta) delta = maximumDelta;
-        if (delta < -maximumDelta) delta = -maximumDelta;
-        float result = current + delta;
-        while (result < -180.0F) result += 360.0F;
-        while (result >= 180.0F) result -= 360.0F;
-        return result;
-    }
-
-    private static float normaliseDegrees(float angle) {
-        while (angle <= -180.0F) angle += 360.0F;
-        while (angle > 180.0F) angle -= 360.0F;
-        return angle;
     }
 
     public MonsterSimulator fork(long seed) {

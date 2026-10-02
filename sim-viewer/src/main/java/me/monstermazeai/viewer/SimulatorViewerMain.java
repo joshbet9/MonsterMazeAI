@@ -1,6 +1,7 @@
 package me.monstermazeai.viewer;
 
 import me.monstermazeai.ability.AbilityModel;
+import me.monstermazeai.ability.AbilityState;
 import me.monstermazeai.collision.CollisionModel;
 import me.monstermazeai.game.GameProgressionModel;
 import me.monstermazeai.game.GameState;
@@ -14,6 +15,7 @@ import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
+import me.monstermazeai.player.PlayerState;
 import me.monstermazeai.planner.LiveObjectiveController;
 import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
 import me.monstermazeai.planner.RobustLiveController;
@@ -118,6 +120,8 @@ final class Simulation {
         padRandom = new Random(seed ^ 0xBB67AE8584CAA73BL);
 
         state.tick = 0;
+        state.player = new PlayerState();
+        state.ability = new AbilityState();
         state.mode = mode;
         state.stage = 1;
         state.mazePattern = pattern;
@@ -474,7 +478,7 @@ final class ViewerPanel extends JPanel {
         for (MonsterState m : simulation.state.monsters) {
             if (m.removed) continue;
             aliveMobs++;
-            double speed = Math.hypot(m.vx, m.vz) * 20.0;
+            double speed = Math.hypot(m.lastDx, m.lastDz) * 20.0;
             maxMobSpeed = Math.max(maxMobSpeed, speed);
             averageMobSpeed += speed;
         }

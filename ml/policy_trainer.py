@@ -224,7 +224,9 @@ def main():
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--report-every", type=int, default=10)
     parser.add_argument("--ranking-temperature", type=float, default=2.5)
-    parser.add_argument("--objective", default="counterfactual_groupwise_ranking")
+    parser.add_argument("--target-mode", choices=("hard", "soft"), default="hard")
+    parser.add_argument("--label-smoothing", type=float, default=0.05)
+    parser.add_argument("--objective", default="counterfactual_groupwise_hard_ranking")
     args = parser.parse_args()
 
     raw = load_rows(Path(args.input))
@@ -285,9 +287,19 @@ def main():
                     probabilities = np.exp(score_shift)
                     probabilities /= np.sum(probabilities)
 
-                    target_shift = (targets - np.max(targets)) / args.ranking_temperature
-                    target_probabilities = np.exp(target_shift)
-                    target_probabilities /= np.sum(target_probabilities)
+                    if args.target_mode == "hard":
+                        best_index = int(np.argmax(targets))
+                        smoothing = min(max(args.label_smoothing, 0.0), 0.25)
+                        target_probabilities = np.full(
+                            count,
+                            smoothing / max(1, count - 1),
+                            dtype=np.float64,
+                        )
+                        target_probabilities[best_index] = 1.0 - smoothing
+                    else:
+                        target_shift = (targets - np.max(targets)) / args.ranking_temperature
+                        target_probabilities = np.exp(target_shift)
+                        target_probabilities /= np.sum(target_probabilities)
 
                     dy[cursor:cursor + count] = probabilities - target_probabilities
                     cursor += count
@@ -315,9 +327,19 @@ def main():
                 probabilities = np.exp(score_shift)
                 probabilities /= np.sum(probabilities)
 
-                target_shift = (targets - np.max(targets)) / args.ranking_temperature
-                target_probabilities = np.exp(target_shift)
-                target_probabilities /= np.sum(target_probabilities)
+                if args.target_mode == "hard":
+                    best_index = int(np.argmax(targets))
+                    smoothing = min(max(args.label_smoothing, 0.0), 0.25)
+                    target_probabilities = np.full(
+                        count,
+                        smoothing / max(1, count - 1),
+                        dtype=np.float64,
+                    )
+                    target_probabilities[best_index] = 1.0 - smoothing
+                else:
+                    target_shift = (targets - np.max(targets)) / args.ranking_temperature
+                    target_probabilities = np.exp(target_shift)
+                    target_probabilities /= np.sum(target_probabilities)
 
                 dy[cursor:cursor + count] = probabilities - target_probabilities
                 cursor += count
@@ -369,7 +391,7 @@ def main():
         "architecture": [FEATURE_COUNT, args.hidden1, args.hidden2, 1],
         "feature_names": feature_names,
         "gamma": args.gamma,
-        "target_mode": "per_decision_groupwise_softmax_ranking",
+        "target_mode": f"per_decision_groupwise_{args.target_mode}_ranking",
         "input_mean": input_mean.tolist(),
         "input_std": input_std.tolist(),
         "target_mean": target_mean,

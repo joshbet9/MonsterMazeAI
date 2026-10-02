@@ -90,7 +90,17 @@ public final class CounterfactualPolicyLearningRecorder {
                 System.getProperty("monstermaze.ml.policy.counterfactual.maxCandidates", "8"),
                 8);
         if (candidates.size() > maxCandidates) {
-            candidates = selectCandidateSubset(candidates, maxCandidates);
+            List<Action> subset = new java.util.ArrayList<>(maxCandidates);
+            subset.add(candidates.get(0));
+            int remaining = maxCandidates - 1;
+            int available = candidates.size() - 1;
+            for (int i = 0; i < remaining; i++) {
+                int index = 1 + (int) Math.floor(
+                        (i * (double) available) / remaining);
+                Action selected = candidates.get(index);
+                if (!subset.contains(selected)) subset.add(selected);
+            }
+            candidates = List.copyOf(subset);
         }
 
         ensureWriter(Path.of(configured));

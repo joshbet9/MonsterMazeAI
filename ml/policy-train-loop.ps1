@@ -30,14 +30,31 @@ $RunRoot = Join-Path $DataRoot "runs"
 
 foreach ($dir in @($DataRoot,$HoldoutRoot,$ReplayRoot,$CheckpointRoot,$CurrentRoot,$RunRoot)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
 
+Write-Host "[policy-ml] Preparing Python environment..."
+
 if (-not (Test-Path $Python)) {
+    Write-Host "[policy-ml] Creating local Python virtual environment..."
     $HostPython = Get-Command python -ErrorAction SilentlyContinue
     if (-not $HostPython) { throw "Python 3.11+ is required." }
     & $HostPython.Source -m venv $Venv
     if ($LASTEXITCODE -ne 0) { throw "Failed to create Python virtual environment." }
 }
-& $Python -m pip install --disable-pip-version-check numpy
-if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
+
+$numpyReady = $false
+try {
+    & $Python -c "import numpy" 2>$null
+    $numpyReady = ($LASTEXITCODE -eq 0)
+} catch {
+    $numpyReady = $false
+}
+
+if (-not $numpyReady) {
+    Write-Host "[policy-ml] NumPy is missing; installing it once into .venv..."
+    & $Python -m pip install --disable-pip-version-check numpy
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
+} else {
+    Write-Host "[policy-ml] Python + NumPy ready."
+}
 
 function Invoke-Run {
     param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore,[string]$TestClass)
@@ -206,6 +223,7 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     $newReplay=Join-Path $ReplayRoot "$stamp.jsonl"
     Remove-Item $newReplay -ErrorAction SilentlyContinue
     Write-Host "================ LOCAL POLICY ML CYCLE $cycle ================"
+    Write-Host "[policy-ml] Starting simulator rollout..."
 
     $currentModel=Join-Path $CurrentRoot "policy-model.json"
     $hasCurrent=Test-Path $currentModel
@@ -216,7 +234,9 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
         $log=Join-Path $cycleDir "explore-$seed.log"
         $data=Join-Path $cycleDir "explore-$seed.jsonl"
         $model=if($hasCurrent){$currentModel}else{$null}
+        Write-Host ("[policy-ml] Rollout seed={0}" -f $seed)
         $code=Invoke-Run $seed $log $data $model $true "PolicyTrainingRolloutTest"
+        Write-Host ("[policy-ml] Rollout finished with exit code {0}" -f $code)
         if($code -eq 0 -and (Test-Path $data)){ Append-File $data $newReplay }
     }
 
@@ -228,6 +248,7 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     foreach($file in ($files | Sort-Object LastWriteTime)){ Append-File $file.FullName $window }
 
     $candidate=Join-Path $cycleDir "policy-model-candidate.json"
+    Write-Host "[policy-ml] Training policy model..."
     & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples 500 --seed $cycle --objective counterfactual_short_horizon_return
     if($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)){ Write-Host "Policy training failed; current policy remains unchanged."; continue }
 

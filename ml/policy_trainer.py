@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-FEATURE_COUNT = 44
+FEATURE_COUNT = 52
 
 
 def load_rows(path: Path):
@@ -288,7 +288,7 @@ def main():
     ]
 
     payload = {
-        "version": 2,
+        "version": 3,
         "objective": args.objective,
         "architecture": [FEATURE_COUNT, args.hidden1, args.hidden2, 1],
         "feature_names": feature_names,

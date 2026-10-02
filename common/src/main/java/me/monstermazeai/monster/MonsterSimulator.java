@@ -21,9 +21,17 @@ public final class MonsterSimulator {
     private static final double CELL_CENTER_OFFSET = 0.5;
     private static final double GRAVITY = 0.08;
     private static final double AIR_DRAG = 0.9800000190734863D;
-    private static final double SNOWMAN_MOVEMENT_SPEED = 0.20000000298023224D;
+    /*
+     * EntitySnowman uses a 0.2 movement attribute, but MonsterManager passes
+     * its 1.4 command speed into ControllerMove#setMoveTo. That command becomes
+     * EntityLivingBase.moveForward and is then converted by moveFlying's ground
+     * acceleration formula. The 0.2 attribute is therefore NOT multiplied into
+     * the command a second time here.
+     */
     private static final double GROUND_SLIPPERINESS = 0.6D;
     private static final double GROUND_FRICTION = GROUND_SLIPPERINESS * 0.91D;
+    private static final double MOVE_FLYING_BASE = 0.16277136D;
+    private static final double MOVE_FLYING_GROUND_SCALE = 0.10D;
     private final MazeModel maze;
     private final Random random;
     private final double speed;
@@ -99,12 +107,14 @@ public final class MonsterSimulator {
             double horizontalSq = dx * dx + dz * dz;
             if (horizontalSq < 2.500000277905201E-7D) continue;
 
-            // Source UtilEnt.CreatureMoveFast -> ControllerMove.c(): command
-            // speed is multiplied by the Snowman's 0.2 movement attribute,
-            // and the entity turns toward the waypoint by at most 30 degrees.
-            // ControllerMove passes the command speed unchanged; it is
-            // multiplied only by GenericAttributes.MOVEMENT_SPEED.
-            double movementInput = speed * SNOWMAN_MOVEMENT_SPEED;
+            // Source ControllerMove -> EntityLivingBase.moveEntityWithHeading:
+            // the command speed is the forward input. Ground acceleration is
+            // 0.1 * (0.16277136 / friction^3) times that input. The Snowman
+            // 0.2 attribute is already represented by the source command and
+            // must not be multiplied in again.
+            double movementFactor = MOVE_FLYING_GROUND_SCALE
+                    * (MOVE_FLYING_BASE / (GROUND_FRICTION * GROUND_FRICTION * GROUND_FRICTION));
+            double movementInput = speed * movementFactor;
             float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
 
@@ -116,9 +126,7 @@ public final class MonsterSimulator {
             double forwardZ = Math.cos(yaw);
             m.vx += forwardX * movementInput;
             m.vz += forwardZ * movementInput;
-            double stepSq = m.vx * m.vx + m.vz * m.vz;
-            double distance = Math.hypot(dx, dz);
-            if (stepSq > 0.0D) {
+            if (m.vx != 0.0D || m.vz != 0.0D) {
                 m.x += m.vx;
                 m.z += m.vz;
             }

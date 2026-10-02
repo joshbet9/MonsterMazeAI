@@ -1,0 +1,47 @@
+name: Policy Fast Training CI
+
+on:
+  push:
+    branches: [ feature/policy-fast-training ]
+
+permissions:
+  contents: read
+
+jobs:
+  policy-fast-training:
+    name: Short counterfactual policy rollout
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run one short training window
+        run: >
+          mvn -B -ntp -pl common -am
+          -Dtest=PolicyTrainingRolloutTest
+          -Dmonstermaze.sim.seedOffset=12345
+          -Dmonstermaze.ml.policy.counterfactual=true
+          -Dmonstermaze.ml.policy.output=target/policy-fast-training.jsonl
+          -Dmonstermaze.ml.policy.counterfactual.stride=40
+          -Dmonstermaze.ml.policy.counterfactual.horizon=32
+          -Dmonstermaze.ml.policy.counterfactual.gamma=0.995
+          -Dmonstermaze.ml.policy.trainingCasesPerMode=1
+          -Dmonstermaze.ml.policy.epsilon=0.0
+          -Dmonstermaze.ml.policy.explore=false
+          -Dsurefire.useFile=false
+          -Dsurefire.redirectTestOutputToFile=false
+          -Dsurefire.failIfNoSpecifiedTests=false
+          test
+
+      - name: Verify counterfactual data was produced
+        run: |
+          test -s common/target/policy-fast-training.jsonl

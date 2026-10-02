@@ -125,6 +125,11 @@ class AuthenticStage10SimulationTest {
         return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
     }
 
+    static RunResult runForTicks(int pattern, Kit kit, AiProfile profile, Mode mode, int maxTicks) {
+        if (maxTicks < 1) throw new IllegalArgumentException("maxTicks");
+        return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, -maxTicks);
+    }
+
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
         return run(pattern, kit, profile, mode, requiredStage(mode));
     }
@@ -213,7 +218,11 @@ class AuthenticStage10SimulationTest {
         double actualHorizontalDistance = 0.0D;
         double commandedInputSum = 0.0D;
 
-        int maxTicks = targetStage > 0 ? MAX_TICKS : FULL_RUN_MAX_TICKS;
+        int maxTicks = targetStage > 0
+                ? MAX_TICKS
+                : targetStage < 0
+                    ? -targetStage
+                    : FULL_RUN_MAX_TICKS;
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the

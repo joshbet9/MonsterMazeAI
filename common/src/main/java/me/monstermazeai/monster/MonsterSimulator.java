@@ -364,7 +364,6 @@ public final class MonsterSimulator {
             if (state.tick - m.launchedAtTick >= 10) {
                 m.removed = true;
             } else {
-                m.launched = false;
                 m.launchedUntilTick = 0L;
                 m.launchedAtTick = 0L;
             }

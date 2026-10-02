@@ -194,7 +194,7 @@ public final class CounterfactualPolicyLearningRecorder {
             try {
                 writer.write(json.toString());
                 rowCount++;
-                if ((rowCount & 127L) == 0L) writer.flush();
+                if ((rowCount & 15L) == 0L) writer.flush();
             } catch (IOException e) {
                 throw new IllegalStateException(
                         "Cannot write counterfactual policy data", e);

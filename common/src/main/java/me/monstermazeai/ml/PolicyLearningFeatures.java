@@ -60,7 +60,15 @@ public final class PolicyLearningFeatures {
             "action_jump",
             "action_sprint",
             "action_yaw_delta",
-            "action_ability"
+            "action_ability",
+            "route_length_norm",
+            "route_next_forward",
+            "route_next_strafe",
+            "route_next_turn_distance_norm",
+            "route_next_turn_sign",
+            "route_gap_soon",
+            "route_gap_distance_norm",
+            "route_turn_count_norm"
     };
 
     private PolicyLearningFeatures() {}
@@ -183,7 +191,139 @@ public final class PolicyLearningFeatures {
         f[41] = action.sprint() ? 1.0 : 0.0;
         f[42] = clamp(action.yawDelta() / 30.0, -1.0, 1.0);
         f[43] = action.useAbility() ? 1.0 : 0.0;
+
+        double[] route = routeContext(state, yaw, forwardX, forwardZ, strafeX, strafeZ);
+        System.arraycopy(route, 0, f, 44, route.length);
         return f;
+    }
+
+    private static final ThreadLocal<RouteCache> ROUTE_CACHE =
+            ThreadLocal.withInitial(RouteCache::new);
+
+    private static double[] routeContext(
+            GameState state,
+            double yaw,
+            double forwardX,
+            double forwardZ,
+            double strafeX,
+            double strafeZ) {
+        RouteCache cache = ROUTE_CACHE.get();
+        int playerRow = (int) Math.floor(state.player.x);
+        int playerColumn = (int) Math.floor(state.player.z);
+        long mazeSignature = state.maze == null ? 0L : state.maze.dynamicSignature();
+        long key = (((long) System.identityHashCode(state.maze)) << 32)
+                ^ mazeSignature
+                ^ ((long) state.activePadRow * 0x9E3779B97F4A7C15L)
+                ^ ((long) state.activePadColumn * 0xBF58476D1CE4E5B9L)
+                ^ ((long) playerRow << 20)
+                ^ (long) playerColumn;
+
+        if (cache.key == key) return cache.values;
+
+        double[] out = new double[8];
+        if (state.maze == null || state.activePadRow < 0 || state.activePadColumn < 0) {
+            cache.key = key;
+            cache.values = out;
+            return out;
+        }
+
+        if (!isPhysicalFloor(state, playerRow, playerColumn)) {
+            cache.key = key;
+            cache.values = out;
+            return out;
+        }
+
+        me.monstermazeai.maze.PlayerPathfinder pathfinder =
+                new me.monstermazeai.maze.PlayerPathfinder();
+        me.monstermazeai.maze.Cell start =
+                new me.monstermazeai.maze.Cell(playerRow, playerColumn);
+        me.monstermazeai.maze.Cell goal =
+                new me.monstermazeai.maze.Cell(state.activePadRow, state.activePadColumn);
+
+        java.util.List<me.monstermazeai.maze.Cell> path =
+                pathfinder.shortestPathToRegion(state.maze, start, goal, 2);
+        if (path.isEmpty()) {
+            path = pathfinder.shortestPath(state.maze, start, goal);
+        }
+
+        int edges = Math.max(0, path.size() - 1);
+        out[0] = clamp(edges / 80.0, 0.0, 2.0);
+
+        if (path.size() >= 2) {
+            me.monstermazeai.maze.Cell next = path.get(1);
+            double dx = next.row() - path.get(0).row();
+            double dz = next.column() - path.get(0).column();
+            double length = Math.max(1.0, Math.hypot(dx, dz));
+            dx /= length;
+            dz /= length;
+            out[1] = dx * forwardX + dz * forwardZ;
+            out[2] = dx * strafeX + dz * strafeZ;
+
+            double turnDistance = 0.0;
+            double currentDx = dx;
+            double currentDz = dz;
+            double turnSign = 0.0;
+            int turns = 0;
+
+            for (int i = 1; i < path.size() - 1; i++) {
+                me.monstermazeai.maze.Cell a = path.get(i);
+                me.monstermazeai.maze.Cell b = path.get(i + 1);
+                double ndx = Integer.signum(b.row() - a.row());
+                double ndz = Integer.signum(b.column() - a.column());
+                if (ndx == currentDx && ndz == currentDz) {
+                    turnDistance++;
+                    continue;
+                }
+                double cross = currentDx * ndz - currentDz * ndx;
+                turnSign = Math.signum(cross);
+                turns++;
+                break;
+            }
+
+            out[3] = clamp(turnDistance / 12.0, 0.0, 2.0);
+            out[4] = turnSign;
+
+            int gapIndex = -1;
+            for (int i = 0; i < path.size() - 1 && i < 9; i++) {
+                me.monstermazeai.maze.Cell a = path.get(i);
+                me.monstermazeai.maze.Cell b = path.get(i + 1);
+                int dr = Math.abs(b.row() - a.row());
+                int dc = Math.abs(b.column() - a.column());
+                if ((dr == 2 && dc == 0) || (dc == 2 && dr == 0)) {
+                    gapIndex = i;
+                    break;
+                }
+            }
+            out[5] = gapIndex >= 0 ? 1.0 : 0.0;
+            out[6] = gapIndex >= 0 ? clamp(gapIndex / 8.0, 0.0, 1.0) : 1.0;
+
+            int totalTurns = 0;
+            int prevDr = Integer.signum(path.get(1).row() - path.get(0).row());
+            int prevDc = Integer.signum(path.get(1).column() - path.get(0).column());
+            for (int i = 1; i < path.size() - 1; i++) {
+                int dr = Integer.signum(path.get(i + 1).row() - path.get(i).row());
+                int dc = Integer.signum(path.get(i + 1).column() - path.get(i).column());
+                if (dr != prevDr || dc != prevDc) totalTurns++;
+                prevDr = dr;
+                prevDc = dc;
+            }
+            out[7] = clamp(totalTurns / 20.0, 0.0, 1.0);
+        }
+
+        cache.key = key;
+        cache.values = out;
+        return out;
+    }
+
+    private static boolean isPhysicalFloor(GameState state, int row, int column) {
+        return row >= 0 && row < me.monstermazeai.maze.MazeModel.SIZE
+                && column >= 0 && column < me.monstermazeai.maze.MazeModel.SIZE
+                && state.maze.isPhysicalFloor(row, column);
+    }
+
+    private static final class RouteCache {
+        private long key = Long.MIN_VALUE;
+        private double[] values = new double[8];
     }
 
     private static double kit(GameState state, Kit kit) {

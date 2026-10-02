@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
  */
 class PolicyTrainingRolloutTest {
     private static final int CASES_PER_MODE_LIMIT = 15;
+    private static final int DEFAULT_MAX_TRAINING_TICKS = 480;
 
     @Test
     void collectShortPolicyRollouts() {
@@ -31,15 +32,19 @@ class PolicyTrainingRolloutTest {
             int pattern = caseIndex / kits.length;
             Kit kit = kits[caseIndex % kits.length];
 
-            runCase(pattern, kit, Mode.SPEED, 10);
-            runCase(pattern, kit, Mode.MODERN, 5);
+            System.out.printf("POLICY_TRAIN_CASE %d/%d pattern=%d kit=%s%n",
+                    offset + 1, cases, pattern + 1, kit);
+            runCase(pattern, kit, Mode.SPEED, maxTrainingTicks);
+            runCase(pattern, kit, Mode.MODERN, maxTrainingTicks);
         }
     }
 
-    private static void runCase(int pattern, Kit kit, Mode mode, int targetStage) {
+    private static void runCase(int pattern, Kit kit, Mode mode, int maxTrainingTicks) {
+        System.out.printf("POLICY_TRAIN_START mode=%s pattern=%d kit=%s maxTicks=%d%n",
+                mode, pattern + 1, kit, maxTrainingTicks);
         AuthenticStage10SimulationTest.RunResult result =
-                AuthenticStage10SimulationTest.runDiagnostic(
-                        pattern, kit, AiProfile.HIGH_SKILL, mode, targetStage);
+                AuthenticStage10SimulationTest.runForTicks(
+                        pattern, kit, AiProfile.HIGH_SKILL, mode, maxTrainingTicks);
 
         System.out.printf(
                 "POLICY_TRAIN_RUN mode=%s pattern=%d kit=%s stage=%d ticks=%d seedOffset=%d%n",

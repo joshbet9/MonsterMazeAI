@@ -251,7 +251,7 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
 
     $candidate=Join-Path $cycleDir "policy-model-candidate.json"
     Write-Host "[policy-ml] Training policy model..."
-    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples $MinTrainingSamples --seed $cycle --ranking-temperature 2.5 --objective counterfactual_groupwise_ranking
+    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples $MinTrainingSamples --seed $cycle --target-mode hard --label-smoothing 0.05 --objective counterfactual_groupwise_hard_ranking
     if($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)){ Write-Host "Policy training failed; current policy remains unchanged."; continue }
 
     $full = ($FullGateEveryCycles -gt 0) -and (($cycle % $FullGateEveryCycles) -eq 0)

@@ -43,6 +43,63 @@ if(Test-Path $candidate){
 }
 
 Write-Host ""
+Write-Host "========== DATA SIGNAL =========="
+$window=Join-Path $latest.FullName "training-window.jsonl"
+if(Test-Path $window){
+  $rows=@(
+    Get-Content $window -Encoding utf8 |
+      Where-Object {$_.Trim().Length -gt 0} |
+      ForEach-Object { $_ | ConvertFrom-Json }
+  )
+  $groups=@{}
+  foreach($row in $rows){
+    $key="$($row.episode)|$($row.t)"
+    if(-not $groups.ContainsKey($key)){ $groups[$key]=@() }
+    $groups[$key] += $row
+  }
+
+  $spreads=@()
+  $advantages=@()
+  $baselineBest=0
+  $nonBaselineBest=0
+  $tieCount=0
+  $candidateCounts=@()
+
+  foreach($group in $groups.Values){
+    if($group.Count -lt 2){continue}
+    $candidateCounts += $group.Count
+    $targets=@($group | ForEach-Object {[double]$_.target_return})
+    $best=($targets | Measure-Object -Maximum).Maximum
+    $baseline=[double]$group[0].target_return
+    $spreads += (($targets | Measure-Object -Maximum).Maximum - ($targets | Measure-Object -Minimum).Minimum)
+    $advantages += ($best - $baseline)
+    $bestRows=@($group | Where-Object {[double]$_.target_return -eq [double]$best})
+    if($bestRows.Count -gt 1){$tieCount++}
+    if([double]$baseline -eq [double]$best){$baselineBest++}else{$nonBaselineBest++}
+  }
+
+  if($candidateCounts.Count -gt 0){
+    $spreadAvg=($spreads | Measure-Object -Average).Average
+    $advAvg=($advantages | Measure-Object -Average).Average
+    $candAvg=($candidateCounts | Measure-Object -Average).Average
+    $candMin=($candidateCounts | Measure-Object -Minimum).Minimum
+    $candMax=($candidateCounts | Measure-Object -Maximum).Maximum
+    Write-Host "decision_points=$($candidateCounts.Count)"
+    Write-Host "rows=$($rows.Count)"
+    Write-Host ("candidates_avg={0:N1} min={1} max={2}" -f $candAvg,$candMin,$candMax)
+    Write-Host ("mean_target_spread={0:N3}" -f $spreadAvg)
+    Write-Host ("mean_oracle_advantage_over_baseline={0:N3}" -f $advAvg)
+    Write-Host ("baseline_oracle_top1={0:P1}" -f ($baselineBest / $candidateCounts.Count))
+    Write-Host ("nonbaseline_oracle_best={0:P1}" -f ($nonBaselineBest / $candidateCounts.Count))
+    Write-Host ("multiway_best_ties={0:P1}" -f ($tieCount / $candidateCounts.Count))
+  } else {
+    Write-Host "No multi-candidate decision points found."
+  }
+} else {
+  Write-Host "No training-window.jsonl found."
+}
+
+Write-Host ""
 Write-Host "========== HOLDOUTS =========="
 $reports=@(Get-ChildItem $latest.FullName -Filter "policy-holdout-seed-*.json" -ErrorAction SilentlyContinue | Sort-Object Name)
 if($reports.Count -eq 0){

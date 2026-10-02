@@ -10,8 +10,10 @@ param(
     [int]$SamplesPerEpoch = 50000,
     [double]$Gamma = 0.995,
     [double]$Exploration = 0.20,
-    [int]$CounterfactualStride = 20,
-    [int]$CounterfactualHorizon = 128,
+    [int]$CounterfactualStride = 80,
+    [int]$CounterfactualHorizon = 32,
+    [int]$TrainingMaxTicks = 480,
+    [int]$MinTrainingSamples = 100,
     [int]$SleepSeconds = 0,
     [switch]$SkipHoldoutGate
 )
@@ -58,7 +60,7 @@ if (-not $numpyReady) {
 
 function Invoke-Run {
     param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore,[string]$TestClass)
-    $args = @("-B","-ntp","-pl","common","-am","-Dtest=$TestClass","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dmonstermaze.ml.policy.trainingCasesPerMode=$TrainingCasesPerMode","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
+    $args = @("-B","-ntp","-pl","common","-am","-Dtest=$TestClass","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dmonstermaze.ml.policy.trainingCasesPerMode=$TrainingCasesPerMode","-Dmonstermaze.ml.policy.trainingMaxTicks=$TrainingMaxTicks","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
     if ($ModelPath) {
         $args += "-Dmonstermaze.ml.policy.model=$ModelPath"
         $args += "-Dmonstermaze.ml.mode=policy"
@@ -249,7 +251,7 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
 
     $candidate=Join-Path $cycleDir "policy-model-candidate.json"
     Write-Host "[policy-ml] Training policy model..."
-    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples 500 --seed $cycle --objective counterfactual_short_horizon_return
+    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples $MinTrainingSamples --seed $cycle --objective counterfactual_short_horizon_return
     if($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)){ Write-Host "Policy training failed; current policy remains unchanged."; continue }
 
     $full = ($FullGateEveryCycles -gt 0) -and (($cycle % $FullGateEveryCycles) -eq 0)

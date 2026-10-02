@@ -123,12 +123,35 @@ def ranking_metrics(rows, predictions):
 
 
 def grouped_split(rows, fraction, seed):
-    ids = sorted({str(row["episode"]) for row in rows})
+    # Hold out whole episodes, but stratify by mode/pattern/kit so validation
+    # measures generalisation to new seeds within each gameplay family.
+    families = {}
+    for row in rows:
+        episode = str(row["episode"])
+        family = episode.split("|seedOffset=", 1)[0]
+        families.setdefault(family, set()).add(episode)
+
     rng = random.Random(seed)
-    rng.shuffle(ids)
-    valid_ids = set(ids[:max(1, int(len(ids) * fraction))])
+    valid_ids = set()
+    for family, episode_ids in sorted(families.items()):
+        ids = list(episode_ids)
+        rng.shuffle(ids)
+        if len(ids) >= 2:
+            take = max(1, int(round(len(ids) * fraction)))
+            take = min(take, len(ids) - 1)
+            valid_ids.update(ids[:take])
+
     train = [row for row in rows if str(row["episode"]) not in valid_ids]
     valid = [row for row in rows if str(row["episode"]) in valid_ids]
+
+    if not valid:
+        ids = sorted({str(row["episode"]) for row in rows})
+        rng.shuffle(ids)
+        fallback = max(1, int(len(ids) * fraction))
+        valid_ids = set(ids[:fallback])
+        train = [row for row in rows if str(row["episode"]) not in valid_ids]
+        valid = [row for row in rows if str(row["episode"]) in valid_ids]
+
     return train, valid
 
 

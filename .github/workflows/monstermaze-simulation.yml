@@ -7,6 +7,7 @@ on:
       - feature/seamless-physics-movement-v1
       - architecture/cpu-opponents-v2
       - autonomous/matrix-lab
+      - autonomous/matrix-lab-route-stability
     paths:
       - 'common/**'
       - 'common-api/**'

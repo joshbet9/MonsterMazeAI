@@ -198,6 +198,8 @@ public final class StableLiveMovementController {
     private int padTransitionPreviousColumn = -1;
     private int gapExecutionRouteIndex = -1;
     private int gapLandingConfirmTicks;
+    /** Large initial headings are acquired in place before the first departure drive. */
+    private boolean bootstrapFacing;
     /** Active while the motor has pre-acquired the next segment heading at a corner. */
     private int cornerTurnCommitmentWaypoint = -1;
     private float cornerTurnCommitmentYaw;
@@ -334,6 +336,9 @@ public final class StableLiveMovementController {
                     ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
                     : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
             waypointIndex = firstTurnWaypoint(route);
+            // Only the initial route gets this departure safeguard; subsequent
+            // pad transitions already use PAD_TRANSITION_FACING.
+            bootstrapFacing = routePlanCount == 0 && initialHeadingNeedsAcquisition(state, route);
             lastRouteTick = state.tick;
             routePlanCount++;
             lastThreatSignature = threatSignature(state);
@@ -381,9 +386,13 @@ public final class StableLiveMovementController {
         }
 
         if (route.size() == 1) {
+            bootstrapFacing = false;
             lastDecisionDetail = "REACHED routeSize=1";
             return Action.IDLE;
         }
+
+        Action bootstrapTurn = executeBootstrapFacing(state);
+        if (bootstrapTurn != null) return bootstrapTurn;
 
         /*
          * The next pad has now spawned and a route exists. While the player is
@@ -863,6 +872,47 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    private boolean initialHeadingNeedsAcquisition(GameState state, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() < 2) return false;
+        Cell from = candidate.cells().get(0);
+        Cell to = candidate.cells().get(1);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (Math.abs(dirRow) + Math.abs(dirColumn) != 1) {
+            if (!((Math.abs(to.row() - from.row()) == 2 && to.column() == from.column())
+                    || (Math.abs(to.column() - from.column()) == 2 && to.row() == from.row()))) {
+                return false;
+            }
+        }
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        return Math.abs(normalise(desiredYaw - state.player.yaw)) > 25.0F;
+    }
+
+    /** Acquire a genuinely large initial heading mismatch without moving. */
+    private Action executeBootstrapFacing(GameState state) {
+        if (!bootstrapFacing || route == null || route.size() < 2) return null;
+        Cell from = route.cells().get(0);
+        Cell to = route.cells().get(1);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (dirRow == 0 && dirColumn == 0) {
+            bootstrapFacing = false;
+            return null;
+        }
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        if (Math.abs(yawError) <= HEADING_TOLERANCE) {
+            bootstrapFacing = false;
+            lastDecisionDetail = "BOOTSTRAP_FACING_RELEASED desiredYaw=" + format(desiredYaw);
+            return null;
+        }
+        float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        lastDecisionDetail = "BOOTSTRAP_FACING desiredYaw=" + format(desiredYaw)
+                + " yawError=" + format(yawError)
+                + " yawDelta=" + format(yawDelta);
+        return new Action(0.0, 0.0, false, false, yawDelta, false);
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {
@@ -2260,6 +2310,7 @@ public final class StableLiveMovementController {
     private void clearRoute() {
         route = null;
         waypointIndex = 0;
+        bootstrapFacing = false;
         anchoredSegmentIndex = -1;
         cornerTurnCommitmentWaypoint = -1;
     }

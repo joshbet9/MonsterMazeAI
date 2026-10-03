@@ -35,6 +35,7 @@ public final class AbilityDecision {
     private static final double BODY_RUSH_TRIGGER_SQ = 6.25;
     private static final double CRYO_TRIGGER_SQ = 36.0;
     private static final double CRYO_ROUTE_CORRIDOR = 1.65;
+    private static final double REPULSOR_POST_HIT_SAFE_HEALTH = 8.0D;
 
     private AbilityDecision() {}
 
@@ -175,7 +176,7 @@ public final class AbilityDecision {
     private static boolean repulsorPostHitRecovery(GameState state) {
         if (state.player.recentMobHitUntilTick <= state.tick
                 || state.player.mobHitGraceUntilTick <= state.tick) return false;
-        if (state.player.health <= MIN_SAFE_HEALTH) return true;
+        if (state.player.health <= REPULSOR_POST_HIT_SAFE_HEALTH) return true;
         for (MonsterState monster : state.monsters) {
             if (!activeMonster(state, monster)) continue;
             if (distanceSq(state, monster) <= REPULSOR_RANGE_SQ) return true;

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-FEATURE_COUNT = 44
+FEATURE_COUNT = 52
 
 
 def load_rows(path: Path):
@@ -123,13 +123,44 @@ def ranking_metrics(rows, predictions):
 
 
 def grouped_split(rows, fraction, seed):
-    ids = sorted({str(row["episode"]) for row in rows})
+    # Hold out whole episodes, but stratify by mode/pattern/kit so validation
+    # measures generalisation to new seeds within each gameplay family.
+    families = {}
+    for row in rows:
+        episode = str(row["episode"])
+        family = episode.split("|seedOffset=", 1)[0]
+        families.setdefault(family, set()).add(episode)
+
     rng = random.Random(seed)
-    rng.shuffle(ids)
-    valid_ids = set(ids[:max(1, int(len(ids) * fraction))])
+    valid_ids = set()
+    for family, episode_ids in sorted(families.items()):
+        ids = list(episode_ids)
+        rng.shuffle(ids)
+        if len(ids) >= 2:
+            take = max(1, int(round(len(ids) * fraction)))
+            take = min(take, len(ids) - 1)
+            valid_ids.update(ids[:take])
+
     train = [row for row in rows if str(row["episode"]) not in valid_ids]
     valid = [row for row in rows if str(row["episode"]) in valid_ids]
+
+    if not valid:
+        ids = sorted({str(row["episode"]) for row in rows})
+        rng.shuffle(ids)
+        fallback = max(1, int(len(ids) * fraction))
+        valid_ids = set(ids[:fallback])
+        train = [row for row in rows if str(row["episode"]) not in valid_ids]
+        valid = [row for row in rows if str(row["episode"]) in valid_ids]
+
     return train, valid
+
+
+def grouped_indices(rows):
+    groups = {}
+    for index, row in enumerate(rows):
+        key = (str(row["episode"]), int(row.get("t", 0)))
+        groups.setdefault(key, []).append(index)
+    return [np.asarray(indices, dtype=np.int64) for indices in groups.values() if len(indices) >= 2]
 
 
 def prepare(rows):
@@ -215,7 +246,10 @@ def main():
     parser.add_argument("--min-samples", type=int, default=500)
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--report-every", type=int, default=10)
-    parser.add_argument("--objective", default="counterfactual_short_horizon_return")
+    parser.add_argument("--ranking-temperature", type=float, default=2.5)
+    parser.add_argument("--target-mode", choices=("hard", "soft"), default="hard")
+    parser.add_argument("--label-smoothing", type=float, default=0.05)
+    parser.add_argument("--objective", default="counterfactual_groupwise_hard_ranking")
     args = parser.parse_args()
 
     raw = load_rows(Path(args.input))
@@ -235,19 +269,106 @@ def main():
 
     model = MLP(FEATURE_COUNT, args.hidden1, args.hidden2, args.seed)
     adam = adam_state(model)
-    train_y_norm = (train_y - target_mean) / target_std
+    train_groups = grouped_indices(train)
+
+    if args.ranking_temperature <= 0:
+        raise SystemExit("--ranking-temperature must be positive")
 
     rng = np.random.default_rng(args.seed)
-    order = np.arange(len(train))
 
     for epoch in range(1, args.epochs + 1):
-        rng.shuffle(order)
-        active = order[:min(len(order), args.samples_per_epoch)]
-        for start in range(0, len(active), args.batch_size):
-            batch = active[start:start + args.batch_size]
+        rng.shuffle(train_groups)
+        active_groups = []
+        active_rows = 0
+        for indices in train_groups:
+            if active_groups and active_rows + len(indices) > args.samples_per_epoch:
+                break
+            active_groups.append(indices)
+            active_rows += len(indices)
+
+            if active_rows >= args.samples_per_epoch:
+                break
+
+        rng.shuffle(active_groups)
+
+        batch_groups = []
+        batch_rows = 0
+        for indices in active_groups:
+            batch_groups.append(indices)
+            batch_rows += len(indices)
+            if batch_rows >= args.batch_size:
+                batch = np.concatenate(batch_groups)
+                predicted, cache = model.forward(train_x[batch])
+
+                dy = np.zeros(len(batch), dtype=np.float64)
+                cursor = 0
+                for group_indices in batch_groups:
+                    count = len(group_indices)
+                    scores = predicted[cursor:cursor + count]
+                    targets = train_y[group_indices]
+                    score_shift = scores - np.max(scores)
+                    probabilities = np.exp(score_shift)
+                    probabilities /= np.sum(probabilities)
+
+                    if args.target_mode == "hard":
+                        best_index = int(np.argmax(targets))
+                        smoothing = min(max(args.label_smoothing, 0.0), 0.25)
+                        target_probabilities = np.full(
+                            count,
+                            smoothing / max(1, count - 1),
+                            dtype=np.float64,
+                        )
+                        target_probabilities[best_index] = 1.0 - smoothing
+                    else:
+                        target_shift = (targets - np.max(targets)) / args.ranking_temperature
+                        target_probabilities = np.exp(target_shift)
+                        target_probabilities /= np.sum(target_probabilities)
+
+                    dy[cursor:cursor + count] = probabilities - target_probabilities
+                    cursor += count
+
+                model.step(
+                    model.gradients(cache, dy),
+                    adam,
+                    epoch,
+                    args.learning_rate,
+                )
+                batch_groups = []
+                batch_rows = 0
+
+        if batch_groups:
+            batch = np.concatenate(batch_groups)
             predicted, cache = model.forward(train_x[batch])
+
+            dy = np.zeros(len(batch), dtype=np.float64)
+            cursor = 0
+            for group_indices in batch_groups:
+                count = len(group_indices)
+                scores = predicted[cursor:cursor + count]
+                targets = train_y[group_indices]
+                score_shift = scores - np.max(scores)
+                probabilities = np.exp(score_shift)
+                probabilities /= np.sum(probabilities)
+
+                if args.target_mode == "hard":
+                    best_index = int(np.argmax(targets))
+                    smoothing = min(max(args.label_smoothing, 0.0), 0.25)
+                    target_probabilities = np.full(
+                        count,
+                        smoothing / max(1, count - 1),
+                        dtype=np.float64,
+                    )
+                    target_probabilities[best_index] = 1.0 - smoothing
+                else:
+                    target_shift = (targets - np.max(targets)) / args.ranking_temperature
+                    target_probabilities = np.exp(target_shift)
+                    target_probabilities /= np.sum(target_probabilities)
+
+                dy[cursor:cursor + count] = probabilities - target_probabilities
+                cursor += count
+
             model.step(
-                model.gradients(cache, 2 * (predicted - train_y_norm[batch])),
+                model.gradients(cache, dy),
                 adam,
                 epoch,
                 args.learning_rate,
@@ -288,12 +409,12 @@ def main():
     ]
 
     payload = {
-        "version": 2,
+        "version": 3,
         "objective": args.objective,
         "architecture": [FEATURE_COUNT, args.hidden1, args.hidden2, 1],
         "feature_names": feature_names,
         "gamma": args.gamma,
-        "target_mode": "per_decision_centered_advantage",
+        "target_mode": f"per_decision_groupwise_{args.target_mode}_ranking",
         "input_mean": input_mean.tolist(),
         "input_std": input_std.tolist(),
         "target_mean": target_mean,

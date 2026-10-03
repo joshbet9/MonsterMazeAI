@@ -1,6 +1,7 @@
 param(
     [int]$MaxCycles = 1,
-    [int]$TrainingMatricesPerCycle = 1,
+    [Alias("TrainingMatricesPerCycle")]
+    [int]$TrainingCasesPerMode = 2,
     [int]$HoldoutSeeds = 3,
     [int]$FullGateEveryCycles = 5,
     [int]$ReplayCycles = 8,
@@ -9,9 +10,12 @@ param(
     [int]$SamplesPerEpoch = 50000,
     [double]$Gamma = 0.995,
     [double]$Exploration = 0.20,
-    [int]$CounterfactualStride = 20,
-    [int]$CounterfactualHorizon = 128,
-    [int]$SleepSeconds = 0
+    [int]$CounterfactualStride = 80,
+    [int]$CounterfactualHorizon = 32,
+    [int]$TrainingMaxTicks = 480,
+    [int]$MinTrainingSamples = 100,
+    [int]$SleepSeconds = 0,
+    [switch]$SkipHoldoutGate
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +23,7 @@ $Repo = Split-Path -Parent $PSScriptRoot
 Set-Location $Repo
 $Venv = Join-Path $Repo ".venv"
 $Python = Join-Path $Venv "Scripts\python.exe"
-$DataRoot = Join-Path $Repo "ml-data\local-counterfactual-policy"
+$DataRoot = Join-Path $Repo "ml-data\local-counterfactual-policy-v3"
 $HoldoutRoot = Join-Path $DataRoot "holdout"
 $ReplayRoot = Join-Path $DataRoot "replay"
 $CheckpointRoot = Join-Path $DataRoot "checkpoints"
@@ -28,18 +32,35 @@ $RunRoot = Join-Path $DataRoot "runs"
 
 foreach ($dir in @($DataRoot,$HoldoutRoot,$ReplayRoot,$CheckpointRoot,$CurrentRoot,$RunRoot)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
 
+Write-Host "[policy-ml] Preparing Python environment..."
+
 if (-not (Test-Path $Python)) {
+    Write-Host "[policy-ml] Creating local Python virtual environment..."
     $HostPython = Get-Command python -ErrorAction SilentlyContinue
     if (-not $HostPython) { throw "Python 3.11+ is required." }
     & $HostPython.Source -m venv $Venv
     if ($LASTEXITCODE -ne 0) { throw "Failed to create Python virtual environment." }
 }
-& $Python -m pip install --disable-pip-version-check numpy
-if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
+
+$numpyReady = $false
+try {
+    & $Python -c "import numpy" 2>$null
+    $numpyReady = ($LASTEXITCODE -eq 0)
+} catch {
+    $numpyReady = $false
+}
+
+if (-not $numpyReady) {
+    Write-Host "[policy-ml] NumPy is missing; installing it once into .venv..."
+    & $Python -m pip install --disable-pip-version-check numpy
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install numpy." }
+} else {
+    Write-Host "[policy-ml] Python + NumPy ready."
+}
 
 function Invoke-Run {
-    param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore)
-    $args = @("-B","-ntp","-pl","common","-am","-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
+    param([long]$SeedOffset,[string]$LogPath,[string]$TrainingPath,[string]$ModelPath,[bool]$Explore,[string]$TestClass)
+    $args = @("-B","-ntp","-pl","common","-am","-Dtest=$TestClass","-Dmonstermaze.sim.seedOffset=$SeedOffset","-Dmonstermaze.ml.policy.record=false","-Dmonstermaze.ml.policy.counterfactual=$Explore","-Dmonstermaze.ml.policy.counterfactual.stride=$CounterfactualStride","-Dmonstermaze.ml.policy.counterfactual.horizon=$CounterfactualHorizon","-Dmonstermaze.ml.policy.counterfactual.gamma=$Gamma","-Dmonstermaze.ml.policy.output=$TrainingPath","-Dmonstermaze.ml.policy.epsilon=$Exploration","-Dmonstermaze.ml.policy.explore=$Explore","-Dmonstermaze.ml.policy.trainingCasesPerMode=$TrainingCasesPerMode","-Dmonstermaze.ml.policy.trainingMaxTicks=$TrainingMaxTicks","-Dsurefire.useFile=false","-Dsurefire.redirectTestOutputToFile=false","-Dsurefire.failIfNoSpecifiedTests=false","test")
     if ($ModelPath) {
         $args += "-Dmonstermaze.ml.policy.model=$ModelPath"
         $args += "-Dmonstermaze.ml.mode=policy"
@@ -64,7 +85,7 @@ function Gate-AgainstBaseline {
     if (-not (Test-Path $baseline)) {
         $baselineLog = Join-Path $CycleDir "baseline-seed-$Seed.log"
         $baselineData = Join-Path $CycleDir "ignored-baseline.jsonl"
-        $code = Invoke-Run $Seed $baselineLog $baselineData $null $false
+        $code = Invoke-Run $Seed $baselineLog $baselineData $null $false "SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"
         if ($code -ne 0) { throw "Policy holdout baseline failed for seed $Seed." }
         Copy-Item $baselineLog $baseline -Force
     }
@@ -75,7 +96,7 @@ function Gate-AgainstBaseline {
     $incumbentLog = Join-Path $CycleDir "incumbent-seed-$Seed.log"
     $currentModel = Join-Path $CurrentRoot "policy-model.json"
     if (Test-Path $currentModel) {
-        $code = Invoke-Run $Seed $incumbentLog (Join-Path $CycleDir "ignored-incumbent-$Seed.jsonl") $currentModel $false
+        $code = Invoke-Run $Seed $incumbentLog (Join-Path $CycleDir "ignored-incumbent-$Seed.jsonl") $currentModel $false "SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"
         if ($code -ne 0) { return $false }
     }
     else {
@@ -83,7 +104,7 @@ function Gate-AgainstBaseline {
     }
 
     $candidateLog = Join-Path $CycleDir "holdout-seed-$Seed.log"
-    $code = Invoke-Run $Seed $candidateLog (Join-Path $CycleDir "ignored-$Seed.jsonl") $Candidate $false
+    $code = Invoke-Run $Seed $candidateLog (Join-Path $CycleDir "ignored-$Seed.jsonl") $Candidate $false "SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"
     if ($code -ne 0) { return $false }
 
     function Read-StageMap([string]$Path) {
@@ -204,17 +225,20 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     $newReplay=Join-Path $ReplayRoot "$stamp.jsonl"
     Remove-Item $newReplay -ErrorAction SilentlyContinue
     Write-Host "================ LOCAL POLICY ML CYCLE $cycle ================"
+    Write-Host "[policy-ml] Starting simulator rollout..."
 
     $currentModel=Join-Path $CurrentRoot "policy-model.json"
     $hasCurrent=Test-Path $currentModel
     $rng=[Random]::new()
 
-    for($s=1;$s -le $TrainingMatricesPerCycle;$s++){
+    for($s=1;$s -le 1;$s++){
         $seed=$rng.Next(10000,2000000000)
         $log=Join-Path $cycleDir "explore-$seed.log"
         $data=Join-Path $cycleDir "explore-$seed.jsonl"
         $model=if($hasCurrent){$currentModel}else{$null}
-        $code=Invoke-Run $seed $log $data $model $true
+        Write-Host ("[policy-ml] Rollout seed={0}" -f $seed)
+        $code=Invoke-Run $seed $log $data $model $true "PolicyTrainingRolloutTest"
+        Write-Host ("[policy-ml] Rollout finished with exit code {0}" -f $code)
         if($code -eq 0 -and (Test-Path $data)){ Append-File $data $newReplay }
     }
 
@@ -226,19 +250,26 @@ while($MaxCycles -eq 0 -or $cycle -lt $MaxCycles){
     foreach($file in ($files | Sort-Object LastWriteTime)){ Append-File $file.FullName $window }
 
     $candidate=Join-Path $cycleDir "policy-model-candidate.json"
-    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples 500 --seed $cycle --objective counterfactual_short_horizon_return
+    Write-Host "[policy-ml] Training policy model..."
+    & $Python (Join-Path $PSScriptRoot "policy_trainer.py") --input $window --output $candidate --epochs $Epochs --batch-size $BatchSize --samples-per-epoch $SamplesPerEpoch --hidden1 48 --hidden2 24 --learning-rate 0.001 --gamma $Gamma --validation-fraction 0.20 --min-samples $MinTrainingSamples --seed $cycle --target-mode hard --label-smoothing 0.05 --objective counterfactual_groupwise_hard_ranking
     if($LASTEXITCODE -ne 0 -or -not (Test-Path $candidate)){ Write-Host "Policy training failed; current policy remains unchanged."; continue }
 
-    $matrixSeed=(($cycle-1)%$HoldoutSeeds)+1
-    $full=($cycle%$FullGateEveryCycles)-eq 0
-    $ok=Gate-AgainstBaseline $candidate $matrixSeed $cycleDir
+    $full = ($FullGateEveryCycles -gt 0) -and (($cycle % $FullGateEveryCycles) -eq 0)
+    $ok = $false
 
-    if($full){
+    if($SkipHoldoutGate){
+        Write-Host "POLICY GATE SKIPPED (development/training-only cycle)."
+        Copy-Item $candidate (Join-Path $CheckpointRoot "policy-model-training-$stamp.json") -Force
+    } elseif($full){
+        $matrixSeed=(($cycle-1)%$HoldoutSeeds)+1
+        $ok=Gate-AgainstBaseline $candidate $matrixSeed $cycleDir
         for($seed=1;$seed -le $HoldoutSeeds;$seed++){
             if($seed -eq $matrixSeed){continue}
             if(-not (Gate-AgainstBaseline $candidate $seed $cycleDir)){$ok=$false}
         }
-    } else {$ok=$false}
+    } else {
+        Write-Host ("POLICY GATE DEFERRED until cycle {0}." -f $FullGateEveryCycles)
+    }
 
     $reports=Get-ChildItem $cycleDir -Filter "policy-holdout-seed-*.json" | Sort-Object Name
     if($reports.Count -gt 0){

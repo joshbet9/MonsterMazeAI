@@ -86,6 +86,23 @@ public final class CounterfactualPolicyLearningRecorder {
                 baseline, allowJump, state);
         if (candidates.isEmpty()) return;
 
+        int maxCandidates = positiveInt(
+                System.getProperty("monstermaze.ml.policy.counterfactual.maxCandidates", "8"),
+                8);
+        if (candidates.size() > maxCandidates) {
+            List<Action> subset = new java.util.ArrayList<>(maxCandidates);
+            subset.add(candidates.get(0));
+            int remaining = maxCandidates - 1;
+            int available = candidates.size() - 1;
+            for (int i = 0; i < remaining; i++) {
+                int index = 1 + (int) Math.floor(
+                        (i * (double) available) / remaining);
+                Action selected = candidates.get(index);
+                if (!subset.contains(selected)) subset.add(selected);
+            }
+            candidates = List.copyOf(subset);
+        }
+
         ensureWriter(Path.of(configured));
 
         String episode = state.mode.name()
@@ -97,6 +114,11 @@ public final class CounterfactualPolicyLearningRecorder {
         long baseSeed = mix(simulator.monsterSeed() ^ state.tick
                 ^ ((long) state.stage << 32)
                 ^ ((long) state.mazePattern * 0x9E3779B97F4A7C15L));
+
+        System.out.printf(
+                "POLICY_CF_START mode=%s pattern=%d kit=%s tick=%d candidates=%d horizon=%d%n",
+                state.mode, state.mazePattern + 1, state.kit, state.tick,
+                candidates.size(), horizon);
 
         int candidateIndex = 0;
         for (Action candidate : candidates) {
@@ -135,6 +157,11 @@ public final class CounterfactualPolicyLearningRecorder {
 
             candidateIndex++;
         }
+
+        System.out.printf(
+                "POLICY_CF_DONE mode=%s pattern=%d kit=%s tick=%d candidates=%d%n",
+                state.mode, state.mazePattern + 1, state.kit, state.tick,
+                candidates.size());
     }
 
     private static AutonomousMonsterMazeAgent newPolicyContinuationAgent() {
@@ -184,7 +211,7 @@ public final class CounterfactualPolicyLearningRecorder {
             try {
                 writer.write(json.toString());
                 rowCount++;
-                if ((rowCount & 127L) == 0L) writer.flush();
+                if ((rowCount & 15L) == 0L) writer.flush();
             } catch (IOException e) {
                 throw new IllegalStateException(
                         "Cannot write counterfactual policy data", e);

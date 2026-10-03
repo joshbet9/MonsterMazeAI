@@ -1942,10 +1942,25 @@ public final class StableLiveMovementController {
         if (route == null || route.size() < 2
                 || waypointIndex <= 0 || waypointIndex >= route.size()) return false;
 
+        /*
+         * The old guard only considered monsters already within ~2.6 blocks of
+         * the player. That made the route lookahead mostly cosmetic: a monster
+         * could sit several cells ahead on the chosen corridor, begin moving
+         * toward it, and only become "threatening" after the player was already
+         * committed to that corridor.
+         *
+         * Predict the encounter at the time the player is expected to reach each
+         * inspected route segment. This remains an input/controller decision;
+         * MonsterState physics stays authoritative. The 20-block source
+         * interaction sphere bounds the observation horizon.
+         */
         int firstSegment = Math.max(0, waypointIndex - 1);
         int lookaheadSegments = routeThreatLookaheadSegments();
         int lastSegment = Math.min(route.size() - 2, firstSegment + lookaheadSegments);
-        double playerRouteDistance = 0.0D;
+        double playerSpeed = Math.max(
+                Math.hypot(state.player.vx, state.player.vz),
+                0.12D);
+        double routeDistance = 0.0D;
 
         for (int i = firstSegment; i <= lastSegment; i++) {
             Cell a = route.cells().get(i);
@@ -1956,42 +1971,81 @@ public final class StableLiveMovementController {
             double bz = b.column() + 0.5D;
             double sx = bx - ax;
             double sz = bz - az;
-            double lenSq = sx * sx + sz * sz;
-            if (lenSq <= 1.0E-9D) continue;
+            double length = Math.hypot(sx, sz);
+            if (length <= 1.0E-9D) continue;
 
-            double px = state.player.x - ax;
-            double pz = state.player.z - az;
-            double projection = Math.max(0.0D, Math.min(1.0D,
-                    (px * sx + pz * sz) / lenSq));
-            double nearestX = ax + projection * sx;
-            double nearestZ = az + projection * sz;
-            double segmentDistance = Math.hypot(
-                    state.player.x - nearestX, state.player.z - nearestZ);
-
-            if (i > firstSegment) playerRouteDistance += Math.sqrt(lenSq);
+            /*
+             * Approximate the point where the player reaches this segment by its
+             * midpoint. Midpoint prediction is deliberately conservative: a mob
+             * anywhere on the segment can make the route unsafe, while using the
+             * exact nearest point would make a corner threat dependent on the
+             * player's current lateral position.
+             */
+            double segmentMidX = (ax + bx) * 0.5D;
+            double segmentMidZ = (az + bz) * 0.5D;
+            double distanceToMidpoint = Math.hypot(
+                    segmentMidX - state.player.x,
+                    segmentMidZ - state.player.z);
+            double timeToSegment = Math.max(
+                    0.0D,
+                    (routeDistance + Math.max(0.0D, distanceToMidpoint - 0.5D))
+                            / playerSpeed);
 
             for (MonsterState monster : state.monsters) {
                 if (monster == null || monster.removed
                         || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
 
-                double mx = monster.x - nearestX;
-                double mz = monster.z - nearestZ;
-                double distanceToRoute = Math.hypot(mx, mz);
-                if (distanceToRoute > 1.45D) continue;
+                double currentMonsterDistance = Math.hypot(
+                        monster.x - state.player.x,
+                        monster.z - state.player.z);
+                if (currentMonsterDistance > me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS) {
+                    continue;
+                }
 
-                double playerDx = monster.x - state.player.x;
-                double playerDz = monster.z - state.player.z;
-                double playerDistance = Math.hypot(playerDx, playerDz);
-                if (playerDistance > 2.60D || playerDistance < 0.05D) continue;
+                double predictedX = monster.x + monster.vx * timeToSegment;
+                double predictedZ = monster.z + monster.vz * timeToSegment;
 
-                double closing = -(monster.vx * playerDx + monster.vz * playerDz)
-                        / Math.max(playerDistance, 1.0E-6D);
-                double aheadAlong = (monster.x - state.player.x) * sx
-                        + (monster.z - state.player.z) * sz;
-                if (aheadAlong <= -0.25D && i == firstSegment) continue;
+                double projection = ((predictedX - ax) * sx
+                        + (predictedZ - az) * sz) / (length * length);
+                projection = Math.max(0.0D, Math.min(1.0D, projection));
+                double nearestX = ax + projection * sx;
+                double nearestZ = az + projection * sz;
+                double routeDistanceAtThreat = Math.hypot(
+                        predictedX - nearestX,
+                        predictedZ - nearestZ);
 
-                if (closing > 0.0D || playerDistance <= 1.15D) return true;
+                if (routeDistanceAtThreat > 1.45D) continue;
+
+                /*
+                 * Require a meaningful future encounter rather than reacting to
+                 * every monster merely occupying the observation sphere. A
+                 * stationary mob on the route is still a valid obstacle; a mob
+                 * already moving away is ignored unless the projected encounter
+                 * remains inside the close-contact envelope.
+                 */
+                double predictedPlayerX = segmentMidX;
+                double predictedPlayerZ = segmentMidZ;
+                double predictedPlayerDistance = Math.hypot(
+                        predictedX - predictedPlayerX,
+                        predictedZ - predictedPlayerZ);
+
+                double velocityTowardPlayer = 0.0D;
+                double currentDx = monster.x - state.player.x;
+                double currentDz = monster.z - state.player.z;
+                double currentDistance = Math.max(
+                        Math.hypot(currentDx, currentDz), 1.0E-6D);
+                velocityTowardPlayer = -(
+                        monster.vx * currentDx + monster.vz * currentDz)
+                        / currentDistance;
+
+                boolean projectedContact = predictedPlayerDistance <= 1.60D;
+                boolean movingIntoRoute = velocityTowardPlayer > 0.02D
+                        || Math.hypot(monster.vx, monster.vz) < 0.02D;
+
+                if (projectedContact && movingIntoRoute) return true;
             }
+
+            routeDistance += length;
         }
         return false;
     }

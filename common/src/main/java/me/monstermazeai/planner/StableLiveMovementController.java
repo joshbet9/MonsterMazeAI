@@ -502,6 +502,33 @@ public final class StableLiveMovementController {
         double speed = Math.hypot(state.player.vx, state.player.vz);
 
         /*
+         * A final SafePad waypoint is a terminal braking problem, not just a
+         * geometric arrival check. Vanilla 1.8 friction removes only about 9%
+         * of horizontal speed per grounded tick, so waiting until the player is
+         * within WAYPOINT_ARRIVAL can overshoot the pad by multiple blocks when
+         * residual momentum is high. Brake from the distance implied by the
+         * current route-aligned velocity, while preserving the normal camera
+         * turn if the final heading is not yet acquired.
+         */
+        if (waypointIndex == route.size() - 1) {
+            double alongSpeed = Math.max(0.0D,
+                    state.player.vx * dirRow + state.player.vz * dirColumn);
+            double stoppingDistance = alongSpeed
+                    / Math.max(1.0E-6D, 1.0D - PHYSICS_GROUND_FRICTION);
+            if (distance <= stoppingDistance + 0.20D && alongSpeed > 0.02D) {
+                float brakeTurn = Math.abs(yawError) > HEADING_TOLERANCE
+                        ? clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                        : 0.0F;
+                lastDecisionDetail += " FINAL_BRAKE"
+                        + " dist=" + format(distance)
+                        + " alongSpeed=" + format(alongSpeed)
+                        + " stoppingDistance=" + format(stoppingDistance)
+                        + " yawDelta=" + format(brakeTurn);
+                return new Action(0.0, 0.0, false, false, brakeTurn, false);
+            }
+        }
+
+        /*
          * Keep the player on the route's cell centreline. Normally this error
          * is tiny. If physics nudges the player sideways inside the current
          * floor cell, briefly correct toward that centre before resuming the

@@ -1,0 +1,102 @@
+name: Human Policy v2
+
+on:
+  push:
+    branches:
+      - feature/human-policy-v2-integration
+  pull_request:
+    branches:
+      - architecture/cpu-opponents-v2
+      - main
+
+jobs:
+  validate-human-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install NumPy
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Compile training scripts
+        run: python -m py_compile training/human_dataset.py training/validate_dataset.py ml/human_policy_v2.py
+
+      - name: Smoke-test human policy v2
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          path = Path("human-policy-v2-smoke.jsonl")
+          rows = []
+          for run_index in range(2):
+              run_name = f"smoke-run-{run_index}"
+              for tick in range(12):
+                  observation = [0.0] * 96
+                  observation[15] = (tick + 1) / 100.0
+                  observation[20] = 1.0
+                  observation[26] = 1.0 if run_index == 0 else 0.0
+                  observation[27] = 1.0 if run_index == 1 else 0.0
+                  rows.append({
+                      "schemaVersion": 2,
+                      "observation": observation,
+                      "profile": [0.5] * 17,
+                      "action": {
+                          "forward": 1.0 if tick % 2 == 0 else 0.5,
+                          "strafe": 0.0,
+                          "yawDelta": 0.0,
+                          "jump": tick % 6 == 0,
+                          "sprint": True,
+                          "useAbility": False,
+                      },
+                      "stage": tick + 1,
+                      "pattern": 1,
+                      "mode": "SPEED" if run_index == 0 else "MODERN",
+                      "kit": "JUMPER",
+                      "source": "human",
+                      "run": run_name,
+                      "tick": tick,
+                      "terminal": False,
+                      "completed": False,
+                      "padReached": False,
+                      "monstersWithin8": 0,
+                      "next": None,
+                  })
+
+          path.write_text(
+              "\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n",
+              encoding="utf-8",
+          )
+          print(f"rows={len(rows)}")
+
+      - name: Inspect smoke dataset
+        run: python ml/human_policy_v2.py inspect --input human-policy-v2-smoke.jsonl
+
+      - name: Train smoke model
+        run: >
+          python ml/human_policy_v2.py train
+          --input human-policy-v2-smoke.jsonl
+          --output human-policy-v2-smoke-model.json
+          --epochs 2
+          --batch-size 8
+          --min-samples 10
+          --validation-fraction 0.5
+          --report-every 1
+
+      - name: Verify model artifact
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          model = json.loads(Path("human-policy-v2-smoke-model.json").read_text(encoding="utf-8"))
+          assert model["source_schema_version"] == 2
+          assert model["architecture"][0] == 96
+          assert model["architecture"][-1] == 6
+          assert len(model["feature_names"]) == 96
+          assert len(model["target_names"]) == 6
+          print("model_schema_ok=true")

@@ -467,7 +467,7 @@ class StableLiveMovementControllerTest {
     @Test
     void predictiveCornerTurnKeepsPhysicalDriveActiveWhileYawChanges() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         boolean sawCornerPrep = false;
@@ -557,7 +557,7 @@ class StableLiveMovementControllerTest {
     @Test
     void laneCorrectionKeepsDrivingInsteadOfStoppingForTurn() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         // +Z is the initial segment. Offset the player 0.25 blocks in +X so
@@ -661,7 +661,7 @@ class StableLiveMovementControllerTest {
     @Test
     void finalApproachBrakesBeforeHighMomentumCarriesPastGoal() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         s.tick = 1;

@@ -617,4 +617,29 @@ class StableLiveMovementControllerTest {
                 "a moving monster projected onto the current route must permit an early strategic heading change");
     }
 
+    @Test
+    void rebasesFutureWaypointToThePhysicallySupportedRouteCell() throws Exception {
+        GameState s = state(0.5, 1.5, 0.0F);
+        s.activePadRow = 1;
+        s.activePadColumn = 3;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        var routeField = StableLiveMovementController.class.getDeclaredField("route");
+        routeField.setAccessible(true);
+        routeField.set(controller, new me.monstermazeai.maze.PlayerRoute(java.util.List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2), new Cell(1, 2), new Cell(1, 3))));
+
+        var waypointField = StableLiveMovementController.class.getDeclaredField("waypointIndex");
+        waypointField.setAccessible(true);
+        waypointField.setInt(controller, 3);
+
+        Action action = controller.nextAction(s, new Cell(1, 3), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("WAYPOINT_REBASE"),
+                controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("dir=0,1"),
+                "the motor must resume the segment containing the physically supported cell");
+        assertTrue(action.forward() >= 0.0);
+    }
+
 }

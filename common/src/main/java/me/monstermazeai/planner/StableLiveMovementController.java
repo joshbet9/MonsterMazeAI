@@ -405,6 +405,20 @@ public final class StableLiveMovementController {
         while (waypointIndex < route.size() - 1
                 && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
                 || hasPassedWaypointAlongSegment(state, waypointIndex))) {
+
+            /*
+             * A physics step can carry the player beyond the corner before the
+             * next observation arrives. Do not immediately rotate into the next
+             * segment while substantial velocity still points down the old one:
+             * that is exactly how the player previously crossed an exposed block
+             * while the camera was still turning. Spend only the minimum bounded
+             * reverse input required to bleed that residual momentum, then advance.
+             */
+            if (hasPassedWaypointAlongSegment(state, waypointIndex)) {
+                Action overshootBrake = cornerOvershootBrake(state, waypointIndex);
+                if (overshootBrake != null) return overshootBrake;
+            }
+
             int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
@@ -1053,6 +1067,82 @@ public final class StableLiveMovementController {
      * carrying sprint momentum into the waypoint and then asking the motor to
      * turn back toward a point already behind the player.
      */
+    private Action cornerOvershootBrake(GameState state, int currentWaypointIndex) {
+        if (route == null || currentWaypointIndex <= 0
+                || currentWaypointIndex >= route.size() - 1) return null;
+
+        Cell from = route.cells().get(currentWaypointIndex - 1);
+        Cell corner = route.cells().get(currentWaypointIndex);
+        Cell after = route.cells().get(currentWaypointIndex + 1);
+
+        int currentDirRow = Integer.signum(corner.row() - from.row());
+        int currentDirColumn = Integer.signum(corner.column() - from.column());
+        int nextDirRow = Integer.signum(after.row() - corner.row());
+        int nextDirColumn = Integer.signum(after.column() - corner.column());
+
+        if (Math.abs(currentDirRow) + Math.abs(currentDirColumn) != 1
+                || Math.abs(nextDirRow) + Math.abs(nextDirColumn) != 1
+                || (currentDirRow == nextDirRow && currentDirColumn == nextDirColumn)) {
+            return null;
+        }
+
+        double startX = from.row() + 0.5D;
+        double startZ = from.column() + 0.5D;
+        int segmentLength = Math.abs(corner.row() - from.row())
+                + Math.abs(corner.column() - from.column());
+        double progress = currentDirRow != 0
+                ? (state.player.x - startX) * currentDirRow
+                : (state.player.z - startZ) * currentDirColumn;
+        double overrun = progress - segmentLength;
+        double speedAlong = currentDirRow != 0
+                ? state.player.vx * currentDirRow
+                : state.player.vz * currentDirColumn;
+
+        if (overrun < -0.02D || speedAlong <= CORNER_DRIVE_SPEED_LIMIT) {
+            return null;
+        }
+
+        double yawRad = Math.toRadians(state.player.yaw);
+        double forwardWorldX = -Math.sin(yawRad);
+        double forwardWorldZ = Math.cos(yawRad);
+        double strafeWorldX = Math.cos(yawRad);
+        double strafeWorldZ = Math.sin(yawRad);
+
+        // Brake exactly opposite the currently moving maze direction.
+        double brakeWorldX = -currentDirRow;
+        double brakeWorldZ = -currentDirColumn;
+        double forward = brakeWorldX * forwardWorldX
+                + brakeWorldZ * forwardWorldZ;
+        double strafe = brakeWorldX * strafeWorldX
+                + brakeWorldZ * strafeWorldZ;
+
+        /*
+         * Keep the braking command deliberately weaker than a normal movement
+         * command. The goal is to remove momentum, not to walk the player back
+         * through the old corridor.
+         */
+        double magnitude = Math.hypot(forward, strafe);
+        if (magnitude > 1.0E-9D) {
+            forward /= magnitude;
+            strafe /= magnitude;
+        }
+        double brakeStrength = Math.min(
+                0.65D,
+                Math.max(0.35D, speedAlong / 0.25D * 0.50D));
+
+        lastDecisionDetail += " CORNER_OVERSHOOT_BRAKE"
+                + " waypoint=" + currentWaypointIndex
+                + " overrun=" + format(overrun)
+                + " speedAlong=" + format(speedAlong)
+                + " forward=" + format(forward * brakeStrength)
+                + " strafe=" + format(strafe * brakeStrength);
+
+        return new Action(
+                forward * brakeStrength,
+                strafe * brakeStrength,
+                false, false, 0.0F, false);
+    }
+
     private Action maybePrepareUpcomingTurn(
             GameState state, int currentWaypointIndex,
             int currentDirRow, int currentDirColumn,

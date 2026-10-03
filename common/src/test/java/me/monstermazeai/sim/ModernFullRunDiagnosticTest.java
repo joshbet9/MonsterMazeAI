@@ -6,6 +6,7 @@ import me.monstermazeai.player.AiProfile;
 import org.junit.jupiter.api.Test;
 
 /**
+ * Best-speed19 instrumented matrix checkpoint.
  * Runs every Modern maze/kit combination until natural termination.
  * This measures the current controller's actual Modern ceiling without a
  * stage-based early exit.

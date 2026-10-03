@@ -205,8 +205,71 @@ public final class MonsterAwareRoutePlanner {
         return cachedCandidates;
     }
 
-    public Action tacticalAction(GameState state, PlayerRoute route, Cell goal, int regionRadius) {
-        return simulator.nextAction(state, route, goal, regionRadius > 0, regionRadius);
+    /**
+     * Estimates short-horizon threat exposure for an already-generated route
+     * using the current monster positions and velocities. This is a planner
+     * heuristic only: it never changes authoritative monster physics.
+     *
+     * The important distinction from an exact threat signature is that a route
+     * generated a few ticks ago can still be perfectly good even though every
+     * nearby monster has moved. Conversely, a stale route can become dangerous
+     * before a new route finishes calculating. The controller uses this score to
+     * decide whether a completed asynchronous route is still worth applying.
+     */
+    public double dynamicThreatRisk(GameState state, PlayerRoute route) {
+        if (state == null || route == null || route.size() == 0) return Double.POSITIVE_INFINITY;
+
+        final int samples = Math.min(route.size(), 14);
+        final double tickPerCell = 5.0D;
+        final double dangerRadius = 5.0D;
+        double total = 0.0D;
+        int counted = 0;
+
+        for (int i = 0; i < samples; i++) {
+            double targetX = route.targetX(i);
+            double targetZ = route.targetZ(i);
+            double distanceFromPlayer = Math.hypot(
+                    targetX - state.player.x, targetZ - state.player.z);
+            double eta = Math.min(80.0D, distanceFromPlayer * tickPerCell);
+
+            double localRisk = 0.0D;
+            for (var monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+                if (!MonsterRelevance.withinPlayerRadius(
+                        monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) continue;
+
+                double predictedX = monster.x + monster.vx * eta;
+                double predictedZ = monster.z + monster.vz * eta;
+                double dx = predictedX - targetX;
+                double dz = predictedZ - targetZ;
+                double distance = Math.hypot(dx, dz);
+                if (distance >= dangerRadius) continue;
+
+                double proximity = (dangerRadius - distance) / dangerRadius;
+                localRisk += proximity * proximity;
+
+                double speed = Math.hypot(monster.vx, monster.vz);
+                if (speed > 1.0E-6D && distance > 1.0E-6D) {
+                    double closing = (
+                            monster.vx * (targetX - predictedX)
+                                    + monster.vz * (targetZ - predictedZ))
+                            / distance;
+                    if (closing > 0.0D) {
+                        localRisk += 0.5D * Math.min(1.0D, closing / Math.max(0.1D, speed));
+                    }
+                }
+            }
+
+            // Give earlier threats more weight because a route switch must help
+            // the next few decisions, not merely look safer far in the future.
+            double timeWeight = 1.0D / (1.0D + eta * 0.035D);
+            total += localRisk * timeWeight;
+            counted++;
+        }
+
+        if (counted == 0) return 0.0D;
+        return total / counted;
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

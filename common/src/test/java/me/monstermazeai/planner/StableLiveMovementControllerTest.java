@@ -5,6 +5,7 @@ import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.AiProfile;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

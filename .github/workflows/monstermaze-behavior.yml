@@ -8,6 +8,7 @@ on:
       - architecture/cpu-opponents-v2
       - autonomous/matrix-lab
       - autonomous/matrix-lab-route-stability
+      - autonomous/matrix-lab-route-soft-lane
     paths:
       - 'common/**'
       - 'common-api/**'

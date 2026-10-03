@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - calibration/results-matrix-v15-damage-sweep
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read

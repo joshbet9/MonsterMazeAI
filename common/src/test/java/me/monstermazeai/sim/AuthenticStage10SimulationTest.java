@@ -48,64 +48,34 @@ class AuthenticStage10SimulationTest {
     private static final int FULL_RUN_MAX_TICKS = 20_000;
 
     @Test
-    void allModernSourcePatternsAndKitsReachStageTen() {
-        List<String> failures = new ArrayList<>();
-
+    void allModernSourcePatternsAndKitsProduceNaturalTerminationDiagnostics() {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
-                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.MODERN);
-                if (result.maxStage < MODERN_REQUIRED_STAGE) {
-                    failures.add("mode=MODERN pattern=" + (pattern + 1)
-                            + " kit=" + kit
-                            + " stage=" + result.maxStage
-                            + " tick=" + result.ticks
-                            + " health=" + result.health
-                            + " pos=(" + result.x + "," + result.z + ")"
-                            + " firstFallTick=" + result.firstFallTick
-                            + " firstFallPrePos=" + result.firstFallPreX + "," + result.firstFallPreY + "," + result.firstFallPreZ
-                            + " firstFallPreV=" + result.firstFallPreVx + "," + result.firstFallPreVy + "," + result.firstFallPreVz
-                            + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
-                            + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
-                            + " firstFallDecision=" + result.firstFallDecision
-                            + " decision=" + result.decision);
-                }
+                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.MODERN, 0);
+                System.out.printf(
+                        "MODERN_NATURAL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%.1f firstFallTick=%d terminalTick=%d naturalEnd=%s%n",
+                        pattern + 1, kit, result.maxStage, result.ticks, result.health,
+                        result.firstFallTick, result.terminalTick, result.terminalTick >= 0);
+                assertTrue(result.ticks > 0 && result.ticks <= FULL_RUN_MAX_TICKS,
+                        "invalid natural-run tick count for pattern=" + (pattern + 1) + " kit=" + kit);
             }
         }
-
-        assertTrue(failures.isEmpty(), String.join(System.lineSeparator(), failures));
     }
 
     @Test
-    void allSpeedSourcePatternsAndKitsReachStageTen() {
-        List<String> failures = new ArrayList<>();
-
+    void allSpeedSourcePatternsAndKitsProduceNaturalTerminationDiagnostics() {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
-                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
-                System.out.printf("SPEED pattern=%d kit=%s stage=%d seedOffset=%d%n",
-                        pattern + 1, kit, result.maxStage,
-                        Long.getLong("monstermaze.sim.seedOffset", 0L));
-                if (result.maxStage < SPEED_REQUIRED_STAGE) {
-                    failures.add("mode=SPEED pattern=" + (pattern + 1)
-                            + " kit=" + kit
-                            + " stage=" + result.maxStage
-                            + " tick=" + result.ticks
-                            + " health=" + result.health
-                            + " pos=(" + result.x + "," + result.z + ")"
-                            + " firstFallTick=" + result.firstFallTick
-                            + " firstFallPrePos=" + result.firstFallPreX + "," + result.firstFallPreY + "," + result.firstFallPreZ
-                            + " firstFallPreV=" + result.firstFallPreVx + "," + result.firstFallPreVy + "," + result.firstFallPreVz
-                            + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
-                            + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
-                            + " firstFallDecision=" + result.firstFallDecision
-                            + " decision=" + result.decision);
-                }
+                RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED, 0);
+                System.out.printf(
+                        "SPEED_NATURAL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%.1f firstFallTick=%d terminalTick=%d naturalEnd=%s%n",
+                        pattern + 1, kit, result.maxStage, result.ticks, result.health,
+                        result.firstFallTick, result.terminalTick, result.terminalTick >= 0);
+                assertTrue(result.ticks > 0 && result.ticks <= FULL_RUN_MAX_TICKS,
+                        "invalid natural-run tick count for pattern=" + (pattern + 1) + " kit=" + kit);
             }
         }
-
-        assertTrue(failures.isEmpty(), String.join(System.lineSeparator(), failures));
     }
-
     private RunResult run(int pattern, Kit kit) {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }

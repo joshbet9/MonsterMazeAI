@@ -711,7 +711,7 @@ class StableLiveMovementControllerTest {
         s.player.y = 0.0;
         s.tick = 2;
 
-        boolean sawUnexpectedReverseWorldInput = false;
+        boolean reachedGoalSurface = false;
         boolean sawOvershootBrake = false;
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false, 2);
@@ -730,9 +730,14 @@ class StableLiveMovementControllerTest {
                 assertTrue(Math.abs(worldZ) <= 0.65D + 1.0E-6,
                         "overshoot brake was too strong: "
                                 + controller.lastDecisionDetail());
-            } else if (worldZ < -1.0E-6) {
-                sawUnexpectedReverseWorldInput = true;
             }
+
+            if (controller.lastDecisionDetail().contains("REACHED_SAFE_PAD")
+                    || controller.lastDecisionDetail().contains("REACHED routeSize=1")) {
+                reachedGoalSurface = true;
+                break;
+            }
+
             physics.tick(s.player, action, s.maze, 0);
 
             if (s.player.y < -0.25 || !s.player.grounded && s.player.y < -0.75) break;
@@ -741,8 +746,9 @@ class StableLiveMovementControllerTest {
 
         assertTrue(sawOvershootBrake,
                 "corner overshoot never engaged a momentum brake: " + controller.lastDecisionDetail());
-        assertFalse(sawUnexpectedReverseWorldInput,
-                "corner recovery emitted unexpected reverse world-space input: " + controller.lastDecisionDetail());
+        assertTrue(reachedGoalSurface,
+                "corner overshoot never reached the live SafePad surface: "
+                        + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);

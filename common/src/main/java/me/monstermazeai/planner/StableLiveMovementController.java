@@ -557,6 +557,7 @@ public final class StableLiveMovementController {
                 dirRow, dirColumn);
 
         Action action;
+        boolean laneCorrectionIssued = false;
         boolean finalApproachBrake = waypointIndex == route.size() - 1
                 && shouldBrakeForFinalApproach(
                 state, distance, closingSpeed(state, dx, dz));
@@ -584,67 +585,67 @@ public final class StableLiveMovementController {
             if (cornerPreparation != null) {
                 action = cornerPreparation;
             } else if (Math.abs(crossTrack) > 0.18) {
-            /*
-             * Correct cross-track error without surrendering forward progress.
-             * The old controller often stopped to rotate/correct once the player
-             * drifted sideways; repeated stop-turn cycles consumed a large
-             * fraction of the phase timer. Build one world-space vector containing
-             * the route direction plus a bounded lateral correction, then project
-             * it into the current camera frame.
-             */
-            int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double lateralRow;
-            double lateralColumn;
-            if (dirRow != 0) {
-                lateralRow = 0.0D;
-                lateralColumn = -crossSign * dirRow;
-            } else {
-                lateralRow = -crossSign * dirColumn;
-                lateralColumn = 0.0D;
-            }
+                /*
+                 * Lane recovery is a local maneuver. Keep the combined
+                 * forward+lateral correction used by the seamless motor, but
+                 * guard it against only the next physical tick so a valid
+                 * correction is not converted into a permanent zero-input stall.
+                 */
+                int crossSign = crossTrack > 0.0 ? 1 : -1;
+                double lateralRow;
+                double lateralColumn;
+                if (dirRow != 0) {
+                    lateralRow = 0.0D;
+                    lateralColumn = -crossSign * dirRow;
+                } else {
+                    lateralRow = -crossSign * dirColumn;
+                    lateralColumn = 0.0D;
+                }
 
-            double correctionStrength = Math.min(
-                    0.90D,
-                    Math.max(0.35D,
-                            Math.abs(crossTrack) / Math.max(0.18D, MAX_SAFE_LANE_ERROR)));
-            double worldX = dirRow + lateralRow * correctionStrength;
-            double worldZ = dirColumn + lateralColumn * correctionStrength;
-            double worldMagnitude = Math.hypot(worldX, worldZ);
-            if (worldMagnitude > 1.0E-9D) {
-                worldX /= worldMagnitude;
-                worldZ /= worldMagnitude;
-            }
+                double correctionStrength = Math.min(
+                        0.90D,
+                        Math.max(0.35D,
+                                Math.abs(crossTrack) / Math.max(0.18D, MAX_SAFE_LANE_ERROR)));
+                double worldX = dirRow + lateralRow * correctionStrength;
+                double worldZ = dirColumn + lateralColumn * correctionStrength;
+                double worldMagnitude = Math.hypot(worldX, worldZ);
+                if (worldMagnitude > 1.0E-9D) {
+                    worldX /= worldMagnitude;
+                    worldZ /= worldMagnitude;
+                }
 
-            float correctionError = normalise(desiredYaw - state.player.yaw);
-            float yawDelta = clamp(
-                    correctionError * 0.5F,
-                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            double moveYaw = Math.toRadians(state.player.yaw + yawDelta);
-            double forwardWorldX = -Math.sin(moveYaw);
-            double forwardWorldZ = Math.cos(moveYaw);
-            double strafeWorldX = Math.cos(moveYaw);
-            double strafeWorldZ = Math.sin(moveYaw);
-            double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
-            double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
-            double inputMagnitude = Math.hypot(forward, strafe);
-            if (inputMagnitude > 1.0E-9D) {
-                forward /= inputMagnitude;
-                strafe /= inputMagnitude;
-            }
+                float correctionError = normalise(desiredYaw - state.player.yaw);
+                float yawDelta = clamp(
+                        correctionError * 0.5F,
+                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                double moveYaw = Math.toRadians(state.player.yaw + yawDelta);
+                double forwardWorldX = -Math.sin(moveYaw);
+                double forwardWorldZ = Math.cos(moveYaw);
+                double strafeWorldX = Math.cos(moveYaw);
+                double strafeWorldZ = Math.sin(moveYaw);
+                double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+                double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+                double inputMagnitude = Math.hypot(forward, strafe);
+                if (inputMagnitude > 1.0E-9D) {
+                    forward /= inputMagnitude;
+                    strafe /= inputMagnitude;
+                }
 
-            action = new Action(
-                    forward,
-                    strafe,
-                    false,
-                    true,
-                    yawDelta,
-                    false);
-            lastDecisionDetail += " LANE_RECOVERY_COMBINED"
-                    + " crossTrack=" + format(crossTrack)
-                    + " strength=" + format(correctionStrength)
-                    + " forward=" + format(forward)
-                    + " strafe=" + format(strafe)
-                    + " yawDelta=" + format(yawDelta);
+                action = new Action(
+                        forward,
+                        strafe,
+                        false,
+                        true,
+                        yawDelta,
+                        false);
+                action = guardLaneCorrectionSupport(state, action);
+                laneCorrectionIssued = true;
+                lastDecisionDetail += " LANE_RECOVERY_COMBINED"
+                        + " crossTrack=" + format(crossTrack)
+                        + " strength=" + format(correctionStrength)
+                        + " forward=" + format(action.forward())
+                        + " strafe=" + format(action.strafe())
+                        + " yawDelta=" + format(action.yawDelta());
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Normal steering is concurrent with forward movement. This is
@@ -714,6 +715,7 @@ public final class StableLiveMovementController {
         }
 
         if (!gapExecutionActive
+                && !laneCorrectionIssued
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
                 && !hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)))) {
@@ -1837,6 +1839,24 @@ public final class StableLiveMovementController {
                 / Math.max(1.0E-6D, 1.0D - PHYSICS_GROUND_FRICTION);
         double dynamicBrake = stoppingDistance + 0.10D;
         return distance < Math.max(waypointBrakeDistance(), dynamicBrake);
+    }
+
+    private Action guardLaneCorrectionSupport(GameState state, Action correction) {
+        if (state.maze == null || !state.player.grounded) return correction;
+        if (hasPredictedPhysicalSupport(state, correction, 1)) return correction;
+
+        for (double scale : new double[]{0.70D, 0.45D, 0.25D, 0.10D}) {
+            Action candidate = new Action(
+                    correction.forward() * scale,
+                    correction.strafe() * scale,
+                    false,
+                    correction.sprint(),
+                    correction.yawDelta(),
+                    false);
+            if (hasPredictedPhysicalSupport(state, candidate, 1)) return candidate;
+        }
+        return new Action(0.0, 0.0, false, false,
+                correction.yawDelta(), false);
     }
 
     private double waypointBrakeDistance() {

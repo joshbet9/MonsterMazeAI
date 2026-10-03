@@ -658,11 +658,29 @@ public final class StableLiveMovementController {
                             ? " FAR_TURN_DRIVE"
                             : " FAR_TURN_SUPPORT_HOLD";
                 } else {
-                    action = new Action(
-                            0.0, 0.0, false, false,
+                    /*
+                     * When the desired heading is more than 135 degrees away,
+                     * forward input points substantially away from the route.
+                     * A short reverse-drive turn is often the source-equivalent
+                     * way to keep translating toward the corridor while the
+                     * camera catches up. This removes the artificial stop-turn-go
+                     * burst without permitting a diagonal cut across the maze.
+                     */
+                    Action reverseTurn = new Action(
+                            -0.35, 0.0, false, false,
                             yawCommand,
                             false);
-                    lastDecisionDetail += " TURN_IN_PLACE";
+                    if (hasPredictedPhysicalSupport(
+                            state, reverseTurn, supportLookaheadTicks(state))) {
+                        action = reverseTurn;
+                        lastDecisionDetail += " REVERSE_TURN_DRIVE";
+                    } else {
+                        action = new Action(
+                                0.0, 0.0, false, false,
+                                yawCommand,
+                                false);
+                        lastDecisionDetail += " TURN_IN_PLACE";
+                    }
                 }
             }
         } else {

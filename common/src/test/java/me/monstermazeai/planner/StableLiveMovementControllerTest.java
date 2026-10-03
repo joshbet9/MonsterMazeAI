@@ -54,6 +54,48 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void separatingMonsterAtSafeDistanceDoesNotStealRouteControl() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(1, 0.5, 0.0, 2.2));
+        me.monstermazeai.monster.MonsterState monster = s.monsters.get(0);
+        monster.vz = 0.30D; // moving away from the player along the route
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("MOB_YIELD"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("MOB_DODGE"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "a separating mob at 1.7 blocks must not replace route movement");
+    }
+
+    @Test
+    void closingMonsterAtSafeDistanceCanTriggerRouteAvoidance() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(2, 0.5, 0.0, 2.2));
+        me.monstermazeai.monster.MonsterState monster = s.monsters.get(0);
+        monster.vz = -0.30D; // moving toward the player along the route
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+        s.tick = 2;
+
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

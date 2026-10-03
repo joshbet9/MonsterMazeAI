@@ -1,6 +1,7 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;

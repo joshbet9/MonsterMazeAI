@@ -1320,29 +1320,42 @@ public final class StableLiveMovementController {
      */
     private static long threatSignature(GameState state) {
         long h = 1469598103934665603L;
-        for (me.monstermazeai.monster.MonsterState monster : state.monsters) {
-            if (!me.monstermazeai.monster.MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS)) continue;
+        boolean relevant = false;
 
-            /*
-             * Cell-only signatures were too coarse for live Monster Maze.
-             * Monsters can move a substantial fraction of a block without
-             * crossing a cell boundary, while their velocity changes the
-             * source-faithful predicted contact. Quantise position to 0.5
-             * blocks and velocity to 0.05 so tactical evaluation is refreshed
-             * when the threat meaningfully changes, without forcing a full
-             * simulation for every floating-point packet variation.
-             */
-            h = mix(h, monster.id);
-            h = mix(h, quantise(monster.x, 0.5D));
-            h = mix(h, quantise(monster.y, 0.5D));
-            h = mix(h, quantise(monster.z, 0.5D));
-            h = mix(h, quantise(monster.vx, 0.05D));
-            h = mix(h, quantise(monster.vz, 0.05D));
-            h = mix(h, monster.launched(state.tick) ? 1L : 0L);
-            h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
+        for (MonsterState monster : state.monsters) {
+            if (monster == null || monster.removed) continue;
+            if (monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+            double distance = Math.sqrt(
+                    sq(monster.x - state.player.x)
+                    + sq(monster.y - state.player.y)
+                    + sq(monster.z - state.player.z));
+            double speed = Math.hypot(monster.vx, monster.vz);
+
+            if (distance <= me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS) {
+                relevant = true;
+                h = mix(h, monster.id);
+                h = mix(h, quantise(monster.x, 0.5D));
+                h = mix(h, quantise(monster.y, 0.5D));
+                h = mix(h, quantise(monster.z, 0.5D));
+                h = mix(h, quantise(monster.vx, 0.05D));
+                h = mix(h, quantise(monster.vz, 0.05D));
+            } else if (distance <= 60.0D && speed >= 0.08D) {
+                /*
+                 * Strategic-only remote signature. The coarse buckets avoid
+                 * re-planning for every fractional packet while still waking
+                 * the background route planner as a moving mob approaches.
+                 */
+                relevant = true;
+                h = mix(h, monster.id);
+                h = mix(h, quantise(monster.x, 1.0D));
+                h = mix(h, quantise(monster.z, 1.0D));
+                h = mix(h, quantise(monster.vx, 0.10D));
+                h = mix(h, quantise(monster.vz, 0.10D));
+            }
         }
-        return h;
+
+        return relevant ? h : 0L;
     }
 
     private static long quantise(double value, double quantum) {

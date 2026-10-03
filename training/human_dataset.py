@@ -465,29 +465,16 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     movement = load_by_tick(movement_path)
     inputs = load_by_tick(input_path)
 
-    # Keep maze/monster processing streaming-sized. These streams can be much
-    # larger than world/input, especially because each maze row carries a full
-    # 99x99 representation.
-    topology_rows: List[Tuple[int, int, List[float]]] = []
-    if maze_path.exists():
-        for row in stream_rows(maze_path):
-            try:
-                tick = int(row["tick"])
-                row_stage = int(row.get("stage", -1))
-            except (TypeError, ValueError):
-                continue
-            world_row = world.get(tick)
-            movement_row = movement.get(tick)
-            center = find_center(world_row) if world_row else None
-            if world_row and movement_row and center is not None:
-                topology_rows.append((
-                    tick,
-                    row_stage,
-                    extract_local_topology(row, movement_row, center),
-                ))
-
-    topology_rows.sort(key=lambda item: item[0])
-    topology_ticks = [item[0] for item in topology_rows]
+    # Maze snapshots are sparse and each snapshot carries a full 99x99 map.
+    # Do not require an exact world/movement tick: advance the maze stream only
+    # as far as the current action tick and retain the latest snapshot. This
+    # keeps memory bounded while preserving the topology that was known at the
+    # time of each human action.
+    topology_iter = iter(stream_rows(maze_path)) if maze_path.exists() else iter(())
+    topology_next = next(topology_iter, None)
+    topology_current: Optional[dict] = None
+    topology_current_tick = -1
+    topology_current_stage = -1
 
     monsters_by_tick: Dict[int, dict] = {}
     if monster_path.exists():
@@ -508,6 +495,31 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     rows: List[dict] = []
 
     for index, tick in enumerate(shared_ticks):
+        while topology_next is not None:
+            try:
+                next_topology_tick = int(topology_next["tick"])
+            except (TypeError, ValueError):
+                topology_next = next(topology_iter, None)
+                continue
+
+            if next_topology_tick > tick:
+                break
+
+            row_stage = int(topology_next.get("stage", -1) or -1)
+            floor = topology_next.get("physicalFloor")
+            if not isinstance(floor, list) or len(floor) != 99:
+                floor = topology_next.get("maze")
+
+            if isinstance(floor, list) and len(floor) == 99:
+                topology_current = {
+                    "physicalFloor": floor,
+                    "maze": topology_next.get("maze"),
+                }
+                topology_current_tick = next_topology_tick
+                topology_current_stage = row_stage
+
+            topology_next = next(topology_iter, None)
+
         world_row = world[tick]
         movement_row = movement[tick]
         input_row = inputs[tick]
@@ -528,16 +540,16 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             kit_override=kit,
         )
 
-        # Maze snapshots are much sparser than tick telemetry. Carry forward
-        # the latest snapshot from the same stage instead of requiring an
-        # exact-tick match. This preserves the topology state that was known
-        # to the observer at the time of the action.
-        if topology_rows:
-            position = bisect.bisect_right(topology_ticks, tick) - 1
-            if position >= 0:
-                snapshot_tick, snapshot_stage, snapshot_features = topology_rows[position]
-                if snapshot_stage == stage:
-                    features[32:41] = snapshot_features
+        if (
+            topology_current is not None
+            and topology_current_tick <= tick
+            and topology_current_stage == stage
+        ):
+            features[32:41] = extract_local_topology(
+                topology_current,
+                movement_row,
+                find_center(world_row),
+            )
 
         action = build_action(input_row)
 

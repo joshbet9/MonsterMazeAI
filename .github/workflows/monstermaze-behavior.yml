@@ -49,12 +49,10 @@ jobs:
           : > simulation-artifacts/behavior.log
           : > simulation-artifacts/behavior-summary.txt
           cases=(
-            'MODERN:P1:JUMPER'
-            'MODERN:P2:JUMPER'
-            'MODERN:P3:JUMPER'
-            'MODERN:P1:SLOWBALLER'
-            'SPEED:P2:REPULSOR'
+            'MODERN:P2:MAVERICK'
+            'MODERN:P3:MAVERICK'
           )
+
           for diag_case in "${cases[@]}"; do
             echo "===== RUN ${diag_case} =====" | tee -a simulation-artifacts/behavior.log
             mvn -B -ntp -pl common \

@@ -104,8 +104,8 @@ class MonsterAwareRoutePlannerTest {
         state.player.z = 0.5;
         state.tick = 100;
 
-        MonsterState moving = new MonsterState(9, 0.5, 0.0, 2.5);
-        moving.vz = 0.20;
+        MonsterState moving = new MonsterState(9, 2.5, 0.0, 3.5);
+        moving.vx = -0.20;
         state.monsters.add(moving);
 
         PlayerRoute exposed = new PlayerRoute(List.of(

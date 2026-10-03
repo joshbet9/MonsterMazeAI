@@ -360,19 +360,8 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
-            Cell supportedCell = new Cell(startRow, startColumn);
-            boolean supportedCellOnRoute = route.cells().contains(supportedCell);
-            /*
-             * Continuous Minecraft momentum can move the player's centre away from
-             * the exact route centreline while the 0.6-wide AABB still overlaps the
-             * intended route cell. The supported logical cell is therefore the
-             * topology test; current-segment deviation is the physical correction
-             * guard. Avoid rebuilding the route merely because the player is
-             * temporarily offset inside the same supported corridor.
-             */
-            boolean routeInvalid = !gapExecutionActive
-                    && (!supportedCellOnRoute
-                    || currentSegmentDeviation(state, route, waypointIndex) > 1.10D);
+            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
+                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
 
             if (routeInvalid) {
                 /*

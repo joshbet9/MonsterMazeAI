@@ -814,10 +814,33 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 12L) {
             fullRouteEvaluationPending = true;
             return;
+        }
+
+        /*
+         * Monster motion is expected. Requiring an identical threat signature
+         * made almost every asynchronously generated route stale before it
+         * could ever be used. Instead, re-score the candidate against the
+         * current monster positions/velocities and only apply it when it is
+         * materially safer than the route we are currently executing.
+         *
+         * This gives the AI human-like behaviour at the strategic boundary:
+         * see a mob moving into the chosen line, let the background evaluator
+         * finish, then switch to a safer route without pretending the world
+         * has stopped changing.
+         */
+        if (route != null) {
+            double currentRisk = routePlanner.dynamicThreatRisk(state, route);
+            double plannedRisk = routePlanner.dynamicThreatRisk(state, planned.route);
+            boolean sameRoute = route.cells().equals(planned.route.cells());
+            boolean materiallySafer = plannedRisk + 0.08D < currentRisk;
+            boolean emergencySafer = currentRisk >= 0.75D && plannedRisk + 0.02D < currentRisk;
+            if (!sameRoute && !materiallySafer && !emergencySafer) {
+                fullRouteEvaluationPending = true;
+                return;
+            }
         }
 
         /*
@@ -830,6 +853,10 @@ public final class StableLiveMovementController {
                 state, planned.route, startRow, startColumn)) {
             fullRouteEvaluationPending = true;
             return;
+        }
+
+        if (currentThreat != planned.threatSignature) {
+            lastDecisionDetail = "ASYNC_ROUTE_APPLIED_MOVING_THREATS";
         }
 
         route = planned.route;

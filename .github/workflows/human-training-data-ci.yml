@@ -1,0 +1,30 @@
+name: Human Training Data CI
+
+on:
+  pull_request:
+    paths:
+      - "tools/build_human_locomotion_dataset.py"
+      - "tools/test_build_human_locomotion_dataset.py"
+      - ".github/workflows/human-training-data-ci.yml"
+  push:
+    branches:
+      - main
+      - architecture/cpu-opponents-v2
+    paths:
+      - "tools/build_human_locomotion_dataset.py"
+      - "tools/test_build_human_locomotion_dataset.py"
+      - ".github/workflows/human-training-data-ci.yml"
+
+jobs:
+  python-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile importer
+        run: python -m py_compile tools/build_human_locomotion_dataset.py tools/test_build_human_locomotion_dataset.py
+      - name: Run importer smoke test
+        working-directory: tools
+        run: python test_build_human_locomotion_dataset.py

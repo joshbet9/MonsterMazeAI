@@ -63,7 +63,12 @@ public final class MonsterAwareRoutePlanner {
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        if (hasRelevantMonster(state)) {
+        List<Cell> normalCells = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
+        List<Cell> gapCells = pathfinder.shortestPath(state.maze, start, goal);
+
+        if (hasRelevantMonster(state)
+                || projectedMonsterThreatOnRoute(state, normalCells)
+                || projectedMonsterThreatOnRoute(state, gapCells)) {
             ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
             PlayerRoute chosen = chooseByGapRisk(
                     state,
@@ -77,8 +82,8 @@ public final class MonsterAwareRoutePlanner {
 
         PlayerRoute chosen = chooseByGapRisk(
                 state,
-                toRoute(pathfinder.shortestPathWithoutGaps(state.maze, start, goal)),
-                toRoute(pathfinder.shortestPath(state.maze, start, goal)));
+                toRoute(normalCells),
+                toRoute(gapCells));
         if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
         return chosen;
     }
@@ -94,8 +99,15 @@ public final class MonsterAwareRoutePlanner {
         }
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
+        List<Cell> normalCells = pathfinder.shortestPathToRegionWithoutGaps(
+                state.maze, start, regionCenter, radius);
+        List<Cell> gapCells = pathfinder.shortestPathToRegion(
+                state.maze, start, regionCenter, radius);
+
         PlayerRoute chosen;
-        if (hasRelevantMonster(state)) {
+        if (hasRelevantMonster(state)
+                || projectedMonsterThreatOnRoute(state, normalCells)
+                || projectedMonsterThreatOnRoute(state, gapCells)) {
             ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
             chosen = chooseByGapRisk(
                     state,
@@ -105,11 +117,7 @@ public final class MonsterAwareRoutePlanner {
                             state, start, regionCenter, radius, true)));
         } else {
             chosen = chooseByGapRisk(
-                    state,
-                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
-                            state.maze, start, regionCenter, radius)),
-                    toRoute(pathfinder.shortestPathToRegion(
-                            state.maze, start, regionCenter, radius)));
+                    state, toRoute(normalCells), toRoute(gapCells));
         }
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
@@ -119,6 +127,62 @@ public final class MonsterAwareRoutePlanner {
         for (var monster : state.monsters) {
             if (MonsterRelevance.withinPlayerRadius(
                     monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Cheap far-threat gate for bootstrap/recovery routing. The expensive
+     * source-faithful tactical simulator still starts only inside the local
+     * interaction envelope, but a mob that is currently far away and moving
+     * into the selected corridor should make the fast planner choose from the
+     * threat-aware alternatives before committing to the direct lane.
+     */
+    private static boolean projectedMonsterThreatOnRoute(GameState state, List<Cell> cells) {
+        if (state == null || cells == null || cells.size() < 2) return false;
+
+        double playerSpeed = Math.max(
+                Math.hypot(state.player.vx, state.player.vz), 0.18D);
+        double routeDistance = 0.0D;
+
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell a = cells.get(i);
+            Cell b = cells.get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double dx = bx - ax;
+            double dz = bz - az;
+            double length = Math.hypot(dx, dz);
+            if (length <= 1.0E-9D) continue;
+
+            double midX = (ax + bx) * 0.5D;
+            double midZ = (az + bz) * 0.5D;
+            double arrivalTicks = Math.min(
+                    120.0D,
+                    routeDistance / playerSpeed
+                            + length * 0.5D / playerSpeed);
+
+            for (var monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+                double predictedX = monster.x + monster.vx * arrivalTicks;
+                double predictedZ = monster.z + monster.vz * arrivalTicks;
+
+                double t = ((predictedX - ax) * dx + (predictedZ - az) * dz)
+                        / (length * length);
+                t = Math.max(0.0D, Math.min(1.0D, t));
+                double nearestX = ax + t * dx;
+                double nearestZ = az + t * dz;
+                double distance = Math.hypot(predictedX - nearestX, predictedZ - nearestZ);
+
+                if (distance <= 2.75D) {
+                    return true;
+                }
+            }
+            routeDistance += length;
         }
         return false;
     }

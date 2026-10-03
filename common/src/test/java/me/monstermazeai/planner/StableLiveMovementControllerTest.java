@@ -700,7 +700,7 @@ class StableLiveMovementControllerTest {
     @Test
     void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         s.tick = 1;
@@ -710,14 +710,14 @@ class StableLiveMovementControllerTest {
         // residual vanilla momentum before the next observation is processed.
         s.player.z = 8.62;
         s.player.vz = 0.25;
-        s.player.vx = 0.0;
+        s.player.vx = 0.0D;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        s.player.y = 0.0;
+        s.player.y = 0.0D;
         s.tick = 2;
 
         boolean reachedGoalSurface = false;
-        boolean sawOvershootBrake = false;
+        boolean sawNextSegmentCommand = false;
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false, 2);
             double yawRadians = Math.toRadians(s.player.yaw + action.yawDelta());
@@ -730,12 +730,11 @@ class StableLiveMovementControllerTest {
             double worldZ = forwardWorldZ * action.forward()
                     + strafeWorldZ * action.strafe();
 
-            if (controller.lastDecisionDetail().contains("CORNER_OVERSHOOT_BRAKE")) {
-                sawOvershootBrake = true;
-                assertTrue(Math.abs(worldZ) <= 0.65D + 1.0E-6,
-                        "overshoot brake was too strong: "
-                                + controller.lastDecisionDetail());
+            if (worldX > 0.05D) {
+                sawNextSegmentCommand = true;
             }
+            assertFalse(controller.lastDecisionDetail().contains("CORNER_OVERSHOOT_BRAKE"),
+                    "stale reverse corner brake returned: " + controller.lastDecisionDetail());
 
             if (controller.lastDecisionDetail().contains("REACHED_SAFE_PAD")
                     || controller.lastDecisionDetail().contains("REACHED routeSize=1")) {
@@ -749,10 +748,11 @@ class StableLiveMovementControllerTest {
             s.tick++;
         }
 
-        assertTrue(sawOvershootBrake,
-                "corner overshoot never engaged a momentum brake: " + controller.lastDecisionDetail());
         assertTrue(reachedGoalSurface,
                 "corner overshoot never reached the live SafePad surface: "
+                        + controller.lastDecisionDetail());
+        assertTrue(sawNextSegmentCommand,
+                "post-corner motor never issued physical +X progress: "
                         + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "

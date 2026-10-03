@@ -33,6 +33,13 @@ public final class TacticalRouteSimulator {
     private static final int ROUTE_TICK_MARGIN = 40;
     private static final double TACTICAL_RELEVANCE_RADIUS = MonsterRelevance.INTERACTION_RADIUS;
     private static final double WAYPOINT_TOLERANCE = 0.30;
+    /**
+     * Tactical damage debt measured as a fraction of one waypoint for a normal
+     * four-health Monster Maze bump. The v14 default is 0.50: taking four damage
+     * is half a waypoint of tactical debt. CI calibration can sweep this value
+     * without changing source-faithful movement or bump mechanics.
+     */
+    private static final double DEFAULT_DAMAGE_DEBT_PER_FOUR_HEALTH = 0.50D;
 
     private final LegacyMovementModel physics = new LegacyMovementModel();
     private final AbilityModel abilities = new AbilityModel();
@@ -188,7 +195,14 @@ public final class TacticalRouteSimulator {
          * Goal completion still wins unconditionally above, so this cannot make
          * the planner prefer a safe stall over actually reaching the pad.
          */
-        long damagePenalty = damage * 125_000_000L;
+        double debtPerFourHealth = Double.parseDouble(System.getProperty(
+                "monstermaze.tactical.damageDebtPerFourHealth",
+                Double.toString(DEFAULT_DAMAGE_DEBT_PER_FOUR_HEALTH)));
+        if (!Double.isFinite(debtPerFourHealth) || debtPerFourHealth < 0.0D) {
+            debtPerFourHealth = DEFAULT_DAMAGE_DEBT_PER_FOUR_HEALTH;
+        }
+        long damagePenalty = Math.round(
+                damage * (debtPerFourHealth * 250_000_000.0D));
         return remaining * 1_000_000_000_000L + distance * 1_000_000L + damagePenalty;
     }
 

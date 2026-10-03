@@ -291,11 +291,7 @@ public final class MonsterAwareRoutePlanner {
             }
 
             if (generated.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
-            generated.sort(this::compareByGapRisk);
-            if (generated.size() > limit) {
-                generated = new ArrayList<>(generated.subList(0, limit));
-            }
-            candidates = generated;
+            candidates = selectDiverseRegionCandidates(state, generated, limit);
         }
 
         cachedTopologySignature = topology;
@@ -573,6 +569,84 @@ public final class MonsterAwareRoutePlanner {
             if ((dr == 2 && dc == 0) || (dc == 2 && dr == 0)) count++;
         }
         return count;
+    }
+
+    /** Preserve diverse region routes before tactical evaluation. */
+    private List<PlayerRoute> selectDiverseRegionCandidates(GameState state,
+                                                              List<PlayerRoute> generated,
+                                                              int limit) {
+        if (generated.size() <= limit) return List.copyOf(generated);
+
+        ArrayList<PlayerRoute> byCost = new ArrayList<>(generated);
+        byCost.sort(this::compareByGapRisk);
+        LinkedHashMap<String, PlayerRoute> selected = new LinkedHashMap<>();
+
+        if (hasRelevantMonster(state)) {
+            addSelected(selected, generated, 0);
+            addSelected(selected, generated, 1);
+        }
+        addSelected(selected, byCost, 0);
+
+        PlayerRoute fewestTurns = byCost.stream().min((a, b) -> {
+            int turns = Integer.compare(routeTurnCount(a), routeTurnCount(b));
+            return turns != 0 ? turns : compareByGapRisk(a, b);
+        }).orElse(null);
+        if (fewestTurns != null) selected.put(routeKey(fewestTurns), fewestTurns);
+
+        PlayerRoute fewestGaps = byCost.stream().min((a, b) -> {
+            int gaps = Integer.compare(gapCount(a), gapCount(b));
+            return gaps != 0 ? gaps : compareByGapRisk(a, b);
+        }).orElse(null);
+        if (fewestGaps != null) selected.put(routeKey(fewestGaps), fewestGaps);
+
+        int remainingSlots = Math.max(0, limit - selected.size());
+        for (int i = 0; i < remainingSlots && selected.size() < limit; i++) {
+            int index = remainingSlots <= 1
+                    ? 0
+                    : (int)Math.round(i * (byCost.size() - 1.0) / (remainingSlots - 1.0));
+            PlayerRoute route = byCost.get(Math.max(0,
+                    Math.min(byCost.size() - 1, index)));
+            selected.put(routeKey(route), route);
+        }
+        for (PlayerRoute route : byCost) {
+            if (selected.size() >= limit) break;
+            selected.put(routeKey(route), route);
+        }
+        return List.copyOf(selected.values());
+    }
+
+    private static void addSelected(Map<String, PlayerRoute> selected,
+                                     List<PlayerRoute> routes, int index) {
+        if (index < 0 || index >= routes.size()) return;
+        PlayerRoute route = routes.get(index);
+        selected.putIfAbsent(routeKey(route), route);
+    }
+
+    private static String routeKey(PlayerRoute route) {
+        StringBuilder key = new StringBuilder(route.size() * 8);
+        for (Cell cell : route.cells()) {
+            key.append(cell.row()).append(':').append(cell.column()).append(';');
+        }
+        return key.toString();
+    }
+
+    private static int routeTurnCount(PlayerRoute route) {
+        if (route == null || route.size() < 3) return 0;
+        int previousRow = Integer.signum(
+                route.cells().get(1).row() - route.cells().get(0).row());
+        int previousColumn = Integer.signum(
+                route.cells().get(1).column() - route.cells().get(0).column());
+        int turns = 0;
+        for (int i = 2; i < route.size(); i++) {
+            int row = Integer.signum(
+                    route.cells().get(i).row() - route.cells().get(i - 1).row());
+            int column = Integer.signum(
+                    route.cells().get(i).column() - route.cells().get(i - 1).column());
+            if (row != previousRow || column != previousColumn) turns++;
+            previousRow = row;
+            previousColumn = column;
+        }
+        return turns;
     }
 
     private List<PlayerRoute> distinct(List<PlayerRoute> routes, int limit) {

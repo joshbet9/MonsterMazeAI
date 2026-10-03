@@ -228,6 +228,34 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void regionCandidateSelectionRetainsLongerRoutesForTacticalEvaluation() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        List<PlayerRoute> generated = new java.util.ArrayList<>();
+        for (int length = 2; length <= 21; length++) {
+            List<Cell> cells = new java.util.ArrayList<>();
+            for (int i = 0; i < length; i++) {
+                cells.add(new Cell(0, i));
+            }
+            generated.add(new PlayerRoute(cells));
+        }
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "selectDiverseRegionCandidates", GameState.class, List.class, int.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<PlayerRoute> selected =
+                (List<PlayerRoute>) method.invoke(
+                        new MonsterAwareRoutePlanner(), state, generated, 12);
+
+        assertEquals(12, selected.size());
+        assertTrue(selected.stream().mapToInt(PlayerRoute::size).max().orElse(0) > 12,
+                "longer route alternatives must survive pre-simulation culling");
+    }
+
+    @Test
     void fullRoutingRetainsAnOrdinaryRouteEvenWhenGapCandidatesExist() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

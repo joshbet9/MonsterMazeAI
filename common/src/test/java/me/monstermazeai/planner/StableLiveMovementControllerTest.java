@@ -35,7 +35,7 @@ class StableLiveMovementControllerTest {
     @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         int reachedTick = -1;
@@ -56,7 +56,7 @@ class StableLiveMovementControllerTest {
     @Test
     void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
         GameState s = state(0.0, 0.0, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         Action first = controller.nextAction(s, new Cell(8, 0), false);
 
@@ -70,7 +70,7 @@ class StableLiveMovementControllerTest {
     @Test
     void sourceSafePadLaneOffsetIsPreservedAfterHeadingAligns() {
         GameState s = state(0.0, 0.0, -90.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
@@ -84,7 +84,7 @@ class StableLiveMovementControllerTest {
     @Test
     void turnsTowardSidewaysObjectiveWithoutStrafingBackAndForth() {
         GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         boolean sawForward = false;
@@ -106,7 +106,7 @@ class StableLiveMovementControllerTest {
     @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
         GameState s = state(0.5, 0.5, -20.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         Action action = controller.nextAction(s, new Cell(0, 8), false);
 
@@ -121,7 +121,7 @@ class StableLiveMovementControllerTest {
     @Test
     void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
@@ -159,7 +159,7 @@ class StableLiveMovementControllerTest {
         s.player.grounded = true;
         s.tick = 100;
 
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         Action action = controller.nextAction(s, new Cell(0, 4), true);
 
         assertEquals(1.0, action.forward(), 0.0);
@@ -203,7 +203,7 @@ class StableLiveMovementControllerTest {
         s.player.grounded = true;
         s.tick = 1;
 
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         Action approach = controller.nextAction(s, new Cell(10, 30), true);
         assertEquals(1.0, approach.forward(), 0.0);
         // Normal live movement may already be jump-spamming for a Jumper;
@@ -225,7 +225,7 @@ class StableLiveMovementControllerTest {
     @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         s.tick = 1;
         Action first = controller.nextAction(s, new Cell(0, 8), false);
@@ -270,7 +270,7 @@ class StableLiveMovementControllerTest {
         s.player.grounded = true;
         s.tick = 1;
 
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         controller.nextAction(s, new Cell(2, 2), false);
 
         // Simulate vanilla momentum carrying the player past the first turn
@@ -293,7 +293,7 @@ class StableLiveMovementControllerTest {
     @Test
     void reducesTurnPulseNearCardinalHeading() {
         GameState s = state(0.5, 0.5, -87.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
@@ -306,7 +306,7 @@ class StableLiveMovementControllerTest {
     @Test
     void mobHitClearsStaleRouteAndWaitsForGroundBeforeResuming() {
         GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         s.tick = 1;
         Action first = controller.nextAction(s, new Cell(0, 8), false);
@@ -351,7 +351,7 @@ class StableLiveMovementControllerTest {
     @Test
     void facesNewPadBeforeDrivingOffPreviouslyReachedPad() {
         GameState s = state(0.5, 8.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         s.tick = 1;
         Action reached = controller.nextAction(s, new Cell(0, 8), false);
@@ -386,7 +386,7 @@ class StableLiveMovementControllerTest {
     @Test
     void activePadChangeImmediatelyUsesTheNewOrdinaryRoute() {
         GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         s.tick = 1;
         Action first = controller.nextAction(s, new Cell(0, 8), false);
@@ -429,7 +429,7 @@ class StableLiveMovementControllerTest {
         s.player.yaw = 0.0F;
         s.player.grounded = true;
 
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         s.tick = 1;
         // Establish the previous objective while the player is on that pad.
         assertEquals(Action.IDLE, controller.nextAction(s, new Cell(10, 10), false));
@@ -484,7 +484,7 @@ class StableLiveMovementControllerTest {
     @Test
     void advancesWhenPhysicsHasCrossedCornerByOnlyTwoCentimetres() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
 
         s.tick = 1;
         controller.nextAction(s, new Cell(8, 8), false);
@@ -507,7 +507,7 @@ class StableLiveMovementControllerTest {
     @Test
     void fallbackMobYieldMovesAwayAfterReverseAlignment() {
         GameState s = state(2.5, 2.5, 180.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         s.activePadRow = 2;
         s.activePadColumn = 8;
 
@@ -533,7 +533,7 @@ class StableLiveMovementControllerTest {
     @Test
     void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         s.tick = 1;
@@ -583,7 +583,7 @@ class StableLiveMovementControllerTest {
         s.player.vx = startRow == cornerRow ? 0.0D : initialSpeed * Integer.signum(cornerRow - startRow);
         s.player.vz = startColumn == cornerColumn ? 0.0D : initialSpeed * Integer.signum(cornerColumn - startColumn);
 
-        StableLiveMovementController controller = new StableLiveMovementController();
+        StableLiveMovementController controller = new StableLiveMovementController(AiProfile.BASELINE, false);
         LegacyMazePhysics physics = new LegacyMazePhysics();
         CornerResult result = new CornerResult();
 

@@ -42,6 +42,8 @@ public final class StableLiveMovementController {
     // Matrix trigger: validate the bounded corner-drive experiment.
     // Behavior workflow trigger after lab harness correction. 1791021083676
     private final AiProfile profile;
+    /** Deterministic lab mode: strategic replans complete in the same simulation step instead of racing wall-clock threads. */
+    private final boolean deterministicPlanning = Boolean.getBoolean("monstermaze.sim.deterministic");
 
     public StableLiveMovementController() {
         this(AiProfile.BASELINE);
@@ -837,11 +839,28 @@ public final class StableLiveMovementController {
     }
 
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
-        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
-
         GameState snapshot = liveState.copyForSimulation();
         long requestedTick = liveState.tick;
         long topology = snapshot.maze.dynamicSignature();
+
+        if (deterministicPlanning) {
+            try {
+                PlayerRoute planned = regionRadius > 0
+                        ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
+                        : backgroundRoutePlanner.route(snapshot, start, goal);
+                completedRoutePlan = new PlannedRoute(
+                        planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
+                        requestedTick, topology, threatSignature(snapshot));
+            } catch (RuntimeException failure) {
+                completedRoutePlan = null;
+                System.err.println("[MonsterMazeAI] deterministic strategic route failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            }
+            return;
+        }
+
+        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
+
         pendingRoutePlan = routePlanningExecutor.submit(() -> {
             try {
                 PlayerRoute planned = regionRadius > 0

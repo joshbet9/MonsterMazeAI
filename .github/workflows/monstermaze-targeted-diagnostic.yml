@@ -49,6 +49,7 @@ jobs:
             mvn -B -ntp -pl common \
               "-Dtest=FullRunFailureDiagnosticTest" \
               "-Dmonstermaze.diag.case=${diag_case}" \
+              "-Dmonstermaze.sim.deterministic=true" \
               "-Dsurefire.useFile=false" \
               "-Dsurefire.redirectTestOutputToFile=false" \
               test 2>&1 | tee -a diagnostic-artifacts/behavior.log

@@ -567,7 +567,7 @@ public final class StableLiveMovementController {
                 lateralWorldZ = -crossSign;
             }
 
-            double correctionWeight = Math.min(1.0D, 0.55D + Math.abs(crossTrack) * 1.50D);
+            double correctionWeight = Math.min(0.75D, 0.40D + Math.abs(crossTrack) * 0.90D);
             double laneExcess = Math.max(0.0D, Math.abs(crossTrack) - MAX_SAFE_LANE_ERROR);
             double driveWeight = 0.85D
                     * Math.max(0.0D, 1.0D - Math.min(1.0D, laneExcess / 0.30D));
@@ -1555,7 +1555,6 @@ public final class StableLiveMovementController {
 
         Action[] alternatives = {
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),
                 new Action(0.0, -counter, false, false, action.yawDelta(), false)
         };

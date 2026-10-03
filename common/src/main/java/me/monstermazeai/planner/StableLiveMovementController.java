@@ -1915,12 +1915,36 @@ public final class StableLiveMovementController {
         return guarded;
     }
 
+    /**
+     * Number of route cells to inspect when deciding whether an asynchronously
+     * planned route is allowed to change the current heading because a monster
+     * may make the existing route unsafe. The source interaction sphere is 20
+     * blocks; the historical value of eight segments made that lookahead much
+     * shorter than the actual local observation horizon.
+     *
+     * The default remains the validated v14 behaviour. CI can sweep the larger
+     * values without changing the production default until a candidate wins the
+     * full 30-cell matrix without regressions.
+     */
+    private static int routeThreatLookaheadSegments() {
+        final int defaultSegments = 8;
+        final int maxSegments = 20;
+        String raw = System.getProperty("monstermaze.routeThreatLookaheadSegments");
+        if (raw == null || raw.isBlank()) return defaultSegments;
+        try {
+            return Math.max(1, Math.min(maxSegments, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException ignored) {
+            return defaultSegments;
+        }
+    }
+
     private boolean currentRouteThreatenedByMonster(GameState state) {
         if (route == null || route.size() < 2
                 || waypointIndex <= 0 || waypointIndex >= route.size()) return false;
 
         int firstSegment = Math.max(0, waypointIndex - 1);
-        int lastSegment = Math.min(route.size() - 2, firstSegment + 8);
+        int lookaheadSegments = routeThreatLookaheadSegments();
+        int lastSegment = Math.min(route.size() - 2, firstSegment + lookaheadSegments);
         double playerRouteDistance = 0.0D;
 
         for (int i = firstSegment; i <= lastSegment; i++) {

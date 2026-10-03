@@ -1081,10 +1081,26 @@ public final class StableLiveMovementController {
                     + " yawDelta=" + format(yawDelta);
 
             /*
-             * No new world-axis acceleration during the heading acquisition.
-             * Existing momentum continues to carry the player along the current
-             * segment while vanilla ground friction reduces it.
+             * JUMPER loses a large fraction of its short Modern phase budget at
+             * repeated 90-degree acquisitions. Keep a low-strength current-axis
+             * drive active while the camera turns. Non-Jumpers retain the proven
+             * zero-acceleration staging until this behavior is separately tested.
              */
+            if (state.kit == me.monstermazeai.kit.Kit.JUMPER) {
+                double currentYaw = Math.toRadians(state.player.yaw);
+                double worldX = currentDirRow;
+                double worldZ = currentDirColumn;
+                double forwardWorldX = -Math.sin(currentYaw);
+                double forwardWorldZ = Math.cos(currentYaw);
+                double strafeWorldX = Math.cos(currentYaw);
+                double strafeWorldZ = Math.sin(currentYaw);
+                double forward = (worldX * forwardWorldX + worldZ * forwardWorldZ) * 0.20D;
+                double strafe = (worldX * strafeWorldX + worldZ * strafeWorldZ) * 0.20D;
+                lastDecisionDetail += " CORNER_PREP_JUMPER_DRIVE"
+                        + " forward=" + format(forward)
+                        + " strafe=" + format(strafe);
+                return new Action(forward, strafe, false, false, yawDelta, false);
+            }
             return new Action(0.0, 0.0, false, false, yawDelta, false);
         }
 

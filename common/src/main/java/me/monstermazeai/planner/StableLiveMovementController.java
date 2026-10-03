@@ -42,8 +42,9 @@ public final class StableLiveMovementController {
     // Matrix trigger: validate the bounded corner-drive experiment.
     // Behavior workflow trigger after lab harness correction. 1791021083676
     private final AiProfile profile;
-    /** Deterministic lab mode: strategic replans complete in the same simulation step instead of racing wall-clock threads. */
+    /** Deterministic lab mode: emulate one outstanding background planner with logical rather than wall-clock completion. */
     private final boolean deterministicPlanning = Boolean.getBoolean("monstermaze.sim.deterministic");
+    private static final long DETERMINISTIC_PLAN_LATENCY_TICKS = 6L;
 
     public StableLiveMovementController() {
         this(AiProfile.BASELINE);
@@ -146,6 +147,7 @@ public final class StableLiveMovementController {
     private double laneAnchorX;
     private double laneAnchorZ;
     private int postCornerRedirectTicks;
+    private long deterministicPlanReadyTick = Long.MIN_VALUE;
 
     /*
      * A real Monster Maze bump is not just another route deviation. The source
@@ -844,6 +846,16 @@ public final class StableLiveMovementController {
         long topology = snapshot.maze.dynamicSignature();
 
         if (deterministicPlanning) {
+            /*
+             * The live controller normally has at most one outstanding background
+             * plan. Reproduce that occupancy deterministically: requests can still
+             * happen on every fresh threat observation, but a new plan is not
+             * started until the previous logical planning window has elapsed.
+             * This removes wall-clock race effects without imposing a gameplay
+             * replan cadence on the production controller.
+             */
+            if (requestedTick < deterministicPlanReadyTick) return;
+            deterministicPlanReadyTick = requestedTick + DETERMINISTIC_PLAN_LATENCY_TICKS;
             try {
                 PlayerRoute planned = regionRadius > 0
                         ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)

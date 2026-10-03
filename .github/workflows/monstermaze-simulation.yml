@@ -10,6 +10,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: monstermaze-simulation-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

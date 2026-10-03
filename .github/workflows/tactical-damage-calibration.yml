@@ -98,22 +98,31 @@ jobs:
               rows.append({'mode':m.group(1).split('_')[0],'pattern':int(m.group(2)),'kit':m.group(3),'maxStage':int(m.group(4)),'ticks':int(m.group(5)),'health':float(m.group(6))})
           if len(rows) != 30:
               raise SystemExit(f'expected 30 matrix rows, found {len(rows)}')
-          baseline = json.loads(Path('docs/calibration/results-matrix-v12.json').read_text(encoding='utf-8'))
-          base = {(x['mode'],x['pattern'],x['kit']):x['maxStage'] for x in baseline['rows']}
+          v12 = json.loads(Path('docs/calibration/results-matrix-v12.json').read_text(encoding='utf-8'))
+          v14 = json.loads(Path('docs/calibration/results-matrix-v14.json').read_text(encoding='utf-8'))
+          base12 = {(x['mode'],x['pattern'],x['kit']):x['maxStage'] for x in v12['rows']}
+          base14 = {(x['mode'],x['pattern'],x['kit']):x['maxStage'] for x in v14['rows']}
           for r in rows:
-              r['baselineMaxStage']=base[(r['mode'],r['pattern'],r['kit'])]
-              r['deltaMaxStage']=r['maxStage']-r['baselineMaxStage']
+              key=(r['mode'],r['pattern'],r['kit'])
+              r['v12MaxStage']=base12[key]
+              r['v14MaxStage']=base14[key]
+              r['deltaVsV12']=r['maxStage']-base12[key]
+              r['deltaVsV14']=r['maxStage']-base14[key]
           summary={
             'selectedDamageDebtPerFourHealth': float(Path('selected-damage-debt.txt').read_text()),
             'cases':len(rows),
             'stageSum':sum(r['maxStage'] for r in rows),
-            'baselineStageSum':sum(base.values()),
-            'improvedCells':sum(r['deltaMaxStage']>0 for r in rows),
-            'worsenedCells':sum(r['deltaMaxStage']<0 for r in rows),
-            'unchangedCells':sum(r['deltaMaxStage']==0 for r in rows),
+            'v12StageSum':sum(base12.values()),
+            'v14StageSum':sum(base14.values()),
+            'improvedVsV12':sum(r['deltaVsV12']>0 for r in rows),
+            'worsenedVsV12':sum(r['deltaVsV12']<0 for r in rows),
+            'improvedVsV14':sum(r['deltaVsV14']>0 for r in rows),
+            'worsenedVsV14':sum(r['deltaVsV14']<0 for r in rows),
+            'unchangedVsV14':sum(r['deltaVsV14']==0 for r in rows),
             'rows':rows,
           }
           Path('calibrated-matrix-summary.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
+
           print(json.dumps({k:v for k,v in summary.items() if k!='rows'},indent=2))
           PY
 

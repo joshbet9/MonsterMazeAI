@@ -54,7 +54,8 @@ jobs:
             'MODERN:P3:JUMPER'
             'MODERN:P1:SLOWBALLER'
             'SPEED:P2:REPULSOR'
-          )          for diag_case in "${cases[@]}"; do
+          )
+          for diag_case in "${cases[@]}"; do
             echo "===== RUN ${diag_case} =====" | tee -a simulation-artifacts/behavior.log
             mvn -B -ntp -pl common \
               "-Dtest=FullRunFailureDiagnosticTest" \

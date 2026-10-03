@@ -192,7 +192,12 @@ def extract_local_topology(maze_row: Optional[dict], movement: dict,
     if not maze_row or center is None:
         return [0.0] * 9
 
-    maze = maze_row.get("maze")
+    # Prefer physicalFloor: it represents the actually walkable surface,
+    # including dynamic deterioration. Fall back to logical maze data for
+    # older observer streams that did not emit physicalFloor.
+    maze = maze_row.get("physicalFloor")
+    if not isinstance(maze, list) or len(maze) != 99:
+        maze = maze_row.get("maze")
     if not isinstance(maze, list) or len(maze) != 99:
         return [0.0] * 9
 
@@ -462,19 +467,25 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     # Keep maze/monster processing streaming-sized. These streams can be much
     # larger than world/input, especially because each maze row carries a full
     # 99x99 representation.
-    topology_by_tick: Dict[int, List[float]] = {}
+    topology_rows: List[Tuple[int, int, List[float]]] = []
     if maze_path.exists():
         for row in stream_rows(maze_path):
             try:
                 tick = int(row["tick"])
+                row_stage = int(row.get("stage", -1))
             except (TypeError, ValueError):
                 continue
             world_row = world.get(tick)
             movement_row = movement.get(tick)
-            if world_row and movement_row:
-                topology_by_tick[tick] = extract_local_topology(
-                    row, movement_row, find_center(world_row)
-                )
+            center = find_center(world_row) if world_row else None
+            if world_row and movement_row and center is not None:
+                topology_rows.append((
+                    tick,
+                    row_stage,
+                    extract_local_topology(row, movement_row, center),
+                ))
+
+    topology_rows.sort(key=lambda item: item[0])
 
     monsters_by_tick: Dict[int, dict] = {}
     if monster_path.exists():
@@ -514,8 +525,19 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             phase_start_seconds=phase_starts[stage],
             kit_override=kit,
         )
-        if tick in topology_by_tick:
-            features[32:41] = topology_by_tick[tick]
+
+        # Maze snapshots are much sparser than tick telemetry. Carry forward
+        # the latest snapshot from the same stage instead of requiring an
+        # exact-tick match. This preserves the topology state that was known
+        # to the observer at the time of the action.
+        if topology_rows:
+            import bisect
+            topology_ticks = [item[0] for item in topology_rows]
+            position = bisect.bisect_right(topology_ticks, tick) - 1
+            if position >= 0:
+                snapshot_tick, snapshot_stage, snapshot_features = topology_rows[position]
+                if snapshot_stage == stage:
+                    features[32:41] = snapshot_features
 
         action = build_action(input_row)
 

@@ -57,6 +57,7 @@ jobs:
         run: |
           mkdir -p simulation-artifacts
           set +e
+          echo "simulation_mode=deterministic" | tee simulation-artifacts/config.txt
           mvn -B -ntp -pl common \
             "-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest" \
             "-Dmonstermaze.sim.deterministic=true" \

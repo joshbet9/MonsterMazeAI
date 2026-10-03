@@ -27,6 +27,7 @@ def make_world(tick: int, stage: int) -> dict:
         "health": 20,
         "alive": True,
         "completed": False,
+        "mazeDetected": True,
         "activePad": {"row": 50, "column": 50, "reached": False},
     }
 

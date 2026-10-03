@@ -517,6 +517,37 @@ class StableLiveMovementControllerTest {
 
 
     @Test
+    void laneCorrectionKeepsDrivingInsteadOfStoppingForTurn() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        // +Z is the initial segment. Offset the player 0.25 blocks in +X so
+        // the old lane-recovery branch would stop/turn instead of driving.
+        s.player.x = 2.75D;
+        s.player.z = 2.50D;
+        s.player.yaw = 0.0F;
+        s.player.vz = 0.08D;
+        s.player.vx = 0.0D;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(Math.hypot(action.forward(), action.strafe()) > 0.1D,
+                "lane correction stopped physical drive: " + controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY_COMBINED"),
+                controller.lastDecisionDetail());
+
+        double beforeZ = s.player.z;
+        physics.tick(s.player, action, s.maze, 0);
+
+        assertTrue(s.player.z > beforeZ,
+                "lane correction failed to preserve forward progress: "
+                        + beforeZ + " -> " + s.player.z);
+    }
+
+    @Test
     void cancelsCornerCommitmentWhenPhysicsReversesTheCurrentSegment() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

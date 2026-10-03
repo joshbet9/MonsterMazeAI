@@ -652,4 +652,31 @@ class StableLiveMovementControllerTest {
         assertTrue(action.forward() >= 0.0);
     }
 
+    @Test
+    void currentSegmentDeviationRejectsAParallelEarlierRouteSegment() throws Exception {
+        GameState s = state(2.5, 0.5, 0.0F);
+        me.monstermazeai.maze.PlayerRoute route = new me.monstermazeai.maze.PlayerRoute(
+                java.util.List.of(
+                        new Cell(2, 0), new Cell(2, 1), new Cell(2, 2), new Cell(3, 2)));
+
+        var method = StableLiveMovementController.class.getDeclaredMethod(
+                "currentSegmentDeviation",
+                GameState.class,
+                me.monstermazeai.maze.PlayerRoute.class,
+                int.class);
+        method.setAccessible(true);
+
+        double global = (Double) StableLiveMovementController.class
+                .getDeclaredMethod("distanceFromRouteCorridor",
+                        GameState.class,
+                        me.monstermazeai.maze.PlayerRoute.class,
+                        int.class)
+                .invoke(new StableLiveMovementController(), s, route, 3);
+        double current = (Double) method.invoke(new StableLiveMovementController(), s, route, 3);
+
+        assertTrue(global < 0.1D, "an earlier parallel route segment is still nearby");
+        assertTrue(current > 1.10D,
+                "the active segment must be considered invalid when the player is more than a block away");
+    }
+
 }

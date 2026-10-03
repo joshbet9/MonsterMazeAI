@@ -790,6 +790,13 @@ class StableLiveMovementControllerTest {
 
             physics.tick(s.player, action, s.maze, 0);
 
+            result.lastX = s.player.x;
+            result.lastZ = s.player.z;
+            result.lastY = s.player.y;
+            result.lastYaw = s.player.yaw;
+            result.lastSpeed = Math.hypot(s.player.vx, s.player.vz);
+            result.lastDecision = controller.lastDecisionDetail();
+
             if (!s.player.grounded && s.player.y < -0.25D) {
                 result.leftPhysicalFloor = true;
                 break;
@@ -854,6 +861,12 @@ class StableLiveMovementControllerTest {
         boolean leftPhysicalFloor;
         int cornerPrepTicks;
         double maxYawDelta;
+        double lastX;
+        double lastZ;
+        double lastY;
+        float lastYaw;
+        double lastSpeed;
+        String lastDecision;
 
         @Override
         public String toString() {
@@ -862,6 +875,10 @@ class StableLiveMovementControllerTest {
                     + ", leftPhysicalFloor=" + leftPhysicalFloor
                     + ", cornerPrepTicks=" + cornerPrepTicks
                     + ", maxYawDelta=" + maxYawDelta
+                    + ", lastPos=" + lastX + "," + lastZ + " y=" + lastY
+                    + ", lastYaw=" + lastYaw
+                    + ", lastSpeed=" + lastSpeed
+                    + ", lastDecision=" + lastDecision
                     + '}';
         }
     }

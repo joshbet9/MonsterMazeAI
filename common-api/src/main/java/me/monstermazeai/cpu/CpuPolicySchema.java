@@ -16,8 +16,20 @@ public final class CpuPolicySchema {
     /** Number of normalized profile values supplied to the policy. */
     public static final int PROFILE_COUNT = 17;
 
-    /** Number of tactical intent values emitted by the tactical head. */
+    /** Legacy compact intent count retained for compatibility with earlier research code. */
     public static final int INTENT_COUNT = 6;
+
+    /** Fixed semantic tactical vector: 5 target + 4 monster + 3 ability + 3 competitor + risk + confidence. */
+    public static final int TACTICAL_VECTOR_COUNT = 17;
+
+    /** Direct locomotion head: forward, steering, strafe, jump, sprint, primary ability, enhanced ability, confidence. */
+    public static final int LOCOMOTION_OUTPUT_COUNT = 8;
+
+    /** Tactical network input = observation + profile. */
+    public static final int TACTICAL_INPUT_COUNT = FEATURE_COUNT + PROFILE_COUNT;
+
+    /** Locomotion network input = observation + profile + semantic tactical vector. */
+    public static final int LOCOMOTION_INPUT_COUNT = FEATURE_COUNT + PROFILE_COUNT + TACTICAL_VECTOR_COUNT;
 
     private CpuPolicySchema() {}
 }

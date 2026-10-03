@@ -40,7 +40,7 @@ jobs:
       - name: Install common-api
         run: mvn -B -ntp -pl common-api -am install -DskipTests
       - name: Run focused movement regressions
-        run: mvn -B -ntp -pl common "-Dtest=StableLiveMovementControllerTest" test
+        run: mvn -B -ntp -pl common "-Dtest=StableLiveMovementControllerTest" "-Dmonstermaze.sim.deterministic=true" test
 
       - name: Run all behavioral replays
         shell: bash
@@ -58,6 +58,7 @@ jobs:
             mvn -B -ntp -pl common \
               "-Dtest=FullRunFailureDiagnosticTest" \
               "-Dmonstermaze.diag.case=${diag_case}" \
+              "-Dmonstermaze.sim.deterministic=true" \
               "-Dsurefire.useFile=false" \
               "-Dsurefire.redirectTestOutputToFile=false" \
               test 2>&1 | tee -a simulation-artifacts/behavior.log

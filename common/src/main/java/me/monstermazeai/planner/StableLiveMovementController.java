@@ -592,13 +592,17 @@ public final class StableLiveMovementController {
              * branch is to regain a physical corridor, not maximize speed while
              * the camera is still turning.
              */
-            action = new Action(forward, strafe, false, false, yawDelta, false);
+            Action laneRecovery = new Action(forward, strafe, false, false, yawDelta, false);
+            Action guarded = guardProjectedSupport(
+                    state, laneRecovery, dirRow, dirColumn);
+            action = guarded;
             lastDecisionDetail += " LANE_RECOVERY world="
                     + format(desiredWorldX) + "," + format(desiredWorldZ)
                     + " crossTrack=" + format(crossTrack)
                     + " f=" + format(forward)
                     + " s=" + format(strafe)
-                    + " yawDelta=" + format(yawDelta);
+                    + " yawDelta=" + format(yawDelta)
+                    + (guarded == laneRecovery ? "" : " EDGE_GUARD");
         } else if (Math.abs(crossTrack) > 0.18) {
             double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
             double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;

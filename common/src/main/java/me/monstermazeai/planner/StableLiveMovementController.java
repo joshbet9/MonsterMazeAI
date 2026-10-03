@@ -568,7 +568,9 @@ public final class StableLiveMovementController {
             }
 
             double correctionWeight = Math.min(1.0D, 0.55D + Math.abs(crossTrack) * 1.50D);
-            double driveWeight = 0.85D;
+            double laneExcess = Math.max(0.0D, Math.abs(crossTrack) - MAX_SAFE_LANE_ERROR);
+            double driveWeight = 0.85D
+                    * Math.max(0.0D, 1.0D - Math.min(1.0D, laneExcess / 0.30D));
             double desiredWorldX = dirRow * driveWeight
                     + lateralWorldX * correctionWeight;
             double desiredWorldZ = dirColumn * driveWeight

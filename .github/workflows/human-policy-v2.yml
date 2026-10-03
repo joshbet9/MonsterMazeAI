@@ -23,7 +23,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check numpy
 
       - name: Compile training scripts
-        run: python -m py_compile training/human_dataset.py training/validate_dataset.py training/test_human_dataset.py ml/human_policy_v2.py
+        run: python -m py_compile training/human_dataset.py training/validate_dataset.py training/test_human_dataset.py ml/human_policy_v2.py ml/evaluate_human_policy_v2.py
 
       - name: Run topology regression test
         run: python training/test_human_dataset.py
@@ -103,3 +103,9 @@ jobs:
           assert len(model["feature_names"]) == 96
           assert len(model["target_names"]) == 6
           print("model_schema_ok=true")
+
+      - name: Evaluate smoke model
+        run: >
+          python ml/evaluate_human_policy_v2.py
+          --input human-policy-v2-smoke.jsonl
+          --model human-policy-v2-smoke-model.json

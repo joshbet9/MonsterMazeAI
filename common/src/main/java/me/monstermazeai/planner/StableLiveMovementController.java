@@ -890,7 +890,7 @@ public final class StableLiveMovementController {
      * null means the player has already diverged from the planned topology and
      * a fresh route must be generated.
      */
-    private static PlayerRoute rebaseRoute(PlayerRoute planned, int startRow, int startColumn) {
+    static PlayerRoute rebaseRoute(PlayerRoute planned, int startRow, int startColumn) {
         if (planned == null || planned.cells().isEmpty()) return null;
         Cell current = new Cell(startRow, startColumn);
         List<Cell> cells = planned.cells();

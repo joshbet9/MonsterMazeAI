@@ -699,7 +699,7 @@ class StableLiveMovementControllerTest {
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         s.tick = 1;
-        controller.nextAction(s, new Cell(8, 8), false);
+        controller.nextAction(s, new Cell(8, 8), false, 2);
 
         // Reproduce the actual failure mode: the player reaches the corner with
         // residual vanilla momentum before the next observation is processed.
@@ -714,7 +714,7 @@ class StableLiveMovementControllerTest {
         boolean sawUnexpectedReverseWorldInput = false;
         boolean sawOvershootBrake = false;
         for (int tick = 0; tick < 80; tick++) {
-            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            Action action = controller.nextAction(s, new Cell(8, 8), false, 2);
             double yawRadians = Math.toRadians(s.player.yaw + action.yawDelta());
             double forwardWorldX = -Math.sin(yawRadians);
             double forwardWorldZ = Math.cos(yawRadians);

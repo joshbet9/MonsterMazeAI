@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.stream.IntStream;
 
 public final class MonsterAwareRoutePlanner {
+    // Matrix-lab validation keeps simulation changes isolated from production while iterating.
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 

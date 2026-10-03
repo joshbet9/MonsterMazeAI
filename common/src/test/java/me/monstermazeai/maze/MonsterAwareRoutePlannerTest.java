@@ -251,9 +251,9 @@ class MonsterAwareRoutePlannerTest {
         List<PlayerRoute> candidates = (List<PlayerRoute>) method.invoke(
                 planner, state, new Cell(0, 0), new Cell(0, 20), 0, 8, false);
 
-        assertTrue(candidates.stream().anyMatch(
-                route -> route.cells().stream().anyMatch(cell -> cell.row() != 0)),
-                "far projected threats must survive into the strategic planner candidate set");
+        assertFalse(candidates.isEmpty());
+        assertTrue(candidates.get(0).cells().stream().anyMatch(cell -> cell.row() != 0),
+                "the far-threat detour must remain selected ahead of static shortest routes");
     }
 
     @Test

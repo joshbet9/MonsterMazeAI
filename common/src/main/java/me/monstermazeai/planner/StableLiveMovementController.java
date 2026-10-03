@@ -360,8 +360,18 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
-            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
+            double routeCorridorDistance = distanceFromRouteCorridor(state, route, waypointIndex);
+            boolean routeCellMismatch = !route.cells().contains(new Cell(startRow, startColumn));
+            /*
+             * The physical player can be between cell centres, especially while
+             * carrying momentum through a corner. A floor-cell mismatch alone
+             * is not a route escape if the actual position is still inside the
+             * route corridor. Replanning on that mismatch caused the observed
+             * FAST_RECOVERY_ROUTE loops and hundreds of stationary ticks.
+             */
+            boolean routeInvalid = !gapExecutionActive
+                    && routeCellMismatch
+                    && routeCorridorDistance > ROUTE_DEVIATION;
 
             if (routeInvalid) {
                 /*

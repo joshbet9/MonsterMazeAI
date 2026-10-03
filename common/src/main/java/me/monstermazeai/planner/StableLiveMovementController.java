@@ -43,14 +43,24 @@ public final class StableLiveMovementController {
     // Best-speed19 behavior replay enabled.
     // Behavior workflow trigger after lab harness correction. 1791021083676
     private final AiProfile profile;
+    private final boolean backgroundPlanningEnabled;
 
     public StableLiveMovementController() {
-        this(AiProfile.BASELINE);
+        this(AiProfile.BASELINE, true);
     }
 
     public StableLiveMovementController(AiProfile profile) {
+        this(profile, true);
+    }
+
+    /**
+     * Package-private deterministic test constructor. Production callers retain
+     * the default async strategic planning behavior.
+     */
+    StableLiveMovementController(AiProfile profile, boolean backgroundPlanningEnabled) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        this.backgroundPlanningEnabled = backgroundPlanningEnabled;
     }
 
     public AiProfile profile() {
@@ -772,6 +782,7 @@ public final class StableLiveMovementController {
     }
 
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
+        if (!backgroundPlanningEnabled) return;
         if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
 
         GameState snapshot = liveState.copyForSimulation();

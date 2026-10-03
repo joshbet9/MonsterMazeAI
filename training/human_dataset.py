@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import math
 from pathlib import Path
@@ -188,19 +189,42 @@ def mode_bits(world: Optional[dict]) -> Tuple[float, float]:
 
 
 def extract_local_topology(maze_row: Optional[dict], movement: dict,
-                           center: Optional[Tuple[float, float, float]]) -> List[float]:
+                           center: Optional[Tuple[float, float, float]],
+                           navigation_row: Optional[dict] = None) -> List[float]:
     if not maze_row or center is None:
         return [0.0] * 9
 
-    maze = maze_row.get("maze")
+    # Prefer physicalFloor: it represents the actually walkable surface,
+    # including dynamic deterioration. Fall back to logical maze data for
+    # older observer streams that did not emit physicalFloor.
+    maze = maze_row.get("physicalFloor")
+    if not isinstance(maze, list) or len(maze) != 99:
+        maze = maze_row.get("maze")
     if not isinstance(maze, list) or len(maze) != 99:
         return [0.0] * 9
 
-    cx, _cy, cz = center
-    px = finite(movement.get("x"))
-    pz = finite(movement.get("z"))
-    grid_row = int(math.floor(px - (cx - 49.0)))
-    grid_col = int(math.floor(pz - (cz - 49.0)))
+    grid_row: Optional[int] = None
+    grid_col: Optional[int] = None
+
+    # The observer's navigation stream already exposes the authoritative maze
+    # cell. Prefer it over reconstructing a discrete cell from floating-point
+    # world coordinates; the latter can disagree at cell boundaries.
+    if isinstance(navigation_row, dict):
+        try:
+            candidate_row = int(navigation_row.get("row", -1))
+            candidate_col = int(navigation_row.get("column", -1))
+        except (TypeError, ValueError):
+            candidate_row = candidate_col = -1
+        if 0 <= candidate_row < 99 and 0 <= candidate_col < 99:
+            grid_row = candidate_row
+            grid_col = candidate_col
+
+    if grid_row is None or grid_col is None:
+        cx, _cy, cz = center
+        px = finite(movement.get("x"))
+        pz = finite(movement.get("z"))
+        grid_row = int(math.floor(px - (cx - 49.0)))
+        grid_col = int(math.floor(pz - (cz - 49.0)))
 
     coords = [
         (0, -1), (0, 1), (1, 0), (-1, 0),
@@ -265,7 +289,8 @@ def build_observation(world: dict, movement: dict,
                       monster_row: Optional[dict],
                       population_alive: int = 1,
                       population_humans: int = 1,
-                      phase_start_seconds: Optional[int] = None) -> Tuple[List[float], dict]:
+                      phase_start_seconds: Optional[int] = None,
+                      kit_override: Optional[str] = None) -> Tuple[List[float], dict]:
     features = [0.0] * FEATURE_COUNT
     center = find_center(world)
     px = finite(movement.get("x"))
@@ -331,7 +356,7 @@ def build_observation(world: dict, movement: dict,
     features[21] = 1.0 if pad_reached else 0.0
     features[22] = 1.0 if pad_reached else 0.0
 
-    kit = str(world.get("kit", "MAVERICK")).upper()
+    kit = str(kit_override if kit_override is not None else world.get("kit", "MAVERICK")).upper()
     features[23] = float(KIT_ORDINAL.get(kit, 4)) / 4.0
     features[24] = clamp(finite(world.get("jumpCharges"), 0.0) / 5.0, 0.0, 1.0)
     ability_charges = max(0.0, finite(world.get("abilityCharges"), 0.0))
@@ -453,27 +478,24 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     input_path = root / f"{prefix}-input.jsonl"
     maze_path = root / f"{prefix}-maze.jsonl"
     monster_path = root / f"{prefix}-monsters.jsonl"
+    navigation_path = root / f"{prefix}-navigation.jsonl"
 
     world = load_by_tick(world_path)
     movement = load_by_tick(movement_path)
     inputs = load_by_tick(input_path)
+    navigation = load_by_tick(navigation_path) if navigation_path.exists() else {}
 
-    # Keep maze/monster processing streaming-sized. These streams can be much
-    # larger than world/input, especially because each maze row carries a full
-    # 99x99 representation.
-    topology_by_tick: Dict[int, List[float]] = {}
-    if maze_path.exists():
-        for row in stream_rows(maze_path):
-            try:
-                tick = int(row["tick"])
-            except (TypeError, ValueError):
-                continue
-            world_row = world.get(tick)
-            movement_row = movement.get(tick)
-            if world_row and movement_row:
-                topology_by_tick[tick] = extract_local_topology(
-                    row, movement_row, find_center(world_row)
-                )
+    # Maze snapshots are sparse and each snapshot carries a full 99x99 map.
+    # Advance the maze stream only as far as the current action tick and retain
+    # the latest valid snapshot. A snapshot from an earlier stage still contains
+    # the same static logical maze; only physicalFloor is stage/deterioration
+    # sensitive. This lets us use physicalFloor when it matches the current
+    # stage and fall back to the logical maze during stage-to-stage telemetry gaps.
+    topology_iter = iter(stream_rows(maze_path)) if maze_path.exists() else iter(())
+    topology_next = next(topology_iter, None)
+    topology_current: Optional[dict] = None
+    topology_current_tick = -1
+    topology_current_stage = -1
 
     monsters_by_tick: Dict[int, dict] = {}
     if monster_path.exists():
@@ -492,11 +514,51 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
 
     phase_starts: Dict[int, int] = {}
     rows: List[dict] = []
+    skipped_invalid_observations = 0
 
     for index, tick in enumerate(shared_ticks):
+        while topology_next is not None:
+            try:
+                next_topology_tick = int(topology_next["tick"])
+            except (TypeError, ValueError):
+                topology_next = next(topology_iter, None)
+                continue
+
+            if next_topology_tick > tick:
+                break
+
+            row_stage = int(topology_next.get("stage", -1) or -1)
+            floor = topology_next.get("physicalFloor")
+            if not isinstance(floor, list) or len(floor) != 99:
+                floor = topology_next.get("maze")
+
+            if isinstance(floor, list) and len(floor) == 99:
+                logical = topology_next.get("maze")
+                if not isinstance(logical, list) or len(logical) != 99:
+                    logical = None
+                topology_current = {
+                    "physicalFloor": floor,
+                    "maze": logical,
+                }
+                topology_current_tick = next_topology_tick
+                topology_current_stage = row_stage
+
+            topology_next = next(topology_iter, None)
+
         world_row = world[tick]
         movement_row = movement[tick]
         input_row = inputs[tick]
+
+        # The human corpus can contain startup/teardown telemetry before the
+        # observer has a valid Monster Maze centre/cell. Those rows do not have
+        # a meaningful 96-feature maze observation and must not be represented
+        # as nine zero topology values.
+        if (
+            not bool(world_row.get("mazeDetected", False))
+            or find_center(world_row) is None
+        ):
+            skipped_invalid_observations += 1
+            continue
 
         stage = int(world_row.get("stage", 1) or 1)
         phase_remaining = int(finite(world_row.get("phaseTimerSeconds"), 0.0))
@@ -511,9 +573,44 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             population_alive=1,
             population_humans=1,
             phase_start_seconds=phase_starts[stage],
+            kit_override=kit,
         )
-        if tick in topology_by_tick:
-            features[32:41] = topology_by_tick[tick]
+
+        topology_source = "unavailable"
+        topology_snapshot_tick = None
+        topology_snapshot_stage = None
+
+        if (
+            topology_current is not None
+            and topology_current_tick <= tick
+            and find_center(world_row) is not None
+        ):
+            topology_snapshot_tick = topology_current_tick
+            topology_snapshot_stage = topology_current_stage
+
+            if (
+                topology_current_stage == stage
+                and isinstance(topology_current.get("physicalFloor"), list)
+            ):
+                topology_source = "physical-snapshot"
+                topology_row = {
+                    "physicalFloor": topology_current["physicalFloor"],
+                    "maze": topology_current.get("maze"),
+                }
+            elif isinstance(topology_current.get("maze"), list):
+                # Logical maze topology is static for a detected pattern. Use it
+                # across stage boundaries rather than turning valid observations
+                # into an all-zero block while waiting for the next physical snapshot.
+                topology_source = "logical-snapshot-fallback"
+                topology_row = {"maze": topology_current["maze"]}
+
+            if topology_source != "unavailable":
+                features[32:41] = extract_local_topology(
+                    topology_row,
+                    movement_row,
+                    find_center(world_row),
+                    navigation.get(tick),
+                )
 
         action = build_action(input_row)
 
@@ -554,6 +651,14 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             "completed": extras["completed"],
             "padReached": extras["pad_reached"],
             "monstersWithin8": extras["monsters_within8"],
+            "topologySource": topology_source,
+            "topologySnapshotTick": topology_snapshot_tick,
+            "topologySnapshotStage": topology_snapshot_stage,
+            "topologyAgeTicks": (
+                tick - topology_snapshot_tick
+                if topology_snapshot_tick is not None
+                else None
+            ),
             "next": next_summary,
         })
 
@@ -562,6 +667,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
         "kit": kit,
         "mode": mode,
         "rows": len(rows),
+        "skippedInvalidObservations": skipped_invalid_observations,
         "firstTick": shared_ticks[0] if shared_ticks else None,
         "lastTick": shared_ticks[-1] if shared_ticks else None,
         "reachedStage": None,
@@ -636,11 +742,13 @@ def main() -> int:
         return 0
 
     total_rows = 0
+    skipped_invalid_observations = 0
     dataset_meta: List[dict] = []
     with args.output.open("w", encoding="utf-8", newline="\n") as handle:
         for item in catalog:
             rows, meta = build_run_dataset(root, item["run"])
             total_rows += len(rows)
+            skipped_invalid_observations += int(meta.get("skippedInvalidObservations", 0) or 0)
             dataset_meta.append(meta)
             for row in rows:
                 handle.write(
@@ -654,6 +762,7 @@ def main() -> int:
     print(f"profileCount={PROFILE_COUNT}")
     print(f"runs={len(catalog)}")
     print(f"rows={total_rows}")
+    print(f"skippedInvalidObservations={skipped_invalid_observations}")
     print(f"output={args.output}")
     return 0
 

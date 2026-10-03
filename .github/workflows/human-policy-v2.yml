@@ -1,0 +1,173 @@
+name: Human Policy v2
+
+on:
+  push:
+    branches:
+      - feature/human-policy-v2-integration
+  pull_request:
+    branches:
+      - architecture/cpu-opponents-v2
+      - main
+
+jobs:
+  validate-human-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install NumPy
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Compile training scripts
+        run: python -m py_compile training/human_dataset.py training/validate_dataset.py training/test_human_dataset.py ml/human_policy_v2.py ml/evaluate_human_policy_v2.py tools/export_human_policy_v2_model.py
+
+      - name: Run topology regression test
+        run: python training/test_human_dataset.py
+
+      - name: Fetch real human run corpus
+        run: |
+          mkdir -p training-data
+          git fetch --depth=1 origin feature/human-run-analysis
+          git archive FETCH_HEAD human-runs | tar -x -C training-data
+          test -d training-data/human-runs
+
+      - name: Build full human policy v2 dataset
+        run: |
+          mkdir -p training-data/derived ml-data/ci
+          python training/human_dataset.py --root training-data/human-runs --output training-data/derived/human-policy-v2.jsonl
+
+      - name: Validate full human policy v2 dataset
+        run: |
+          python training/validate_dataset.py training-data/derived/human-policy-v2.jsonl
+
+      - name: Inspect full human policy v2 dataset
+        run: |
+          python ml/human_policy_v2.py inspect --input training-data/derived/human-policy-v2.jsonl | tee ml-data/ci/human-policy-v2-inspection.txt
+
+      - name: Train full human policy v2 model
+        run: |
+          python ml/human_policy_v2.py train --input training-data/derived/human-policy-v2.jsonl --output ml-data/ci/human-policy-v2-model.json --epochs 60 --batch-size 1024 --hidden1 64 --hidden2 32 --learning-rate 0.002 --validation-fraction 0.20 --min-samples 500 --seed 1337 --report-every 10 | tee ml-data/ci/human-policy-v2-training.txt
+
+      - name: Evaluate full human policy v2 model
+        run: |
+          python ml/evaluate_human_policy_v2.py --input training-data/derived/human-policy-v2.jsonl --model ml-data/ci/human-policy-v2-model.json | tee ml-data/ci/human-policy-v2-evaluation.txt
+
+      - name: Export full human policy v2 model
+        run: |
+          python tools/export_human_policy_v2_model.py --input ml-data/ci/human-policy-v2-model.json --output ml-data/ci/human-policy-v2-model.bin
+          test -s ml-data/ci/human-policy-v2-model.bin
+
+      - name: Upload real dataset and model
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-policy-v2-${{ github.sha }}
+          path: |
+            training-data/derived/human-policy-v2.jsonl
+            ml-data/ci/human-policy-v2-model.json
+            ml-data/ci/human-policy-v2-model.bin
+            ml-data/ci/human-policy-v2-inspection.txt
+            ml-data/ci/human-policy-v2-training.txt
+            ml-data/ci/human-policy-v2-evaluation.txt
+          if-no-files-found: warn
+
+      - name: Smoke-test human policy v2
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          path = Path("human-policy-v2-smoke.jsonl")
+          rows = []
+          for run_index in range(2):
+              run_name = f"smoke-run-{run_index}"
+              for tick in range(12):
+                  observation = [0.0] * 96
+                  observation[15] = (tick + 1) / 100.0
+                  observation[20] = 1.0
+                  observation[26] = 1.0 if run_index == 0 else 0.0
+                  observation[27] = 1.0 if run_index == 1 else 0.0
+                  rows.append({
+                      "schemaVersion": 2,
+                      "observation": observation,
+                      "profile": [0.5] * 17,
+                      "action": {
+                          "forward": 1.0 if tick % 2 == 0 else 0.5,
+                          "strafe": 0.0,
+                          "yawDelta": 0.0,
+                          "jump": tick % 6 == 0,
+                          "sprint": True,
+                          "useAbility": False,
+                      },
+                      "stage": tick + 1,
+                      "pattern": 1,
+                      "mode": "SPEED" if run_index == 0 else "MODERN",
+                      "kit": "JUMPER",
+                      "source": "human",
+                      "run": run_name,
+                      "tick": tick,
+                      "terminal": False,
+                      "completed": False,
+                      "padReached": False,
+                      "monstersWithin8": 0,
+                      "next": None,
+                  })
+
+          path.write_text(
+              "\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n",
+              encoding="utf-8",
+          )
+          print(f"rows={len(rows)}")
+
+      - name: Inspect smoke dataset
+        run: python ml/human_policy_v2.py inspect --input human-policy-v2-smoke.jsonl
+
+      - name: Train smoke model
+        run: >
+          python ml/human_policy_v2.py train
+          --input human-policy-v2-smoke.jsonl
+          --output human-policy-v2-smoke-model.json
+          --epochs 2
+          --batch-size 8
+          --min-samples 10
+          --validation-fraction 0.5
+          --report-every 1
+
+      - name: Verify model artifact
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          model = json.loads(Path("human-policy-v2-smoke-model.json").read_text(encoding="utf-8"))
+          assert model["source_schema_version"] == 2
+          assert model["architecture"][0] == 96
+          assert model["architecture"][-1] == 6
+          assert len(model["feature_names"]) == 96
+          assert len(model["target_names"]) == 6
+          print("model_schema_ok=true")
+
+      - name: Export smoke model
+        run: >
+          python tools/export_human_policy_v2_model.py
+          --input human-policy-v2-smoke-model.json
+          --output human-policy-v2-smoke-model.bin
+
+      - name: Verify exported model
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("human-policy-v2-smoke-model.bin")
+          assert path.stat().st_size == 87624
+          print(f"exported_model_bytes={path.stat().st_size}")
+
+      - name: Evaluate smoke model
+        run: >
+          python ml/evaluate_human_policy_v2.py
+          --input human-policy-v2-smoke.jsonl
+          --model human-policy-v2-smoke-model.json

@@ -12,6 +12,13 @@ from pathlib import Path
 
 FEATURE_COUNT = 96
 PROFILE_COUNT = 17
+KIT_ORDINAL = {
+    "JUMPER": 0,
+    "SLOWBALLER": 1,
+    "BODY_BUILDER": 2,
+    "REPULSOR": 3,
+    "MAVERICK": 4,
+}
 
 
 def finite_number(value):
@@ -43,7 +50,13 @@ def main() -> int:
     nonzero_strafe = 0
     nonzero_yaw = 0
     topology_missing = 0
+    topology_available = 0
+    topology_physical = 0
+    topology_logical_fallback = 0
+    topology_zero_available = 0
+    topology_max_age = 0
     competitor_nonzero = 0
+    kit_feature_mismatch = 0
 
     with args.dataset.open("r", encoding="utf-8") as handle:
         for line_number, raw in enumerate(handle, 1):
@@ -73,8 +86,22 @@ def main() -> int:
                     problems.append("observation_nonfinite")
                 if len(observation) >= 96 and any(abs(float(x)) > 1.000001 for x in observation):
                     problems.append("observation_out_of_range")
-                if not any(abs(float(x)) > 0.0 for x in observation[32:41]):
+
+                topology_source = str(row.get("topologySource", "legacy-inferred"))
+                if topology_source == "unavailable":
                     topology_missing += 1
+                else:
+                    topology_available += 1
+                    if topology_source == "physical-snapshot":
+                        topology_physical += 1
+                    elif topology_source == "logical-snapshot-fallback":
+                        topology_logical_fallback += 1
+                    if not any(abs(float(x)) > 0.0 for x in observation[32:41]):
+                        topology_zero_available += 1
+
+                age = row.get("topologyAgeTicks")
+                if isinstance(age, (int, float)) and math.isfinite(float(age)):
+                    topology_max_age = max(topology_max_age, int(age))
 
             if not isinstance(profile, list) or len(profile) != PROFILE_COUNT:
                 problems.append("profile_length")
@@ -104,8 +131,14 @@ def main() -> int:
                     nonzero_yaw += 1
 
             run = str(row.get("run", "UNKNOWN"))
-            kit = str(row.get("kit", "UNKNOWN"))
-            mode = str(row.get("mode", "UNKNOWN"))
+            kit = str(row.get("kit", "UNKNOWN")).upper()
+            mode = str(row.get("mode", "UNKNOWN")).upper()
+
+            if isinstance(observation, list) and len(observation) >= 24 and kit in KIT_ORDINAL:
+                expected_kit = KIT_ORDINAL[kit] / 4.0
+                if abs(float(observation[23]) - expected_kit) > 1e-7:
+                    problems.append("kit_feature_mismatch")
+                    kit_feature_mismatch += 1
             stage = int(row.get("stage", 0) or 0)
 
             runs[run] += 1
@@ -142,8 +175,15 @@ def main() -> int:
     print(f"abilityRows={ability}")
     print(f"nonzeroStrafeRows={nonzero_strafe}")
     print(f"nonzeroYawRows={nonzero_yaw}")
+
     print(f"topologyMissingRows={topology_missing}")
+    print(f"topologyAvailableRows={topology_available}")
+    print(f"topologyPhysicalSnapshotRows={topology_physical}")
+    print(f"topologyLogicalFallbackRows={topology_logical_fallback}")
+    print(f"topologyZeroButAvailableRows={topology_zero_available}")
+    print(f"topologyMaxAgeTicks={topology_max_age}")
     print(f"competitorNonzeroRows={competitor_nonzero}")
+    print(f"kitFeatureMismatchRows={kit_feature_mismatch}")
     print("stages=" + json.dumps(dict(sorted(stages.items())), sort_keys=True))
 
     if rows == 0 or bad:

@@ -42,6 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that one seed or one profile represents every real game.
  */
 class AuthenticStage10SimulationTest {
+    private static final ThreadLocal<List<BehaviorTick>> ACTIVE_BEHAVIOR_TRACE = new ThreadLocal<>();
+
     private static final int MODERN_REQUIRED_STAGE = 5;
     private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
@@ -123,6 +125,19 @@ class AuthenticStage10SimulationTest {
 
     static RunResult runToEnd(int pattern, Kit kit, AiProfile profile, Mode mode) {
         return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
+    }
+
+    static BehaviorTraceResult runToEndWithBehaviorTrace(
+            int pattern, Kit kit, AiProfile profile, Mode mode) {
+        List<BehaviorTick> trace = new ArrayList<>();
+        ACTIVE_BEHAVIOR_TRACE.set(trace);
+        try {
+            RunResult result = new AuthenticStage10SimulationTest()
+                    .run(pattern, kit, profile, mode, 0);
+            return new BehaviorTraceResult(result, List.copyOf(trace));
+        } finally {
+            ACTIVE_BEHAVIOR_TRACE.remove();
+        }
     }
 
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
@@ -260,6 +275,24 @@ class AuthenticStage10SimulationTest {
 
             simulator.tick(state, action.action);
             actualHorizontalDistance += Math.hypot(state.player.x - preX, state.player.z - preZ);
+
+            List<BehaviorTick> activeTrace = ACTIVE_BEHAVIOR_TRACE.get();
+            if (activeTrace != null) {
+                activeTrace.add(new BehaviorTick(
+                        state.tick,
+                        state.stage,
+                        state.activePadRow,
+                        state.activePadColumn,
+                        state.previewPadRow,
+                        state.previewPadColumn,
+                        preX, preY, preZ,
+                        preVx, preVy, preVz,
+                        state.player.x, state.player.y, state.player.z,
+                        state.player.vx, state.player.vy, state.player.vz,
+                        state.player.yaw,
+                        action.action,
+                        decisionBeforeTick));
+            }
             if (!state.alive && terminalTick < 0L) {
                 terminalTick = state.tick;
                 terminalStage = state.stage;
@@ -461,6 +494,33 @@ class AuthenticStage10SimulationTest {
     private static String format(double value) {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
+
+    static record BehaviorTraceResult(
+            RunResult result,
+            List<BehaviorTick> ticks) {}
+
+    static record BehaviorTick(
+            long tick,
+            int stage,
+            int activePadRow,
+            int activePadColumn,
+            int previewPadRow,
+            int previewPadColumn,
+            double preX,
+            double preY,
+            double preZ,
+            double preVx,
+            double preVy,
+            double preVz,
+            double postX,
+            double postY,
+            double postZ,
+            double postVx,
+            double postVy,
+            double postVz,
+            float yaw,
+            me.monstermazeai.player.Action action,
+            String decision) {}
 
     static record RunResult(
             int maxStage,

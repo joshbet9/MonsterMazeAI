@@ -1,0 +1,73 @@
+name: Monster Maze - Best19 Reversal Candidate
+
+on:
+  push:
+    branches:
+      - autonomous/candidate-best19-reversal
+    paths:
+      - 'common/**'
+      - 'common-api/**'
+      - 'pom.xml'
+      - '**/pom.xml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monstermaze-candidate-best19-reversal
+  cancel-in-progress: true
+
+jobs:
+  movement:
+    name: Focused movement suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - run: mvn -B -ntp -pl common "-Dtest=StableLiveMovementControllerTest" test
+
+  matrix:
+    name: 30-case unrestricted natural-termination matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - shell: bash
+        run: |
+          mkdir -p simulation-artifacts
+          set +e
+          mvn -B -ntp -pl common \
+            "-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest" \
+            "-Dsurefire.useFile=false" \
+            "-Dsurefire.redirectTestOutputToFile=false" \
+            test 2>&1 | tee simulation-artifacts/full-matrix.log
+          rc=${PIPESTATUS[0]}
+          grep -E '^(SPEED_FULL_RUN|MODERN_FULL_RUN) ' simulation-artifacts/full-matrix.log > simulation-artifacts/full-matrix-rows.txt || true
+          echo "maven_exit_code=${rc}" > simulation-artifacts/status.txt
+          exit "${rc}"
+      - if: always()
+        shell: bash
+        run: |
+          echo "## Baseline 310 matrix" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat simulation-artifacts/full-matrix-rows.txt 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-best19-reversal-matrix-${{ github.sha }}
+          path: simulation-artifacts/
+          if-no-files-found: warn

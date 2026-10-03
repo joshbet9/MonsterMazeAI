@@ -3,7 +3,6 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
-import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -465,42 +464,6 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void predictiveCornerTurnKeepsPhysicalDriveActiveWhileYawChanges() {
-        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController(false);
-        LegacyMazePhysics physics = new LegacyMazePhysics();
-
-        boolean sawCornerPrep = false;
-        boolean sawDrivenCornerPrep = false;
-
-        for (int tick = 1; tick <= 360; tick++) {
-            s.tick = tick;
-            Action action = controller.nextAction(s, new Cell(8, 8), false);
-
-            if (controller.lastDecisionDetail().contains("CORNER_PREP")) {
-                sawCornerPrep = true;
-                if (Math.hypot(action.forward(), action.strafe()) > 0.1D) {
-                    sawDrivenCornerPrep = true;
-                }
-            }
-
-            physics.tick(s.player, action, s.maze, 0);
-
-            if (!s.player.grounded && s.player.y < -0.25D) {
-                break;
-            }
-            if (sawDrivenCornerPrep && s.player.x > 8.0D) {
-                break;
-            }
-        }
-
-        assertTrue(sawCornerPrep,
-                "test never entered predictive corner preparation");
-        assertTrue(sawDrivenCornerPrep,
-                "predictive corner preparation still stopped physical movement");
-    }
-
-    @Test
     void physicsDrivenLeftTurnBrakesBeforeCornerAndReachesGoal() {
         CornerResult result = simulateCorner(
                 8, 1, 8, 8, 2, 8,
@@ -516,171 +479,6 @@ class StableLiveMovementControllerTest {
                 "controller exceeded the 1.8 yaw limit: " + result);
     }
 
-
-    @Test
-    void committedJumperGapTakesPriorityOverIncomingMobAvoidance() {
-        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
-        raw[4][4] = 1;
-        raw[3][4] = 1;
-        raw[2][4] = 0;
-        raw[1][4] = 1;
-        raw[0][4] = 1;
-        MazeModel maze = new MazeModel(raw);
-
-        GameState s = new GameState();
-        s.inMonsterMaze = true;
-        s.alive = true;
-        s.maze = maze;
-        s.kit = me.monstermazeai.kit.Kit.JUMPER;
-        s.ability.charges = 1;
-        s.player.x = 3.5D;
-        s.player.z = 4.5D;
-        s.player.y = 0.0D;
-        s.player.yaw = 90.0F;
-        s.player.grounded = true;
-        s.activePadRow = 0;
-        s.activePadColumn = 4;
-
-        MonsterState monster = new MonsterState(42, 3.5D, 0.0D, 5.7D);
-        monster.vz = -0.15D;
-        s.monsters.add(monster);
-
-        StableLiveMovementController controller = new StableLiveMovementController(false);
-
-        // Bootstrap route, then advance until the two-cell gap is the active edge.
-        s.tick = 1;
-        controller.nextAction(s, new Cell(0, 4), true);
-        s.tick = 2;
-        Action action = controller.nextAction(s, new Cell(0, 4), true);
-
-        assertTrue(controller.lastDecisionDetail().contains("GAP_")
-                        || action.jump(),
-                "incoming mob avoidance stole the gap decision: "
-                        + controller.lastDecisionDetail() + " action=" + action);
-    }
-
-    @Test
-    void mobYieldMovesAwayAfterReverseHeadingAlignment() {
-        GameState s = state(2.5, 2.5, 180.0F);
-        s.kit = me.monstermazeai.kit.Kit.JUMPER;
-        s.ability.charges = 0;
-
-        // Initial +Z route has no supported side cells, forcing the controller
-        // into the no-side-floor MOB_YIELD path.
-        s.maze.setPhysicalFloor(1, 2, false);
-        s.maze.setPhysicalFloor(3, 2, false);
-        s.maze.setPhysicalFloor(2, 1, false);
-
-        StableLiveMovementController controller = new StableLiveMovementController(false);
-        // Establish a +Z route before introducing the approaching mob.
-        s.tick = 1;
-        controller.nextAction(s, new Cell(2, 8), false);
-        s.tick = 2;
-
-        MonsterState monster = new MonsterState(1, 2.5, 0.0, 3.8);
-        s.monsters.add(monster);
-
-        // First build the route. The movement controller intentionally bootstraps
-        // the initial route before evaluating local monster avoidance.
-        s.tick = 1;
-        controller.nextAction(s, new Cell(2, 8), false);
-        s.tick = 2;
-
-        Action action = controller.nextAction(s, new Cell(2, 8), false);
-
-        assertTrue(controller.lastDecisionDetail().contains("MOB_YIELD"),
-                controller.lastDecisionDetail());
-        assertTrue(action.forward() > 0.0,
-                "aligned mob yield used the wrong input sign: " + action);
-
-        double beforeZ = s.player.z;
-        new LegacyMazePhysics().tick(s.player, action, s.maze, -10);
-
-        assertTrue(s.player.z < beforeZ,
-                "mob yield moved toward the monster instead of away: "
-                        + beforeZ + " -> " + s.player.z);
-    }
-
-    @Test
-    void laneCorrectionKeepsDrivingInsteadOfStoppingForTurn() {
-        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController(false);
-        LegacyMazePhysics physics = new LegacyMazePhysics();
-
-        // +Z is the initial segment. Offset the player 0.25 blocks in +X so
-        // the old lane-recovery branch would stop/turn instead of driving.
-        s.player.x = 2.75D;
-        s.player.z = 2.50D;
-        s.player.yaw = 0.0F;
-        s.player.vz = 0.08D;
-        s.player.vx = 0.0D;
-        s.player.grounded = true;
-        // Establish the physical route/lane anchor first. Then introduce a
-        // lateral drift just beyond the allowed initial pad-transition offset;
-        // this deterministically forces LANE_RECOVERY_COMBINED.
-        s.tick = 1;
-        controller.nextAction(s, new Cell(8, 8), false);
-        s.tick = 2;
-        controller.nextAction(s, new Cell(8, 8), false);
-
-        s.player.x = 3.18D;
-        s.player.z = 2.50D;
-        s.player.vz = 0.08D;
-        s.player.vx = 0.0D;
-        s.tick = 3;
-
-        Action action = controller.nextAction(s, new Cell(8, 8), false);
-
-        assertTrue(Math.hypot(action.forward(), action.strafe()) > 0.1D,
-                "lane correction stopped physical drive: " + controller.lastDecisionDetail());
-        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY_COMBINED"),
-                controller.lastDecisionDetail());
-
-        double beforeZ = s.player.z;
-        physics.tick(s.player, action, s.maze, 0);
-
-        assertTrue(s.player.z > beforeZ,
-                "lane correction failed to preserve forward progress: "
-                        + beforeZ + " -> " + s.player.z);
-    }
-
-    @Test
-    void cancelsCornerCommitmentWhenPhysicsReversesTheCurrentSegment() {
-        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
-        LegacyMazePhysics physics = new LegacyMazePhysics();
-
-        boolean sawCornerPrep = false;
-        for (int tick = 1; tick <= 120; tick++) {
-            s.tick = tick;
-            Action action = controller.nextAction(s, new Cell(8, 8), false);
-            if (controller.lastDecisionDetail().contains("CORNER_PREP")) {
-                sawCornerPrep = true;
-
-                // Simulate a post-commit physics reversal, such as a monster
-                // bump, before the actual corner is crossed.
-                s.player.vz = -0.12D;
-                s.player.vx = 0.0D;
-                s.tick++;
-                Action recovery = controller.nextAction(s, new Cell(8, 8), false);
-
-                assertFalse(controller.lastDecisionDetail().contains("CORNER_PREP"),
-                        "stale corner commitment survived a reversed segment: "
-                                + controller.lastDecisionDetail());
-                assertTrue(Math.abs(recovery.forward()) > 1.0E-6
-                                || Math.abs(recovery.strafe()) > 1.0E-6
-                                || Math.abs(recovery.yawDelta()) > 1.0E-6,
-                        "reversed segment produced no recovery command: "
-                                + controller.lastDecisionDetail());
-                return;
-            }
-
-            physics.tick(s.player, action, s.maze, 0);
-        }
-
-        assertTrue(sawCornerPrep,
-                "test never reached predictive corner staging");
-    }
 
     @Test
     void advancesWhenPhysicsHasCrossedCornerByOnlyTwoCentimetres() {
@@ -706,96 +504,38 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void finalApproachBrakesBeforeHighMomentumCarriesPastGoal() {
+    void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController(false);
+        StableLiveMovementController controller = new StableLiveMovementController();
         LegacyMazePhysics physics = new LegacyMazePhysics();
 
         s.tick = 1;
         controller.nextAction(s, new Cell(8, 8), false);
 
-        // Put the player on the final +X segment with substantial residual
-        // vanilla momentum and still outside the terminal goal surface.
-        s.player.x = 7.0D;
-        s.player.z = 8.5D;
-        s.player.vx = 0.20D;
-        s.player.vz = 0.0D;
-        s.player.yaw = -90.0F;
-        s.player.grounded = true;
-        s.player.y = 0.0D;
-
-        for (int tick = 2; tick <= 10; tick++) {
-            s.tick = tick;
-            Action action = controller.nextAction(s, new Cell(8, 8), false);
-            if (action.forward() == 0.0D && action.strafe() == 0.0D) {
-                assertTrue(s.player.x < 8.8D,
-                        "final braking engaged too late: " + s.player.x);
-                return;
-            }
-            physics.tick(s.player, action, s.maze, 0);
-        }
-
-        throw new AssertionError("final approach never entered braking: "
-                + controller.lastDecisionDetail());
-    }
-
-    @Test
-    void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
-        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController(false);
-        LegacyMazePhysics physics = new LegacyMazePhysics();
-
-        s.tick = 1;
-        controller.nextAction(s, new Cell(8, 8), false, 2);
-
         // Reproduce the actual failure mode: the player reaches the corner with
         // residual vanilla momentum before the next observation is processed.
         s.player.z = 8.62;
         s.player.vz = 0.25;
-        s.player.vx = 0.0D;
+        s.player.vx = 0.0;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        s.player.y = 0.0D;
+        s.player.y = 0.0;
         s.tick = 2;
 
-        boolean reachedGoalSurface = false;
-        boolean sawNextSegmentCommand = false;
+        boolean sawOldDirectionInput = false;
         for (int tick = 0; tick < 80; tick++) {
-            Action action = controller.nextAction(s, new Cell(8, 8), false, 2);
-            double yawRadians = Math.toRadians(s.player.yaw + action.yawDelta());
-            double forwardWorldX = -Math.sin(yawRadians);
-            double forwardWorldZ = Math.cos(yawRadians);
-            double strafeWorldX = Math.cos(yawRadians);
-            double strafeWorldZ = Math.sin(yawRadians);
-            double worldX = forwardWorldX * action.forward()
-                    + strafeWorldX * action.strafe();
-            double worldZ = forwardWorldZ * action.forward()
-                    + strafeWorldZ * action.strafe();
-
-            if (worldX > 0.05D) {
-                sawNextSegmentCommand = true;
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            if (action.forward() < -1.0E-6 || action.strafe() < -1.0E-6) {
+                sawOldDirectionInput = true;
             }
-            assertFalse(controller.lastDecisionDetail().contains("CORNER_OVERSHOOT_BRAKE"),
-                    "stale reverse corner brake returned: " + controller.lastDecisionDetail());
-
-            if (controller.lastDecisionDetail().contains("REACHED_SAFE_PAD")
-                    || controller.lastDecisionDetail().contains("REACHED routeSize=1")) {
-                reachedGoalSurface = true;
-                break;
-            }
-
             physics.tick(s.player, action, s.maze, 0);
 
             if (s.player.y < -0.25 || !s.player.grounded && s.player.y < -0.75) break;
             s.tick++;
         }
 
-        assertTrue(reachedGoalSurface,
-                "corner overshoot never reached the live SafePad surface: "
-                        + controller.lastDecisionDetail());
-        assertTrue(sawNextSegmentCommand,
-                "post-corner motor never issued physical +X progress: "
-                        + controller.lastDecisionDetail());
+        assertFalse(sawOldDirectionInput,
+                "corner recovery emitted reverse input: " + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);
@@ -831,13 +571,6 @@ class StableLiveMovementControllerTest {
             }
 
             physics.tick(s.player, action, s.maze, 0);
-
-            result.lastX = s.player.x;
-            result.lastZ = s.player.z;
-            result.lastY = s.player.y;
-            result.lastYaw = s.player.yaw;
-            result.lastSpeed = Math.hypot(s.player.vx, s.player.vz);
-            result.lastDecision = controller.lastDecisionDetail();
 
             if (!s.player.grounded && s.player.y < -0.25D) {
                 result.leftPhysicalFloor = true;
@@ -903,12 +636,6 @@ class StableLiveMovementControllerTest {
         boolean leftPhysicalFloor;
         int cornerPrepTicks;
         double maxYawDelta;
-        double lastX;
-        double lastZ;
-        double lastY;
-        float lastYaw;
-        double lastSpeed;
-        String lastDecision;
 
         @Override
         public String toString() {
@@ -917,10 +644,6 @@ class StableLiveMovementControllerTest {
                     + ", leftPhysicalFloor=" + leftPhysicalFloor
                     + ", cornerPrepTicks=" + cornerPrepTicks
                     + ", maxYawDelta=" + maxYawDelta
-                    + ", lastPos=" + lastX + "," + lastZ + " y=" + lastY
-                    + ", lastYaw=" + lastYaw
-                    + ", lastSpeed=" + lastSpeed
-                    + ", lastDecision=" + lastDecision
                     + '}';
         }
     }

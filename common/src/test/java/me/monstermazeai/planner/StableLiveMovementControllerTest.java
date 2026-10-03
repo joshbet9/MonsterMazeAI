@@ -104,6 +104,46 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void laneRecoveryCorrectsWorldLateralErrorWhileCameraTurns() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        // Establish the +Z route and its lane anchor first.
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        // Simulate a monster dodge: player is 0.4 blocks to the +X side while
+        // the camera is still 60 degrees away from the corridor heading.
+        s.player.x = 0.9;
+        s.player.z = 2.5;
+        s.player.yaw = -60.0F;
+        s.player.grounded = true;
+        s.player.vx = 0.0;
+        s.player.vz = 0.0;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+        double before = Math.abs(s.player.x - 0.5);
+
+        assertTrue(action.forward() > 0.0,
+                "lane recovery should preserve some forward route progress");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0,
+                "lane recovery should turn the camera back toward the corridor");
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY world="),
+                controller.lastDecisionDetail());
+
+        physics.tick(s.player, action);
+
+        double after = Math.abs(s.player.x - 0.5);
+        assertTrue(after < before,
+                "world-space lane recovery must reduce lateral error: before="
+                        + before + " after=" + after + " action=" + action);
+        assertTrue(s.player.z > 2.5,
+                "lane recovery must continue advancing along the route");
+    }
+
+    @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
         GameState s = state(0.5, 0.5, -20.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

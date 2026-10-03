@@ -1109,11 +1109,11 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * Keep driving toward the physical corner while the camera acquires the
-         * next heading, but never accelerate an already-fast approach. Above the
-         * bounded corner speed, vanilla friction is allowed to bleed momentum;
-         * below it, a current-axis input keeps the player moving. The input is
-         * projected in world space, so camera rotation does not cut the corner.
+         * Keep the predictive turn source-safe: bleed high approach momentum
+         * with vanilla friction while the camera acquires the next heading,
+         * then resume a bounded 0.65 current-axis input once speed is low.
+         * This preserves continuous physical progress without recreating the
+         * high-momentum corner overshoot regression.
          */
         float yawDelta = Math.abs(nextYawError) <= HEADING_TOLERANCE
                 ? 0.0F
@@ -1142,6 +1142,9 @@ public final class StableLiveMovementController {
             forward /= magnitude;
             strafe /= magnitude;
         }
+
+        forward *= 0.65D;
+        strafe *= 0.65D;
 
         if (Math.abs(nextYawError) > HEADING_TOLERANCE) {
             lastDecisionDetail += " CORNER_PREP"

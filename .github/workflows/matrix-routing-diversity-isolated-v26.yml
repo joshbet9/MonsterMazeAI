@@ -1,0 +1,92 @@
+name: Matrix v26 — Isolated Route Diversity
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  movement-routing-regression:
+    name: Movement + routing regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Controller and route tests
+        run: mvn -B -ntp -pl common -am -Dtest=StableLiveMovementControllerTest,MonsterAwareRoutePlannerTest -Dsurefire.failIfNoSpecifiedTests=false test
+
+  full-matrix:
+    name: Full 30-cell natural-termination matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run full matrix
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee matrix-v26.log
+      - name: Summarize matrix
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          text = Path("matrix-v26.log").read_text(encoding="utf-8", errors="replace")
+          rx = re.compile(r'(SPEED_FULL_RUN|MODERN_FULL_RUN)\\s+pattern=(\\d+)\\s+kit=([A-Z_]+)\\s+' +
+              r'maxStage=(\\d+)\\s+ticks=(\\d+)\\s+health=([-\\d.]+)')
+          rows = [{
+              "mode": m.group(1).split("_")[0],
+              "pattern": int(m.group(2)),
+              "kit": m.group(3),
+              "maxStage": int(m.group(4)),
+              "ticks": int(m.group(5)),
+              "health": float(m.group(6))
+          } for m in rx.finditer(text)]
+          if len(rows) != 30:
+              raise SystemExit(f"expected 30 matrix rows, found {len(rows)}")
+          summary = {
+              "cases": 30,
+              "speedMeanStage": sum(r["maxStage"] for r in rows if r["mode"] == "SPEED") / 15,
+              "modernMeanStage": sum(r["maxStage"] for r in rows if r["mode"] == "MODERN") / 15,
+              "minStage": min(r["maxStage"] for r in rows),
+              "maxStage": max(r["maxStage"]),
+              "stageSum": sum(r["maxStage"] for r in rows),
+              "rows": rows
+          }
+          Path("matrix-v26.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps({k:v for k,v in summary.items() if k != "rows"}, indent=2))
+          PY
+      - name: Upload matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-v26-COMMIT
+          path: |
+            matrix-v26.log
+            matrix-v26.json
+          if-no-files-found: warn

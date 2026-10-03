@@ -16,6 +16,15 @@ public final class ThreatAwarePathfinder {
     private static final double MONSTER_DANGER_RADIUS = 3.0D;
     private static final double MAX_DANGER_PENALTY = 2.5D;
     private static final double MOVING_TOWARD_PENALTY = 0.75D;
+    /** Additional route cost for where a monster is predicted to be on arrival. */
+    private static final double FUTURE_DANGER_RADIUS = 4.0D;
+    private static final double FUTURE_DANGER_PENALTY = 4.0D;
+    /** Near-contact is disproportionately dangerous because one source bump costs four health. */
+    private static final double FUTURE_CONTACT_RADIUS = 1.8D;
+    private static final double FUTURE_CONTACT_PENALTY = 8.0D;
+    /** Conservative live speed estimate used only for route-threat timing. */
+    private static final double MIN_ROUTE_TRAVEL_SPEED = 0.18D;
+    private static final double MAX_ROUTE_THREAT_TICKS = 100.0D;
 
     public List<Cell> shortestPathToRegion(GameState state, Cell start, Cell center, int radius,
                                             boolean allowGaps) {
@@ -27,6 +36,7 @@ public final class ThreatAwarePathfinder {
         PriorityQueue<Node> open = new PriorityQueue<>(
                 Comparator.comparingDouble((Node n) -> n.cost)
                         .thenComparingInt(n -> n.turns)
+                        .thenComparingDouble(n -> n.travelDistance)
                         .thenComparingInt(n -> n.state.cell.row())
                         .thenComparingInt(n -> n.state.cell.column())
                         .thenComparingInt(n -> n.state.direction.ordinal()));
@@ -35,8 +45,8 @@ public final class ThreatAwarePathfinder {
         Map<StateKey, StateKey> previous = new HashMap<>();
 
         StateKey origin = new StateKey(start, Direction.NONE);
-        best.put(origin, new Best(0.0D, 0));
-        open.add(new Node(origin, 0.0D, 0));
+        best.put(origin, new Best(0.0D, 0, 0.0D));
+        open.add(new Node(origin, 0.0D, 0, 0.0D));
 
         StateKey bestGoal = null;
         double bestGoalCost = Double.POSITIVE_INFINITY;
@@ -47,7 +57,8 @@ public final class ThreatAwarePathfinder {
             Best known = best.get(node.state);
             if (known == null
                     || Double.compare(node.cost, known.cost) != 0
-                    || node.turns != known.turns) continue;
+                    || node.turns != known.turns
+                    || Double.compare(node.travelDistance, known.travelDistance) != 0) continue;
 
             if (node.cost > bestGoalCost + 1.0E-9D) break;
 
@@ -111,7 +122,17 @@ public final class ThreatAwarePathfinder {
                        Map<StateKey, Best> best, Map<StateKey, StateKey> previous) {
         if (!state.maze.isPhysicalFloor(to.row(), to.column())) return;
 
-        double nextCost = from.cost + baseCost + dangerPenalty(state, to);
+        double edgeDistance = Math.hypot(
+                to.row() - from.state.cell.row(),
+                to.column() - from.state.cell.column());
+        double nextTravelDistance = from.travelDistance + edgeDistance;
+        double arrivalTicks = Math.min(
+                MAX_ROUTE_THREAT_TICKS,
+                nextTravelDistance / Math.max(
+                        MIN_ROUTE_TRAVEL_SPEED,
+                        Math.hypot(state.player.vx, state.player.vz)));
+        double nextCost = from.cost + baseCost
+                + dangerPenalty(state, to, arrivalTicks);
         int nextTurns = from.turns
                 + (from.state.direction != Direction.NONE && from.state.direction != direction ? 1 : 0);
         StateKey next = new StateKey(to, direction);
@@ -119,15 +140,18 @@ public final class ThreatAwarePathfinder {
 
         boolean better = prior == null
                 || nextCost < prior.cost - 1.0E-9D
-                || (Math.abs(nextCost - prior.cost) <= 1.0E-9D && nextTurns < prior.turns);
+                || (Math.abs(nextCost - prior.cost) <= 1.0E-9D && nextTurns < prior.turns)
+                || (Math.abs(nextCost - prior.cost) <= 1.0E-9D
+                && nextTurns == prior.turns
+                && nextTravelDistance < prior.travelDistance - 1.0E-9D);
         if (!better) return;
 
-        best.put(next, new Best(nextCost, nextTurns));
+        best.put(next, new Best(nextCost, nextTurns, nextTravelDistance));
         previous.put(next, from.state);
-        open.add(new Node(next, nextCost, nextTurns));
+        open.add(new Node(next, nextCost, nextTurns, nextTravelDistance));
     }
 
-    private double dangerPenalty(GameState state, Cell cell) {
+    private double dangerPenalty(GameState state, Cell cell, double arrivalTicks) {
         double x = cell.row() + 0.5D;
         double z = cell.column() + 0.5D;
         double penalty = 0.0D;
@@ -136,22 +160,56 @@ public final class ThreatAwarePathfinder {
             if (monster == null || monster.removed
                     || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
 
+            // Current-position risk keeps the bootstrap path responsive to an
+            // already-near contact.
             double dx = monster.x - x;
             double dz = monster.z - z;
             double distance = Math.hypot(dx, dz);
-            if (distance >= MONSTER_DANGER_RADIUS) continue;
+            if (distance < MONSTER_DANGER_RADIUS) {
+                double proximity = (MONSTER_DANGER_RADIUS - distance) / MONSTER_DANGER_RADIUS;
+                penalty += MAX_DANGER_PENALTY * proximity * proximity;
 
-            double proximity = (MONSTER_DANGER_RADIUS - distance) / MONSTER_DANGER_RADIUS;
-            penalty += MAX_DANGER_PENALTY * proximity * proximity;
-
-            double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
-            if (speedSq > 1.0E-6D) {
-                double closing = (monster.vx * (x - monster.x)
-                        + monster.vz * (z - monster.z)) / Math.max(distance, 1.0E-6D);
-                if (closing > 0.0D) penalty += MOVING_TOWARD_PENALTY * proximity;
+                double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
+                if (speedSq > 1.0E-6D) {
+                    double closing = (monster.vx * (x - monster.x)
+                            + monster.vz * (z - monster.z)) / Math.max(distance, 1.0E-6D);
+                    if (closing > 0.0D) penalty += MOVING_TOWARD_PENALTY * proximity;
+                }
             }
 
-            if (penalty >= 32.0D) return 32.0D;
+            // Temporal threat: score the monster at approximately the moment
+            // the player reaches this route cell. This captures a slow mob
+            // that is harmless now but crossing the chosen lane by arrival.
+            double t = Math.max(0.0D, Math.min(MAX_ROUTE_THREAT_TICKS, arrivalTicks));
+            double predictedX = monster.x + monster.vx * t;
+            double predictedZ = monster.z + monster.vz * t;
+            double predictedDistance = Math.hypot(predictedX - x, predictedZ - z);
+
+            if (predictedDistance < FUTURE_DANGER_RADIUS) {
+                double proximity = (FUTURE_DANGER_RADIUS - predictedDistance)
+                        / FUTURE_DANGER_RADIUS;
+                penalty += FUTURE_DANGER_PENALTY * proximity * proximity;
+            }
+            if (predictedDistance < FUTURE_CONTACT_RADIUS) {
+                double contact = (FUTURE_CONTACT_RADIUS - predictedDistance)
+                        / FUTURE_CONTACT_RADIUS;
+                penalty += FUTURE_CONTACT_PENALTY * contact * contact;
+            }
+
+            // Also sample slightly before arrival so a monster crossing the cell
+            // between two route observations is represented instead of being
+            // invisible because it has already passed by the exact arrival tick.
+            double previousT = Math.max(0.0D, t - 4.0D);
+            double previousX = monster.x + monster.vx * previousT;
+            double previousZ = monster.z + monster.vz * previousT;
+            double previousDistance = Math.hypot(previousX - x, previousZ - z);
+            if (previousDistance < FUTURE_CONTACT_RADIUS) {
+                double contact = (FUTURE_CONTACT_RADIUS - previousDistance)
+                        / FUTURE_CONTACT_RADIUS;
+                penalty += FUTURE_CONTACT_PENALTY * 0.5D * contact * contact;
+            }
+
+            if (penalty >= 64.0D) return 64.0D;
         }
         return penalty;
     }
@@ -185,6 +243,6 @@ public final class ThreatAwarePathfinder {
     }
 
     private record StateKey(Cell cell, Direction direction) {}
-    private record Best(double cost, int turns) {}
-    private record Node(StateKey state, double cost, int turns) {}
+    private record Best(double cost, int turns, double travelDistance) {}
+    private record Node(StateKey state, double cost, int turns, double travelDistance) {}
 }

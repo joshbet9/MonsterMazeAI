@@ -387,7 +387,8 @@ public final class MonsterAwareRoutePlanner {
             }
 
             if (generated.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
-            candidates = selectDiverseRegionCandidates(state, generated, limit);
+            candidates = selectDiverseRegionCandidates(
+                    state, generated, limit, hasRelevantMonster(state) || projectedThreat);
         }
 
         cachedTopologySignature = topology;
@@ -698,6 +699,13 @@ public final class MonsterAwareRoutePlanner {
     private List<PlayerRoute> selectDiverseRegionCandidates(GameState state,
                                                               List<PlayerRoute> generated,
                                                               int limit) {
+        return selectDiverseRegionCandidates(state, generated, limit, hasRelevantMonster(state));
+    }
+
+    private List<PlayerRoute> selectDiverseRegionCandidates(GameState state,
+                                                              List<PlayerRoute> generated,
+                                                              int limit,
+                                                              boolean dynamicThreat) {
         if (generated.size() <= limit) return List.copyOf(generated);
 
         ArrayList<PlayerRoute> byCost = new ArrayList<>(generated);
@@ -707,7 +715,7 @@ public final class MonsterAwareRoutePlanner {
 
         // ThreatAwarePathfinder inserts its fresh dynamic routes first. Retain
         // them even when their topology cost is higher than the straight route.
-        if (hasRelevantMonster(state)) {
+        if (dynamicThreat) {
             addSelected(selected, generated, 0);
             addSelected(selected, generated, 1);
         }

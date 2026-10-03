@@ -25,6 +25,7 @@ class TacticalDamageDebtSweepTest {
         double debt = Double.parseDouble(System.getProperty(
                 "monstermaze.tactical.damageDebtPerFourHealth", "0.50"));
         long stageSum = 0;
+        int minStage = Integer.MAX_VALUE;
         long completed = 0;
         for (int[] entry : CASES) {
             Mode mode = entry[0] == 0 ? Mode.SPEED : Mode.MODERN;
@@ -34,6 +35,7 @@ class TacticalDamageDebtSweepTest {
                     AuthenticStage10SimulationTest.runToEnd(
                             pattern, kit, AiProfile.HIGH_SKILL, mode);
             stageSum += result.maxStage();
+            minStage = Math.min(minStage, result.maxStage());
             if (result.terminalTick() >= 0) completed++;
             System.out.printf(
                     "DAMAGE_DEBT_SWEEP debt=%.3f mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%.1f firstFall=%d%n",
@@ -41,7 +43,7 @@ class TacticalDamageDebtSweepTest {
                     result.health(), result.firstFallTick());
         }
         System.out.printf(
-                "DAMAGE_DEBT_SWEEP_SUMMARY debt=%.3f cases=%d stageSum=%d completed=%d%n",
-                debt, CASES.length, stageSum, completed);
+                "DAMAGE_DEBT_SWEEP_SUMMARY debt=%.3f cases=%d minStage=%d stageSum=%d completed=%d%n",
+                debt, CASES.length, minStage, stageSum, completed);
     }
 }

@@ -447,4 +447,181 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void physicsDrivenRightTurnBrakesBeforeCornerAndReachesGoal() {
+        CornerResult result = simulateCorner(
+                2, 1, 2, 8, 8, 8,
+                0.0F, 0.0D);
+
+        assertTrue(result.reachedGoal,
+                "right turn did not reach goal: " + result);
+        assertFalse(result.leftPhysicalFloor,
+                "right turn left physical floor: " + result);
+        assertTrue(result.cornerPrepTicks > 0,
+                "right turn never entered predictive corner staging: " + result);
+        assertTrue(result.maxYawDelta <= 30.0F + 1.0E-6,
+                "controller exceeded the 1.8 yaw limit: " + result);
+    }
+
+    @Test
+    void physicsDrivenLeftTurnBrakesBeforeCornerAndReachesGoal() {
+        CornerResult result = simulateCorner(
+                8, 1, 8, 8, 2, 8,
+                0.0F, 0.0D);
+
+        assertTrue(result.reachedGoal,
+                "left turn did not reach goal: " + result);
+        assertFalse(result.leftPhysicalFloor,
+                "left turn left physical floor: " + result);
+        assertTrue(result.cornerPrepTicks > 0,
+                "left turn never entered predictive corner staging: " + result);
+        assertTrue(result.maxYawDelta <= 30.0F + 1.0E-6,
+                "controller exceeded the 1.8 yaw limit: " + result);
+    }
+
+    @Test
+    void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // Reproduce the actual failure mode: the player reaches the corner with
+        // residual vanilla momentum before the next observation is processed.
+        s.player.z = 8.62;
+        s.player.vz = 0.25;
+        s.player.vx = 0.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.player.y = 0.0;
+        s.tick = 2;
+
+        boolean sawOldDirectionInput = false;
+        for (int tick = 0; tick < 80; tick++) {
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            if (action.forward() < -1.0E-6 || action.strafe() < -1.0E-6) {
+                sawOldDirectionInput = true;
+            }
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (s.player.y < -0.25 || !s.player.grounded && s.player.y < -0.75) break;
+            s.tick++;
+        }
+
+        assertFalse(sawOldDirectionInput,
+                "corner recovery emitted reverse input: " + controller.lastDecisionDetail());
+        assertTrue(s.player.x > 2.0,
+                "post-corner movement did not acquire the next +X segment: "
+                        + s.player.x + "," + s.player.z);
+        assertTrue(s.player.y >= -0.25,
+                "overshoot recovery fell from the maze: "
+                        + s.player.x + "," + s.player.z + " y=" + s.player.y);
+    }
+
+    private static CornerResult simulateCorner(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float initialYaw,
+            double initialSpeed) {
+        GameState s = cornerState(
+                startRow, startColumn, cornerRow, cornerColumn,
+                goalRow, goalColumn, initialYaw);
+        s.player.vx = startRow == cornerRow ? 0.0D : initialSpeed * Integer.signum(cornerRow - startRow);
+        s.player.vz = startColumn == cornerColumn ? 0.0D : initialSpeed * Integer.signum(cornerColumn - startColumn);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+        CornerResult result = new CornerResult();
+
+        for (int tick = 1; tick <= 360; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(goalRow, goalColumn), false);
+
+            result.maxYawDelta = Math.max(result.maxYawDelta, Math.abs(action.yawDelta()));
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")
+                    || controller.lastDecisionDetail().contains("CORNER_STAGE")) {
+                result.cornerPrepTicks++;
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (!s.player.grounded && s.player.y < -0.25D) {
+                result.leftPhysicalFloor = true;
+                break;
+            }
+
+            if (Math.hypot(
+                    s.player.x - (goalRow + 0.5D),
+                    s.player.z - (goalColumn + 0.5D)) <= 0.55D) {
+                result.reachedGoal = true;
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    private static GameState cornerState(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float yaw) {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+
+        int rowStep = Integer.signum(cornerRow - startRow);
+        int columnStep = Integer.signum(cornerColumn - startColumn);
+        int row = startRow;
+        int column = startColumn;
+        raw[row][column] = 1;
+
+        while (row != cornerRow) {
+            row += rowStep;
+            raw[row][column] = 1;
+        }
+        while (column != goalColumn) {
+            column += columnStep;
+            raw[row][column] = 1;
+        }
+
+        int goalRowStep = Integer.signum(goalRow - cornerRow);
+        row = cornerRow;
+        while (row != goalRow) {
+            row += goalRowStep;
+            raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = goalRow;
+        s.activePadColumn = goalColumn;
+        s.player.x = startRow + 0.5D;
+        s.player.z = startColumn + 0.5D;
+        s.player.y = 0.0D;
+        s.player.yaw = yaw;
+        s.player.grounded = true;
+        return s;
+    }
+
+    private static final class CornerResult {
+        boolean reachedGoal;
+        boolean leftPhysicalFloor;
+        int cornerPrepTicks;
+        double maxYawDelta;
+
+        @Override
+        public String toString() {
+            return "CornerResult{"
+                    + "reachedGoal=" + reachedGoal
+                    + ", leftPhysicalFloor=" + leftPhysicalFloor
+                    + ", cornerPrepTicks=" + cornerPrepTicks
+                    + ", maxYawDelta=" + maxYawDelta
+                    + '}';
+        }
+    }
+
 }

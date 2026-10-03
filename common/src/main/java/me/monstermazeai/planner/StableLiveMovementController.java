@@ -217,6 +217,10 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
+        // Diagnostic state describes this observation only. Prevent earlier
+        // route decisions from leaking into the next tick's behavioral class.
+        lastDecisionDetail = "TICK";
+
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(

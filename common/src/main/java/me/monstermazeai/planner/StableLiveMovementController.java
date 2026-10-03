@@ -2000,9 +2000,11 @@ public final class StableLiveMovementController {
          * committed to that corridor.
          *
          * Predict the encounter at the time the player is expected to reach each
-         * inspected route segment. This remains an input/controller decision;
-         * MonsterState physics stays authoritative. The 20-block source
-         * interaction sphere bounds the observation horizon.
+         * inspected route segment. Nearby monsters use the source interaction
+         * envelope; fast monsters farther away are also admitted through a
+         * strategic 60-block horizon so an incoming crossing can authorize an
+         * early route change before the mob reaches the player. This remains an
+         * input/controller decision; MonsterState physics stays authoritative.
          */
         int firstSegment = Math.max(0, waypointIndex - 1);
         int lookaheadSegments = routeThreatLookaheadSegments();
@@ -2048,7 +2050,12 @@ public final class StableLiveMovementController {
                 double currentMonsterDistance = Math.hypot(
                         monster.x - state.player.x,
                         monster.z - state.player.z);
-                if (currentMonsterDistance > me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS) {
+                double monsterSpeed = Math.hypot(monster.vx, monster.vz);
+                boolean localMonster = currentMonsterDistance
+                        <= me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS;
+                boolean remoteMovingMonster = currentMonsterDistance <= 60.0D
+                        && monsterSpeed >= 0.08D;
+                if (!localMonster && !remoteMovingMonster) {
                     continue;
                 }
 
@@ -2090,7 +2097,8 @@ public final class StableLiveMovementController {
 
                 boolean projectedContact = predictedPlayerDistance <= 1.60D;
                 boolean movingIntoRoute = velocityTowardPlayer > 0.02D
-                        || Math.hypot(monster.vx, monster.vz) < 0.02D;
+                        || monsterSpeed < 0.02D
+                        || remoteMovingMonster;
 
                 if (projectedContact && movingIntoRoute) return true;
             }

@@ -1724,7 +1724,7 @@ public final class StableLiveMovementController {
                 && state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && state.ability.charges > 0
                 && !gapExecutionActive
-                && bestDistance <= 1.25D
+                && bestDistance <= 1.75D
                 && (closingSpeed > 0.03D || !(leftFloor || rightFloor));
         if (urgentJumperJump) {
             float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);

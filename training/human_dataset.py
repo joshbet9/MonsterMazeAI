@@ -265,7 +265,8 @@ def build_observation(world: dict, movement: dict,
                       monster_row: Optional[dict],
                       population_alive: int = 1,
                       population_humans: int = 1,
-                      phase_start_seconds: Optional[int] = None) -> Tuple[List[float], dict]:
+                      phase_start_seconds: Optional[int] = None,
+                      kit_override: Optional[str] = None) -> Tuple[List[float], dict]:
     features = [0.0] * FEATURE_COUNT
     center = find_center(world)
     px = finite(movement.get("x"))
@@ -331,7 +332,7 @@ def build_observation(world: dict, movement: dict,
     features[21] = 1.0 if pad_reached else 0.0
     features[22] = 1.0 if pad_reached else 0.0
 
-    kit = str(world.get("kit", "MAVERICK")).upper()
+    kit = str(kit_override if kit_override is not None else world.get("kit", "MAVERICK")).upper()
     features[23] = float(KIT_ORDINAL.get(kit, 4)) / 4.0
     features[24] = clamp(finite(world.get("jumpCharges"), 0.0) / 5.0, 0.0, 1.0)
     ability_charges = max(0.0, finite(world.get("abilityCharges"), 0.0))
@@ -511,6 +512,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             population_alive=1,
             population_humans=1,
             phase_start_seconds=phase_starts[stage],
+            kit_override=kit,
         )
         if tick in topology_by_tick:
             features[32:41] = topology_by_tick[tick]

@@ -228,6 +228,31 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void threatAwarePathfinderAvoidsAProjectedMonsterCrossing() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 5.5;
+        state.player.z = 1.5;
+        state.player.vx = 0.20;
+        state.player.vz = 0.0;
+        state.player.grounded = true;
+
+        MonsterState crossing = new MonsterState(31, 5.5, 0.0, 7.5);
+        crossing.vx = 0.0;
+        crossing.vz = -0.20;
+        state.monsters.add(crossing);
+
+        List<Cell> path = new ThreatAwarePathfinder()
+                .shortestPathToRegion(state, new Cell(5, 1), new Cell(5, 7), 0, false);
+
+        assertFalse(path.isEmpty());
+        assertEquals(new Cell(5, 1), path.get(0));
+        assertEquals(new Cell(5, 7), path.get(path.size() - 1));
+        assertTrue(path.stream().anyMatch(cell -> cell.row() != 5),
+                "the temporal threat model should retain a detour when a moving mob is projected onto the direct lane");
+    }
+
+    @Test
     void regionCandidateSelectionRetainsLongerRoutesForTacticalEvaluation() throws Exception {
         GameState state = new GameState();
         state.maze = openMaze();

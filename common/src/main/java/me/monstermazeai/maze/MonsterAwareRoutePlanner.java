@@ -325,7 +325,7 @@ public final class MonsterAwareRoutePlanner {
             List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
             boolean projectedThreat = projectedMonsterThreatOnRoute(state, normal)
                     || projectedMonsterThreatOnRoute(state, gap);
-            if (hasRelevantMonster(state) || projectedThreat) {
+            if (projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
                         state, start, goal, 0, false);
@@ -356,7 +356,7 @@ public final class MonsterAwareRoutePlanner {
                     state.maze, start, goal, regionRadius);
             boolean projectedThreat = projectedMonsterThreatOnRoute(state, normalRegion)
                     || projectedMonsterThreatOnRoute(state, gapRegion);
-            if (hasRelevantMonster(state) || projectedThreat) {
+            if (projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
                         state, start, goal, regionRadius, false);
@@ -388,7 +388,7 @@ public final class MonsterAwareRoutePlanner {
 
             if (generated.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
             candidates = selectDiverseRegionCandidates(
-                    state, generated, limit, hasRelevantMonster(state) || projectedThreat);
+                    state, generated, limit, projectedThreat);
         }
 
         cachedTopologySignature = topology;
@@ -699,7 +699,7 @@ public final class MonsterAwareRoutePlanner {
     private List<PlayerRoute> selectDiverseRegionCandidates(GameState state,
                                                               List<PlayerRoute> generated,
                                                               int limit) {
-        return selectDiverseRegionCandidates(state, generated, limit, hasRelevantMonster(state));
+        return selectDiverseRegionCandidates(state, generated, limit, false);
     }
 
     private List<PlayerRoute> selectDiverseRegionCandidates(GameState state,

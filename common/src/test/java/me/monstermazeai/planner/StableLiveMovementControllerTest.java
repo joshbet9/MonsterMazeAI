@@ -618,6 +618,9 @@ class StableLiveMovementControllerTest {
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);
+        assertTrue(s.player.x <= 8.75,
+                "final waypoint handling must stop the motor at the goal: "
+                        + s.player.x + "," + s.player.z);
         assertTrue(s.player.y >= -0.25,
                 "overshoot recovery fell from the maze: "
                         + s.player.x + "," + s.player.z + " y=" + s.player.y);

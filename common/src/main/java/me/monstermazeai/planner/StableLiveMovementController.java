@@ -421,6 +421,12 @@ public final class StableLiveMovementController {
             lastDecisionDetail = "REACHED routeSize=" + route.size();
             return Action.IDLE;
         }
+        if (waypointIndex == route.size() - 1
+                && distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL) {
+            lastDecisionDetail = "REACHED_FINAL waypoint=" + waypointIndex
+                    + " routeSize=" + route.size();
+            return Action.IDLE;
+        }
 
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
         if (padEntry != null) return padEntry;

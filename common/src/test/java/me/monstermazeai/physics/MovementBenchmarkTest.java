@@ -57,8 +57,14 @@ class MovementBenchmarkTest {
                 "the source sprint-jump horizontal impulse must materially advance the player toward the destination");
         assertTrue(s.player.vz > 0.39,
                 "the source sprint-jump horizontal impulse must increase forward momentum");
+
+        // The first source tick reaches the air cell; the next movement tick
+        // carries the 0.6-wide AABB onto the destination block.
+        physics.tick(s.player, new Action(1, 0, false, true, 0, false), maze, -10);
+        assertTrue(s.player.z > 11.70,
+                "continued source movement must carry the player's AABB across the one-block gap");
         assertTrue(s.player.grounded,
-                "a successful speeding gap crossing must retain physical support on the destination block");
+                "after crossing the gap the player must regain physical support");
         assertTrue(s.player.vz > 0.0,
                 "the successful crossing must preserve forward momentum");
     }

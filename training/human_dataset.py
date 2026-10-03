@@ -23,7 +23,7 @@ import argparse
 import json
 import math
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 
 SCHEMA_VERSION = 2
@@ -243,7 +243,7 @@ def monster_features(monster_row: Optional[dict], movement: dict) -> Tuple[List[
         monsters.append((distance, dx, dy, dz, raw))
 
     monsters.sort(key=lambda x: x[0])
-    within8 = sum(1 for x in monsters if x[0] <= 8.0)
+    within8 = sum(1 for x in monsters if math.hypot(x[1], x[3]) <= 8.0)
 
     out: List[float] = []
     for distance, dx, dy, dz, _raw in monsters[:8]:
@@ -301,7 +301,7 @@ def build_observation(world: dict, movement: dict,
         dx = tx - px
         dz = tz - pz
         distance = math.hypot(dx, dz)
-        target_angle = math.degrees(math.atan2(dx, dz))
+        target_angle = math.degrees(math.atan2(-dx, dz))
         bearing = wrap_degrees(target_angle - yaw)
 
         features[9] = norm(dx, 64.0)
@@ -314,7 +314,7 @@ def build_observation(world: dict, movement: dict,
     stage = int(world.get("stage", 1) or 1)
     phase_remaining = int(finite(world.get("phaseTimerSeconds"), 0.0))
     phase_start = phase_start_seconds if phase_start_seconds is not None else max(phase_remaining, 0)
-    phase_elapsed = max(0.0, float(phase_start - phase_remaining))
+    phase_elapsed_ratio = (float(phase_start - phase_remaining) / float(max(1, phase_start))) if phase_start > 0 else 0.0
 
     features[15] = clamp(stage / 100.0, 0.0, 1.0)
     features[16] = clamp(float(max(0, phase_remaining)) / 60.0, 0.0, 1.0)
@@ -345,7 +345,7 @@ def build_observation(world: dict, movement: dict,
     features[28] = 1.0 if maze_pattern == 1 else 0.0
     features[29] = 1.0 if maze_pattern == 2 else 0.0
     features[30] = 1.0 if maze_pattern == 3 else 0.0
-    features[31] = clamp((stage - 1.0 + phase_elapsed) / 100.0, 0.0, 1.0)
+    features[31] = clamp((stage - 1.0 + phase_elapsed_ratio) / 100.0, 0.0, 1.0)
 
     features[32:41] = extract_local_topology(maze_row, movement, center)
     features[41] = clamp(float(population_alive) / 8.0, 0.0, 1.0)

@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
  */
 public final class StableLiveMovementController {
     // Autonomous matrix control checkpoint: known-green movement baseline.
+    // Trigger full-matrix control execution.
     private final AiProfile profile;
 
     public StableLiveMovementController() {

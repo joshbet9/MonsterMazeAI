@@ -22,9 +22,7 @@ public final class AlternativePhysicalRoutes {
         seen.add(key(baseline.cells()));
 
         PriorityQueue<PlayerRoute> queue = new PriorityQueue<>(
-                Comparator.comparingInt(PlayerRoute::size)
-                        .thenComparingInt(AlternativePhysicalRoutes::turnCount)
-                        .thenComparing(r -> key(r.cells())));
+                Comparator.comparingInt(PlayerRoute::size).thenComparing(r -> key(r.cells())));
 
         addDeviations(maze, start, goal, baseline, queue, seen);
         while (accepted.size() < limit && !queue.isEmpty()) {
@@ -77,23 +75,7 @@ public final class AlternativePhysicalRoutes {
 
     private static List<Cell> reconstruct(Map<Cell, Cell> previous, Cell goal) {
         ArrayList<Cell> path = new ArrayList<>();
-        for (Cell at = goal; at != n    private static int turnCount(PlayerRoute route) {
-        List<Cell> cells = route.cells();
-        if (cells.size() < 3) return 0;
-        int turns = 0;
-        int previousRow = Integer.signum(cells.get(1).row() - cells.get(0).row());
-        int previousColumn = Integer.signum(cells.get(1).column() - cells.get(0).column());
-        for (int i = 2; i < cells.size(); i++) {
-            int row = Integer.signum(cells.get(i).row() - cells.get(i - 1).row());
-            int column = Integer.signum(cells.get(i).column() - cells.get(i - 1).column());
-            if (row != previousRow || column != previousColumn) turns++;
-            previousRow = row;
-            previousColumn = column;
-        }
-        return turns;
-    }
-
-ull; at = previous.get(at)) path.add(at);
+        for (Cell at = goal; at != null; at = previous.get(at)) path.add(at);
         Collections.reverse(path);
         return path;
     }

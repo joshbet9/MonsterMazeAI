@@ -14,6 +14,7 @@ from policy_trainer import (
     build_targets,
     grouped_indices,
     grouped_split,
+    decision_grouped_split,
     load_rows,
     prepare,
     ranking_metrics,
@@ -40,7 +41,7 @@ def standardise(train_x, valid_x):
 
 def pairwise_train(train_x, train_y, valid_x, valid_y, train_rows, valid_rows,
                    epochs, batch_size, samples_per_epoch, lr, temperature,
-                   seed, patience):
+                   seed, patience, hidden1, hidden2, weight_decay):
     if temperature <= 0:
         raise ValueError("temperature must be positive")
 
@@ -62,7 +63,7 @@ def pairwise_train(train_x, train_y, valid_x, valid_y, train_rows, valid_rows,
         raise ValueError("No non-tied action pairs")
 
     pairs = np.asarray(pairs, dtype=np.int64)
-    model = MLP(INPUT_SIZE, 48, 24, seed)
+    model = MLP(INPUT_SIZE, hidden1, hidden2, seed)
     adam = adam_state(model)
     rng = np.random.default_rng(seed)
     best = (-1.0, -1.0)
@@ -86,7 +87,11 @@ def pairwise_train(train_x, train_y, valid_x, valid_y, train_rows, valid_rows,
             p = 1.0 / (1.0 + np.exp(-diff))
             g = (p - 1.0) / temperature
             dy = np.concatenate((g, -g))
-            model.step(model.gradients(cache, dy), adam, epoch, lr)
+            grads = list(model.gradients(cache, dy))
+            if weight_decay > 0:
+                for i, key in enumerate(("w1", "b1", "w2", "b2", "w3")):
+                    grads[i] = grads[i] + weight_decay * getattr(model, key)
+            model.step(tuple(grads), adam, epoch, lr)
 
         valid_score, _ = model.forward(valid_x)
         m = ranking_metrics(valid_rows, valid_score)
@@ -133,11 +138,16 @@ def main():
     ap.add_argument("--validation-fraction", type=float, default=0.20)
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--patience", type=int, default=25)
+    ap.add_argument("--hidden1", type=int, default=16)
+    ap.add_argument("--hidden2", type=int, default=8)
+    ap.add_argument("--weight-decay", type=float, default=0.0005)
+    ap.add_argument("--validation-mode", choices=("decision", "episode"), default="decision")
     args = ap.parse_args()
 
     raw = load_rows(Path(args.input))
     rows = build_targets(raw, 0.995)
-    train, valid = grouped_split(rows, args.validation_fraction, args.seed)
+    split_fn = decision_grouped_split if args.validation_mode == "decision" else grouped_split
+    train, valid = split_fn(rows, args.validation_fraction, args.seed)
     train_x, train_y = prepare(train)
     valid_x, valid_y = prepare(valid)
 
@@ -161,6 +171,7 @@ def main():
         train_x, train_y, valid_x, valid_y, train, valid,
         args.epochs, args.batch_size, args.samples_per_epoch,
         args.learning_rate, args.pair_temperature, args.seed, args.patience,
+        args.hidden1, args.hidden2, args.weight_decay,
     )
 
     print("\nFINAL")

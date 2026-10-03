@@ -1,0 +1,72 @@
+name: Monster Maze - Behavior Regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/seamless-physics-movement-v1
+      - architecture/cpu-opponents-v2
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  behavior:
+    name: ${{ matrix.case }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - MODERN:P1:JUMPER
+          - MODERN:P1:SLOWBALLER
+          - MODERN:P2:REPULSOR
+          - MODERN:P3:JUMPER
+          - MODERN:P3:BODY_BUILDER
+          - MODERN:P3:REPULSOR
+          - SPEED:P1:JUMPER
+          - SPEED:P3:JUMPER
+          - SPEED:P2:MAVERICK
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - name: Run behavioral replay
+        shell: bash
+        run: |
+          mkdir -p simulation-artifacts
+          set +e
+          mvn -B -ntp -pl common \
+            "-Dtest=FullRunFailureDiagnosticTest" \
+            "-Dmonstermaze.diag.case=${{ matrix.case }}" \
+            "-Dsurefire.useFile=false" \
+            "-Dsurefire.redirectTestOutputToFile=false" \
+            test 2>&1 | tee simulation-artifacts/behavior.log
+          rc=${PIPESTATUS[0]}
+          grep -E '^(=====|RESULT |COUNTS )' simulation-artifacts/behavior.log > simulation-artifacts/behavior-summary.txt || true
+          echo "maven_exit_code=${rc}" > simulation-artifacts/status.txt
+          exit "${rc}"
+      - name: Publish behavioral summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Behavioral replay: ${{ matrix.case }}" >> "$GITHUB_STEP_SUMMARY"
+          cat simulation-artifacts/behavior-summary.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload behavioral artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-behavior-${{ matrix.case }}-${{ github.sha }}
+          path: simulation-artifacts/
+          if-no-files-found: warn

@@ -1832,8 +1832,13 @@ public final class StableLiveMovementController {
             }
         }
 
-        Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
-        Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
+        /*
+         * Camera is already aligned to the reverse cardinal direction here.
+         * Positive forward input therefore moves physically away from the mob.
+         */
+        Action yield = new Action(0.65, 0.0, false, false, 0.0F, false);
+        Action guarded = guardProjectedSupport(
+                state, yield, -routeDirRow, -routeDirColumn);
         lastDecisionDetail = "MOB_YIELD"
                 + " monster=" + threat.id
                 + " distance=" + format(bestDistance)

@@ -605,6 +605,16 @@ class StableLiveMovementControllerTest {
                 new Cell(0, 4), new Cell(0, 5), new Cell(0, 6), new Cell(0, 7),
                 new Cell(0, 8), new Cell(0, 9), new Cell(0, 10), new Cell(0, 11))));
 
+        var goalRowField = StableLiveMovementController.class.getDeclaredField("goalRow");
+        goalRowField.setAccessible(true);
+        goalRowField.setInt(controller, 1);
+        var goalColumnField = StableLiveMovementController.class.getDeclaredField("goalColumn");
+        goalColumnField.setAccessible(true);
+        goalColumnField.setInt(controller, 3);
+        var goalRadiusField = StableLiveMovementController.class.getDeclaredField("goalRadius");
+        goalRadiusField.setAccessible(true);
+        goalRadiusField.setInt(controller, 0);
+
         var waypointField = StableLiveMovementController.class.getDeclaredField("waypointIndex");
         waypointField.setAccessible(true);
         waypointField.setInt(controller, 1);

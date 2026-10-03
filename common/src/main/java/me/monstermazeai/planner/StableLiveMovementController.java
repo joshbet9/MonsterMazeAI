@@ -39,7 +39,8 @@ import java.util.concurrent.Future;
  * remains the shortest cardinal route selected by the planner.
  */
 public final class StableLiveMovementController {
-    // Matrix trigger: validate the bounded corner-drive experiment. 1791021083676
+    // Matrix trigger: validate the bounded corner-drive experiment.
+    // Behavior workflow trigger after lab harness correction. 1791021083676
     private final AiProfile profile;
 
     public StableLiveMovementController() {

@@ -15,7 +15,7 @@ permissions:
 jobs:
   calibrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,6 +119,10 @@ jobs:
             'improvedVsV14':sum(r['deltaVsV14']>0 for r in rows),
             'worsenedVsV14':sum(r['deltaVsV14']<0 for r in rows),
             'unchangedVsV14':sum(r['deltaVsV14']==0 for r in rows),
+            'modernReached40':sum(r['mode']=='MODERN' and r['maxStage']>=40 for r in rows),
+            'speedReached70':sum(r['mode']=='SPEED' and r['maxStage']>=70 for r in rows),
+            'modernMeanStage':sum(r['maxStage'] for r in rows if r['mode']=='MODERN')/15,
+            'speedMeanStage':sum(r['maxStage'] for r in rows if r['mode']=='SPEED')/15,
             'rows':rows,
           }
           Path('calibrated-matrix-summary.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')

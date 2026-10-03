@@ -568,15 +568,15 @@ class StableLiveMovementControllerTest {
         s.player.vz = 0.08D;
         s.player.vx = 0.0D;
         s.player.grounded = true;
-        // Establish the physical route/lane anchor first. The async route
-        // result may arrive on the next observation, so give it one more tick
-        // before introducing the lateral drift.
+        // Establish the physical route/lane anchor first. Then introduce a
+        // lateral drift just beyond the allowed initial pad-transition offset;
+        // this deterministically forces LANE_RECOVERY_COMBINED.
         s.tick = 1;
         controller.nextAction(s, new Cell(8, 8), false);
         s.tick = 2;
         controller.nextAction(s, new Cell(8, 8), false);
 
-        s.player.x = 2.75D;
+        s.player.x = 3.18D;
         s.player.z = 2.50D;
         s.player.vz = 0.08D;
         s.player.vx = 0.0D;

@@ -192,19 +192,42 @@ public final class MonsterAwareRoutePlanner {
         boolean relevant = false;
         for (var monster : state.monsters) {
             if (monster == null || monster.removed
-                    || !MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) continue;
-            relevant = true;
-            h = mix(h, monster.id);
-            h = mix(h, Math.round(monster.x / 0.5D));
-            h = mix(h, Math.round(monster.y / 0.5D));
-            h = mix(h, Math.round(monster.z / 0.5D));
-            h = mix(h, Math.round(monster.vx / 0.05D));
-            h = mix(h, Math.round(monster.vz / 0.05D));
-            h = mix(h, monster.launched(state.tick) ? 1L : 0L);
-            h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+            double distance = Math.sqrt(
+                    sq(monster.x - state.player.x)
+                    + sq(monster.y - state.player.y)
+                    + sq(monster.z - state.player.z));
+            double speed = Math.hypot(monster.vx, monster.vz);
+
+            if (distance <= MonsterRelevance.INTERACTION_RADIUS) {
+                relevant = true;
+                h = mix(h, monster.id);
+                h = mix(h, quantiseThreat(monster.x, 0.5D));
+                h = mix(h, quantiseThreat(monster.y, 0.5D));
+                h = mix(h, quantiseThreat(monster.z, 0.5D));
+                h = mix(h, quantiseThreat(monster.vx, 0.05D));
+                h = mix(h, quantiseThreat(monster.vz, 0.05D));
+            } else if (distance <= 60.0D && speed >= 0.08D) {
+                // Coarser remote signature keeps strategic planning aware of
+                // incoming traffic without restarting on every tiny packet.
+                relevant = true;
+                h = mix(h, monster.id);
+                h = mix(h, quantiseThreat(monster.x, 1.0D));
+                h = mix(h, quantiseThreat(monster.z, 1.0D));
+                h = mix(h, quantiseThreat(monster.vx, 0.10D));
+                h = mix(h, quantiseThreat(monster.vz, 0.10D));
+            }
         }
         return relevant ? h : 0L;
+    }
+
+    private static double sq(double value) {
+        return value * value;
+    }
+
+    private static long quantiseThreat(double value, double quantum) {
+        return Math.round(value / quantum);
     }
 
     private static long mix(long h, long value) {
@@ -298,7 +321,11 @@ public final class MonsterAwareRoutePlanner {
              * worth its extra distance; the live motor is never forced to keep
              * following yesterday's threat-free geometry.
              */
-            if (hasRelevantMonster(state)) {
+            List<Cell> normal = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
+            List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
+            boolean projectedThreat = projectedMonsterThreatOnRoute(state, normal)
+                    || projectedMonsterThreatOnRoute(state, gap);
+            if (hasRelevantMonster(state) || projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
                         state, start, goal, 0, false);
@@ -308,9 +335,8 @@ public final class MonsterAwareRoutePlanner {
                 if (!threatGap.isEmpty()) generated.add(new PlayerRoute(threatGap));
             }
 
-            List<Cell> normal = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
             if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
-            List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
+            if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
             candidates = distinct(generated, limit * 3);
@@ -324,7 +350,13 @@ public final class MonsterAwareRoutePlanner {
              * available for throughput, but a fresh threat-aware route is included
              * whenever a monster can materially affect the approach.
              */
-            if (hasRelevantMonster(state)) {
+            List<Cell> normalRegion = pathfinder.shortestPathToRegionWithoutGaps(
+                    state.maze, start, goal, regionRadius);
+            List<Cell> gapRegion = pathfinder.shortestPathToRegion(
+                    state.maze, start, goal, regionRadius);
+            boolean projectedThreat = projectedMonsterThreatOnRoute(state, normalRegion)
+                    || projectedMonsterThreatOnRoute(state, gapRegion);
+            if (hasRelevantMonster(state) || projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
                         state, start, goal, regionRadius, false);
@@ -393,7 +425,10 @@ public final class MonsterAwareRoutePlanner {
                 break;
             }
         }
-        if (!hasRelevantMonster) return shortest(candidates);
+        boolean projectedCandidateThreat = candidates.stream()
+                .anyMatch(candidate -> projectedMonsterThreatOnRoute(
+                        state, candidate.cells()));
+        if (!hasRelevantMonster && !projectedCandidateThreat) return shortest(candidates);
 
         int[] evaluationIndices = simulationCandidateIndices(state, candidates, goal);
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];

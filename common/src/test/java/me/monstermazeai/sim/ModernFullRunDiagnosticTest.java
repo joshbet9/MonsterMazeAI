@@ -21,10 +21,19 @@ class ModernFullRunDiagnosticTest {
 
                 boolean naturalEnd = result.firstFallTick() >= 0 || result.ticks() < 100_000;
                 System.out.printf(
-                        "MODERN_FULL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%s firstFallTick=%d naturalEnd=%s%n",
+                        "MODERN_FULL_RUN pattern=%d kit=%s maxStage=%d ticks=%d health=%s firstFallTick=%d "
+                                + "terminalTick=%d terminalStage=%d phaseTicks=%d terminalPad=%d,%d terminalOnPad=%s naturalEnd=%s "
+                                + "moveShare=%.3f zeroShare=%.3f stationaryShare=%.3f avgSpeed=%.3f "
+                                + "lane=%d edge=%d corner=%d steer=%d recovery=%d%n",
                         pattern + 1, kit, result.maxStage(), result.ticks(),
                         Double.toString(result.health()), result.firstFallTick(),
-                        naturalEnd);
+                        result.terminalTick(), result.terminalStage(), result.terminalPhaseTicksRemaining(),
+                        result.terminalPadRow(), result.terminalPadColumn(), result.terminalOnPad(),
+                        naturalEnd, result.movementInputShare(), result.zeroInputShare(),
+                        result.stationaryShare(), result.averageHorizontalSpeed(),
+                        result.laneRecoveryTicks(), result.edgeGuardTicks(),
+                        result.cornerVectorTicks(), result.steerDriveTicks(),
+                        result.fastRecoveryRouteTicks());
             }
         }
     }

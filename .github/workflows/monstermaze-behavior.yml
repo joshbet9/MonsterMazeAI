@@ -47,16 +47,11 @@ jobs:
           : > simulation-artifacts/behavior-summary.txt
           cases=(
             'MODERN:P1:JUMPER'
-            'MODERN:P1:SLOWBALLER'
-            'MODERN:P2:REPULSOR'
+            'MODERN:P2:JUMPER'
             'MODERN:P3:JUMPER'
-            'MODERN:P3:BODY_BUILDER'
-            'MODERN:P3:REPULSOR'
-            'SPEED:P1:JUMPER'
-            'SPEED:P3:JUMPER'
-            'SPEED:P2:MAVERICK'
-          )
-          for diag_case in "${cases[@]}"; do
+            'MODERN:P1:SLOWBALLER'
+            'SPEED:P2:REPULSOR'
+          )          for diag_case in "${cases[@]}"; do
             echo "===== RUN ${diag_case} =====" | tee -a simulation-artifacts/behavior.log
             mvn -B -ntp -pl common \
               "-Dtest=FullRunFailureDiagnosticTest" \

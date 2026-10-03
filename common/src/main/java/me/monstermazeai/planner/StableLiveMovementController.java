@@ -90,6 +90,8 @@ public final class StableLiveMovementController {
     private static final double CORNER_PREP_MAX_LEAD = 1.60D;
     private static final double CORNER_PREP_RELEASE = 0.08D;
     private static final double CORNER_STAGED_SPEED = 0.035D;
+    /** Keep predictive corner drive from adding acceleration to an already-fast approach. */
+    private static final double CORNER_DRIVE_SPEED_LIMIT = 0.12D;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
     /*
@@ -1108,20 +1110,33 @@ public final class StableLiveMovementController {
 
         /*
          * Keep driving toward the physical corner while the camera acquires the
-         * next heading. The local W/A/D vector is projected back onto the
-         * *current* world-cardinal direction, so turning the camera does not cut
-         * diagonally across the one-cell corridor. This preserves momentum instead
-         * of spending multiple ticks coasting or standing still.
+         * next heading, but never accelerate an already-fast approach. Above the
+         * bounded corner speed, vanilla friction is allowed to bleed momentum;
+         * below it, a current-axis input keeps the player moving. The input is
+         * projected in world space, so camera rotation does not cut the corner.
          */
         float yawDelta = Math.abs(nextYawError) <= HEADING_TOLERANCE
                 ? 0.0F
                 : clamp(nextYawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
+        if (speedAlong > CORNER_DRIVE_SPEED_LIMIT) {
+            lastDecisionDetail += " CORNER_STAGE_COAST"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " yawDelta=" + format(yawDelta);
+            return new Action(0.0, 0.0, false, false, yawDelta, false);
+        }
+
         double currentYaw = Math.toRadians(state.player.yaw + yawDelta);
         double worldX = currentDirRow;
         double worldZ = currentDirColumn;
-        double forward = worldX * (-Math.sin(currentYaw)) + worldZ * Math.cos(currentYaw);
-        double strafe = worldX * Math.cos(currentYaw) + worldZ * Math.sin(currentYaw);
+        double forwardWorldX = -Math.sin(currentYaw);
+        double forwardWorldZ = Math.cos(currentYaw);
+        double strafeWorldX = Math.cos(currentYaw);
+        double strafeWorldZ = Math.sin(currentYaw);
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
         double magnitude = Math.hypot(forward, strafe);
         if (magnitude > 1.0E-9) {
             forward /= magnitude;
@@ -1136,13 +1151,6 @@ public final class StableLiveMovementController {
                     + " nextYaw=" + format(nextYaw)
                     + " yawError=" + format(nextYawError)
                     + " yawDelta=" + format(yawDelta)
-                    + " projected=f=" + format(forward)
-                    + ",s=" + format(strafe);
-        } else if (speedAlong > CORNER_STAGED_SPEED) {
-            lastDecisionDetail += " CORNER_STAGE_COAST_REPLACED"
-                    + " waypoint=" + currentWaypointIndex
-                    + " remaining=" + format(remaining)
-                    + " speedAlong=" + format(speedAlong)
                     + " projected=f=" + format(forward)
                     + ",s=" + format(strafe);
         } else {

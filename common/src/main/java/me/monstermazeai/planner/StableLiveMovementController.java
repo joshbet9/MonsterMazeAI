@@ -1085,20 +1085,14 @@ public final class StableLiveMovementController {
             return new Action(0.0, 0.0, false, false, yawDelta, false);
         }
 
-        if (speedAlong > CORNER_STAGED_SPEED) {
-            lastDecisionDetail += " CORNER_STAGE_COAST"
-                    + " waypoint=" + currentWaypointIndex
-                    + " remaining=" + format(remaining)
-                    + " speedAlong=" + format(speedAlong);
-            return Action.IDLE;
-        }
-
         /*
-         * We are aligned to the next heading but still short of the corner.
-         * Project a small input onto the *current* world direction so we keep
-         * advancing without arcing diagonally toward the next cell.
+         * Keep the physical current-axis motion alive while the camera acquires
+         * the next heading. At high approach speed use only 0.20 input: under
+         * the source movement constants this approximately offsets one-tick
+         * ground friction instead of accelerating the player into the corner.
+         * Once speed is low, resume the stronger 0.65 push to avoid a stall.
          */
-        double drive = 0.65D;
+        double drive = speedAlong > CORNER_STAGED_SPEED ? 0.20D : 0.65D;
         double currentYaw = Math.toRadians(state.player.yaw);
         double worldX = currentDirRow;
         double worldZ = currentDirColumn;
@@ -1107,12 +1101,22 @@ public final class StableLiveMovementController {
         forward *= drive;
         strafe *= drive;
 
-        lastDecisionDetail += " CORNER_STAGE_PUSH"
-                + " waypoint=" + currentWaypointIndex
-                + " remaining=" + format(remaining)
-                + " forward=" + format(forward)
-                + " strafe=" + format(strafe);
-        return new Action(forward, strafe, false, false, 0.0F, false);
+        if (speedAlong > CORNER_STAGED_SPEED) {
+            lastDecisionDetail += " CORNER_STAGE_DRIVE"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " forward=" + format(forward)
+                    + " strafe=" + format(strafe);
+        } else {
+            lastDecisionDetail += " CORNER_STAGE_PUSH"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " forward=" + format(forward)
+                    + " strafe=" + format(strafe);
+        }
+        return new Action(forward, strafe, false, false, yawDelta, false);
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {

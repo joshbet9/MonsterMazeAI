@@ -1035,6 +1035,21 @@ public final class StableLiveMovementController {
                 : state.player.vz * currentDirColumn;
 
         boolean committed = cornerTurnCommitmentWaypoint == currentWaypointIndex;
+
+        /*
+         * A monster retreat/collision can reverse the current segment velocity
+         * before the corner is crossed. A predictive turn commitment from the
+         * pre-hit state is then stale; retaining it causes repeated 30-degree
+         * yaw pulses while the player backs away from the corner.
+         */
+        if (committed && speedAlong < -CORNER_STAGED_SPEED) {
+            cornerTurnCommitmentWaypoint = -1;
+            committed = false;
+            lastDecisionDetail += " CORNER_COMMITMENT_CANCEL_REVERSED"
+                    + " waypoint=" + currentWaypointIndex
+                    + " speedAlong=" + format(speedAlong);
+        }
+
         if (!committed) {
             if (remaining < 0.0D || speedAlong < CORNER_STAGED_SPEED) {
                 return null;

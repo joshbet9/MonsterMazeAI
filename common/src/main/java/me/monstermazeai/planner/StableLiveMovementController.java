@@ -790,6 +790,12 @@ public final class StableLiveMovementController {
                 PlayerRoute planned = regionRadius > 0
                         ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
                         : backgroundRoutePlanner.route(snapshot, start, goal);
+                if (planned == null) {
+                    // No executable tactical replacement is a valid result. Keep
+                    // the live physical route and wait for a later observation
+                    // that changes the tactical decision context.
+                    return;
+                }
                 completedRoutePlan = new PlannedRoute(
                         planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
                         requestedTick, topology, threatSignature(snapshot));

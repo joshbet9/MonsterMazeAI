@@ -442,9 +442,9 @@ public final class StableLiveMovementController {
          * EDGE_GUARD zero-input loop.
          */
         int supportedRouteIndex = route.cells().indexOf(supportedCell);
-        if (supportedRouteIndex >= 0 && supportedRouteIndex < waypointIndex - 1) {
+        if (supportedRouteIndex >= 0) {
             int rebasedWaypoint = nextTurnWaypoint(route, supportedRouteIndex);
-            if (rebasedWaypoint < waypointIndex) {
+            if (rebasedWaypoint != waypointIndex) {
                 waypointIndex = rebasedWaypoint;
                 anchoredSegmentIndex = -1;
                 lastDecisionDetail += " WAYPOINT_REBASE"

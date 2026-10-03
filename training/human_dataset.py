@@ -189,7 +189,8 @@ def mode_bits(world: Optional[dict]) -> Tuple[float, float]:
 
 
 def extract_local_topology(maze_row: Optional[dict], movement: dict,
-                           center: Optional[Tuple[float, float, float]]) -> List[float]:
+                           center: Optional[Tuple[float, float, float]],
+                           navigation_row: Optional[dict] = None) -> List[float]:
     if not maze_row or center is None:
         return [0.0] * 9
 
@@ -202,11 +203,28 @@ def extract_local_topology(maze_row: Optional[dict], movement: dict,
     if not isinstance(maze, list) or len(maze) != 99:
         return [0.0] * 9
 
-    cx, _cy, cz = center
-    px = finite(movement.get("x"))
-    pz = finite(movement.get("z"))
-    grid_row = int(math.floor(px - (cx - 49.0)))
-    grid_col = int(math.floor(pz - (cz - 49.0)))
+    grid_row: Optional[int] = None
+    grid_col: Optional[int] = None
+
+    # The observer's navigation stream already exposes the authoritative maze
+    # cell. Prefer it over reconstructing a discrete cell from floating-point
+    # world coordinates; the latter can disagree at cell boundaries.
+    if isinstance(navigation_row, dict):
+        try:
+            candidate_row = int(navigation_row.get("row", -1))
+            candidate_col = int(navigation_row.get("column", -1))
+        except (TypeError, ValueError):
+            candidate_row = candidate_col = -1
+        if 0 <= candidate_row < 99 and 0 <= candidate_col < 99:
+            grid_row = candidate_row
+            grid_col = candidate_col
+
+    if grid_row is None or grid_col is None:
+        cx, _cy, cz = center
+        px = finite(movement.get("x"))
+        pz = finite(movement.get("z"))
+        grid_row = int(math.floor(px - (cx - 49.0)))
+        grid_col = int(math.floor(pz - (cz - 49.0)))
 
     coords = [
         (0, -1), (0, 1), (1, 0), (-1, 0),
@@ -464,6 +482,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     world = load_by_tick(world_path)
     movement = load_by_tick(movement_path)
     inputs = load_by_tick(input_path)
+    navigation = load_by_tick(navigation_path)
 
     # Maze snapshots are sparse and each snapshot carries a full 99x99 map.
     # Do not require an exact world/movement tick: advance the maze stream only
@@ -549,6 +568,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
                 topology_current,
                 movement_row,
                 find_center(world_row),
+                navigation.get(tick),
             )
 
         action = build_action(input_row)

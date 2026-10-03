@@ -1488,145 +1488,183 @@ public final class StableLiveMovementController {
      * whenever its surface is plausibly reachable before the fall.
      */
     private Action airborneMobRecoveryAction(GameState state, Cell goal) {
-        double[] target = findAirRecoveryTarget(state, goal);
-        double dx = target[0] - state.player.x;
-        double dz = target[1] - state.player.z;
-        if (Math.hypot(dx, dz) < 0.20D) {
+        RecoveryCandidate best = bestAirRecoveryCandidate(state, goal);
+        if (best == null) {
             lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
-                    + " target=under-player"
+                    + " fallback=true"
                     + " vx=" + format(state.player.vx)
                     + " vz=" + format(state.player.vz);
             return new Action(1.0, 0.0, false, true, 0.0F, false);
         }
 
-        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float yawError = normalise(desiredYaw - state.player.yaw);
-        float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-
-        // A struck player remains controllable in the air. Use the same W+A/D
-        // vector a strong Minecraft player would use: rotate toward the landing
-        // target while simultaneously applying the local movement component
-        // that points at it. This is still ordinary Minecraft input; it is not
-        // a physics shortcut.
-        /*
-         * Air control is weak in 1.8, while the Monster Maze source bump starts
-         * the player with roughly 1 block/tick horizontal velocity. Pointing
-         * only at the landing point therefore cannot cancel the knockback
-         * quickly enough. Counter the measured source velocity, then bias the
-         * remaining air-control vector toward the supported landing target.
-         */
-        double targetDx = target[0] - state.player.x;
-        double targetDz = target[1] - state.player.z;
-        double targetLen = Math.hypot(targetDx, targetDz);
-        if (targetLen > 1.0E-9) {
-            targetDx /= targetLen;
-            targetDz /= targetLen;
-        }
-        double speedX = state.player.vx;
-        double speedZ = state.player.vz;
-        double horizontalSpeed = Math.hypot(speedX, speedZ);
-        double desiredWorldX = targetDx;
-        double desiredWorldZ = targetDz;
-        if (horizontalSpeed > 0.05D) {
-            double cancelWeight = Math.min(2.5D, 1.0D + horizontalSpeed);
-            desiredWorldX -= (speedX / horizontalSpeed) * cancelWeight;
-            desiredWorldZ -= (speedZ / horizontalSpeed) * cancelWeight;
-        }
-        double desiredLen = Math.hypot(desiredWorldX, desiredWorldZ);
-        if (desiredLen < 1.0E-9) {
-            desiredWorldX = targetDx;
-            desiredWorldZ = targetDz;
-            desiredLen = 1.0D;
-        }
-        desiredWorldX /= desiredLen;
-        desiredWorldZ /= desiredLen;
-
-        float postTurnYaw = state.player.yaw + yawDelta;
-        double yawRad = Math.toRadians(postTurnYaw);
-        double forwardWorldX = -Math.sin(yawRad);
-        double forwardWorldZ = Math.cos(yawRad);
-        double strafeWorldX = Math.cos(yawRad);
-        double strafeWorldZ = Math.sin(yawRad);
-        double forward = desiredWorldX * forwardWorldX + desiredWorldZ * forwardWorldZ;
-        double strafe = desiredWorldX * strafeWorldX + desiredWorldZ * strafeWorldZ;
-        double inputMagnitude = Math.hypot(forward, strafe);
-        if (inputMagnitude > 1.0D) {
-            forward /= inputMagnitude;
-            strafe /= inputMagnitude;
-        }
-        boolean sprint = true;
+        Action action = best.action;
         lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
-                + " target=" + format(target[0]) + "," + format(target[1])
-                + " yawError=" + format(yawError)
-                + " yawDelta=" + format(yawDelta)
-                + " f=" + format(forward)
-                + " s=" + format(strafe)
+                + " target=" + format(best.landingX) + "," + format(best.landingZ)
+                + " landingSupported=" + best.landingSupported
+                + " landingTicks=" + best.landingTicks
+                + " score=" + format(best.score)
+                + " yawDelta=" + format(action.yawDelta())
+                + " f=" + format(action.forward())
+                + " s=" + format(action.strafe())
                 + " vy=" + format(state.player.vy);
-        return new Action(forward, strafe, false, sprint, yawDelta, false);
+        return action;
     }
 
-    private double[] findAirRecoveryTarget(GameState state, Cell goal) {
-        /*
-         * The source bump supplies the player with a large horizontal impulse.
-         * Select the recovery surface from the point the same 1.8 movement model
-         * predicts the player's feet will reach naturally, not merely the nearest
-         * floor around the current position.
-         */
-        me.monstermazeai.player.PlayerState ballistic = state.player.copy();
-        int landingTicks = 0;
-        final int MAX_RECOVERY_TICKS = 20;
-        while (landingTicks < MAX_RECOVERY_TICKS
-                && !ballistic.grounded
-                && ballistic.y > GameState.PATH_Y - 3.0D) {
-            movementProjection.tick(
-                    ballistic,
-                    Action.IDLE,
-                    state.maze,
-                    0);
-            landingTicks++;
+    /**
+     * Pick the first recovery input by actually rolling the source movement
+     * model one control tick, then projecting the resulting knockback to its
+     * natural landing. The previous implementation selected a no-input landing
+     * target and only afterwards invented a steering vector, so the target and
+     * returned action could disagree.
+     */
+    private RecoveryCandidate bestAirRecoveryCandidate(GameState state, Cell goal) {
+        double[] baselineTarget = findAirRecoveryTarget(state, goal);
+        double targetDx = baselineTarget[0] - state.player.x;
+        double targetDz = baselineTarget[1] - state.player.z;
+        double targetLen = Math.hypot(targetDx, targetDz);
+        if (targetLen > 1.0E-9D) {
+            targetDx /= targetLen;
+            targetDz /= targetLen;
+        } else {
+            targetDx = 0.0D;
+            targetDz = 0.0D;
         }
 
-        double predictedX = ballistic.x;
-        double predictedZ = ballistic.z;
-        double goalX = goal.row() + 0.5D;
-        double goalZ = goal.column() + 0.5D;
+        double speedX = state.player.vx;
+        double speedZ = state.player.vz;
+        double speed = Math.hypot(speedX, speedZ);
+        double oppositeVx = speed > 0.05D ? -speedX / speed : 0.0D;
+        double oppositeVz = speed > 0.05D ? -speedZ / speed : 0.0D;
 
-        int centreRow = (int) Math.floor(predictedX);
-        int centreCol = (int) Math.floor(predictedZ);
+        /*
+         * These are ordinary world-space steering intents. They are deliberately
+         * redundant: a short rollout decides which one is physically useful for
+         * this exact knockback state.
+         */
+        double[][] worldDirections = {
+                {targetDx, targetDz},
+                {oppositeVx, oppositeVz},
+                {targetDx + oppositeVx, targetDz + oppositeVz},
+                {targetDx * 1.5D + oppositeVx, targetDz * 1.5D + oppositeVz},
+                {targetDx + oppositeVx * 1.5D, targetDz + oppositeVz * 1.5D},
+                {-targetDz, targetDx},
+                {targetDz, -targetDx},
+                {0.0D, 0.0D}
+        };
 
-        double bestX = state.player.x;
-        double bestZ = state.player.z;
-        double bestScore = Double.POSITIVE_INFINITY;
+        RecoveryCandidate best = null;
+        float[] yawDeltas = {-30.0F, 0.0F, 30.0F};
+        for (double[] rawWorld : worldDirections) {
+            double worldLength = Math.hypot(rawWorld[0], rawWorld[1]);
+            if (worldLength < 1.0E-6D) continue;
+            double worldX = rawWorld[0] / worldLength;
+            double worldZ = rawWorld[1] / worldLength;
 
-        for (int row = Math.max(0, centreRow - 7);
-             row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 7); row++) {
-            for (int col = Math.max(0, centreCol - 7);
-                 col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 7); col++) {
-                if (!state.maze.isPhysicalFloor(row, col)) continue;
+            for (float yawDelta : yawDeltas) {
+                PlayerState projection = state.player.copy();
+                double yawRad = Math.toRadians(state.player.yaw + yawDelta);
+                double forwardWorldX = -Math.sin(yawRad);
+                double forwardWorldZ = Math.cos(yawRad);
+                double strafeWorldX = Math.cos(yawRad);
+                double strafeWorldZ = Math.sin(yawRad);
 
-                double x = row + 0.5D;
-                double z = col + 0.5D;
-                double landingDistance = sq(x - predictedX) + sq(z - predictedZ);
-                double goalDistance = sq(x - goalX) + sq(z - goalZ);
+                double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+                double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+                double inputMagnitude = Math.hypot(forward, strafe);
+                if (inputMagnitude > 1.0D) {
+                    forward /= inputMagnitude;
+                    strafe /= inputMagnitude;
+                }
+
+                Action action = new Action(forward, strafe, false, true, yawDelta, false);
+                movementProjection.tick(projection, action, state.maze, 0);
+
+                int landingTicks = 1;
+                while (landingTicks < 20
+                        && !projection.grounded
+                        && projection.y > GameState.PATH_Y - 3.0D) {
+                    movementProjection.tick(projection, Action.IDLE, state.maze, 0);
+                    landingTicks++;
+                }
+
+                boolean supported = projection.grounded
+                        && hasPlayerPhysicalSupport(state.maze, projection.x, projection.z);
+                double floorDistance = nearestPhysicalFloorDistance(
+                        state.maze, projection.x, projection.z);
+                double goalDistance = Math.hypot(
+                        projection.x - (goal.row() + 0.5D),
+                        projection.z - (goal.column() + 0.5D));
+                double residualSpeed = Math.hypot(projection.vx, projection.vz);
 
                 /*
-                 * Landing safety dominates strategic progress, but the goal gets
-                 * a small bias so a choice among several equally reachable floor
-                 * cells does not unnecessarily reverse the route.
+                 * An actual supported landing is the dominant objective.
+                 * Otherwise minimise the distance to physical support and keep
+                 * the player pointed generally toward the active pad. This is a
+                 * first-action policy, so the next observation is free to re-plan.
                  */
-                double score = landingDistance + 0.025D * goalDistance;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestX = x;
-                    bestZ = z;
+                double score = supported ? -1_000_000.0D : 0.0D;
+                score += floorDistance * 25.0D;
+                score += goalDistance * 0.75D;
+                score += residualSpeed * 0.08D;
+                score += Math.abs(yawDelta) * 0.002D;
+                if (!supported) {
+                    score += Math.max(0.0D, projection.y + 2.0D) * 2.0D;
+                }
+
+                RecoveryCandidate candidate = new RecoveryCandidate(
+                        action, score, projection.x, projection.z, supported, landingTicks);
+                if (best == null || candidate.score < best.score) {
+                    best = candidate;
                 }
             }
         }
-
-        return new double[]{bestX, bestZ};
+        return best;
     }
 
-    private Action laneCorrectionAction(
+    private static boolean hasPlayerPhysicalSupport(
+            me.monstermazeai.maze.MazeModel maze, double x, double z) {
+        if (maze == null) return true;
+        final double halfWidth = 0.30D;
+        int minRow = (int) Math.floor(x - halfWidth);
+        int maxRow = (int) Math.floor(Math.nextDown(x + halfWidth));
+        int minCol = (int) Math.floor(z - halfWidth);
+        int maxCol = (int) Math.floor(Math.nextDown(z + halfWidth));
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int col = minCol; col <= maxCol; col++) {
+                if (maze.isPhysicalFloor(row, col)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static double nearestPhysicalFloorDistance(
+            me.monstermazeai.maze.MazeModel maze, double x, double z) {
+        if (maze == null) return 0.0D;
+        double best = Double.POSITIVE_INFINITY;
+        int centreRow = (int) Math.floor(x);
+        int centreCol = (int) Math.floor(z);
+        for (int row = Math.max(0, centreRow - 2);
+             row <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreRow + 2); row++) {
+            for (int col = Math.max(0, centreCol - 2);
+                 col <= Math.min(me.monstermazeai.maze.MazeModel.SIZE - 1, centreCol + 2); col++) {
+                if (!maze.isPhysicalFloor(row, col)) continue;
+                double dx = x - (row + 0.5D);
+                double dz = z - (col + 0.5D);
+                best = Math.min(best, Math.hypot(dx, dz));
+            }
+        }
+        return Double.isFinite(best) ? best : 20.0D;
+    }
+
+    private record RecoveryCandidate(
+            Action action,
+            double score,
+            double landingX,
+            double landingZ,
+            boolean landingSupported,
+            int landingTicks) {}
+
+        private Action laneCorrectionAction(
             GameState state, int dirRow, int dirColumn, double magnitude) {
         double targetX = state.player.x;
         double targetZ = state.player.z;

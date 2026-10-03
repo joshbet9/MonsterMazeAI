@@ -518,6 +518,48 @@ class StableLiveMovementControllerTest {
 
 
     @Test
+    void committedJumperGapTakesPriorityOverIncomingMobAvoidance() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[4][4] = 1;
+        raw[3][4] = 1;
+        raw[2][4] = 0;
+        raw[1][4] = 1;
+        raw[0][4] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = maze;
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.ability.charges = 1;
+        s.player.x = 3.5D;
+        s.player.z = 4.5D;
+        s.player.y = 0.0D;
+        s.player.yaw = 90.0F;
+        s.player.grounded = true;
+        s.activePadRow = 0;
+        s.activePadColumn = 4;
+
+        MonsterState monster = new MonsterState(42, 3.5D, 0.0D, 5.7D);
+        monster.vz = -0.15D;
+        s.monsters.add(monster);
+
+        StableLiveMovementController controller = new StableLiveMovementController(false);
+
+        // Bootstrap route, then advance until the two-cell gap is the active edge.
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 4), true);
+        s.tick = 2;
+        Action action = controller.nextAction(s, new Cell(0, 4), true);
+
+        assertTrue(controller.lastDecisionDetail().contains("GAP_")
+                        || action.jump(),
+                "incoming mob avoidance stole the gap decision: "
+                        + controller.lastDecisionDetail() + " action=" + action);
+    }
+
+    @Test
     void mobYieldMovesAwayAfterReverseHeadingAlignment() {
         GameState s = state(2.5, 2.5, 180.0F);
         s.kit = me.monstermazeai.kit.Kit.JUMPER;

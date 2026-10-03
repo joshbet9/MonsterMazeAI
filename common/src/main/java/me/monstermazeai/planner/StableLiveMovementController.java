@@ -807,14 +807,24 @@ public final class StableLiveMovementController {
 
         completedRoutePlan = null;
         long currentThreat = threatSignature(state);
-        if (planned.startRow != startRow
-                || planned.startColumn != startColumn
-                || planned.goalRow != goal.row()
+        if (planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
                 || state.tick - planned.requestedTick > 12L) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * The player normally advances several cells while the background
+         * evaluator is working. A route is still useful when its topology
+         * contains the player's current support cell, so trim the already
+         * traversed prefix instead of throwing the result away as "stale".
+         */
+        PlayerRoute rebasedRoute = rebaseRoute(planned.route, startRow, startColumn);
+        if (rebasedRoute == null) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -833,8 +843,8 @@ public final class StableLiveMovementController {
          */
         if (route != null) {
             double currentRisk = routePlanner.dynamicThreatRisk(state, route);
-            double plannedRisk = routePlanner.dynamicThreatRisk(state, planned.route);
-            boolean sameRoute = route.cells().equals(planned.route.cells());
+            double plannedRisk = routePlanner.dynamicThreatRisk(state, rebasedRoute);
+            boolean sameRoute = route.cells().equals(rebasedRoute.cells());
             boolean materiallySafer = plannedRisk + 0.08D < currentRisk;
             boolean emergencySafer = currentRisk >= 0.75D && plannedRisk + 0.02D < currentRisk;
             if (!sameRoute && !materiallySafer && !emergencySafer) {
@@ -850,7 +860,7 @@ public final class StableLiveMovementController {
          * producing alternating first headings and left/right oscillation.
          */
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)) {
+                state, rebasedRoute, startRow, startColumn)) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -859,7 +869,7 @@ public final class StableLiveMovementController {
             lastDecisionDetail = "ASYNC_ROUTE_APPLIED_MOVING_THREATS";
         }
 
-        route = planned.route;
+        route = rebasedRoute;
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
         cornerTurnCommitmentWaypoint = -1;
@@ -873,6 +883,21 @@ public final class StableLiveMovementController {
                 + " plannedTick=" + planned.requestedTick;
         fullRouteEvaluationPending = false;
         lastTacticalSignature = Long.MIN_VALUE;
+    }
+
+    /**
+     * Trim a completed strategic route to the player's current cell. Returning
+     * null means the player has already diverged from the planned topology and
+     * a fresh route must be generated.
+     */
+    private static PlayerRoute rebaseRoute(PlayerRoute planned, int startRow, int startColumn) {
+        if (planned == null || planned.cells().isEmpty()) return null;
+        Cell current = new Cell(startRow, startColumn);
+        List<Cell> cells = planned.cells();
+        int index = cells.indexOf(current);
+        if (index < 0) return null;
+        if (index == cells.size() - 1) return new PlayerRoute(List.of(current));
+        return new PlayerRoute(new java.util.ArrayList<>(cells.subList(index, cells.size())));
     }
 
     private static final class PlannedRoute {

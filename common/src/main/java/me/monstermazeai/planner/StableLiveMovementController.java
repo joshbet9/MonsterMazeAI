@@ -612,8 +612,8 @@ public final class StableLiveMovementController {
             float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
-                boolean brake = distance < waypointBrakeDistance()
-                        && closingSpeed(state, dx, dz) > 0.04;
+                boolean brake = shouldBrakeForFinalApproach(
+                        state, distance, closingSpeed(state, dx, dz));
                 /*
                  * Keep forward input concurrent with cursor movement, but do not
                  * carry full sprint acceleration through a sharp heading change.
@@ -654,8 +654,8 @@ public final class StableLiveMovementController {
                         false);
             }
         } else {
-            boolean brake = distance < waypointBrakeDistance()
-                    && closingSpeed(state, dx, dz) > 0.04;
+            boolean brake = shouldBrakeForFinalApproach(
+                    state, distance, closingSpeed(state, dx, dz));
             double forward = brake ? 0.0 : 1.0;
             boolean jump = shouldSpeedJump(state, allowJump);
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
@@ -1677,6 +1677,26 @@ public final class StableLiveMovementController {
         }
 
         return new double[]{bestX, bestZ};
+    }
+
+    private boolean shouldBrakeForFinalApproach(
+            GameState state, double distance, double closingSpeed) {
+        if (closingSpeed <= 0.04D) return false;
+        if (route == null || waypointIndex != route.size() - 1) {
+            return distance < waypointBrakeDistance();
+        }
+
+        /*
+         * The final SafePad is a physical 5x5 surface, but the player can still
+         * carry substantial vanilla momentum across its far edge. Once the final
+         * waypoint is the active target, start braking early enough for ordinary
+         * ground friction to remove the observed forward velocity before the
+         * centre of the terminal surface is passed.
+         */
+        double stoppingDistance = closingSpeed
+                / Math.max(1.0E-6D, 1.0D - PHYSICS_GROUND_FRICTION);
+        double dynamicBrake = stoppingDistance + 0.10D;
+        return distance < Math.max(waypointBrakeDistance(), dynamicBrake);
     }
 
     private double waypointBrakeDistance() {

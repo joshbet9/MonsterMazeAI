@@ -125,30 +125,30 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as temp2:
         root = Path(temp2)
 
-            # Startup/teardown rows without a detected maze centre are not training
-            # observations and must be excluded rather than encoded as zero topology.
-            write_jsonl(root / f"{run}-world.jsonl", [
-                make_world(50, 1),
-                {**make_world(75, 1), "mazeDetected": False, "center": None, "mazePattern": -1},
-                make_world(100, 1),
-                make_world(150, 2),
-                make_world(200, 2),
-            ])
-            write_jsonl(root / f"{run}-movement.jsonl", [
-                make_movement(50),
-                make_movement(75),
-                make_movement(100),
-                make_movement(150),
-                make_movement(200),
-            ])
-            write_jsonl(root / f"{run}-input.jsonl", [
-                make_input(50),
-                make_input(75),
-                make_input(100),
-                make_input(150),
-                make_input(200),
-            ])
-            write_jsonl(root / f"{run}-navigation.jsonl", [
+        # Startup/teardown rows without a detected maze centre are not training
+        # observations and must be excluded rather than encoded as zero topology.
+        write_jsonl(root / f"{run}-world.jsonl", [
+            make_world(50, 1),
+            {**make_world(75, 1), "mazeDetected": False, "center": None, "mazePattern": -1},
+            make_world(100, 1),
+            make_world(150, 2),
+            make_world(200, 2),
+        ])
+        write_jsonl(root / f"{run}-movement.jsonl", [
+            make_movement(50),
+            make_movement(75),
+            make_movement(100),
+            make_movement(150),
+            make_movement(200),
+        ])
+        write_jsonl(root / f"{run}-input.jsonl", [
+            make_input(50),
+            make_input(75),
+            make_input(100),
+            make_input(150),
+            make_input(200),
+        ])
+        write_jsonl(root / f"{run}-navigation.jsonl", [
                 make_navigation(50),
                 {"tick": 75, "row": -1, "column": -1},
                 make_navigation(100),

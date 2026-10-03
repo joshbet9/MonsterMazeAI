@@ -260,6 +260,32 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void rebasesCompletedStrategicRouteOntoCurrentSupportedCell() {
+        PlayerRoute planned = new PlayerRoute(java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+
+        PlayerRoute rebased = StableLiveMovementController.rebaseRoute(planned, 0, 2);
+
+        assertNotNull(rebased);
+        assertEquals(java.util.List.of(
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)), rebased.cells());
+    }
+
+    @Test
+    void rejectsCompletedStrategicRouteAfterTopologyDivergence() {
+        PlayerRoute planned = new PlayerRoute(java.util.List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2)));
+
+        assertNull(StableLiveMovementController.rebaseRoute(planned, 1, 1));
+    }
+
+    @Test
     void advancesPastOvershotTurnInsteadOfReversingTowardStaleWaypoint() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;

@@ -17,11 +17,13 @@ class FullRunFailureDiagnosticTest {
         Case[] cases = {
                 new Case(Mode.MODERN, 1, Kit.JUMPER),
                 new Case(Mode.MODERN, 1, Kit.SLOWBALLER),
+                new Case(Mode.MODERN, 2, Kit.JUMPER),
                 new Case(Mode.MODERN, 2, Kit.REPULSOR),
                 new Case(Mode.MODERN, 3, Kit.JUMPER),
                 new Case(Mode.MODERN, 3, Kit.BODY_BUILDER),
                 new Case(Mode.MODERN, 3, Kit.REPULSOR),
                 new Case(Mode.SPEED, 1, Kit.JUMPER),
+                new Case(Mode.SPEED, 2, Kit.REPULSOR),
                 new Case(Mode.SPEED, 3, Kit.JUMPER),
                 new Case(Mode.SPEED, 2, Kit.MAVERICK)
         };

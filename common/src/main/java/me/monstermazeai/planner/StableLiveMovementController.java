@@ -1991,7 +1991,18 @@ public final class StableLiveMovementController {
         double ux = dx / length;
         double uz = dz / length;
 
-        double yawRad = Math.toRadians(state.player.yaw);
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        /*
+         * Project the recovery vector against the yaw that will actually be in
+         * force after this tick's camera update. Using the pre-turn yaw could
+         * produce a negative forward component which was then clamped away,
+         * leaving only a lateral input incapable of reaching a diagonal support
+         * cell before gravity wins.
+         */
+        double yawRad = Math.toRadians(state.player.yaw + yawDelta);
         double forwardX = -Math.sin(yawRad);
         double forwardZ = Math.cos(yawRad);
         double strafeX = Math.cos(yawRad);
@@ -2006,11 +2017,9 @@ public final class StableLiveMovementController {
         }
 
         /*
-         * Once support has already been lost, backward input is usually the
-         * wrong recovery primitive: it keeps the camera pointed away from the
-         * nearest live floor while the player is falling. Preserve lateral
-         * air-control toward the support target and let yaw correction bring
-         * the camera around instead of issuing a reverse-drive command.
+         * Once support has already been lost, prefer a forward/lateral recovery
+         * command after turning toward the live support target. This avoids the
+         * old-yaw sign mismatch without requiring a reverse drive command.
          */
         if (forward < 0.0D) {
             forward = 0.0D;
@@ -2020,9 +2029,6 @@ public final class StableLiveMovementController {
                 && state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && state.ability.charges > 0
                 && state.player.y > -0.05D;
-        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
-                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
         return new Action(forward, strafe, emergencyJump, forward > 0.75,
                 yawDelta, false);

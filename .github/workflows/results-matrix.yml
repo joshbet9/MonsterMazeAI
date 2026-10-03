@@ -1,0 +1,224 @@
+name: Results Matrix Calibration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'calibration/results-matrix-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monstermaze-ml-calibration-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: Baseline + ML-prefilter 15 Speed + 15 Modern matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Prepare ML output directory
+        run: |
+          mkdir -p ml-data
+          : > ml-data/route-training.jsonl
+
+      - name: Validate policy PowerShell scripts
+        if: always()
+        run: |
+          pwsh -NoProfile -Command '
+            $errors = $null
+            $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              "ml/policy-train-loop.ps1",
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Host $_.Message }
+              exit 1
+            }
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              "ml/policy-cycle-report.ps1",
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Host $_.Message }
+              exit 1
+            }
+          '
+
+      - name: Run baseline matrix and collect simulator labels
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dmonstermaze.ml.record=true \
+            -Dmonstermaze.ml.output=ml-data/route-training.jsonl \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee ml-data/baseline-matrix.log
+
+
+      - name: Set up Python 3
+        if: always()
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ML trainer dependency
+        if: always()
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Validate long-horizon policy trainer
+        if: always()
+        run: |
+          python -m py_compile ml/policy_trainer.py
+
+      - name: Fetch human calibration runs
+        if: always()
+        continue-on-error: true
+        run: |
+          git fetch --depth=1 origin feature/human-run-analysis
+          git archive FETCH_HEAD human-runs | tar -x
+
+      - name: Build human behavior-cloning dataset
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -d human-runs ]; then
+            python ml/human_policy.py convert \
+              --input human-runs \
+              --output ml-data/human-behavior.jsonl
+          else
+            echo "No human-runs directory available"
+          fi
+
+      - name: Train human behavior model
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s ml-data/human-behavior.jsonl ]; then
+            python ml/human_policy.py train \
+              --input ml-data/human-behavior.jsonl \
+              --output ml-data/human-policy-model.json \
+              --epochs 150 \
+              --batch-size 256 \
+              --hidden1 32 \
+              --hidden2 16 \
+              --learning-rate 0.002 \
+              --validation-fraction 0.20 \
+              --min-samples 500 \
+              --seed 1337
+          else
+            echo "No human behavior dataset available"
+          fi
+
+      - name: Inspect simulator training set
+        if: always()
+        continue-on-error: true
+        run: python ml/route_ranker.py inspect --input ml-data/route-training.jsonl
+
+      - name: Train initial route-value model
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s ml-data/route-training.jsonl ]; then
+            python ml/route_ranker.py train \
+              --input ml-data/route-training.jsonl \
+              --output ml-data/route-value-model-0.json \
+              --epochs 250 \
+              --batch-size 256 \
+              --hidden1 32 \
+              --hidden2 16 \
+              --learning-rate 0.002 \
+              --validation-fraction 0.20 \
+              --min-samples 100 \
+              --seed 1337
+            cp ml-data/route-value-model-0.json ml-data/route-value-model.json
+          else
+            echo "No simulator labels available"
+          fi
+
+      - name: Self-train route model from simulator rollouts
+        if: always()
+        continue-on-error: true
+        run: |
+          for generation in 1 2; do
+            if [ ! -s ml-data/route-value-model.json ]; then
+              echo "No current route model; stopping self-training"
+              break
+            fi
+
+            echo "===== SELF-TRAIN GENERATION ${generation} ====="
+            set -o pipefail
+            mvn -B -ntp -pl common -am \
+              -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+              -Dmonstermaze.ml.record=true \
+              -Dmonstermaze.ml.output=ml-data/route-training.jsonl \
+              -Dmonstermaze.ml.model=ml-data/route-value-model.json \
+              -Dmonstermaze.ml.mode=prefilter \
+              -Dsurefire.useFile=false \
+              -Dsurefire.redirectTestOutputToFile=false \
+              -Dsurefire.failIfNoSpecifiedTests=false \
+              test 2>&1 | tee ml-data/prefilter-generation-${generation}.log
+
+            if [ -s ml-data/baseline-matrix.log ]; then
+              python ml/compare_matrix.py \
+                --baseline ml-data/baseline-matrix.log \
+                --ml ml-data/prefilter-generation-${generation}.log \
+                | tee -a ml-data/ml-comparison.txt || true
+            fi
+
+            python ml/route_ranker.py train \
+              --input ml-data/route-training.jsonl \
+              --output ml-data/route-value-model-${generation}.json \
+              --epochs 250 \
+              --batch-size 256 \
+              --hidden1 32 \
+              --hidden2 16 \
+              --learning-rate 0.002 \
+              --validation-fraction 0.20 \
+              --min-samples 100 \
+              --seed $((1337 + generation))
+
+            if [ -s ml-data/route-value-model-${generation}.json ]; then
+              cp ml-data/route-value-model-${generation}.json ml-data/route-value-model.json
+            else
+              echo "Generation ${generation} did not produce a model; stopping"
+              break
+            fi
+          done
+      - name: Upload ML dataset and model
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-route-ml-${{ github.sha }}
+          path: |
+            ml-data/route-training.jsonl
+            ml-data/route-value-model.json
+            ml-data/route-value-model-0.json
+            ml-data/route-value-model-1.json
+            ml-data/route-value-model-2.json
+            ml-data/baseline-matrix.log
+            ml-data/prefilter-generation-1.log
+            ml-data/prefilter-generation-2.log
+            ml-data/ml-comparison.txt
+            ml-data/human-behavior.jsonl
+            ml-data/human-policy-model.json
+          if-no-files-found: warn

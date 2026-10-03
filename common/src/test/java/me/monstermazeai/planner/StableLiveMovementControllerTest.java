@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StableLiveMovementControllerTest {
+    // Autonomous matrix-lab-next validation marker.
     private static MazeModel openMaze() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r < MazeModel.SIZE; r++)

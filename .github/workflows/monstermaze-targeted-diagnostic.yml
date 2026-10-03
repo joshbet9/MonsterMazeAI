@@ -1,0 +1,81 @@
+name: Monster Maze - Targeted Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - autonomous/matrix-lab
+    paths:
+      - '.github/diagnostic-trigger/**'
+
+concurrency:
+  group: monstermaze-targeted-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: Targeted diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am install -DskipTests
+
+      - name: Run Modern P2/P3 Maverick diagnostics
+        shell: bash
+        run: |
+          mkdir -p diagnostic-artifacts
+          cases=(
+            'MODERN:P2:MAVERICK'
+            'MODERN:P3:MAVERICK'
+            'MODERN:P1:JUMPER'
+          )
+          : > diagnostic-artifacts/behavior.log
+          for diag_case in "${cases[@]}"; do
+            echo "===== RUN ${diag_case} =====" | tee -a diagnostic-artifacts/behavior.log
+            mvn -B -ntp -pl common \
+              "-Dtest=FullRunFailureDiagnosticTest" \
+              "-Dmonstermaze.diag.case=${diag_case}" \
+              "-Dsurefire.useFile=false" \
+              "-Dsurefire.redirectTestOutputToFile=false" \
+              test 2>&1 | tee -a diagnostic-artifacts/behavior.log
+            rc=${PIPESTATUS[0]}
+            echo "case=${diag_case} exit=${rc}" >> diagnostic-artifacts/status.txt
+            if [ "${rc}" -ne 0 ]; then
+              exit "${rc}"
+            fi
+          done
+
+          grep -E '^(===== BEHAVIOR_CASE|RESULT |BEHAVIOR_TICK|COUNTS )' \
+            diagnostic-artifacts/behavior.log \
+            > diagnostic-artifacts/behavior-summary.txt || true
+
+      - name: Publish diagnostic summary
+        if: always()
+        shell: bash
+        run: |
+          echo '## Targeted behavior diagnostics' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat diagnostic-artifacts/behavior-summary.txt 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-targeted-diagnostic-${{ github.sha }}
+          path: diagnostic-artifacts/
+          if-no-files-found: warn

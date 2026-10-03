@@ -127,7 +127,7 @@ public final class CpuMlpPolicy implements CpuPolicy {
         return best;
     }
 
-    private static double abilityThreshold(double primary, double enhanced, int abilityMode) {
+    private static boolean abilityThreshold(double primary, double enhanced, int abilityMode) {
         double threshold = abilityMode == 0 ? 0.80 : abilityMode == 1 ? 0.55 : 0.35;
         return abilityMode == 2 ? enhanced >= threshold : primary >= threshold;
     }

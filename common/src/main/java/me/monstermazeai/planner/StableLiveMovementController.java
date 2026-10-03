@@ -92,6 +92,9 @@ public final class StableLiveMovementController {
     private static final double CORNER_PREP_MAX_LEAD = 1.60D;
     private static final double CORNER_PREP_RELEASE = 0.08D;
     private static final double CORNER_STAGED_SPEED = 0.035D;
+    /** Keep newly crossed corners redirecting residual momentum into the next segment. */
+    private static final int POST_CORNER_REDIRECT_TICKS = 3;
+    private static final double POST_CORNER_REDIRECT_DRIVE = 0.45D;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
     /*
@@ -140,6 +143,7 @@ public final class StableLiveMovementController {
     private long routePlanCount;
     private double laneAnchorX;
     private double laneAnchorZ;
+    private int postCornerRedirectTicks;
 
     /*
      * A real Monster Maze bump is not just another route deviation. The source
@@ -401,6 +405,7 @@ public final class StableLiveMovementController {
 
         // A route waypoint is a turn cell. Once its centre is reached, switch
         // to the next segment. Never skip over a corner and then turn back.
+        boolean crossedCornerThisTick = false;
         while (waypointIndex < route.size() - 1
                 && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
                 || hasPassedWaypointAlongSegment(state, waypointIndex))) {
@@ -409,6 +414,31 @@ public final class StableLiveMovementController {
             if (waypointIndex != previousWaypoint) {
                 anchoredSegmentIndex = -1;
                 cornerTurnCommitmentWaypoint = -1;
+
+                /*
+                 * A normal corner can be crossed with substantial residual
+                 * velocity on the old segment. Redirect that velocity immediately
+                 * into the new cardinal axis for a few ticks; otherwise the player
+                 * can continue travelling off the old edge before the camera has
+                 * rotated far enough for the normal steering branch to drive.
+                 */
+                if (previousWaypoint > 0
+                        && previousWaypoint < route.size() - 1
+                        && !isGapEdge(
+                                state,
+                                route.cells().get(previousWaypoint - 1).row(),
+                                route.cells().get(previousWaypoint - 1).column(),
+                                route.cells().get(previousWaypoint).row(),
+                                route.cells().get(previousWaypoint).column())
+                        && !isGapEdge(
+                                state,
+                                route.cells().get(previousWaypoint).row(),
+                                route.cells().get(previousWaypoint).column(),
+                                route.cells().get(previousWaypoint + 1).row(),
+                                route.cells().get(previousWaypoint + 1).column())) {
+                    postCornerRedirectTicks = POST_CORNER_REDIRECT_TICKS;
+                    crossedCornerThisTick = true;
+                }
             }
         }
 
@@ -489,6 +519,52 @@ public final class StableLiveMovementController {
         float desiredYaw = cardinalYaw(dirRow, dirColumn);
         float yawError = normalise(desiredYaw - state.player.yaw);
         double speed = Math.hypot(state.player.vx, state.player.vz);
+
+        /*
+         * Immediately redirect residual post-corner momentum into the current
+         * cardinal segment. This is intentionally world-cardinal and therefore
+         * cannot cut diagonally through an air cell.
+         */
+        if ((crossedCornerThisTick || postCornerRedirectTicks > 0)
+                && Math.abs(yawError) > HEADING_TOLERANCE
+                && Math.abs(yawError) <= 135.0F
+                && distance <= 6.50D) {
+            double errorRad = Math.toRadians(yawError);
+            double forward = Math.cos(errorRad) * POST_CORNER_REDIRECT_DRIVE;
+            double strafe = -Math.sin(errorRad) * POST_CORNER_REDIRECT_DRIVE;
+            boolean jump = shouldSpeedJump(state, allowJump);
+            action = new Action(forward, strafe, jump, false,
+                    clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
+                    false);
+            lastDecisionDetail += " POST_CORNER_REDIRECT";
+            postCornerRedirectTicks = Math.max(0, postCornerRedirectTicks - 1);
+
+            if (!gapExecutionActive) {
+                Action guarded = guardProjectedSupport(
+                        state, action, dirRow, dirColumn);
+                if (guarded != action) {
+                    lastDecisionDetail += " EDGE_GUARD";
+                    action = guarded;
+                }
+            }
+
+            lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)
+                    + " target=" + targetX + "," + targetZ
+                    + " dist=" + format(distance)
+                    + " dir=" + dirRow + "," + dirColumn
+                    + " yawError=" + format(yawError)
+                    + " crossTrack=" + format(crossTrack)
+                    + " speed=" + format(speed)
+                    + " output=f=" + action.forward()
+                    + ",s=" + action.strafe()
+                    + ",jump=" + action.jump()
+                    + ",yawDelta=" + action.yawDelta();
+            return action;
+        }
+
+        if (postCornerRedirectTicks > 0) {
+            postCornerRedirectTicks = Math.max(0, postCornerRedirectTicks - 1);
+        }
 
         /*
          * Keep the player on the route's cell centreline. Normally this error
@@ -696,6 +772,7 @@ public final class StableLiveMovementController {
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;
         completedRoutePlan = null;
+        postCornerRedirectTicks = 0;
         lastDecisionDetail = "RESET";
     }
 

@@ -1601,6 +1601,47 @@ public final class StableLiveMovementController {
         }
         if (best != null) return best;
 
+        /*
+         * The player can still physically overlap the current route cell even
+         * when the next route-directed step leaves the one-tick support envelope.
+         * In that state a pure rotate/idle fallback creates the observed permanent
+         * FAST_RECOVERY_ROUTE loop. Pull gently toward the centre of the nearest
+         * supported floor cell instead; this is a local geometric recovery and does
+         * not alter the route topology.
+         */
+        Cell supported = resolveSupportedStartCell(state);
+        if (supported != null) {
+            double targetX = supported.row() + 0.5D;
+            double targetZ = supported.column() + 0.5D;
+            double dx = targetX - state.player.x;
+            double dz = targetZ - state.player.z;
+            double distance = Math.hypot(dx, dz);
+            if (distance > 0.03D) {
+                double ux = dx / distance;
+                double uz = dz / distance;
+                double yaw = Math.toRadians(state.player.yaw);
+                double forwardX = -Math.sin(yaw);
+                double forwardZ = Math.cos(yaw);
+                double strafeX = Math.cos(yaw);
+                double strafeZ = Math.sin(yaw);
+                double forward = ux * forwardX + uz * forwardZ;
+                double strafe = ux * strafeX + uz * strafeZ;
+                double magnitude = Math.hypot(forward, strafe);
+                if (magnitude > 1.0E-9D) {
+                    forward = (forward / magnitude) * 0.45D;
+                    strafe = (strafe / magnitude) * 0.45D;
+                }
+                float desired = (float) Math.toDegrees(Math.atan2(-dx, dz));
+                float correction = clamp(normalise(desired - state.player.yaw),
+                        -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+                Action recovery = new Action(
+                        forward, strafe, false, false, correction, false);
+                if (hasPredictedPhysicalSupport(state, recovery, SUPPORT_LOOKAHEAD_TICKS)) {
+                    return recovery;
+                }
+            }
+        }
+
         float desired = cardinalYaw(dirRow, dirColumn);
         float correction = clamp(normalise(desired - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);

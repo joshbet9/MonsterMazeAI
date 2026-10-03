@@ -9,7 +9,6 @@ import java.util.*;
 import java.util.stream.IntStream;
 
 public final class MonsterAwareRoutePlanner {
-    // Matrix-lab validation keeps simulation changes isolated from production while iterating.
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 
@@ -38,25 +37,12 @@ public final class MonsterAwareRoutePlanner {
     private int cachedGoalColumn = Integer.MIN_VALUE;
     private int cachedRegionRadius = Integer.MIN_VALUE;
     private boolean cachedRegionGoal;
-    private long cachedThreatSignature = Long.MIN_VALUE;
 
     public PlayerRoute routeFast(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        if (hasRelevantMonster(state)) {
-            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
-            PlayerRoute chosen = chooseByGapRisk(
-                    state,
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, goal, 0, false)),
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, goal, 0, true)));
-            if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
-            return chosen;
-        }
-
         PlayerRoute chosen = chooseByGapRisk(
                 state,
                 toRoute(pathfinder.shortestPathWithoutGaps(state.maze, start, goal)),
@@ -99,36 +85,10 @@ public final class MonsterAwareRoutePlanner {
 
     private static boolean hasRelevantMonster(GameState state) {
         for (var monster : state.monsters) {
-            if (monster == null || monster.removed) continue;
             if (MonsterRelevance.withinPlayerRadius(
                     monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) return true;
         }
         return false;
-    }
-
-    private static long threatSignature(GameState state) {
-        long h = 1469598103934665603L;
-        boolean relevant = false;
-        for (var monster : state.monsters) {
-            if (monster == null || monster.removed
-                    || !MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) continue;
-            relevant = true;
-            h = mix(h, monster.id);
-            h = mix(h, Math.round(monster.x / 0.5D));
-            h = mix(h, Math.round(monster.y / 0.5D));
-            h = mix(h, Math.round(monster.z / 0.5D));
-            h = mix(h, Math.round(monster.vx / 0.05D));
-            h = mix(h, Math.round(monster.vz / 0.05D));
-            h = mix(h, monster.launched(state.tick) ? 1L : 0L);
-            h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
-        }
-        return relevant ? h : 0L;
-    }
-
-    private static long mix(long h, long value) {
-        h ^= value;
-        return h * 1099511628211L;
     }
 
     private static List<Cell> toRoute(List<Cell> cells) {
@@ -187,13 +147,11 @@ public final class MonsterAwareRoutePlanner {
     private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,
                                                     int regionRadius, int limit, boolean regionGoal) {
         long topology = state.maze.dynamicSignature();
-        long threatSignature = threatSignature(state);
         if (topology == cachedTopologySignature
                 && start.row() == cachedStartRow && start.column() == cachedStartColumn
                 && goal.row() == cachedGoalRow && goal.column() == cachedGoalColumn
                 && regionRadius == cachedRegionRadius
                 && regionGoal == cachedRegionGoal
-                && threatSignature == cachedThreatSignature
                 && !cachedCandidates.isEmpty()) {
             return cachedCandidates;
         }
@@ -201,25 +159,7 @@ public final class MonsterAwareRoutePlanner {
         List<PlayerRoute> candidates;
         if (!regionGoal) {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
-            PlayerPathfinder pathfinder = new PlayerPathfinder();
-
-            /*
-             * A live monster changes the physically sensible route options even
-             * when the maze topology is unchanged. Seed the candidate set with
-             * fresh threat-aware normal/gap paths so tactical evaluation can
-             * compare them against the static alternatives.
-             */
-            if (hasRelevantMonster(state)) {
-                ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
-                List<Cell> threatNormal = threatAware.shortestPathToRegion(
-                        state, start, goal, 0, false);
-                List<Cell> threatGap = threatAware.shortestPathToRegion(
-                        state, start, goal, 0, true);
-                if (!threatNormal.isEmpty()) generated.add(new PlayerRoute(threatNormal));
-                if (!threatGap.isEmpty()) generated.add(new PlayerRoute(threatGap));
-            }
-
-            List<Cell> normal = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
+            List<Cell> normal = new PlayerPathfinder().shortestPathWithoutGaps(state.maze, start, goal);
             if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
             candidates = distinct(generated, limit * 3);
@@ -227,18 +167,6 @@ public final class MonsterAwareRoutePlanner {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
             Set<String> seen = new HashSet<>();
             PlayerPathfinder pathfinder = new PlayerPathfinder();
-
-            if (hasRelevantMonster(state)) {
-                ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
-                List<Cell> threatNormal = threatAware.shortestPathToRegion(
-                        state, start, goal, regionRadius, false);
-                List<Cell> threatGap = threatAware.shortestPathToRegion(
-                        state, start, goal, regionRadius, true);
-                if (!threatNormal.isEmpty()) addCandidate(
-                        generated, seen, new PlayerRoute(threatNormal));
-                if (!threatGap.isEmpty()) addCandidate(
-                        generated, seen, new PlayerRoute(threatGap));
-            }
 
             for (int r = goal.row() - regionRadius; r <= goal.row() + regionRadius; r++) {
                 for (int c = goal.column() - regionRadius; c <= goal.column() + regionRadius; c++) {
@@ -273,7 +201,6 @@ public final class MonsterAwareRoutePlanner {
         cachedGoalColumn = goal.column();
         cachedRegionRadius = regionRadius;
         cachedRegionGoal = regionGoal;
-        cachedThreatSignature = threatSignature;
         cachedCandidates = List.copyOf(candidates);
         return cachedCandidates;
     }

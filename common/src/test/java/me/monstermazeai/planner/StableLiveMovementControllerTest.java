@@ -647,6 +647,7 @@ class StableLiveMovementControllerTest {
         long backtrackTick = -1;
         Action backtrackAction = null;
         double backtrackProgress = 0.0D;
+        StringBuilder earlyTrace = new StringBuilder();
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false);
 
@@ -662,6 +663,14 @@ class StableLiveMovementControllerTest {
             double worldZ = (Math.cos(yaw) * action.forward())
                     + (Math.sin(yaw) * action.strafe());
             double goalProgress = worldX + worldZ;
+            if (tick < 6) {
+                earlyTrace.append(" t=").append(s.tick)
+                        .append(" pos=").append(s.player.x).append(",").append(s.player.z)
+                        .append(" yaw=").append(s.player.yaw)
+                        .append(" action=").append(action)
+                        .append(" progress=").append(goalProgress)
+                        .append(" detail=").append(controller.lastDecisionDetail()).append(";");
+            }
             if (goalProgress < -1.0E-6 && !sawWorldBacktrack) {
                 sawWorldBacktrack = true;
                 backtrackTick = s.tick;
@@ -680,7 +689,7 @@ class StableLiveMovementControllerTest {
                         + " tick=" + backtrackTick
                         + " action=" + backtrackAction
                         + " progress=" + backtrackProgress
-                        + " detail=" + controller.lastDecisionDetail());
+                        + " earlyTrace=" + earlyTrace);
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);

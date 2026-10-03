@@ -273,9 +273,6 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
-
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
         boolean objectiveChanged = goal.row() != goalRow
@@ -454,6 +451,15 @@ public final class StableLiveMovementController {
                 if (gapAction != null) return gapAction;
             }
         }
+
+        /*
+         * Ordinary monster avoidance comes after committed gap handling. A
+         * nearby mob must not steal the source-critical takeoff/landing ticks
+         * of an already-selected gap route; once the gap motor declines control,
+         * ordinary lateral dodge/yield logic can run on the same fresh observation.
+         */
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+        if (mobAvoidance != null) return mobAvoidance;
 
         // When a source interaction is close enough to matter this tick, hand
         // control to the same tactical simulator used during route selection.

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: monster-maze-v25-\${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   movement-routing-regression:
     name: Movement + routing regression tests

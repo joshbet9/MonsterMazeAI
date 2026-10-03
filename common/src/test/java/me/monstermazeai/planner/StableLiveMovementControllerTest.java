@@ -138,6 +138,26 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void strategicThreatSignatureChangesForMovingFarMonster() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        MonsterState monster = new me.monstermazeai.monster.MonsterState(
+                123, 0.5, 0.0, 35.5);
+        monster.vz = -0.15;
+        s.monsters.add(monster);
+
+        var method = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        method.setAccessible(true);
+
+        long first = (long) method.invoke(null, s);
+        monster.z -= 1.0;
+        long second = (long) method.invoke(null, s);
+
+        assertNotEquals(first, second,
+                "coarsely quantised far-threat motion must wake strategic replanning");
+    }
+
+    @Test
     void largeHeadingErrorNearCornerKeepsTranslationWhileTurning() {
         GameState s = state(0.5, 0.5, 149.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

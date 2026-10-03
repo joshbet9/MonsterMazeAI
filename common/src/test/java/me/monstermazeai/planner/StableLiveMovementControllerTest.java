@@ -527,11 +527,16 @@ class StableLiveMovementControllerTest {
         // into the no-side-floor MOB_YIELD path.
         s.maze.setPhysicalFloor(1, 2, false);
         s.maze.setPhysicalFloor(3, 2, false);
+        s.maze.setPhysicalFloor(2, 1, false);
+
+        StableLiveMovementController controller = new StableLiveMovementController(false);
+        // Establish a +Z route before introducing the approaching mob.
+        s.tick = 1;
+        controller.nextAction(s, new Cell(2, 8), false);
+        s.tick = 2;
 
         MonsterState monster = new MonsterState(1, 2.5, 0.0, 3.8);
         s.monsters.add(monster);
-
-        StableLiveMovementController controller = new StableLiveMovementController();
 
         // First build the route. The movement controller intentionally bootstraps
         // the initial route before evaluating local monster avoidance.

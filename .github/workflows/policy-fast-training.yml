@@ -1,6 +1,7 @@
 name: Policy Fast Training CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ feature/policy-fast-training ]
 
@@ -34,7 +35,7 @@ jobs:
           -Dmonstermaze.ml.policy.counterfactual.stride=40
           -Dmonstermaze.ml.policy.counterfactual.horizon=32
           -Dmonstermaze.ml.policy.counterfactual.gamma=0.995
-          -Dmonstermaze.ml.policy.trainingCasesPerMode=1
+          -Dmonstermaze.ml.policy.trainingCasesPerMode=3
           -Dmonstermaze.ml.policy.epsilon=0.0
           -Dmonstermaze.ml.policy.explore=false
           -Dsurefire.useFile=false
@@ -42,6 +43,36 @@ jobs:
           -Dsurefire.failIfNoSpecifiedTests=false
           test
 
-      - name: Verify counterfactual data was produced
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install policy trainer dependency
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Inspect counterfactual dataset
         run: |
           test -s common/target/policy-fast-training.jsonl
+          python ml/policy_data_diagnostic.py --input common/target/policy-fast-training.jsonl
+
+      - name: Train counterfactual policy model
+        run: |
+          python ml/policy_trainer.py --input common/target/policy-fast-training.jsonl --output common/target/policy-fast-training-model.json --epochs 40 --batch-size 256 --samples-per-epoch 10000 --hidden1 48 --hidden2 24 --learning-rate 0.001 --validation-fraction 0.20 --min-samples 100 --seed 1337 --report-every 10
+
+      - name: Verify trained policy artifact
+        run: |
+          test -s common/target/policy-fast-training.jsonl
+          test -s common/target/policy-fast-training-model.json
+
+      - name: Upload policy learning artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-policy-fast-${{ github.sha }}
+          path: |
+            common/target/policy-fast-training.jsonl
+            common/target/policy-fast-training-model.json
+            common/target/surefire-reports/*.txt
+            common/target/surefire-reports/*.xml
+          if-no-files-found: warn

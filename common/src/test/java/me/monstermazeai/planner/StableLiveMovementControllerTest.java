@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -515,6 +516,36 @@ class StableLiveMovementControllerTest {
                 "controller exceeded the 1.8 yaw limit: " + result);
     }
 
+
+    @Test
+    void mobYieldMovesAwayAfterReverseHeadingAlignment() {
+        GameState s = state(2.5, 2.5, 180.0F);
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.ability.charges = 0;
+
+        // Initial +Z route has no supported side cells, forcing the controller
+        // into the no-side-floor MOB_YIELD path.
+        s.maze.setPhysicalFloor(1, 2, false);
+        s.maze.setPhysicalFloor(3, 2, false);
+
+        MonsterState monster = new MonsterState(1, 2.5, 0.0, 3.8);
+        s.monsters.add(monster);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(2, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_YIELD"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0,
+                "aligned mob yield used the wrong input sign: " + action);
+
+        double beforeZ = s.player.z;
+        new LegacyMazePhysics().tick(s.player, action, s.maze, -10);
+
+        assertTrue(s.player.z < beforeZ,
+                "mob yield moved toward the monster instead of away: "
+                        + beforeZ + " -> " + s.player.z);
+    }
 
     @Test
     void laneCorrectionKeepsDrivingInsteadOfStoppingForTurn() {

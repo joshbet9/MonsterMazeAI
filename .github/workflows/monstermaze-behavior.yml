@@ -47,9 +47,10 @@ jobs:
         run: |
           mkdir -p simulation-artifacts
           set +e
+          diag_case=$(echo "${{ matrix.case_id }}" | sed "s/-/:/1; s/-/:/1")
           mvn -B -ntp -pl common \
             "-Dtest=FullRunFailureDiagnosticTest" \
-            "-Dmonstermaze.diag.case=$(echo "${{ matrix.case_id }}" | sed "s/-/:/1; s/-/:/1")" \
+            "-Dmonstermaze.diag.case=${diag_case}" \
             "-Dsurefire.useFile=false" \
             "-Dsurefire.redirectTestOutputToFile=false" \
             test 2>&1 | tee simulation-artifacts/behavior.log

@@ -539,24 +539,66 @@ public final class StableLiveMovementController {
             action = cornerPreparation;
         } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
-             * A player can remain physically supported while the block
-             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
-             * lateral error is therefore not source-like: A/D correction is a
-             * normal Minecraft input and is the safest way to recover the lane
-             * without cutting the cardinal corridor.
+             * Lane recovery is a world-space correction, not a blind local
+             * strafe. A/D is relative to the camera, so when a monster dodge
+             * has left the player 60-90 degrees off the corridor, a fixed
+             * strafe can actually increase the lateral error and walk the
+             * player into an air block. Build the desired world vector first,
+             * then project it into the current (post-turn) camera frame.
+             *
+             * Keep most of the vector pointed down the route so recovery does
+             * not become a lateral sidestep that stalls progression. The
+             * stronger the cross-track error, the stronger the correction.
              */
             int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
+            double lateralWorldX;
+            double lateralWorldZ;
+            if (dirRow == 0) {
+                lateralWorldX = -crossSign;
+                lateralWorldZ = 0.0;
+            } else {
+                lateralWorldX = 0.0;
+                lateralWorldZ = -crossSign;
+            }
+
+            double correctionWeight = Math.min(1.0D, 0.55D + Math.abs(crossTrack) * 1.50D);
+            double driveWeight = 0.85D;
+            double desiredWorldX = dirRow * driveWeight
+                    + lateralWorldX * correctionWeight;
+            double desiredWorldZ = dirColumn * driveWeight
+                    + lateralWorldZ * correctionWeight;
+
             float correctionYaw = cardinalYaw(dirRow, dirColumn);
             float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
-            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
+            float yawDelta = clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+            double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+            double forwardWorldX = -Math.sin(postYaw);
+            double forwardWorldZ = Math.cos(postYaw);
+            double strafeWorldX = Math.cos(postYaw);
+            double strafeWorldZ = Math.sin(postYaw);
+            double forward = desiredWorldX * forwardWorldX
+                    + desiredWorldZ * forwardWorldZ;
+            double strafe = desiredWorldX * strafeWorldX
+                    + desiredWorldZ * strafeWorldZ;
+            double magnitude = Math.hypot(forward, strafe);
+            if (magnitude > 1.0D) {
+                forward /= magnitude;
+                strafe /= magnitude;
+            }
+
+            /*
+             * Do not sprint during a large lane correction. The purpose of this
+             * branch is to regain a physical corridor, not maximize speed while
+             * the camera is still turning.
+             */
+            action = new Action(forward, strafe, false, false, yawDelta, false);
+            lastDecisionDetail += " LANE_RECOVERY world="
+                    + format(desiredWorldX) + "," + format(desiredWorldZ)
+                    + " crossTrack=" + format(crossTrack)
+                    + " f=" + format(forward)
+                    + " s=" + format(strafe)
+                    + " yawDelta=" + format(yawDelta);
         } else if (Math.abs(crossTrack) > 0.18) {
             double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
             double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;

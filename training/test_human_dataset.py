@@ -82,8 +82,8 @@ def make_maze(tick: int, stage: int, physical: str) -> dict:
 def main() -> int:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
-
         run = "synthetic-human-run"
+
         write_jsonl(root / f"{run}-inventory.jsonl", [])
         write_jsonl(root / f"{run}-world.jsonl", [
             make_world(100, 1),
@@ -122,9 +122,6 @@ def main() -> int:
         assert by_tick[200]["topologySource"] == "physical-snapshot"
         assert by_tick[200]["observation"][32:41] == [0.0] * 9
 
-    with tempfile.TemporaryDirectory() as temp2:
-        root = Path(temp2)
-
         # Startup/teardown rows without a detected maze centre are not training
         # observations and must be excluded rather than encoded as zero topology.
         write_jsonl(root / f"{run}-world.jsonl", [
@@ -149,16 +146,16 @@ def main() -> int:
             make_input(200),
         ])
         write_jsonl(root / f"{run}-navigation.jsonl", [
-                make_navigation(50),
-                {"tick": 75, "row": -1, "column": -1},
-                make_navigation(100),
-                make_navigation(150),
-                make_navigation(200),
-            ])
+            make_navigation(50),
+            {"tick": 75, "row": -1, "column": -1},
+            make_navigation(100),
+            make_navigation(150),
+            make_navigation(200),
+        ])
 
-            rows, meta = build_run_dataset(root, run)
-            assert [row["tick"] for row in rows] == [50, 100, 150, 200]
-            assert meta["skippedInvalidObservations"] == 1
+        rows, meta = build_run_dataset(root, run)
+        assert [row["tick"] for row in rows] == [50, 100, 150, 200]
+        assert meta["skippedInvalidObservations"] == 1
 
     print("human_dataset_topology_regression_ok=true")
     return 0

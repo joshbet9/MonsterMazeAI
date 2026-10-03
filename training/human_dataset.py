@@ -478,11 +478,12 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     input_path = root / f"{prefix}-input.jsonl"
     maze_path = root / f"{prefix}-maze.jsonl"
     monster_path = root / f"{prefix}-monsters.jsonl"
+    navigation_path = root / f"{prefix}-navigation.jsonl"
 
     world = load_by_tick(world_path)
     movement = load_by_tick(movement_path)
     inputs = load_by_tick(input_path)
-    navigation = load_by_tick(navigation_path)
+    navigation = load_by_tick(navigation_path) if navigation_path.exists() else {}
 
     # Maze snapshots are sparse and each snapshot carries a full 99x99 map.
     # Do not require an exact world/movement tick: advance the maze stream only

@@ -1,9 +1,6 @@
 name: Matrix v25 — Far Threat Candidate Preservation
 
 on:
-  push:
-    branches:
-      - autonomous/matrix-far-threat-candidate-preservation-v25
   pull_request:
     branches:
       - main

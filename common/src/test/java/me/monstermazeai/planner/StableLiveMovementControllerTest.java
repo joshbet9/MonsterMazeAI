@@ -532,6 +532,13 @@ class StableLiveMovementControllerTest {
         s.monsters.add(monster);
 
         StableLiveMovementController controller = new StableLiveMovementController();
+
+        // First build the route. The movement controller intentionally bootstraps
+        // the initial route before evaluating local monster avoidance.
+        s.tick = 1;
+        controller.nextAction(s, new Cell(2, 8), false);
+        s.tick = 2;
+
         Action action = controller.nextAction(s, new Cell(2, 8), false);
 
         assertTrue(controller.lastDecisionDetail().contains("MOB_YIELD"),
@@ -561,7 +568,15 @@ class StableLiveMovementControllerTest {
         s.player.vz = 0.08D;
         s.player.vx = 0.0D;
         s.player.grounded = true;
+        // Establish the physical route/lane anchor first, then introduce the
+        // lateral drift that the recovery branch must correct.
         s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+        s.player.x = 2.75D;
+        s.player.z = 2.50D;
+        s.player.vz = 0.08D;
+        s.player.vx = 0.0D;
+        s.tick = 2;
 
         Action action = controller.nextAction(s, new Cell(8, 8), false);
 
@@ -658,11 +673,23 @@ class StableLiveMovementControllerTest {
         s.player.y = 0.0;
         s.tick = 2;
 
-        boolean sawOldDirectionInput = false;
+        boolean sawReverseWorldInput = false;
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false);
-            if (action.forward() < -1.0E-6 || action.strafe() < -1.0E-6) {
-                sawOldDirectionInput = true;
+            double yawRadians = Math.toRadians(s.player.yaw + action.yawDelta());
+            double forwardWorldX = -Math.sin(yawRadians);
+            double forwardWorldZ = Math.cos(yawRadians);
+            double strafeWorldX = Math.cos(yawRadians);
+            double strafeWorldZ = Math.sin(yawRadians);
+            double worldX = forwardWorldX * action.forward()
+                    + strafeWorldX * action.strafe();
+            double worldZ = forwardWorldZ * action.forward()
+                    + strafeWorldZ * action.strafe();
+
+            // The old +Z segment must never receive a negative world-space
+            // component merely because its local W/A/D representation changed.
+            if (worldZ < -1.0E-6) {
+                sawReverseWorldInput = true;
             }
             physics.tick(s.player, action, s.maze, 0);
 
@@ -670,8 +697,8 @@ class StableLiveMovementControllerTest {
             s.tick++;
         }
 
-        assertFalse(sawOldDirectionInput,
-                "corner recovery emitted reverse input: " + controller.lastDecisionDetail());
+        assertFalse(sawReverseWorldInput,
+                "corner recovery emitted reverse world-space input: " + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);

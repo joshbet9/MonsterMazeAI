@@ -203,8 +203,8 @@ class HumanPolicyV2ClosedLoopTest {
         f[6] = clamp(Math.hypot(vx, vz), 0.0, 1.0);
 
         double yawRad = Math.toRadians(yaw);
-        f[7] = Math.sin(yawRad);
-        f[8] = Math.cos(yawRad);
+        f[7] = (float) Math.sin(yawRad);
+        f[8] = (float) Math.cos(yawRad);
 
         if (state.activePadRow >= 0 && state.activePadColumn >= 0) {
             double tx = state.activePadRow + 0.5;
@@ -218,8 +218,8 @@ class HumanPolicyV2ClosedLoopTest {
             f[9] = clamp(dx / 64.0, -1.0, 1.0);
             f[10] = clamp(dz / 64.0, -1.0, 1.0);
             f[11] = clamp(distance / 64.0, 0.0, 1.0);
-            f[12] = Math.sin(Math.toRadians(bearing));
-            f[13] = Math.cos(Math.toRadians(bearing));
+            f[12] = (float) Math.sin(Math.toRadians(bearing));
+            f[13] = (float) Math.cos(Math.toRadians(bearing));
             f[14] = clamp(bearing / 180.0, -1.0, 1.0);
         }
 

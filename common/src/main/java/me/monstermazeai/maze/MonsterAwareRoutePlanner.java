@@ -548,6 +548,25 @@ public final class MonsterAwareRoutePlanner {
         return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
     }
 
+    private static int routeTurnCount(PlayerRoute route) {
+        if (route == null || route.size() < 3) return 0;
+        int previousRow = Integer.signum(
+                route.cells().get(1).row() - route.cells().get(0).row());
+        int previousColumn = Integer.signum(
+                route.cells().get(1).column() - route.cells().get(0).column());
+        int turns = 0;
+        for (int i = 2; i < route.size(); i++) {
+            int row = Integer.signum(
+                    route.cells().get(i).row() - route.cells().get(i - 1).row());
+            int column = Integer.signum(
+                    route.cells().get(i).column() - route.cells().get(i - 1).column());
+            if (row != previousRow || column != previousColumn) turns++;
+            previousRow = row;
+            previousColumn = column;
+        }
+        return turns;
+    }
+
     private int compareByGapRisk(PlayerRoute a, PlayerRoute b) {
         int cost = Double.compare(routeCost(a), routeCost(b));
         if (cost != 0) return cost;
@@ -597,7 +616,7 @@ public final class MonsterAwareRoutePlanner {
         addSelected(selected, byCost, 0);
 
         PlayerRoute fewestTurns = byCost.stream().min((a, b) -> {
-            int turns = Integer.compare(turnCount(a), turnCount(b));
+            int turns = Integer.compare(routeTurnCount(a), routeTurnCount(b));
             return turns != 0 ? turns : compareByGapRisk(a, b);
         }).orElse(null);
         if (fewestTurns != null) selected.put(routeKey(fewestTurns), fewestTurns);

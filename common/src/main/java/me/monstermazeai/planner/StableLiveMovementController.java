@@ -39,6 +39,7 @@ import java.util.concurrent.Future;
  * remains the shortest cardinal route selected by the planner.
  */
 public final class StableLiveMovementController {
+    // Baseline control experiment anchored to known 310c692 behavior.
     private final AiProfile profile;
 
     public StableLiveMovementController() {

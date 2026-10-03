@@ -28,6 +28,53 @@ jobs:
       - name: Run topology regression test
         run: python training/test_human_dataset.py
 
+      - name: Fetch real human run corpus
+        run: |
+          mkdir -p training-data
+          git fetch --depth=1 origin feature/human-run-analysis
+          git archive FETCH_HEAD human-runs | tar -x -C training-data
+          test -d training-data/human-runs
+
+      - name: Build full human policy v2 dataset
+        run: |
+          mkdir -p training-data/derived ml-data/ci
+          python training/human_dataset.py --root training-data/human-runs --output training-data/derived/human-policy-v2.jsonl
+
+      - name: Validate full human policy v2 dataset
+        run: |
+          python training/validate_dataset.py training-data/derived/human-policy-v2.jsonl
+
+      - name: Inspect full human policy v2 dataset
+        run: |
+          python ml/human_policy_v2.py inspect --input training-data/derived/human-policy-v2.jsonl | tee ml-data/ci/human-policy-v2-inspection.txt
+
+      - name: Train full human policy v2 model
+        run: |
+          python ml/human_policy_v2.py train --input training-data/derived/human-policy-v2.jsonl --output ml-data/ci/human-policy-v2-model.json --epochs 60 --batch-size 1024 --hidden1 64 --hidden2 32 --learning-rate 0.002 --validation-fraction 0.20 --min-samples 500 --seed 1337 --report-every 10 | tee ml-data/ci/human-policy-v2-training.txt
+
+      - name: Evaluate full human policy v2 model
+        run: |
+          python ml/evaluate_human_policy_v2.py --input training-data/derived/human-policy-v2.jsonl --model ml-data/ci/human-policy-v2-model.json | tee ml-data/ci/human-policy-v2-evaluation.txt
+
+      - name: Export full human policy v2 model
+        run: |
+          python tools/export_human_policy_v2_model.py --input ml-data/ci/human-policy-v2-model.json --output ml-data/ci/human-policy-v2-model.bin
+          test -s ml-data/ci/human-policy-v2-model.bin
+
+      - name: Upload real dataset and model
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-policy-v2-${{ github.sha }}
+          path: |
+            training-data/derived/human-policy-v2.jsonl
+            ml-data/ci/human-policy-v2-model.json
+            ml-data/ci/human-policy-v2-model.bin
+            ml-data/ci/human-policy-v2-inspection.txt
+            ml-data/ci/human-policy-v2-training.txt
+            ml-data/ci/human-policy-v2-evaluation.txt
+          if-no-files-found: warn
+
       - name: Smoke-test human policy v2
         shell: python
         run: |

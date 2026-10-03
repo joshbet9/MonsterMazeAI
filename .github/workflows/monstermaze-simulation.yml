@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - autonomous/matrix-control-310
+      - autonomous/matrix-control-311
     paths:
       - 'common/**'
       - 'common-api/**'
@@ -81,5 +82,46 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: monstermaze-full-matrix-${{ github.sha }}
+          path: simulation-artifacts/
+          if-no-files-found: warn
+
+  progression-40:
+    name: Full matrix Stage-40 progress
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - name: Run complete Pattern x Mode x Kit Stage-40 diagnostic
+        shell: bash
+        run: |
+          mkdir -p simulation-artifacts
+          mvn -B -ntp -pl common \
+            "-Dtest=MatrixProgression40DiagnosticTest" \
+            "-Dsurefire.useFile=false" \
+            "-Dsurefire.redirectTestOutputToFile=false" \
+            test 2>&1 | tee simulation-artifacts/matrix40.log
+          grep -E '^MATRIX40 ' simulation-artifacts/matrix40.log > simulation-artifacts/matrix40-rows.txt || true
+          grep -E '^MATRIX40_SUMMARY ' simulation-artifacts/matrix40.log > simulation-artifacts/matrix40-summary.txt || true
+      - name: Publish Stage-40 summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Full matrix Stage-40 progress" >> "$GITHUB_STEP_SUMMARY"
+          cat simulation-artifacts/matrix40-summary.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+          cat simulation-artifacts/matrix40-rows.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload Stage-40 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-matrix40-${{ github.sha }}
           path: simulation-artifacts/
           if-no-files-found: warn

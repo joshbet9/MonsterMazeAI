@@ -225,12 +225,19 @@ public final class MonsterAwareRoutePlanner {
         double total = 0.0D;
         int counted = 0;
 
+        double cumulativeRouteDistance = 0.0D;
         for (int i = 0; i < samples; i++) {
             double targetX = route.targetX(i);
             double targetZ = route.targetZ(i);
-            double distanceFromPlayer = Math.hypot(
-                    targetX - state.player.x, targetZ - state.player.z);
-            double eta = Math.min(80.0D, distanceFromPlayer * tickPerCell);
+            if (i == 0) {
+                cumulativeRouteDistance = Math.hypot(
+                        targetX - state.player.x, targetZ - state.player.z);
+            } else {
+                cumulativeRouteDistance += Math.hypot(
+                        targetX - route.targetX(i - 1),
+                        targetZ - route.targetZ(i - 1));
+            }
+            double eta = Math.min(80.0D, cumulativeRouteDistance * tickPerCell);
 
             double localRisk = 0.0D;
             for (var monster : state.monsters) {

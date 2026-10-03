@@ -11,9 +11,9 @@ import java.util.List;
 import java.util.Map;
 
 class FullRunFailureDiagnosticTest {
+    private record Case(Mode mode, int pattern, Kit kit) {}
     @Test
     void printBehaviourReplayForSelectedCases() {
-        record Case(Mode mode, int pattern, Kit kit) {}
         Case[] cases = {
                 new Case(Mode.MODERN, 1, Kit.JUMPER),
                 new Case(Mode.MODERN, 1, Kit.SLOWBALLER),
@@ -41,7 +41,7 @@ class FullRunFailureDiagnosticTest {
     }
 
     private static void printCase(
-            record Case(Mode mode, int pattern, Kit kit) c,
+            Case c,
             AuthenticStage10SimulationTest.BehaviorTraceResult traced) {
         AuthenticStage10SimulationTest.RunResult r = traced.result();
         List<AuthenticStage10SimulationTest.BehaviorTick> ticks = traced.ticks();

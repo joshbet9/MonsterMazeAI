@@ -53,17 +53,18 @@ jobs:
           from pathlib import Path
           text = Path('damage-debt-sweep.log').read_text(encoding='utf-8', errors='replace')
           rows = []
-          pattern = re.compile(r'DAMAGE_DEBT_SWEEP_SUMMARY debt=([0-9.]+) cases=(\d+) stageSum=(\d+) completed=(\d+)')
+          pattern = re.compile(r'DAMAGE_DEBT_SWEEP_SUMMARY debt=([0-9.]+) cases=(\d+) minStage=(\d+) stageSum=(\d+) completed=(\d+)')
           for m in pattern.finditer(text):
               rows.append({
                   'debt': float(m.group(1)),
                   'cases': int(m.group(2)),
-                  'stageSum': int(m.group(3)),
-                  'completed': int(m.group(4)),
+                  'minStage': int(m.group(3)),
+                  'stageSum': int(m.group(4)),
+                  'completed': int(m.group(5)),
               })
           if len(rows) != 4:
               raise SystemExit(f'expected 4 sweep summaries, found {len(rows)}')
-          rows.sort(key=lambda r: (-r['stageSum'], -r['completed'], r['debt']))
+          rows.sort(key=lambda r: (-r['minStage'], -r['stageSum'], -r['completed'], r['debt']))
           best = rows[0]
           print('SWEEP_RESULT=' + str(rows))
           print(f"SELECTED_DAMAGE_DEBT={best['debt']:.2f}")

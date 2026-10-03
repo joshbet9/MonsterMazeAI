@@ -2,19 +2,14 @@ name: Monster Maze - Full Simulation Matrix
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feature/seamless-physics-movement-v1
-      - architecture/cpu-opponents-v2
-      - autonomous/matrix-lab
-    paths:
-      - 'common/**'
-      - 'common-api/**'
-      - 'pom.xml'
-      - '**/pom.xml'
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - autonomous/matrix-lab
+    paths:
+      - '.github/matrix-trigger/**'
 
 concurrency:
   group: monstermaze-simulation-${{ github.ref }}

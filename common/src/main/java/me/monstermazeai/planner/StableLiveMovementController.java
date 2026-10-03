@@ -2063,11 +2063,25 @@ public final class StableLiveMovementController {
         double ux = dx / length;
         double uz = dz / length;
 
-        double yawRad = Math.toRadians(state.player.yaw);
-        double forwardX = -Math.sin(yawRad);
-        double forwardZ = Math.cos(yawRad);
-        double strafeX = Math.cos(yawRad);
-        double strafeZ = Math.sin(yawRad);
+        boolean emergencyJump = allowJump
+                && state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0
+                && state.player.y > -0.05D;
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        /*
+         * LegacyMovementModel applies yawDelta before moveFlying(). Project the
+         * recovery vector into the post-turn camera frame, not the stale frame.
+         * Otherwise a simultaneous turn can rotate a correct world-space target
+         * into the wrong W/A/D command on the falling tick.
+         */
+        double postTurnYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double forwardX = -Math.sin(postTurnYaw);
+        double forwardZ = Math.cos(postTurnYaw);
+        double strafeX = Math.cos(postTurnYaw);
+        double strafeZ = Math.sin(postTurnYaw);
 
         double forward = ux * forwardX + uz * forwardZ;
         double strafe = ux * strafeX + uz * strafeZ;
@@ -2076,14 +2090,6 @@ public final class StableLiveMovementController {
             forward /= magnitude;
             strafe /= magnitude;
         }
-
-        boolean emergencyJump = allowJump
-                && state.kit == me.monstermazeai.kit.Kit.JUMPER
-                && state.ability.charges > 0
-                && state.player.y > -0.05D;
-        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
-                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
         return new Action(forward, strafe, emergencyJump, forward > 0.75,
                 yawDelta, false);

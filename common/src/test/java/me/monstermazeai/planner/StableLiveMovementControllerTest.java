@@ -479,6 +479,30 @@ class StableLiveMovementControllerTest {
                 "controller exceeded the 1.8 yaw limit: " + result);
     }
 
+
+    @Test
+    void advancesWhenPhysicsHasCrossedCornerByOnlyTwoCentimetres() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // The waypoint centre is z=8.5. A real physics step can put the player
+        // only a few centimetres beyond it; this must still count as crossing.
+        s.player.z = 8.502D;
+        s.player.vz = 0.01D;
+        s.player.vx = 0.0D;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 2;
+
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("dir=1,0"),
+                controller.lastDecisionDetail());
+    }
+
     @Test
     void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);

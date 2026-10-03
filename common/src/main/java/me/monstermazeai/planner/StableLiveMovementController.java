@@ -1867,8 +1867,15 @@ public final class StableLiveMovementController {
             }
         }
 
-        Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
-        Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
+        /*
+         * The camera is already aligned to the reverse cardinal direction here.
+         * Positive forward input therefore moves along the already-traversed route
+         * segment. Negative forward input would move toward the approaching monster,
+         * which was the source of the observed JUMPER yield oscillation.
+         */
+        Action yield = new Action(0.65, 0.0, false, false, 0.0F, false);
+        Action guarded = guardProjectedSupport(
+                state, yield, -routeDirRow, -routeDirColumn);
         lastDecisionDetail = "MOB_YIELD"
                 + " monster=" + threat.id
                 + " distance=" + format(bestDistance)

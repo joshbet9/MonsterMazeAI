@@ -4,8 +4,17 @@ on:
   workflow_dispatch:
   push:
     branches: [ main, feature/first-pad-movement, feature/first-pad-movement-v2 ]
+    paths:
+      - 'common/**'
+      - 'common-api/**'
+      - 'pom.xml'
+      - '**/pom.xml'
   pull_request:
     branches: [ main ]
+
+concurrency:
+  group: maven-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

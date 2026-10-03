@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -445,6 +446,342 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
         assertFalse(controller.lastDecisionDetail().contains("REACHED"),
                 controller.lastDecisionDetail());
+    }
+
+    @Test
+    void physicsDrivenRightTurnBrakesBeforeCornerAndReachesGoal() {
+        CornerResult result = simulateCorner(
+                2, 1, 2, 8, 8, 8,
+                0.0F, 0.0D);
+
+        assertTrue(result.reachedGoal,
+                "right turn did not reach goal: " + result);
+        assertFalse(result.leftPhysicalFloor,
+                "right turn left physical floor: " + result);
+        assertTrue(result.cornerPrepTicks > 0,
+                "right turn never entered predictive corner staging: " + result);
+        assertTrue(result.maxYawDelta <= 30.0F + 1.0E-6,
+                "controller exceeded the 1.8 yaw limit: " + result);
+    }
+
+    @Test
+    void predictiveCornerTurnKeepsPhysicalDriveActiveWhileYawChanges() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        boolean sawCornerPrep = false;
+        boolean sawDrivenCornerPrep = false;
+
+        for (int tick = 1; tick <= 360; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")) {
+                sawCornerPrep = true;
+                if (Math.hypot(action.forward(), action.strafe()) > 0.1D) {
+                    sawDrivenCornerPrep = true;
+                }
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (!s.player.grounded && s.player.y < -0.25D) {
+                break;
+            }
+            if (sawDrivenCornerPrep && s.player.x > 8.0D) {
+                break;
+            }
+        }
+
+        assertTrue(sawCornerPrep,
+                "test never entered predictive corner preparation");
+        assertTrue(sawDrivenCornerPrep,
+                "predictive corner preparation still stopped physical movement");
+    }
+
+    @Test
+    void physicsDrivenLeftTurnBrakesBeforeCornerAndReachesGoal() {
+        CornerResult result = simulateCorner(
+                8, 1, 8, 8, 2, 8,
+                0.0F, 0.0D);
+
+        assertTrue(result.reachedGoal,
+                "left turn did not reach goal: " + result);
+        assertFalse(result.leftPhysicalFloor,
+                "left turn left physical floor: " + result);
+        assertTrue(result.cornerPrepTicks > 0,
+                "left turn never entered predictive corner staging: " + result);
+        assertTrue(result.maxYawDelta <= 30.0F + 1.0E-6,
+                "controller exceeded the 1.8 yaw limit: " + result);
+    }
+
+
+    @Test
+    void mobYieldMovesAwayAfterReverseHeadingAlignment() {
+        GameState s = state(2.5, 2.5, 180.0F);
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.ability.charges = 0;
+
+        // Initial +Z route has no supported side cells, forcing the controller
+        // into the no-side-floor MOB_YIELD path.
+        s.maze.setPhysicalFloor(1, 2, false);
+        s.maze.setPhysicalFloor(3, 2, false);
+
+        MonsterState monster = new MonsterState(1, 2.5, 0.0, 3.8);
+        s.monsters.add(monster);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(2, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_YIELD"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0,
+                "aligned mob yield used the wrong input sign: " + action);
+
+        double beforeZ = s.player.z;
+        new LegacyMazePhysics().tick(s.player, action, s.maze, -10);
+
+        assertTrue(s.player.z < beforeZ,
+                "mob yield moved toward the monster instead of away: "
+                        + beforeZ + " -> " + s.player.z);
+    }
+
+    @Test
+    void laneCorrectionKeepsDrivingInsteadOfStoppingForTurn() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        // +Z is the initial segment. Offset the player 0.25 blocks in +X so
+        // the old lane-recovery branch would stop/turn instead of driving.
+        s.player.x = 2.75D;
+        s.player.z = 2.50D;
+        s.player.yaw = 0.0F;
+        s.player.vz = 0.08D;
+        s.player.vx = 0.0D;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(Math.hypot(action.forward(), action.strafe()) > 0.1D,
+                "lane correction stopped physical drive: " + controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY_COMBINED"),
+                controller.lastDecisionDetail());
+
+        double beforeZ = s.player.z;
+        physics.tick(s.player, action, s.maze, 0);
+
+        assertTrue(s.player.z > beforeZ,
+                "lane correction failed to preserve forward progress: "
+                        + beforeZ + " -> " + s.player.z);
+    }
+
+    @Test
+    void cancelsCornerCommitmentWhenPhysicsReversesTheCurrentSegment() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        boolean sawCornerPrep = false;
+        for (int tick = 1; tick <= 120; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")) {
+                sawCornerPrep = true;
+
+                // Simulate a post-commit physics reversal, such as a monster
+                // bump, before the actual corner is crossed.
+                s.player.vz = -0.12D;
+                s.player.vx = 0.0D;
+                s.tick++;
+                Action recovery = controller.nextAction(s, new Cell(8, 8), false);
+
+                assertFalse(controller.lastDecisionDetail().contains("CORNER_PREP"),
+                        "stale corner commitment survived a reversed segment: "
+                                + controller.lastDecisionDetail());
+                assertTrue(Math.abs(recovery.forward()) > 1.0E-6
+                                || Math.abs(recovery.strafe()) > 1.0E-6
+                                || Math.abs(recovery.yawDelta()) > 1.0E-6,
+                        "reversed segment produced no recovery command: "
+                                + controller.lastDecisionDetail());
+                return;
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+        }
+
+        assertTrue(sawCornerPrep,
+                "test never reached predictive corner staging");
+    }
+
+    @Test
+    void advancesWhenPhysicsHasCrossedCornerByOnlyTwoCentimetres() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // The waypoint centre is z=8.5. A real physics step can put the player
+        // only a few centimetres beyond it; this must still count as crossing.
+        s.player.z = 8.502D;
+        s.player.vz = 0.01D;
+        s.player.vx = 0.0D;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 2;
+
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("dir=1,0"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
+    void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // Reproduce the actual failure mode: the player reaches the corner with
+        // residual vanilla momentum before the next observation is processed.
+        s.player.z = 8.62;
+        s.player.vz = 0.25;
+        s.player.vx = 0.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.player.y = 0.0;
+        s.tick = 2;
+
+        boolean sawOldDirectionInput = false;
+        for (int tick = 0; tick < 80; tick++) {
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            if (action.forward() < -1.0E-6 || action.strafe() < -1.0E-6) {
+                sawOldDirectionInput = true;
+            }
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (s.player.y < -0.25 || !s.player.grounded && s.player.y < -0.75) break;
+            s.tick++;
+        }
+
+        assertFalse(sawOldDirectionInput,
+                "corner recovery emitted reverse input: " + controller.lastDecisionDetail());
+        assertTrue(s.player.x > 2.0,
+                "post-corner movement did not acquire the next +X segment: "
+                        + s.player.x + "," + s.player.z);
+        assertTrue(s.player.y >= -0.25,
+                "overshoot recovery fell from the maze: "
+                        + s.player.x + "," + s.player.z + " y=" + s.player.y);
+    }
+
+    private static CornerResult simulateCorner(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float initialYaw,
+            double initialSpeed) {
+        GameState s = cornerState(
+                startRow, startColumn, cornerRow, cornerColumn,
+                goalRow, goalColumn, initialYaw);
+        s.player.vx = startRow == cornerRow ? 0.0D : initialSpeed * Integer.signum(cornerRow - startRow);
+        s.player.vz = startColumn == cornerColumn ? 0.0D : initialSpeed * Integer.signum(cornerColumn - startColumn);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+        CornerResult result = new CornerResult();
+
+        for (int tick = 1; tick <= 360; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(goalRow, goalColumn), false);
+
+            result.maxYawDelta = Math.max(result.maxYawDelta, Math.abs(action.yawDelta()));
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")
+                    || controller.lastDecisionDetail().contains("CORNER_STAGE")) {
+                result.cornerPrepTicks++;
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (!s.player.grounded && s.player.y < -0.25D) {
+                result.leftPhysicalFloor = true;
+                break;
+            }
+
+            if (Math.hypot(
+                    s.player.x - (goalRow + 0.5D),
+                    s.player.z - (goalColumn + 0.5D)) <= 0.55D) {
+                result.reachedGoal = true;
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    private static GameState cornerState(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float yaw) {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+
+        int rowStep = Integer.signum(cornerRow - startRow);
+        int columnStep = Integer.signum(cornerColumn - startColumn);
+        int row = startRow;
+        int column = startColumn;
+        raw[row][column] = 1;
+
+        while (row != cornerRow) {
+            row += rowStep;
+            raw[row][column] = 1;
+        }
+        while (column != goalColumn) {
+            column += columnStep;
+            raw[row][column] = 1;
+        }
+
+        int goalRowStep = Integer.signum(goalRow - cornerRow);
+        row = cornerRow;
+        while (row != goalRow) {
+            row += goalRowStep;
+            raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = goalRow;
+        s.activePadColumn = goalColumn;
+        s.player.x = startRow + 0.5D;
+        s.player.z = startColumn + 0.5D;
+        s.player.y = 0.0D;
+        s.player.yaw = yaw;
+        s.player.grounded = true;
+        return s;
+    }
+
+    private static final class CornerResult {
+        boolean reachedGoal;
+        boolean leftPhysicalFloor;
+        int cornerPrepTicks;
+        double maxYawDelta;
+
+        @Override
+        public String toString() {
+            return "CornerResult{"
+                    + "reachedGoal=" + reachedGoal
+                    + ", leftPhysicalFloor=" + leftPhysicalFloor
+                    + ", cornerPrepTicks=" + cornerPrepTicks
+                    + ", maxYawDelta=" + maxYawDelta
+                    + '}';
+        }
     }
 
 }

@@ -85,6 +85,13 @@ public final class StableLiveMovementController {
     private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
+    /** Begin acquiring the next cardinal heading before the corner while enough momentum remains. */
+    private static final double CORNER_PREP_MIN_LEAD = 0.35D;
+    private static final double CORNER_PREP_MAX_LEAD = 1.60D;
+    private static final double CORNER_PREP_RELEASE = 0.08D;
+    private static final double CORNER_STAGED_SPEED = 0.035D;
+    /** Keep predictive corner drive from adding acceleration to an already-fast approach. */
+    private static final double CORNER_DRIVE_SPEED_LIMIT = 0.12D;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
     /*
@@ -191,6 +198,9 @@ public final class StableLiveMovementController {
     private int padTransitionPreviousColumn = -1;
     private int gapExecutionRouteIndex = -1;
     private int gapLandingConfirmTicks;
+    /** Active while the motor has pre-acquired the next segment heading at a corner. */
+    private int cornerTurnCommitmentWaypoint = -1;
+    private float cornerTurnCommitmentYaw;
 
 
     public Action nextAction(GameState state, Cell goal, boolean allowJump) {
@@ -206,6 +216,11 @@ public final class StableLiveMovementController {
         }
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
+
+        // Each observation/tick gets a fresh movement decision. Without this reset,
+        // append-only detail such as MOB_JUMP_OVER or CORNER_PREP can leak into later
+        // ticks and make behavioural diagnostics report actions that were not executed.
+        lastDecisionDetail = "TICK";
 
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
@@ -394,6 +409,7 @@ public final class StableLiveMovementController {
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
                 anchoredSegmentIndex = -1;
+                cornerTurnCommitmentWaypoint = -1;
             }
         }
 
@@ -511,45 +527,74 @@ public final class StableLiveMovementController {
                 state.player.x, state.player.z, laneAnchorX, laneAnchorZ,
                 dirRow, dirColumn);
 
+        Action cornerPreparation = maybePrepareUpcomingTurn(
+                state, waypointIndex, dirRow, dirColumn, speed, crossTrack);
         Action action;
 
-        if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
+        if (cornerPreparation != null) {
+            action = cornerPreparation;
+        } else if (Math.abs(crossTrack) > 0.18) {
             /*
-             * A player can remain physically supported while the block
-             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
-             * lateral error is therefore not source-like: A/D correction is a
-             * normal Minecraft input and is the safest way to recover the lane
-             * without cutting the cardinal corridor.
+             * Correct cross-track error without surrendering forward progress.
+             * The old controller often stopped to rotate/correct once the player
+             * drifted sideways; repeated stop-turn cycles consumed a large
+             * fraction of the phase timer. Build one world-space vector containing
+             * the route direction plus a bounded lateral correction, then project
+             * it into the current camera frame.
              */
             int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
-            float correctionYaw = cardinalYaw(dirRow, dirColumn);
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
-            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
-        } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-
-            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
-                action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED
-                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                                : 0.0F,
-                        false);
+            double lateralRow;
+            double lateralColumn;
+            if (dirRow != 0) {
+                lateralRow = 0.0D;
+                lateralColumn = -crossSign * dirRow;
             } else {
-                action = new Action(1.0, 0.0, false, true, 0.0F, false);
+                lateralRow = -crossSign * dirColumn;
+                lateralColumn = 0.0D;
             }
+
+            double correctionStrength = Math.min(
+                    0.90D,
+                    Math.max(0.35D,
+                            Math.abs(crossTrack) / Math.max(0.18D, MAX_SAFE_LANE_ERROR)));
+            double worldX = dirRow + lateralRow * correctionStrength;
+            double worldZ = dirColumn + lateralColumn * correctionStrength;
+            double worldMagnitude = Math.hypot(worldX, worldZ);
+            if (worldMagnitude > 1.0E-9D) {
+                worldX /= worldMagnitude;
+                worldZ /= worldMagnitude;
+            }
+
+            float correctionError = normalise(desiredYaw - state.player.yaw);
+            float yawDelta = clamp(
+                    correctionError * 0.5F,
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            double moveYaw = Math.toRadians(state.player.yaw + yawDelta);
+            double forwardWorldX = -Math.sin(moveYaw);
+            double forwardWorldZ = Math.cos(moveYaw);
+            double strafeWorldX = Math.cos(moveYaw);
+            double strafeWorldZ = Math.sin(moveYaw);
+            double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+            double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+            double inputMagnitude = Math.hypot(forward, strafe);
+            if (inputMagnitude > 1.0E-9D) {
+                forward /= inputMagnitude;
+                strafe /= inputMagnitude;
+            }
+
+            action = new Action(
+                    forward,
+                    strafe,
+                    false,
+                    true,
+                    yawDelta,
+                    false);
+            lastDecisionDetail += " LANE_RECOVERY_COMBINED"
+                    + " crossTrack=" + format(crossTrack)
+                    + " strength=" + format(correctionStrength)
+                    + " forward=" + format(forward)
+                    + " strafe=" + format(strafe)
+                    + " yawDelta=" + format(yawDelta);
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Normal steering is concurrent with forward movement. This is
@@ -660,6 +705,7 @@ public final class StableLiveMovementController {
         goalRadius = 0;
         lastRouteTick = Long.MIN_VALUE;
         anchoredSegmentIndex = -1;
+        cornerTurnCommitmentWaypoint = -1;
         lastThreatSignature = Long.MIN_VALUE;
         bootstrapRoutePending = true;
         fullRouteEvaluationPending = true;
@@ -810,6 +856,7 @@ public final class StableLiveMovementController {
         route = planned.route;
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
+        cornerTurnCommitmentWaypoint = -1;
         lastRouteTick = planned.requestedTick;
         routePlanCount++;
         lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
@@ -960,6 +1007,164 @@ public final class StableLiveMovementController {
                 && currentColumnDirection == plannedColumnDirection;
     }
 
+    /**
+     * Physics-driven corner staging. The controller owns the turn before the
+     * waypoint rather than waiting for the player to reach the exact cell centre.
+     *
+     * While the camera acquires the next heading, movement input is projected
+     * onto the current cardinal world direction. Once aligned, the player is
+     * allowed to coast (or use a pure lateral input in the new camera frame)
+     * until the corner is physically crossed. This prevents the old pattern of
+     * carrying sprint momentum into the waypoint and then asking the motor to
+     * turn back toward a point already behind the player.
+     */
+    private Action maybePrepareUpcomingTurn(
+            GameState state, int currentWaypointIndex,
+            int currentDirRow, int currentDirColumn,
+            double speed, double crossTrack) {
+        if (route == null || currentWaypointIndex <= 0
+                || currentWaypointIndex >= route.size() - 1
+                || Math.abs(crossTrack) > 0.20D) {
+            cornerTurnCommitmentWaypoint = -1;
+            return null;
+        }
+
+        Cell from = route.cells().get(currentWaypointIndex - 1);
+        Cell corner = route.cells().get(currentWaypointIndex);
+        Cell after = route.cells().get(currentWaypointIndex + 1);
+
+        if (isGapEdge(state, from.row(), from.column(), corner.row(), corner.column())
+                || isGapEdge(state, corner.row(), corner.column(), after.row(), after.column())) {
+            cornerTurnCommitmentWaypoint = -1;
+            return null;
+        }
+
+        int nextDirRow = Integer.signum(after.row() - corner.row());
+        int nextDirColumn = Integer.signum(after.column() - corner.column());
+        if (Math.abs(nextDirRow) + Math.abs(nextDirColumn) != 1
+                || (nextDirRow == currentDirRow && nextDirColumn == currentDirColumn)) {
+            cornerTurnCommitmentWaypoint = -1;
+            return null;
+        }
+
+        float nextYaw = cardinalYaw(nextDirRow, nextDirColumn);
+        float nextYawError = normalise(nextYaw - state.player.yaw);
+
+        double startX = from.row() + 0.5D;
+        double startZ = from.column() + 0.5D;
+        int segmentLength = Math.abs(corner.row() - from.row())
+                + Math.abs(corner.column() - from.column());
+
+        double progress = currentDirRow != 0
+                ? (state.player.x - startX) * currentDirRow
+                : (state.player.z - startZ) * currentDirColumn;
+        double remaining = segmentLength - progress;
+        double speedAlong = currentDirRow != 0
+                ? state.player.vx * currentDirRow
+                : state.player.vz * currentDirColumn;
+
+        boolean committed = cornerTurnCommitmentWaypoint == currentWaypointIndex;
+
+        /*
+         * A corner commitment is only valid while physics is still carrying the
+         * player toward that corner. A mob bump, collision impulse, or other
+         * authoritative movement update can reverse the current-axis velocity
+         * before the waypoint is crossed. In that state, continuing to acquire
+         * the next heading spends the recovery ticks turning away from the live
+         * direction of travel and can create the observed timeout/oscillation.
+         */
+        if (committed && speedAlong < -CORNER_STAGED_SPEED) {
+            cornerTurnCommitmentWaypoint = -1;
+            committed = false;
+            lastDecisionDetail += " CORNER_COMMITMENT_CANCEL_REVERSED"
+                    + " waypoint=" + currentWaypointIndex
+                    + " speedAlong=" + format(speedAlong);
+        }
+
+        if (!committed) {
+            if (remaining < 0.0D || speedAlong < CORNER_STAGED_SPEED) {
+                return null;
+            }
+
+            double stoppingDistance = speedAlong / Math.max(1.0E-6D, 1.0D - PHYSICS_GROUND_FRICTION);
+            int turnTicks = Math.max(1,
+                    (int) Math.ceil(Math.abs(nextYawError) / MAX_TURN_PER_TICK));
+            double turnTravel = speedAlong
+                    * (1.0D - Math.pow(PHYSICS_GROUND_FRICTION, turnTicks))
+                    / Math.max(1.0E-6D, 1.0D - PHYSICS_GROUND_FRICTION);
+            double lead = Math.max(
+                    CORNER_PREP_MIN_LEAD,
+                    Math.min(CORNER_PREP_MAX_LEAD, Math.max(stoppingDistance, turnTravel) + 0.10D));
+
+            if (remaining > lead) {
+                return null;
+            }
+
+            cornerTurnCommitmentWaypoint = currentWaypointIndex;
+            cornerTurnCommitmentYaw = nextYaw;
+            committed = true;
+        } else {
+            nextYaw = cornerTurnCommitmentYaw;
+            nextYawError = normalise(nextYaw - state.player.yaw);
+        }
+
+        /*
+         * Keep driving toward the physical corner while the camera acquires the
+         * next heading, but never accelerate an already-fast approach. Above the
+         * bounded corner speed, vanilla friction is allowed to bleed momentum;
+         * below it, a current-axis input keeps the player moving. The input is
+         * projected in world space, so camera rotation does not cut the corner.
+         */
+        float yawDelta = Math.abs(nextYawError) <= HEADING_TOLERANCE
+                ? 0.0F
+                : clamp(nextYawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        if (speedAlong > CORNER_DRIVE_SPEED_LIMIT) {
+            lastDecisionDetail += " CORNER_STAGE_COAST"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " yawDelta=" + format(yawDelta);
+            return new Action(0.0, 0.0, false, false, yawDelta, false);
+        }
+
+        double currentYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double worldX = currentDirRow;
+        double worldZ = currentDirColumn;
+        double forwardWorldX = -Math.sin(currentYaw);
+        double forwardWorldZ = Math.cos(currentYaw);
+        double strafeWorldX = Math.cos(currentYaw);
+        double strafeWorldZ = Math.sin(currentYaw);
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+        double magnitude = Math.hypot(forward, strafe);
+        if (magnitude > 1.0E-9) {
+            forward /= magnitude;
+            strafe /= magnitude;
+        }
+
+        if (Math.abs(nextYawError) > HEADING_TOLERANCE) {
+            lastDecisionDetail += " CORNER_PREP"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " nextYaw=" + format(nextYaw)
+                    + " yawError=" + format(nextYawError)
+                    + " yawDelta=" + format(yawDelta)
+                    + " projected=f=" + format(forward)
+                    + ",s=" + format(strafe);
+        } else {
+            lastDecisionDetail += " CORNER_STAGE_PUSH"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " forward=" + format(forward)
+                    + " strafe=" + format(strafe);
+        }
+
+        return new Action(forward, strafe, false, false, yawDelta, false);
+    }
+
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
@@ -1075,7 +1280,14 @@ public final class StableLiveMovementController {
         }
 
         double endpointProgress = Math.abs(toRow - fromRow) + Math.abs(toColumn - fromColumn);
-        if (progress <= endpointProgress + 0.08D) return false;
+        /*
+         * A waypoint is crossed at its physical endpoint, not 8 cm beyond it.
+         * The previous +0.08 guard was large enough for a fast player to be
+         * visibly past the corner while the motor still considered the old
+         * waypoint active. That is exactly the stale-waypoint lockup this
+         * controller is designed to remove.
+         */
+        if (progress < endpointProgress - 0.02D) return false;
 
         // Only advance when the player remains reasonably close to the route
         // corridor; a monster knockback far away must trigger a new route instead
@@ -1663,8 +1875,15 @@ public final class StableLiveMovementController {
             }
         }
 
-        Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
-        Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
+        /*
+         * The camera is already aligned to the reverse cardinal direction here.
+         * Positive forward input therefore moves along the already-traversed route
+         * segment. Negative forward input would move toward the approaching monster,
+         * which was the source of the observed JUMPER yield oscillation.
+         */
+        Action yield = new Action(0.65, 0.0, false, false, 0.0F, false);
+        Action guarded = guardProjectedSupport(
+                state, yield, -routeDirRow, -routeDirColumn);
         lastDecisionDetail = "MOB_YIELD"
                 + " monster=" + threat.id
                 + " distance=" + format(bestDistance)
@@ -2097,5 +2316,6 @@ public final class StableLiveMovementController {
         route = null;
         waypointIndex = 0;
         anchoredSegmentIndex = -1;
+        cornerTurnCommitmentWaypoint = -1;
     }
 }

@@ -588,4 +588,33 @@ class StableLiveMovementControllerTest {
     }
 
 
+    @Test
+    void projectedFarThreatCanAuthorizeAnEarlyStrategicHeadingChange() throws Exception {
+        GameState state = state(0.5, 0.5, 0.0F);
+        state.player.vz = 0.20D;
+
+        MonsterState incoming = new MonsterState(123, 0.5, 0.0, 16.5);
+        incoming.vz = -0.20D;
+        state.monsters.add(incoming);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        var routeField = StableLiveMovementController.class.getDeclaredField("route");
+        routeField.setAccessible(true);
+        routeField.set(controller, new me.monstermazeai.maze.PlayerRoute(java.util.List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2), new Cell(0, 3),
+                new Cell(0, 4), new Cell(0, 5), new Cell(0, 6), new Cell(0, 7),
+                new Cell(0, 8), new Cell(0, 9), new Cell(0, 10), new Cell(0, 11))));
+
+        var waypointField = StableLiveMovementController.class.getDeclaredField("waypointIndex");
+        waypointField.setAccessible(true);
+        waypointField.setInt(controller, 1);
+
+        var method = StableLiveMovementController.class.getDeclaredMethod(
+                "currentRouteThreatenedByMonster", GameState.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(controller, state),
+                "a moving monster projected onto the current route must permit an early strategic heading change");
+    }
+
 }

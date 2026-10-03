@@ -1081,14 +1081,27 @@ public final class StableLiveMovementController {
             nextYawError = normalise(nextYaw - state.player.yaw);
         }
 
-        if (remaining <= CORNER_PREP_RELEASE
-                && Math.abs(nextYawError) <= HEADING_TOLERANCE) {
-            return null;
-        }
-
+        /*
+         * Keep driving toward the physical corner while the camera acquires the
+         * next heading. The local W/A/D vector is projected back onto the
+         * *current* world-cardinal direction, so turning the camera does not cut
+         * diagonally across the one-cell corridor. This preserves momentum instead
+         * of spending multiple ticks coasting or standing still.
+         */
         float yawDelta = Math.abs(nextYawError) <= HEADING_TOLERANCE
                 ? 0.0F
                 : clamp(nextYawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        double currentYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double worldX = currentDirRow;
+        double worldZ = currentDirColumn;
+        double forward = worldX * (-Math.sin(currentYaw)) + worldZ * Math.cos(currentYaw);
+        double strafe = worldX * Math.cos(currentYaw) + worldZ * Math.sin(currentYaw);
+        double magnitude = Math.hypot(forward, strafe);
+        if (magnitude > 1.0E-9) {
+            forward /= magnitude;
+            strafe /= magnitude;
+        }
 
         if (Math.abs(nextYawError) > HEADING_TOLERANCE) {
             lastDecisionDetail += " CORNER_PREP"
@@ -1097,44 +1110,26 @@ public final class StableLiveMovementController {
                     + " speedAlong=" + format(speedAlong)
                     + " nextYaw=" + format(nextYaw)
                     + " yawError=" + format(nextYawError)
-                    + " yawDelta=" + format(yawDelta);
-
-            /*
-             * No new world-axis acceleration during the heading acquisition.
-             * Existing momentum continues to carry the player along the current
-             * segment while vanilla ground friction reduces it.
-             */
-            return new Action(0.0, 0.0, false, false, yawDelta, false);
-        }
-
-        if (speedAlong > CORNER_STAGED_SPEED) {
-            lastDecisionDetail += " CORNER_STAGE_COAST"
+                    + " yawDelta=" + format(yawDelta)
+                    + " projected=f=" + format(forward)
+                    + ",s=" + format(strafe);
+        } else if (speedAlong > CORNER_STAGED_SPEED) {
+            lastDecisionDetail += " CORNER_STAGE_COAST_REPLACED"
                     + " waypoint=" + currentWaypointIndex
                     + " remaining=" + format(remaining)
-                    + " speedAlong=" + format(speedAlong);
-            return Action.IDLE;
+                    + " speedAlong=" + format(speedAlong)
+                    + " projected=f=" + format(forward)
+                    + ",s=" + format(strafe);
+        } else {
+            lastDecisionDetail += " CORNER_STAGE_PUSH"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong)
+                    + " forward=" + format(forward)
+                    + " strafe=" + format(strafe);
         }
 
-        /*
-         * We are aligned to the next heading but still short of the corner.
-         * Project a small input onto the *current* world direction so we keep
-         * advancing without arcing diagonally toward the next cell.
-         */
-        double drive = 0.65D;
-        double currentYaw = Math.toRadians(state.player.yaw);
-        double worldX = currentDirRow;
-        double worldZ = currentDirColumn;
-        double forward = worldX * (-Math.sin(currentYaw)) + worldZ * Math.cos(currentYaw);
-        double strafe = worldX * Math.cos(currentYaw) + worldZ * Math.sin(currentYaw);
-        forward *= drive;
-        strafe *= drive;
-
-        lastDecisionDetail += " CORNER_STAGE_PUSH"
-                + " waypoint=" + currentWaypointIndex
-                + " remaining=" + format(remaining)
-                + " forward=" + format(forward)
-                + " strafe=" + format(strafe);
-        return new Action(forward, strafe, false, false, 0.0F, false);
+        return new Action(forward, strafe, false, false, yawDelta, false);
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {

@@ -613,10 +613,16 @@ public final class StableLiveMovementController {
                 lateralColumn = 0.0D;
             }
 
-            double correctionStrength = Math.min(
-                    0.90D,
-                    Math.max(0.35D,
-                            Math.abs(crossTrack) / Math.max(0.18D, MAX_SAFE_LANE_ERROR)));
+            /*
+             * Keep the route-stability gain, but do not yank a live player sideways
+             * with a near-diagonal vector for a small lane error. A bounded 0.25..0.60
+             * correction preserves forward momentum and lets vanilla friction settle
+             * the remaining offset instead of creating another edge-guard/recovery loop.
+             */
+            double correctionNormal = Math.min(
+                    1.0D,
+                    Math.abs(crossTrack) / Math.max(0.18D, MAX_SAFE_LANE_ERROR));
+            double correctionStrength = 0.25D + (0.35D * correctionNormal);
             double worldX = dirRow + lateralRow * correctionStrength;
             double worldZ = dirColumn + lateralColumn * correctionStrength;
             double worldMagnitude = Math.hypot(worldX, worldZ);

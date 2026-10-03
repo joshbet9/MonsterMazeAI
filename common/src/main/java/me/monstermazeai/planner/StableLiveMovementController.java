@@ -1230,7 +1230,14 @@ public final class StableLiveMovementController {
         }
 
         double endpointProgress = Math.abs(toRow - fromRow) + Math.abs(toColumn - fromColumn);
-        if (progress <= endpointProgress + 0.08D) return false;
+        /*
+         * A waypoint is crossed at its physical endpoint, not 8 cm beyond it.
+         * The previous +0.08 guard was large enough for a fast player to be
+         * visibly past the corner while the motor still considered the old
+         * waypoint active. That is exactly the stale-waypoint lockup this
+         * controller is designed to remove.
+         */
+        if (progress < endpointProgress - 0.02D) return false;
 
         // Only advance when the player remains reasonably close to the route
         // corridor; a monster knockback far away must trigger a new route instead

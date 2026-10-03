@@ -31,13 +31,62 @@ jobs:
 
       - name: Results matrix — 15 Speed + 15 Modern natural-termination runs
         if: always()
-        run: >
-          mvn -B -ntp -pl common -am
-          -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest
-          -Dsurefire.useFile=false
-          -Dsurefire.redirectTestOutputToFile=false
-          -Dsurefire.failIfNoSpecifiedTests=false
-          test
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee common/target/full-results-matrix.log
+
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          text = Path("common/target/full-results-matrix.log").read_text(encoding="utf-8", errors="replace")
+          rows = []
+          pattern = re.compile(
+              r"(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
+              r"maxStage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
+          )
+          for match in pattern.finditer(text):
+              rows.append({
+                  "mode": match.group(1).replace("_FULL_RUN", ""),
+                  "pattern": int(match.group(2)),
+                  "kit": match.group(3),
+                  "maxStage": int(match.group(4)),
+                  "ticks": int(match.group(5)),
+                  "health": float(match.group(6)),
+              })
+
+          summary = {"cases": len(rows), "expected": 30, "byMode": {}, "rows": rows}
+          for mode in ("SPEED", "MODERN"):
+              values = [r["maxStage"] for r in rows if r["mode"] == mode]
+              summary["byMode"][mode] = {
+                  "cases": len(values),
+                  "meanMaxStage": (sum(values) / len(values)) if values else None,
+                  "minMaxStage": min(values) if values else None,
+                  "maxMaxStage": max(values) if values else None,
+                  "stage10OrBetter": sum(v >= 10 for v in values),
+              }
+
+          Path("common/target/full-results-matrix.json").write_text(
+              json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+          assert len(rows) == 30, f"expected 30 matrix rows, found {len(rows)}"
+          print(json.dumps(summary["byMode"], indent=2))
+          PY
+
+      - name: Upload full matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-results-matrix-${{ github.sha }}
+          path: |
+            common/target/full-results-matrix.log
+            common/target/full-results-matrix.json
+          if-no-files-found: warn
 
       - name: First-pad deterministic physics simulation
         run: mvn -B -ntp -pl common -am -Dtest=FirstPadMovementControllerTest,FirstPadMovementPhysicsSimulationTest -Dsurefire.failIfNoSpecifiedTests=false test

@@ -66,8 +66,7 @@ public final class MonsterAwareRoutePlanner {
         List<Cell> normalCells = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
         List<Cell> gapCells = pathfinder.shortestPath(state.maze, start, goal);
 
-        if (hasRelevantMonster(state)
-                || projectedMonsterThreatOnRoute(state, normalCells)
+        if (projectedMonsterThreatOnRoute(state, normalCells)
                 || projectedMonsterThreatOnRoute(state, gapCells)) {
             ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
             PlayerRoute chosen = chooseByGapRisk(
@@ -105,8 +104,7 @@ public final class MonsterAwareRoutePlanner {
                 state.maze, start, regionCenter, radius);
 
         PlayerRoute chosen;
-        if (hasRelevantMonster(state)
-                || projectedMonsterThreatOnRoute(state, normalCells)
+        if (projectedMonsterThreatOnRoute(state, normalCells)
                 || projectedMonsterThreatOnRoute(state, gapCells)) {
             ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
             chosen = chooseByGapRisk(
@@ -167,6 +165,14 @@ public final class MonsterAwareRoutePlanner {
             for (var monster : state.monsters) {
                 if (monster == null || monster.removed
                         || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+                double currentDistance = Math.hypot(
+                        monster.x - state.player.x,
+                        monster.z - state.player.z);
+                double monsterSpeed = Math.hypot(monster.vx, monster.vz);
+                if (currentDistance <= MonsterRelevance.INTERACTION_RADIUS
+                        || currentDistance > 60.0D
+                        || monsterSpeed < 0.08D) continue;
 
                 double predictedX = monster.x + monster.vx * arrivalTicks;
                 double predictedZ = monster.z + monster.vz * arrivalTicks;

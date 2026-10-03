@@ -12,12 +12,12 @@ import org.junit.jupiter.api.Test;
  */
 class TacticalDamageDebtSweepTest {
     private static final int[][] CASES = {
-            {0, 1}, // Speed Pattern 1 Slowballer
-            {1, 3}, // Speed Pattern 2 Repulsor
-            {2, 4}, // Speed Pattern 3 Maverick
-            {0, 4}, // Modern Pattern 1 Maverick
-            {1, 3}, // Modern Pattern 2 Repulsor
-            {2, 4}, // Modern Pattern 3 Maverick
+            {0, 0, 1}, // Speed Pattern 1 Slowballer
+            {0, 1, 3}, // Speed Pattern 2 Repulsor
+            {0, 2, 4}, // Speed Pattern 3 Maverick
+            {1, 0, 4}, // Modern Pattern 1 Maverick
+            {1, 1, 3}, // Modern Pattern 2 Repulsor
+            {1, 2, 4}, // Modern Pattern 3 Maverick
     };
 
     @Test
@@ -27,9 +27,9 @@ class TacticalDamageDebtSweepTest {
         long stageSum = 0;
         long completed = 0;
         for (int[] entry : CASES) {
-            int pattern = entry[0];
-            Kit kit = Kit.values()[entry[1]];
-            Mode mode = (entry[0] == entry[1] ? Mode.SPEED : Mode.MODERN);
+            Mode mode = entry[0] == 0 ? Mode.SPEED : Mode.MODERN;
+            int pattern = entry[1];
+            Kit kit = Kit.values()[entry[2]];
             AuthenticStage10SimulationTest.RunResult result =
                     AuthenticStage10SimulationTest.runToEnd(
                             pattern, kit, AiProfile.HIGH_SKILL, mode);

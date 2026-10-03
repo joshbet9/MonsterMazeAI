@@ -101,7 +101,13 @@ public final class MonsterAwareRoutePlanner {
 
         List<PlayerRoute> candidates = cachedCandidatesFor(
                 state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
-        return choose(state, restrictJumperGapBudget(state, candidates), goal, false, 0);
+        List<PlayerRoute> executable = restrictJumperGapBudget(state, candidates);
+        // A strategic evaluation may legitimately have no executable candidate
+        // when a Jumper has exhausted its charged jumps. The live motor already
+        // has a physical fallback; report "no replacement" instead of throwing
+        // from an empty candidate list.
+        if (executable.isEmpty()) return null;
+        return choose(state, executable, goal, false, 0);
     }
 
     public PlayerRoute routeToRegion(GameState state, Cell start, Cell regionCenter, int radius) {
@@ -116,8 +122,9 @@ public final class MonsterAwareRoutePlanner {
 
         List<PlayerRoute> candidates = cachedCandidatesFor(
                 state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
-        return choose(state, restrictJumperGapBudget(state, candidates),
-                regionCenter, true, radius);
+        List<PlayerRoute> executable = restrictJumperGapBudget(state, candidates);
+        if (executable.isEmpty()) return null;
+        return choose(state, executable, regionCenter, true, radius);
     }
 
     /**

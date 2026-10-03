@@ -219,7 +219,7 @@ public final class MonsterAwareRoutePlanner {
     public double dynamicThreatRisk(GameState state, PlayerRoute route) {
         if (state == null || route == null || route.size() == 0) return Double.POSITIVE_INFINITY;
 
-        final int samples = Math.min(route.size(), 14);
+        final int samples = Math.min(route.size(), 20);
         final double tickPerCell = 5.0D;
         final double dangerRadius = 5.0D;
         double total = 0.0D;

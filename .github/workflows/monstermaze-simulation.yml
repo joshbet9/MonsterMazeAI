@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - autonomous/matrix-lab
+      - autonomous/best-speed19
     paths:
       - '.github/matrix-trigger/**'
 

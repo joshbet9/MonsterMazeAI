@@ -45,7 +45,11 @@ class AuthenticStage10SimulationTest {
     private static final int MODERN_REQUIRED_STAGE = 5;
     private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
-    private static final int FULL_RUN_MAX_TICKS = 20_000;
+    // Natural-termination calibration must be able to measure the long-term
+    // 40-Modern / 70-Speed objective rather than stopping at an arbitrary
+    // benchmark horizon. A run still terminates immediately on source-equivalent
+    // death/leave-game; this is only the hard safety cap.
+    private static final int FULL_RUN_MAX_TICKS = 60_000;
 
     @Test
     void allModernSourcePatternsAndKitsProduceNaturalTerminationDiagnostics() {

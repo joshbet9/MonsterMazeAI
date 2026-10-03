@@ -1,0 +1,1 @@
+Trigger full natural-termination matrix checkpoint for bounded corner-drive experiment.

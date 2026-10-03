@@ -895,6 +895,15 @@ public final class StableLiveMovementController {
 
         completedRoutePlan = null;
         long currentThreat = threatSignature(state);
+
+        // A background planner can fail because the live maze/threat state has
+        // changed while the snapshot was being evaluated. That result is stale,
+        // not a reason to crash the live motor.
+        if (planned.route == null) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()

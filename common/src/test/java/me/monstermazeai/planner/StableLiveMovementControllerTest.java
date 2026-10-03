@@ -352,12 +352,15 @@ class StableLiveMovementControllerTest {
         s.player.yaw = -90.0F;
         s.tick = 2;
 
+        long plansBeforeOvershoot = controller.routePlanCount();
         Action action = controller.nextAction(s, new Cell(2, 2), false);
 
         assertTrue(controller.lastDecisionDetail().contains("dir=0,1"),
                 controller.lastDecisionDetail());
         assertTrue(action.forward() >= 0.0,
                 "the controller must not reverse into the already-passed waypoint");
+        assertEquals(plansBeforeOvershoot, controller.routePlanCount(),
+                "an overshot corner that is still inside the route corridor must not trigger a false route recovery");
     }
 
     @Test

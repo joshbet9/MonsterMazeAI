@@ -643,20 +643,35 @@ class StableLiveMovementControllerTest {
         s.player.y = 0.0;
         s.tick = 2;
 
-        boolean sawOldDirectionInput = false;
+        boolean sawWorldBacktrack = false;
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false);
-            if (action.forward() < -1.0E-6 || action.strafe() < -1.0E-6) {
-                sawOldDirectionInput = true;
+
+            /*
+             * W/A/D are camera-relative. A negative local axis is not itself a
+             * reverse command: for example, after a -90 degree turn, negative
+             * strafe can be the correct +Z world movement. Measure the action in
+             * world space against the overall start->goal direction instead.
+             */
+            double yaw = Math.toRadians(s.player.yaw + action.yawDelta());
+            double worldX = (-Math.sin(yaw) * action.forward())
+                    + (Math.cos(yaw) * action.strafe());
+            double worldZ = (Math.cos(yaw) * action.forward())
+                    + (Math.sin(yaw) * action.strafe());
+            double goalProgress = worldX + worldZ;
+            if (goalProgress < -1.0E-6) {
+                sawWorldBacktrack = true;
             }
+
             physics.tick(s.player, action, s.maze, 0);
 
             if (s.player.y < -0.25 || !s.player.grounded && s.player.y < -0.75) break;
             s.tick++;
         }
 
-        assertFalse(sawOldDirectionInput,
-                "corner recovery emitted reverse input: " + controller.lastDecisionDetail());
+        assertFalse(sawWorldBacktrack,
+                "corner recovery emitted world-space backtracking: "
+                        + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);

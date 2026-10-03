@@ -24,22 +24,9 @@ permissions:
 
 jobs:
   behavior:
-    name: ${{ matrix.case_id }}
+    name: Selected behavioral diagnostics
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    strategy:
-      fail-fast: false
-      matrix:
-        case_id:
-          - MODERN-P1-JUMPER
-          - MODERN-P1-SLOWBALLER
-          - MODERN-P2-REPULSOR
-          - MODERN-P3-JUMPER
-          - MODERN-P3-BODY_BUILDER
-          - MODERN-P3-REPULSOR
-          - SPEED-P1-JUMPER
-          - SPEED-P3-JUMPER
-          - SPEED-P2-MAVERICK
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,32 +38,51 @@ jobs:
           cache: maven
       - name: Install common-api
         run: mvn -B -ntp -pl common-api -am install -DskipTests
-      - name: Run behavioral replay
+      - name: Run all behavioral replays
         shell: bash
         run: |
           mkdir -p simulation-artifacts
-          set +e
-          diag_case=$(echo "${{ matrix.case_id }}" | sed "s/-/:/1; s/-/:/1")
-          mvn -B -ntp -pl common \
-            "-Dtest=FullRunFailureDiagnosticTest" \
-            "-Dmonstermaze.diag.case=${diag_case}" \
-            "-Dsurefire.useFile=false" \
-            "-Dsurefire.redirectTestOutputToFile=false" \
-            test 2>&1 | tee simulation-artifacts/behavior.log
-          rc=${PIPESTATUS[0]}
-          grep -E '^(=====|RESULT |COUNTS )' simulation-artifacts/behavior.log > simulation-artifacts/behavior-summary.txt || true
-          echo "maven_exit_code=${rc}" > simulation-artifacts/status.txt
-          exit "${rc}"
-      - name: Publish behavioral summary
+          : > simulation-artifacts/behavior.log
+          : > simulation-artifacts/behavior-summary.txt
+          cases=(
+            'MODERN:P1:JUMPER'
+            'MODERN:P1:SLOWBALLER'
+            'MODERN:P2:REPULSOR'
+            'MODERN:P3:JUMPER'
+            'MODERN:P3:BODY_BUILDER'
+            'MODERN:P3:REPULSOR'
+            'SPEED:P1:JUMPER'
+            'SPEED:P3:JUMPER'
+            'SPEED:P2:MAVERICK'
+          )
+          for diag_case in "${cases[@]}"; do
+            echo "===== RUN ${diag_case} =====" | tee -a simulation-artifacts/behavior.log
+            mvn -B -ntp -pl common \
+              "-Dtest=FullRunFailureDiagnosticTest" \
+              "-Dmonstermaze.diag.case=${diag_case}" \
+              "-Dsurefire.useFile=false" \
+              "-Dsurefire.redirectTestOutputToFile=false" \
+              test 2>&1 | tee -a simulation-artifacts/behavior.log
+            rc=${PIPESTATUS[0]}
+            grep -E '^(=====|RESULT |COUNTS )' simulation-artifacts/behavior.log | tail -n 3 >> simulation-artifacts/behavior-summary.txt || true
+            if [ "${rc}" -ne 0 ]; then
+              echo "case=${diag_case} exit=${rc}" >> simulation-artifacts/status.txt
+              exit "${rc}"
+            fi
+          done
+          echo "all_behavior_cases=success" > simulation-artifacts/status.txt
+      - name: Publish behavior summary
         if: always()
         shell: bash
         run: |
-          echo "## Behavioral replay: ${{ matrix.case_id }}" >> "$GITHUB_STEP_SUMMARY"
-          cat simulation-artifacts/behavior-summary.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
-      - name: Upload behavioral artifact
+          echo '## Selected behavioral diagnostics' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat simulation-artifacts/behavior-summary.txt 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload behavior artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: monstermaze-behavior-${{ matrix.case_id }}-${{ github.sha }}
+          name: monstermaze-behavior-${{ github.sha }}
           path: simulation-artifacts/
           if-no-files-found: warn

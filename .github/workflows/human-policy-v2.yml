@@ -23,7 +23,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check numpy
 
       - name: Compile training scripts
-        run: python -m py_compile training/human_dataset.py training/validate_dataset.py training/test_human_dataset.py ml/human_policy_v2.py ml/evaluate_human_policy_v2.py
+        run: python -m py_compile training/human_dataset.py training/validate_dataset.py training/test_human_dataset.py ml/human_policy_v2.py ml/evaluate_human_policy_v2.py tools/export_human_policy_v2_model.py
 
       - name: Run topology regression test
         run: python training/test_human_dataset.py
@@ -103,6 +103,21 @@ jobs:
           assert len(model["feature_names"]) == 96
           assert len(model["target_names"]) == 6
           print("model_schema_ok=true")
+
+      - name: Export smoke model
+        run: >
+          python tools/export_human_policy_v2_model.py
+          --input human-policy-v2-smoke-model.json
+          --output human-policy-v2-smoke-model.bin
+
+      - name: Verify exported model
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("human-policy-v2-smoke-model.bin")
+          assert path.stat().st_size == 87624
+          print(f"exported_model_bytes={path.stat().st_size}")
 
       - name: Evaluate smoke model
         run: >

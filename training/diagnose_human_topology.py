@@ -8,7 +8,8 @@ For selected derived observations this prints:
   - nearest maze snapshot tick/stage
   - logical 3x3 cell neighbourhood
   - physicalFloor 3x3 cell neighbourhood
-  - whether the derived topology block is all-zero
+  - topology source/availability metadata
+  - whether an available topology block is all-zero
 
 Usage:
   python training/diagnose_human_topology.py \
@@ -139,7 +140,21 @@ def choose_samples(rows: list[dict], per_run: int) -> list[dict]:
             if any(abs(float(v)) > 1e-12 for v in r.get("observation", [])[32:41])
         ]
 
-        pools = [("MISSING", missing), ("NONZERO", nonzero)]
+        unavailable = [
+            r for r in run_rows
+            if str(r.get("topologySource", "legacy-inferred")) == "unavailable"
+        ]
+        zero_available = [
+            r for r in run_rows
+            if str(r.get("topologySource", "legacy-inferred")) != "unavailable"
+            and not any(abs(float(v)) > 1e-12 for v in r.get("observation", [])[32:41])
+        ]
+
+        pools = [
+            ("UNAVAILABLE", unavailable),
+            ("ZERO_AVAILABLE", zero_available),
+            ("NONZERO", nonzero),
+        ]
         for label, pool in pools:
             if not pool:
                 continue
@@ -235,6 +250,12 @@ def main() -> int:
             print("SNAPSHOT none")
             continue
 
+        print(
+            f"TOPOLOGY source={row.get('topologySource')} "
+            f"snapshotTick={row.get('topologySnapshotTick')} "
+            f"snapshotStage={row.get('topologySnapshotStage')} "
+            f"ageTicks={row.get('topologyAgeTicks')}"
+        )
         print(
             f"SNAPSHOT tick={snapshot['tick']} stage={snapshot['stage']} "
             f"physicalAvailable={snapshot['physicalFloor'] is not None}"

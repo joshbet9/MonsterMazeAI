@@ -486,10 +486,11 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
     navigation = load_by_tick(navigation_path) if navigation_path.exists() else {}
 
     # Maze snapshots are sparse and each snapshot carries a full 99x99 map.
-    # Do not require an exact world/movement tick: advance the maze stream only
-    # as far as the current action tick and retain the latest snapshot. This
-    # keeps memory bounded while preserving the topology that was known at the
-    # time of each human action.
+    # Advance the maze stream only as far as the current action tick and retain
+    # the latest valid snapshot. A snapshot from an earlier stage still contains
+    # the same static logical maze; only physicalFloor is stage/deterioration
+    # sensitive. This lets us use physicalFloor when it matches the current
+    # stage and fall back to the logical maze during stage-to-stage telemetry gaps.
     topology_iter = iter(stream_rows(maze_path)) if maze_path.exists() else iter(())
     topology_next = next(topology_iter, None)
     topology_current: Optional[dict] = None
@@ -531,9 +532,12 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
                 floor = topology_next.get("maze")
 
             if isinstance(floor, list) and len(floor) == 99:
+                logical = topology_next.get("maze")
+                if not isinstance(logical, list) or len(logical) != 99:
+                    logical = None
                 topology_current = {
                     "physicalFloor": floor,
-                    "maze": topology_next.get("maze"),
+                    "maze": logical,
                 }
                 topology_current_tick = next_topology_tick
                 topology_current_stage = row_stage
@@ -560,17 +564,41 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             kit_override=kit,
         )
 
+        topology_source = "unavailable"
+        topology_snapshot_tick = None
+        topology_snapshot_stage = None
+
         if (
             topology_current is not None
             and topology_current_tick <= tick
-            and topology_current_stage == stage
+            and find_center(world_row) is not None
         ):
-            features[32:41] = extract_local_topology(
-                topology_current,
-                movement_row,
-                find_center(world_row),
-                navigation.get(tick),
-            )
+            topology_snapshot_tick = topology_current_tick
+            topology_snapshot_stage = topology_current_stage
+
+            if (
+                topology_current_stage == stage
+                and isinstance(topology_current.get("physicalFloor"), list)
+            ):
+                topology_source = "physical-snapshot"
+                topology_row = {
+                    "physicalFloor": topology_current["physicalFloor"],
+                    "maze": topology_current.get("maze"),
+                }
+            elif isinstance(topology_current.get("maze"), list):
+                # Logical maze topology is static for a detected pattern. Use it
+                # across stage boundaries rather than turning valid observations
+                # into an all-zero block while waiting for the next physical snapshot.
+                topology_source = "logical-snapshot-fallback"
+                topology_row = {"maze": topology_current["maze"]}
+
+            if topology_source != "unavailable":
+                features[32:41] = extract_local_topology(
+                    topology_row,
+                    movement_row,
+                    find_center(world_row),
+                    navigation.get(tick),
+                )
 
         action = build_action(input_row)
 
@@ -611,6 +639,14 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
             "completed": extras["completed"],
             "padReached": extras["pad_reached"],
             "monstersWithin8": extras["monsters_within8"],
+            "topologySource": topology_source,
+            "topologySnapshotTick": topology_snapshot_tick,
+            "topologySnapshotStage": topology_snapshot_stage,
+            "topologyAgeTicks": (
+                tick - topology_snapshot_tick
+                if topology_snapshot_tick is not None
+                else None
+            ),
             "next": next_summary,
         })
 

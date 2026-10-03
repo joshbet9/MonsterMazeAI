@@ -1841,8 +1841,19 @@ public final class StableLiveMovementController {
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
             if (lateral > 0.95D) continue;
 
-            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
-            double score = distance - 0.20D * Math.max(0.0D, closing);
+            double relativeClosing = -((monster.vx - state.player.vx) * dx
+                    + (monster.vz - state.player.vz) * dz) / distance;
+
+            /*
+             * Distance alone is not enough to justify a yield. A monster that
+             * has already passed, is stationary while the player is retreating,
+             * or is otherwise separating should not keep taking control away
+             * from the route motor. Only close threats or genuinely closing
+             * threats enter the avoidance branch.
+             */
+            if (distance > 1.25D && relativeClosing < 0.08D) continue;
+
+            double score = distance - 0.20D * Math.max(0.0D, relativeClosing);
             if (score < bestScore) {
                 bestScore = score;
                 bestDistance = distance;
@@ -1871,11 +1882,11 @@ public final class StableLiveMovementController {
          * escape, but spend one when the mob is already inside the final
          * contact window and the lane cannot safely be cleared laterally.
          */
-        double closingSpeed = 0.0D;
         double threatDx = threat.x - state.player.x;
         double threatDz = threat.z - state.player.z;
         double threatDistance = Math.max(bestDistance, 1.0E-6D);
-        closingSpeed = -(threat.vx * threatDx + threat.vz * threatDz) / threatDistance;
+        double closingSpeed = -((threat.vx - state.player.vx) * threatDx
+                + (threat.vz - state.player.vz) * threatDz) / threatDistance;
         boolean urgentJumperJump = allowJump
                 && state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && state.ability.charges > 0

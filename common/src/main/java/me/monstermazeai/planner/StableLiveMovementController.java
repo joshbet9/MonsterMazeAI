@@ -215,6 +215,11 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
+        // Each observation/tick gets a fresh movement decision. Without this reset,
+        // append-only detail such as MOB_JUMP_OVER or CORNER_PREP can leak into later
+        // ticks and make behavioural diagnostics report actions that were not executed.
+        lastDecisionDetail = "TICK";
+
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(

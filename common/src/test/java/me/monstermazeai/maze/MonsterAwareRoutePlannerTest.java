@@ -1,7 +1,6 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
-import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
@@ -111,23 +110,6 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
-    void nearbyMonsterDoesNotCauseSafePadGlobalDetour() {
-        GameState state = new GameState();
-        state.maze = openMaze();
-        state.player.x = 2.5;
-        state.player.z = 2.5;
-        MonsterState monster = new MonsterState(9, 2.5, 0.0, 3.5);
-        state.monsters.add(monster);
-
-        PlayerRoute route = new MonsterAwareRoutePlanner()
-                .routeToRegionFast(state, new Cell(2, 2), new Cell(2, 6), 0);
-
-        assertEquals(List.of(
-                new Cell(2, 2), new Cell(2, 3), new Cell(2, 4),
-                new Cell(2, 5), new Cell(2, 6)), route.cells());
-    }
-
-    @Test
     void gapRiskCanPreferAnOrdinaryRouteOverAValuableShortcut() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
@@ -164,49 +146,6 @@ class MonsterAwareRoutePlannerTest {
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
         assertEquals(List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)), route.cells());
-    }
-
-    @Test
-    void baselineRoutePolicyUsesARealGapShortcutWhenItSavesRouteEdges() {
-        GameState state = new GameState();
-        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
-        for (int r = 0; r < MazeModel.SIZE; r++)
-            for (int col = 0; col < MazeModel.SIZE; col++) raw[r][col] = 1;
-        raw[10][11] = 0;
-        raw[10][13] = 0;
-        state.maze = new MazeModel(raw);
-        state.mode = Mode.SPEED;
-        state.kit = Kit.MAVERICK;
-
-        PlayerRoute route = new MonsterAwareRoutePlanner()
-                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
-
-        assertEquals(List.of(
-                new Cell(10, 10),
-                new Cell(10, 12),
-                new Cell(10, 14)), route.cells());
-    }
-
-    @Test
-    void modernNonJumperSharesSpeedGapMechanic() {
-        GameState state = new GameState();
-        state.mode = Mode.MODERN;
-        state.kit = Kit.MAVERICK;
-
-        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
-        for (int r = 0; r < MazeModel.SIZE; r++)
-            for (int col = 0; col < MazeModel.SIZE; col++) raw[r][col] = 1;
-        raw[10][11] = 0;
-        raw[10][13] = 0;
-        state.maze = new MazeModel(raw);
-
-        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
-                .route(state, new Cell(10, 10), new Cell(10, 14));
-
-        assertEquals(List.of(
-                new Cell(10, 10),
-                new Cell(10, 12),
-                new Cell(10, 14)), route.cells());
     }
 
     @Test

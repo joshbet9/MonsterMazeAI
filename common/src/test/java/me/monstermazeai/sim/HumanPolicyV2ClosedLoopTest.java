@@ -124,6 +124,7 @@ class HumanPolicyV2ClosedLoopTest {
         activatePadSurface(state, pads.initialPad());
 
         int[] nextMonsterId = {1};
+        state.pendingMonsterSpawns = initialMonsterCount(mode);
         int maxStage = 1;
         long firstFallTick = -1L;
         int lastStage = 1;
@@ -242,9 +243,10 @@ class HumanPolicyV2ClosedLoopTest {
         f[25] = state.ability.charges > 0 ? 1.0F : 0.0F;
         f[26] = state.mode == Mode.SPEED ? 1.0F : 0.0F;
         f[27] = state.mode == Mode.MODERN ? 1.0F : 0.0F;
-        f[28] = state.mazePattern == 0 ? 1.0F : 0.0F;
-        f[29] = state.mazePattern == 1 ? 1.0F : 0.0F;
-        f[30] = state.mazePattern == 2 ? 1.0F : 0.0F;
+        int datasetPattern = state.mazePattern + 1;
+        f[28] = datasetPattern == 1 ? 1.0F : 0.0F;
+        f[29] = datasetPattern == 2 ? 1.0F : 0.0F;
+        f[30] = datasetPattern == 3 ? 1.0F : 0.0F;
 
         double phaseElapsedRatio =
                 (timer.phaseStartSeconds - Math.max(0, state.phaseTicksRemaining / 20.0))
@@ -314,6 +316,12 @@ class HumanPolicyV2ClosedLoopTest {
             case REPULSOR: return 3;
             default: return 4;
         }
+    }
+
+    private static double distanceSq(Cell a, Cell b) {
+        double dr = a.row() - b.row();
+        double dc = a.column() - b.column();
+        return dr * dr + dc * dc;
     }
 
     private static double distanceSq(MonsterState monster, GameState state) {
@@ -424,8 +432,12 @@ class HumanPolicyV2ClosedLoopTest {
         return wrapped;
     }
 
-    private static double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
+    private static float clamp(double value, double min, double max) {
+        return (float) Math.max(min, Math.min(max, value));
+    }
+
+    private static int initialMonsterCount(Mode mode) {
+        return mode == Mode.MODERN || mode == Mode.CLASSIC ? 225 : 150;
     }
 
     private record TimerState(int phaseStartSeconds) {}

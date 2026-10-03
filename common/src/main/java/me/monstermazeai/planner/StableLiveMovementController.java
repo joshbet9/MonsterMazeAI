@@ -40,24 +40,14 @@ import java.util.concurrent.Future;
  */
 public final class StableLiveMovementController {
     private final AiProfile profile;
-    private final boolean backgroundPlanningEnabled;
 
     public StableLiveMovementController() {
-        this(AiProfile.BASELINE, true);
+        this(AiProfile.BASELINE);
     }
 
     public StableLiveMovementController(AiProfile profile) {
-        this(profile, true);
-    }
-
-    StableLiveMovementController(boolean backgroundPlanningEnabled) {
-        this(AiProfile.BASELINE, backgroundPlanningEnabled);
-    }
-
-    StableLiveMovementController(AiProfile profile, boolean backgroundPlanningEnabled) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
-        this.backgroundPlanningEnabled = backgroundPlanningEnabled;
     }
 
     public AiProfile profile() {
@@ -100,8 +90,6 @@ public final class StableLiveMovementController {
     private static final double CORNER_PREP_MAX_LEAD = 1.60D;
     private static final double CORNER_PREP_RELEASE = 0.08D;
     private static final double CORNER_STAGED_SPEED = 0.035D;
-    /** Keep predictive corner drive from adding acceleration to an already-fast approach. */
-    private static final double CORNER_DRIVE_SPEED_LIMIT = 0.12D;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
     private static final double MAX_SAFE_LANE_ERROR = 0.28;
     /*
@@ -227,11 +215,6 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
-        // Each observation/tick gets a fresh movement decision. Without this reset,
-        // append-only detail such as MOB_JUMP_OVER or CORNER_PREP can leak into later
-        // ticks and make behavioural diagnostics report actions that were not executed.
-        lastDecisionDetail = "TICK";
-
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(
@@ -272,6 +255,9 @@ public final class StableLiveMovementController {
             Action bumpAction = steerIntoMonster(state, intentionalBump);
             if (bumpAction != null) return bumpAction;
         }
+
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+        if (mobAvoidance != null) return mobAvoidance;
 
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
@@ -412,13 +398,6 @@ public final class StableLiveMovementController {
         while (waypointIndex < route.size() - 1
                 && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
                 || hasPassedWaypointAlongSegment(state, waypointIndex))) {
-
-            /*
-             * Once physical progress has crossed the waypoint, advance immediately.
-             * The next observation must see the next cardinal segment so the normal
-             * motor can steer into it; holding the old segment here caused repeated
-             * reverse-input recovery and corner stalls.
-             */
             int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
@@ -451,15 +430,6 @@ public final class StableLiveMovementController {
                 if (gapAction != null) return gapAction;
             }
         }
-
-        /*
-         * Ordinary monster avoidance comes after committed gap handling. A
-         * nearby mob must not steal the source-critical takeoff/landing ticks
-         * of an already-selected gap route; once the gap motor declines control,
-         * ordinary lateral dodge/yield logic can run on the same fresh observation.
-         */
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
 
         // When a source interaction is close enough to matter this tick, hand
         // control to the same tactical simulator used during route selection.
@@ -532,27 +502,15 @@ public final class StableLiveMovementController {
              */
             double nominalLaneX = startCellRow + 0.5;
             double nominalLaneZ = startCellColumn + 0.5;
-
-            /*
-             * Preserve a real SafePad-to-maze lateral offset only when this is the
-             * initial route or a genuine pad transition. A later strategic/recovery
-             * route must not redefine the corridor around an already-drifting player;
-             * it should re-center and let LANE_RECOVERY correct the physical error.
-             */
-            boolean preserveInitialOffset = padTransitionFacing
-                    || routePlanCount <= 1L;
-
             if (dirRow == 0) {
                 double offset = state.player.x - nominalLaneX;
-                laneAnchorX = preserveInitialOffset
-                        && Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
+                laneAnchorX = Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
                         ? state.player.x : nominalLaneX;
                 laneAnchorZ = nominalLaneZ;
             } else {
                 laneAnchorX = nominalLaneX;
                 double offset = state.player.z - nominalLaneZ;
-                laneAnchorZ = preserveInitialOffset
-                        && Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
+                laneAnchorZ = Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
                         ? state.player.z : nominalLaneZ;
             }
             anchoredSegmentIndex = waypointIndex;
@@ -562,95 +520,49 @@ public final class StableLiveMovementController {
                 state.player.x, state.player.z, laneAnchorX, laneAnchorZ,
                 dirRow, dirColumn);
 
+        Action cornerPreparation = maybePrepareUpcomingTurn(
+                state, waypointIndex, dirRow, dirColumn, speed, crossTrack);
         Action action;
-        boolean finalApproachBrake = waypointIndex == route.size() - 1
-                && shouldBrakeForFinalApproach(
-                state, distance, closingSpeed(state, dx, dz));
 
-        /*
-         * Terminal braking has priority over lane/corner steering. A lateral
-         * recovery vector can otherwise re-accelerate a player who has already
-         * reached the physics-derived braking envelope for the SafePad.
-         */
-        if (finalApproachBrake) {
-            float brakeYawDelta = Math.abs(yawError) <= HEADING_TOLERANCE
-                    ? 0.0F
-                    : clamp(yawError * 0.5F,
-                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            action = new Action(
-                    0.0, 0.0, false, false, brakeYawDelta, false);
-            lastDecisionDetail += " FINAL_APPROACH_BRAKE"
-                    + " distance=" + format(distance)
-                    + " closingSpeed=" + format(closingSpeed(state, dx, dz))
-                    + " yawDelta=" + format(brakeYawDelta);
-        } else {
-            Action cornerPreparation = maybePrepareUpcomingTurn(
-                    state, waypointIndex, dirRow, dirColumn, speed, crossTrack);
-
-            if (cornerPreparation != null) {
-                action = cornerPreparation;
-            } else if (Math.abs(crossTrack) > 0.18) {
+        if (cornerPreparation != null) {
+            action = cornerPreparation;
+        } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*
-             * Correct cross-track error without surrendering forward progress.
-             * The old controller often stopped to rotate/correct once the player
-             * drifted sideways; repeated stop-turn cycles consumed a large
-             * fraction of the phase timer. Build one world-space vector containing
-             * the route direction plus a bounded lateral correction, then project
-             * it into the current camera frame.
+             * A player can remain physically supported while the block
+             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
+             * lateral error is therefore not source-like: A/D correction is a
+             * normal Minecraft input and is the safest way to recover the lane
+             * without cutting the cardinal corridor.
              */
             int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double lateralRow;
-            double lateralColumn;
-            if (dirRow != 0) {
-                lateralRow = 0.0D;
-                lateralColumn = -crossSign * dirRow;
+            double strafe = dirRow == 0
+                    ? -crossSign * Math.signum(dirColumn)
+                    : crossSign * Math.signum(dirRow);
+            float correctionYaw = cardinalYaw(dirRow, dirColumn);
+            float correctionError = normalise(correctionYaw - state.player.yaw);
+            float yawDelta = speed <= MAX_TURNING_SPEED
+                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                    : 0.0F;
+            action = new Action(0.0, strafe, false, false, yawDelta, false);
+            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
+                    + " strafe=" + format(strafe);
+        } else if (Math.abs(crossTrack) > 0.18) {
+            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
+            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
+            float correctionYaw = (float) Math.toDegrees(
+                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
+            float correctionError = normalise(correctionYaw - state.player.yaw);
+
+            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
+                action = new Action(
+                        0.0, 0.0, false, false,
+                        speed <= MAX_TURNING_SPEED
+                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
+                                : 0.0F,
+                        false);
             } else {
-                lateralRow = -crossSign * dirColumn;
-                lateralColumn = 0.0D;
+                action = new Action(1.0, 0.0, false, true, 0.0F, false);
             }
-
-            double correctionStrength = Math.min(
-                    0.90D,
-                    Math.max(0.35D,
-                            Math.abs(crossTrack) / Math.max(0.18D, MAX_SAFE_LANE_ERROR)));
-            double worldX = dirRow + lateralRow * correctionStrength;
-            double worldZ = dirColumn + lateralColumn * correctionStrength;
-            double worldMagnitude = Math.hypot(worldX, worldZ);
-            if (worldMagnitude > 1.0E-9D) {
-                worldX /= worldMagnitude;
-                worldZ /= worldMagnitude;
-            }
-
-            float correctionError = normalise(desiredYaw - state.player.yaw);
-            float yawDelta = clamp(
-                    correctionError * 0.5F,
-                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            double moveYaw = Math.toRadians(state.player.yaw + yawDelta);
-            double forwardWorldX = -Math.sin(moveYaw);
-            double forwardWorldZ = Math.cos(moveYaw);
-            double strafeWorldX = Math.cos(moveYaw);
-            double strafeWorldZ = Math.sin(moveYaw);
-            double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
-            double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
-            double inputMagnitude = Math.hypot(forward, strafe);
-            if (inputMagnitude > 1.0E-9D) {
-                forward /= inputMagnitude;
-                strafe /= inputMagnitude;
-            }
-
-            action = new Action(
-                    forward,
-                    strafe,
-                    false,
-                    true,
-                    yawDelta,
-                    false);
-            lastDecisionDetail += " LANE_RECOVERY_COMBINED"
-                    + " crossTrack=" + format(crossTrack)
-                    + " strength=" + format(correctionStrength)
-                    + " forward=" + format(forward)
-                    + " strafe=" + format(strafe)
-                    + " yawDelta=" + format(yawDelta);
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Normal steering is concurrent with forward movement. This is
@@ -668,8 +580,8 @@ public final class StableLiveMovementController {
             float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
-                boolean brake = shouldBrakeForFinalApproach(
-                        state, distance, closingSpeed(state, dx, dz));
+                boolean brake = distance < waypointBrakeDistance()
+                        && closingSpeed(state, dx, dz) > 0.04;
                 /*
                  * Keep forward input concurrent with cursor movement, but do not
                  * carry full sprint acceleration through a sharp heading change.
@@ -710,13 +622,11 @@ public final class StableLiveMovementController {
                         false);
             }
         } else {
-            boolean brake = shouldBrakeForFinalApproach(
-                    state, distance, closingSpeed(state, dx, dz));
+            boolean brake = distance < waypointBrakeDistance()
+                    && closingSpeed(state, dx, dz) > 0.04;
             double forward = brake ? 0.0 : 1.0;
             boolean jump = shouldSpeedJump(state, allowJump);
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
-            }
-
         }
 
         if (!gapExecutionActive
@@ -859,7 +769,6 @@ public final class StableLiveMovementController {
     }
 
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
-        if (!backgroundPlanningEnabled) return;
         if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
 
         GameState snapshot = liveState.copyForSimulation();
@@ -886,17 +795,6 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        if (planned.route == null) {
-            /*
-             * The background planner may legitimately fail when a just-disabled
-             * maze surface temporarily leaves no physical candidate. Treat that
-             * as a stale plan and keep the live physical route; never turn a
-             * planner failure into an agent-level null dereference.
-             */
-            fullRouteEvaluationPending = true;
-            return;
-        }
-
         long currentThreat = threatSignature(state);
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn
@@ -1088,82 +986,6 @@ public final class StableLiveMovementController {
      * carrying sprint momentum into the waypoint and then asking the motor to
      * turn back toward a point already behind the player.
      */
-    private Action cornerOvershootBrake(GameState state, int currentWaypointIndex) {
-        if (route == null || currentWaypointIndex <= 0
-                || currentWaypointIndex >= route.size() - 1) return null;
-
-        Cell from = route.cells().get(currentWaypointIndex - 1);
-        Cell corner = route.cells().get(currentWaypointIndex);
-        Cell after = route.cells().get(currentWaypointIndex + 1);
-
-        int currentDirRow = Integer.signum(corner.row() - from.row());
-        int currentDirColumn = Integer.signum(corner.column() - from.column());
-        int nextDirRow = Integer.signum(after.row() - corner.row());
-        int nextDirColumn = Integer.signum(after.column() - corner.column());
-
-        if (Math.abs(currentDirRow) + Math.abs(currentDirColumn) != 1
-                || Math.abs(nextDirRow) + Math.abs(nextDirColumn) != 1
-                || (currentDirRow == nextDirRow && currentDirColumn == nextDirColumn)) {
-            return null;
-        }
-
-        double startX = from.row() + 0.5D;
-        double startZ = from.column() + 0.5D;
-        int segmentLength = Math.abs(corner.row() - from.row())
-                + Math.abs(corner.column() - from.column());
-        double progress = currentDirRow != 0
-                ? (state.player.x - startX) * currentDirRow
-                : (state.player.z - startZ) * currentDirColumn;
-        double overrun = progress - segmentLength;
-        double speedAlong = currentDirRow != 0
-                ? state.player.vx * currentDirRow
-                : state.player.vz * currentDirColumn;
-
-        if (overrun < -0.02D || speedAlong <= CORNER_DRIVE_SPEED_LIMIT) {
-            return null;
-        }
-
-        double yawRad = Math.toRadians(state.player.yaw);
-        double forwardWorldX = -Math.sin(yawRad);
-        double forwardWorldZ = Math.cos(yawRad);
-        double strafeWorldX = Math.cos(yawRad);
-        double strafeWorldZ = Math.sin(yawRad);
-
-        // Brake exactly opposite the currently moving maze direction.
-        double brakeWorldX = -currentDirRow;
-        double brakeWorldZ = -currentDirColumn;
-        double forward = brakeWorldX * forwardWorldX
-                + brakeWorldZ * forwardWorldZ;
-        double strafe = brakeWorldX * strafeWorldX
-                + brakeWorldZ * strafeWorldZ;
-
-        /*
-         * Keep the braking command deliberately weaker than a normal movement
-         * command. The goal is to remove momentum, not to walk the player back
-         * through the old corridor.
-         */
-        double magnitude = Math.hypot(forward, strafe);
-        if (magnitude > 1.0E-9D) {
-            forward /= magnitude;
-            strafe /= magnitude;
-        }
-        double brakeStrength = Math.min(
-                0.65D,
-                Math.max(0.35D, speedAlong / 0.25D * 0.50D));
-
-        lastDecisionDetail += " CORNER_OVERSHOOT_BRAKE"
-                + " waypoint=" + currentWaypointIndex
-                + " overrun=" + format(overrun)
-                + " speedAlong=" + format(speedAlong)
-                + " forward=" + format(forward * brakeStrength)
-                + " strafe=" + format(strafe * brakeStrength);
-
-        return new Action(
-                forward * brakeStrength,
-                strafe * brakeStrength,
-                false, false, 0.0F, false);
-    }
-
     private Action maybePrepareUpcomingTurn(
             GameState state, int currentWaypointIndex,
             int currentDirRow, int currentDirColumn,
@@ -1210,23 +1032,6 @@ public final class StableLiveMovementController {
                 : state.player.vz * currentDirColumn;
 
         boolean committed = cornerTurnCommitmentWaypoint == currentWaypointIndex;
-
-        /*
-         * A corner commitment is only valid while physics is still carrying the
-         * player toward that corner. A mob bump, collision impulse, or other
-         * authoritative movement update can reverse the current-axis velocity
-         * before the waypoint is crossed. In that state, continuing to acquire
-         * the next heading spends the recovery ticks turning away from the live
-         * direction of travel and can create the observed timeout/oscillation.
-         */
-        if (committed && speedAlong < -CORNER_STAGED_SPEED) {
-            cornerTurnCommitmentWaypoint = -1;
-            committed = false;
-            lastDecisionDetail += " CORNER_COMMITMENT_CANCEL_REVERSED"
-                    + " waypoint=" + currentWaypointIndex
-                    + " speedAlong=" + format(speedAlong);
-        }
-
         if (!committed) {
             if (remaining < 0.0D || speedAlong < CORNER_STAGED_SPEED) {
                 return null;
@@ -1254,43 +1059,14 @@ public final class StableLiveMovementController {
             nextYawError = normalise(nextYaw - state.player.yaw);
         }
 
-        /*
-         * Keep the predictive turn source-safe: bleed high approach momentum
-         * with vanilla friction while the camera acquires the next heading,
-         * then resume a bounded 0.65 current-axis input once speed is low.
-         * This preserves continuous physical progress without recreating the
-         * high-momentum corner overshoot regression.
-         */
+        if (remaining <= CORNER_PREP_RELEASE
+                && Math.abs(nextYawError) <= HEADING_TOLERANCE) {
+            return null;
+        }
+
         float yawDelta = Math.abs(nextYawError) <= HEADING_TOLERANCE
                 ? 0.0F
                 : clamp(nextYawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-
-        if (speedAlong > CORNER_DRIVE_SPEED_LIMIT) {
-            lastDecisionDetail += " CORNER_STAGE_COAST"
-                    + " waypoint=" + currentWaypointIndex
-                    + " remaining=" + format(remaining)
-                    + " speedAlong=" + format(speedAlong)
-                    + " yawDelta=" + format(yawDelta);
-            return new Action(0.0, 0.0, false, false, yawDelta, false);
-        }
-
-        double currentYaw = Math.toRadians(state.player.yaw + yawDelta);
-        double worldX = currentDirRow;
-        double worldZ = currentDirColumn;
-        double forwardWorldX = -Math.sin(currentYaw);
-        double forwardWorldZ = Math.cos(currentYaw);
-        double strafeWorldX = Math.cos(currentYaw);
-        double strafeWorldZ = Math.sin(currentYaw);
-        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
-        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
-        double magnitude = Math.hypot(forward, strafe);
-        if (magnitude > 1.0E-9) {
-            forward /= magnitude;
-            strafe /= magnitude;
-        }
-
-        forward *= 0.65D;
-        strafe *= 0.65D;
 
         if (Math.abs(nextYawError) > HEADING_TOLERANCE) {
             lastDecisionDetail += " CORNER_PREP"
@@ -1299,19 +1075,44 @@ public final class StableLiveMovementController {
                     + " speedAlong=" + format(speedAlong)
                     + " nextYaw=" + format(nextYaw)
                     + " yawError=" + format(nextYawError)
-                    + " yawDelta=" + format(yawDelta)
-                    + " projected=f=" + format(forward)
-                    + ",s=" + format(strafe);
-        } else {
-            lastDecisionDetail += " CORNER_STAGE_PUSH"
-                    + " waypoint=" + currentWaypointIndex
-                    + " remaining=" + format(remaining)
-                    + " speedAlong=" + format(speedAlong)
-                    + " forward=" + format(forward)
-                    + " strafe=" + format(strafe);
+                    + " yawDelta=" + format(yawDelta);
+
+            /*
+             * No new world-axis acceleration during the heading acquisition.
+             * Existing momentum continues to carry the player along the current
+             * segment while vanilla ground friction reduces it.
+             */
+            return new Action(0.0, 0.0, false, false, yawDelta, false);
         }
 
-        return new Action(forward, strafe, false, false, yawDelta, false);
+        if (speedAlong > CORNER_STAGED_SPEED) {
+            lastDecisionDetail += " CORNER_STAGE_COAST"
+                    + " waypoint=" + currentWaypointIndex
+                    + " remaining=" + format(remaining)
+                    + " speedAlong=" + format(speedAlong);
+            return Action.IDLE;
+        }
+
+        /*
+         * We are aligned to the next heading but still short of the corner.
+         * Project a small input onto the *current* world direction so we keep
+         * advancing without arcing diagonally toward the next cell.
+         */
+        double drive = 0.65D;
+        double currentYaw = Math.toRadians(state.player.yaw);
+        double worldX = currentDirRow;
+        double worldZ = currentDirColumn;
+        double forward = worldX * (-Math.sin(currentYaw)) + worldZ * Math.cos(currentYaw);
+        double strafe = worldX * Math.cos(currentYaw) + worldZ * Math.sin(currentYaw);
+        forward *= drive;
+        strafe *= drive;
+
+        lastDecisionDetail += " CORNER_STAGE_PUSH"
+                + " waypoint=" + currentWaypointIndex
+                + " remaining=" + format(remaining)
+                + " forward=" + format(forward)
+                + " strafe=" + format(strafe);
+        return new Action(forward, strafe, false, false, 0.0F, false);
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {
@@ -1446,62 +1247,6 @@ public final class StableLiveMovementController {
                 toRow + 0.5D, toColumn + 0.5D,
                 dirRow, dirColumn);
         return Math.abs(lateral) <= 0.65D;
-    }
-
-    private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
-        if (route == null || route.size() < 2
-                || targetIndex <= 0 || targetIndex >= route.size()) return 0.0D;
-
-        List<Cell> cells = route.cells();
-        Cell from = cells.get(targetIndex - 1);
-        Cell to = cells.get(targetIndex);
-        int rowDirection = Integer.signum(to.row() - from.row());
-        int columnDirection = Integer.signum(to.column() - from.column());
-        int segmentLength = Math.abs(to.row() - from.row())
-                + Math.abs(to.column() - from.column());
-        if (Math.abs(rowDirection) + Math.abs(columnDirection) != 1) {
-            return Double.POSITIVE_INFINITY;
-        }
-
-        int runStart = targetIndex - 1;
-        while (runStart > 0) {
-            Cell previous = cells.get(runStart - 1);
-            Cell current = cells.get(runStart);
-            int previousRowDirection = Integer.signum(current.row() - previous.row());
-            int previousColumnDirection = Integer.signum(current.column() - previous.column());
-            int previousLength = Math.abs(current.row() - previous.row())
-                    + Math.abs(current.column() - previous.column());
-            if (previousRowDirection != rowDirection
-                    || previousColumnDirection != columnDirection
-                    || previousLength != segmentLength) {
-                break;
-            }
-            runStart--;
-        }
-
-        double best = Double.POSITIVE_INFINITY;
-        for (int i = runStart; i < targetIndex; i++) {
-            Cell a = cells.get(i);
-            Cell b = cells.get(i + 1);
-            double ax = a.row() + 0.5D;
-            double az = a.column() + 0.5D;
-            double bx = b.row() + 0.5D;
-            double bz = b.column() + 0.5D;
-            double dx = bx - ax;
-            double dz = bz - az;
-            double lengthSquared = dx * dx + dz * dz;
-            if (lengthSquared <= 1.0E-9D) continue;
-
-            double px = state.player.x - ax;
-            double pz = state.player.z - az;
-            double projection = (px * dx + pz * dz) / lengthSquared;
-            projection = Math.max(0.0D, Math.min(1.0D, projection));
-            double nearestX = ax + projection * dx;
-            double nearestZ = az + projection * dz;
-            best = Math.min(best, Math.hypot(
-                    state.player.x - nearestX, state.player.z - nearestZ));
-        }
-        return best == Double.POSITIVE_INFINITY ? 0.0D : best;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {
@@ -1662,31 +1407,6 @@ public final class StableLiveMovementController {
             }
         }
         if (best != null) return best;
-
-        /*
-         * Before giving up on the route-directed command, try the exact same
-         * vector at reduced strength. This preserves the intended direction while
-         * giving vanilla friction/collision enough room to settle the player back
-         * onto the supported corridor. Only non-jump locomotion is scaled so the
-         * source jump mechanic is never retimed by the edge guard.
-         */
-        if (!action.jump() && !action.useAbility()
-                && (Math.abs(action.forward()) > 1.0E-6
-                || Math.abs(action.strafe()) > 1.0E-6)) {
-            for (double scale : new double[] {0.50D, 0.25D, 0.10D}) {
-                Action reduced = new Action(
-                        action.forward() * scale,
-                        action.strafe() * scale,
-                        false,
-                        false,
-                        action.yawDelta(),
-                        false);
-                if (hasPredictedPhysicalSupport(
-                        state, reduced, SUPPORT_LOOKAHEAD_TICKS)) {
-                    return reduced;
-                }
-            }
-        }
 
         float desired = cardinalYaw(dirRow, dirColumn);
         float correction = clamp(normalise(desired - state.player.yaw),
@@ -1906,26 +1626,6 @@ public final class StableLiveMovementController {
         return new double[]{bestX, bestZ};
     }
 
-    private boolean shouldBrakeForFinalApproach(
-            GameState state, double distance, double closingSpeed) {
-        if (closingSpeed <= 0.04D) return false;
-        if (route == null || waypointIndex != route.size() - 1) {
-            return distance < waypointBrakeDistance();
-        }
-
-        /*
-         * The final SafePad is a physical 5x5 surface, but the player can still
-         * carry substantial vanilla momentum across its far edge. Once the final
-         * waypoint is the active target, start braking early enough for ordinary
-         * ground friction to remove the observed forward velocity before the
-         * centre of the terminal surface is passed.
-         */
-        double stoppingDistance = closingSpeed
-                / Math.max(1.0E-6D, 1.0D - PHYSICS_GROUND_FRICTION);
-        double dynamicBrake = stoppingDistance + 0.10D;
-        return distance < Math.max(waypointBrakeDistance(), dynamicBrake);
-    }
-
     private double waypointBrakeDistance() {
         // High handling lets a player carry more vanilla momentum through a
         // corner; low handling starts braking earlier. The baseline value remains
@@ -2125,15 +1825,8 @@ public final class StableLiveMovementController {
             }
         }
 
-        /*
-         * The camera is already aligned to the reverse cardinal direction here.
-         * Positive forward input therefore moves along the already-traversed route
-         * segment. Negative forward input would move toward the approaching monster,
-         * which was the source of the observed JUMPER yield oscillation.
-         */
-        Action yield = new Action(0.65, 0.0, false, false, 0.0F, false);
-        Action guarded = guardProjectedSupport(
-                state, yield, -routeDirRow, -routeDirColumn);
+        Action yield = new Action(-0.65, 0.0, false, false, 0.0F, false);
+        Action guarded = guardProjectedSupport(state, yield, routeDirRow, routeDirColumn);
         lastDecisionDetail = "MOB_YIELD"
                 + " monster=" + threat.id
                 + " distance=" + format(bestDistance)

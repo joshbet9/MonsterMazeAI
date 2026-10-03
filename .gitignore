@@ -1,0 +1,10 @@
+# Generated local ML/training output
+ml-data/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Derived human-policy datasets (rebuild from raw observer runs)
+training-data/derived/

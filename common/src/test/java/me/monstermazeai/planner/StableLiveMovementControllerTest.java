@@ -228,9 +228,20 @@ class StableLiveMovementControllerTest {
 
         s.tick = 1;
         Action first = controller.nextAction(s, new Cell(0, 8), false);
-        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0,
-                "the first live observation must produce a non-idle bootstrap control action");
-        assertTrue(controller.lastDecisionDetail().contains("BOOTSTRAP_ROUTE"));
+        assertEquals(0.0, first.forward(), 1.0e-6,
+                "a large initial heading error must be acquired in place before departure");
+        assertEquals(0.0, first.strafe(), 1.0e-6);
+        assertEquals(30.0F, Math.abs(first.yawDelta()), 1.0e-6F);
+        assertTrue(controller.lastDecisionDetail().contains("BOOTSTRAP_FACING"));
+
+        // Once the heading has been acquired, the motor must release directly
+        // into continuous movement rather than adding an artificial pause.
+        s.player.yaw = -2.0F;
+        s.tick = 2;
+        Action second = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0);
+        assertFalse(controller.lastDecisionDetail().contains("BOOTSTRAP_FACING"));
+
 
         s.tick = 2;
         Action second = controller.nextAction(s, new Cell(0, 8), false);

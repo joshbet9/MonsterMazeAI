@@ -1037,6 +1037,23 @@ public final class StableLiveMovementController {
                 : state.player.vz * currentDirColumn;
 
         boolean committed = cornerTurnCommitmentWaypoint == currentWaypointIndex;
+
+        /*
+         * A corner commitment is only valid while physics is still carrying the
+         * player toward that corner. A mob bump, collision impulse, or other
+         * authoritative movement update can reverse the current-axis velocity
+         * before the waypoint is crossed. In that state, continuing to acquire
+         * the next heading spends the recovery ticks turning away from the live
+         * direction of travel and can create the observed timeout/oscillation.
+         */
+        if (committed && speedAlong < -CORNER_STAGED_SPEED) {
+            cornerTurnCommitmentWaypoint = -1;
+            committed = false;
+            lastDecisionDetail += " CORNER_COMMITMENT_CANCEL_REVERSED"
+                    + " waypoint=" + currentWaypointIndex
+                    + " speedAlong=" + format(speedAlong);
+        }
+
         if (!committed) {
             if (remaining < 0.0D || speedAlong < CORNER_STAGED_SPEED) {
                 return null;

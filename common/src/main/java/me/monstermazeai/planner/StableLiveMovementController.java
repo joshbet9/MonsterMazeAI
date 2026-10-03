@@ -509,15 +509,27 @@ public final class StableLiveMovementController {
              */
             double nominalLaneX = startCellRow + 0.5;
             double nominalLaneZ = startCellColumn + 0.5;
+
+            /*
+             * Preserve a real SafePad-to-maze lateral offset only when this is the
+             * initial route or a genuine pad transition. A later strategic/recovery
+             * route must not redefine the corridor around an already-drifting player;
+             * it should re-center and let LANE_RECOVERY correct the physical error.
+             */
+            boolean preserveInitialOffset = padTransitionFacing
+                    || routePlanCount <= 1L;
+
             if (dirRow == 0) {
                 double offset = state.player.x - nominalLaneX;
-                laneAnchorX = Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
+                laneAnchorX = preserveInitialOffset
+                        && Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
                         ? state.player.x : nominalLaneX;
                 laneAnchorZ = nominalLaneZ;
             } else {
                 laneAnchorX = nominalLaneX;
                 double offset = state.player.z - nominalLaneZ;
-                laneAnchorZ = Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
+                laneAnchorZ = preserveInitialOffset
+                        && Math.abs(offset) <= MAX_INITIAL_LANE_OFFSET
                         ? state.player.z : nominalLaneZ;
             }
             anchoredSegmentIndex = waypointIndex;

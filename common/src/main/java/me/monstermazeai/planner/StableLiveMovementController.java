@@ -113,6 +113,8 @@ public final class StableLiveMovementController {
     });
     private Future<?> pendingRoutePlan;
     private volatile PlannedRoute completedRoutePlan;
+    /** Monotonic generation invalidates background routes when newer world state requests planning. */
+    private long strategicPlanGeneration;
 
     private PlayerRoute route;
     /** Index of the next turn/goal cell, not merely the next adjacent cell. */
@@ -746,6 +748,7 @@ public final class StableLiveMovementController {
         clearPadEntryCommitment();
         clearGapCommitment();
         clearPadTransitionFacing();
+        strategicPlanGeneration++;
         lastSpeedJumpInputTick = Long.MIN_VALUE;
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
@@ -830,7 +833,14 @@ public final class StableLiveMovementController {
     }
 
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
-        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
+        long generation = ++strategicPlanGeneration;
+        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) {
+            // Do not apply the in-flight plan after a newer observation requested
+            // replanning. The next live tick will submit a fresh snapshot when
+            // the current worker becomes available.
+            fullRouteEvaluationPending = true;
+            return;
+        }
 
         GameState snapshot = liveState.copyForSimulation();
         long requestedTick = liveState.tick;
@@ -845,7 +855,7 @@ public final class StableLiveMovementController {
                 }
                 completedRoutePlan = new PlannedRoute(
                         planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
-                        requestedTick, topology, threatSignature(snapshot));
+                        requestedTick, topology, threatSignature(snapshot), generation);
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] background strategic route failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
@@ -859,6 +869,12 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
+        if (planned.generation != strategicPlanGeneration) {
+            // A newer world observation has already requested a replacement.
+            // Never let an older background snapshot steer the live motor.
+            fullRouteEvaluationPending = true;
+            return;
+        }
         /*
          * Monster positions are intentionally dynamic. Requiring the exact
          * quantised threat signature from the planning snapshot made otherwise
@@ -918,10 +934,12 @@ public final class StableLiveMovementController {
         final long requestedTick;
         final long topologySignature;
         final long threatSignature;
+        final long generation;
 
         PlannedRoute(PlayerRoute route, int startRow, int startColumn,
                      int goalRow, int goalColumn, int regionRadius,
-                     long requestedTick, long topologySignature, long threatSignature) {
+                     long requestedTick, long topologySignature, long threatSignature,
+                     long generation) {
             this.route = route;
             this.startRow = startRow;
             this.startColumn = startColumn;
@@ -931,6 +949,7 @@ public final class StableLiveMovementController {
             this.requestedTick = requestedTick;
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
+            this.generation = generation;
         }
     }
 

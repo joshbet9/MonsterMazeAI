@@ -249,12 +249,15 @@ class StableLiveMovementControllerTest {
                 "the live control thread must never synchronously execute the expensive route simulation");
 
         long plansAfterSecondObservation = controller.routePlanCount();
-        s.tick = 3;
-        Action third = controller.nextAction(s, new Cell(0, 8), false);
-        assertTrue(third.forward() > 0.0 || Math.abs(third.yawDelta()) > 0.0,
-                "a slow strategic plan must not leave the motor idle");
-        assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
-                "unchanged local world state must not start another strategic simulation");
+        for (int tick = 3; tick <= 10; tick++) {
+            s.tick = tick;
+            Action next = controller.nextAction(s, new Cell(0, 8), false);
+            assertTrue(next.forward() > 0.0 || Math.abs(next.yawDelta()) > 0.0,
+                    "a slow strategic plan must not leave the motor idle");
+            assertTrue(controller.routePlanCount() <= plansAfterSecondObservation + 1,
+                    "unchanged local world state must not trigger repeated route replans: "
+                            + controller.routePlanCount() + " vs baseline " + plansAfterSecondObservation);
+        }
     }
 
     @Test

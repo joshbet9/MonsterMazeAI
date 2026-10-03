@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import math
 from pathlib import Path
@@ -486,6 +487,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
                 ))
 
     topology_rows.sort(key=lambda item: item[0])
+    topology_ticks = [item[0] for item in topology_rows]
 
     monsters_by_tick: Dict[int, dict] = {}
     if monster_path.exists():
@@ -531,8 +533,6 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
         # exact-tick match. This preserves the topology state that was known
         # to the observer at the time of the action.
         if topology_rows:
-            import bisect
-            topology_ticks = [item[0] for item in topology_rows]
             position = bisect.bisect_right(topology_ticks, tick) - 1
             if position >= 0:
                 snapshot_tick, snapshot_stage, snapshot_features = topology_rows[position]

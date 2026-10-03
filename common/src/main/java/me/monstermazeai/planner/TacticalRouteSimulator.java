@@ -341,3 +341,4 @@ public final class TacticalRouteSimulator {
                          double damageTaken, GameState finalState, int finalWaypoint) {}
     private record Node(GameState state, int waypoint, List<Action> actions) {}
 }
+

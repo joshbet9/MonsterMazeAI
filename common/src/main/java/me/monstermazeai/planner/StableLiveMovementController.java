@@ -363,7 +363,7 @@ public final class StableLiveMovementController {
              * should be carrying speed through a segment.
              */
             boolean currentSegmentMiss = !gapExecutionActive
-                    && currentSegmentDeviation(state, route, waypointIndex) > 1.10D;
+                    && currentSegmentDeviationFromSupportedCell(state, route, supportedCell) > 1.10D;
             boolean routeInvalid = !gapExecutionActive
                     && (!supportedCellOnRoute
                         || distanceFromRouteCorridor(state, route, waypointIndex) > 1.10D
@@ -1222,6 +1222,18 @@ public final class StableLiveMovementController {
      * waypoint is more than a block away and leaves the motor following stale
      * geometry.
      */
+    private double currentSegmentDeviationFromSupportedCell(GameState state,
+                                                        PlayerRoute route,
+                                                        Cell supportedCell) {
+        if (route == null || supportedCell == null) return 0.0D;
+        int supportedIndex = route.cells().indexOf(supportedCell);
+        if (supportedIndex < 0 || supportedIndex >= route.size() - 1) return 0.0D;
+
+        int targetIndex = nextTurnWaypoint(route, supportedIndex);
+        if (targetIndex <= supportedIndex || targetIndex >= route.size()) return 0.0D;
+        return currentSegmentDeviation(state, route, targetIndex);
+    }
+
     private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
         if (route == null || route.size() < 2
                 || targetIndex <= 0 || targetIndex >= route.size()) return 0.0D;

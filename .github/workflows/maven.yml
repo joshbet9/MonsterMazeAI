@@ -30,6 +30,7 @@ jobs:
         run: mvn -B -ntp verify
 
       - name: Results matrix — 15 Speed + 15 Modern natural-termination runs
+        if: always()
         run: >
           mvn -B -ntp -pl common -am
           -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest

@@ -1,0 +1,71 @@
+name: Monster Maze - Best254 Modern Behavior
+
+on:
+  push:
+    branches:
+      - autonomous/best254-modern-lab
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monstermaze-best254-modern-behavior
+  cancel-in-progress: true
+
+jobs:
+  behavior:
+    name: Modern targeted behavior
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - name: Run Modern behavioral replays
+        shell: bash
+        run: |
+          set +e
+          mkdir -p simulation-artifacts
+          : > simulation-artifacts/behavior.log
+          cases=(
+            'MODERN:P1:JUMPER'
+            'MODERN:P2:JUMPER'
+            'MODERN:P3:JUMPER'
+            'MODERN:P1:SLOWBALLER'
+            'MODERN:P2:SLOWBALLER'
+            'MODERN:P3:SLOWBALLER'
+          )
+          for diag_case in "${cases[@]}"; do
+            echo "===== RUN ${diag_case} =====" | tee -a simulation-artifacts/behavior.log
+            mvn -B -ntp -pl common \
+              "-Dtest=FullRunFailureDiagnosticTest" \
+              "-Dmonstermaze.diag.case=${diag_case}" \
+              "-Dsurefire.useFile=false" \
+              "-Dsurefire.redirectTestOutputToFile=false" \
+              test 2>&1 | tee -a simulation-artifacts/behavior.log
+            rc=${PIPESTATUS[0]}
+            if [ "${rc}" -ne 0 ]; then
+              echo "case=${diag_case} exit=${rc}" >> simulation-artifacts/status.txt
+              exit "${rc}"
+            fi
+          done
+          grep -E '^(=====|RESULT |BEHAVIOR_TICK|COUNTS )' simulation-artifacts/behavior.log > simulation-artifacts/behavior-summary.txt || true
+          echo "all_behavior_cases=success" > simulation-artifacts/status.txt
+      - if: always()
+        shell: bash
+        run: |
+          echo '## Best254 Modern behavior' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat simulation-artifacts/behavior-summary.txt 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: best254-modern-behavior
+          path: simulation-artifacts/
+          if-no-files-found: warn

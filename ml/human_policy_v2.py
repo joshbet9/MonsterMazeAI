@@ -164,21 +164,52 @@ def split_by_run(
     rows: list[dict],
     validation_fraction: float,
     seed: int,
-) -> tuple[list[dict], list[dict]]:
-    runs = sorted({str(row["run"]) for row in rows})
+) -> tuple[list[dict], list[dict], list[str]]:
+    run_meta: dict[str, tuple[str, str]] = {}
+    for row in rows:
+        run = str(row["run"])
+        run_meta.setdefault(
+            run,
+            (str(row.get("mode", "UNKNOWN")).upper(), str(row.get("kit", "UNKNOWN")).upper()),
+        )
+
+    runs = sorted(run_meta)
     if len(runs) < 2:
         raise SystemExit("At least two distinct human runs are required for holdout validation.")
 
-    rng = random.Random(seed)
-    rng.shuffle(runs)
-
-    validation_count = max(1, int(round(len(runs) * validation_fraction)))
+    # A tiny random holdout can accidentally contain only one mode or one kit.
+    # Keep whole runs isolated while deliberately covering both modes and
+    # as many kit families as practical.
+    validation_count = max(4, int(round(len(runs) * validation_fraction)))
     validation_count = min(validation_count, len(runs) - 1)
-    validation_runs = set(runs[:validation_count])
 
-    train = [row for row in rows if str(row["run"]) not in validation_runs]
-    valid = [row for row in rows if str(row["run"]) in validation_runs]
-    return train, valid
+    rng = random.Random(seed)
+    remaining = set(runs)
+    validation_runs: list[str] = []
+
+    # First guarantee both gameplay modes when available.
+    for mode in ("SPEED", "MODERN"):
+        candidates = [run for run in sorted(remaining) if run_meta[run][0] == mode]
+        if candidates and len(validation_runs) < validation_count:
+            validation_runs.append(rng.choice(candidates))
+            remaining.remove(validation_runs[-1])
+
+    # Then maximize kit coverage, preferring kits not represented yet.
+    while len(validation_runs) < validation_count and remaining:
+        represented_kits = {run_meta[run][1] for run in validation_runs}
+        uncovered = [
+            run for run in sorted(remaining)
+            if run_meta[run][1] not in represented_kits
+        ]
+        pool = uncovered if uncovered else sorted(remaining)
+        chosen = rng.choice(pool)
+        validation_runs.append(chosen)
+        remaining.remove(chosen)
+
+    validation_set = set(validation_runs)
+    train = [row for row in rows if str(row["run"]) not in validation_set]
+    valid = [row for row in rows if str(row["run"]) in validation_set]
+    return train, valid, sorted(validation_runs)
 
 
 def relu(x: np.ndarray) -> np.ndarray:
@@ -373,7 +404,7 @@ def train(args: argparse.Namespace) -> int:
             f"Need at least {args.min_samples} rows; found {len(rows)}"
         )
 
-    train_rows, valid_rows = split_by_run(
+    train_rows, valid_rows, validation_runs = split_by_run(
         rows,
         args.validation_fraction,
         args.seed,
@@ -472,6 +503,7 @@ def train(args: argparse.Namespace) -> int:
     )
 
     print("")
+    print("validation_runs=" + json.dumps(validation_runs))
     print("========== HUMAN POLICY V2 TRAINING COMPLETE ==========")
     print(json.dumps(payload["training"], indent=2, allow_nan=False))
     print(f"output={output}")

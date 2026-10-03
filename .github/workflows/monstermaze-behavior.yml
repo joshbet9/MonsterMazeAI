@@ -15,22 +15,22 @@ permissions:
 
 jobs:
   behavior:
-    name: ${{ matrix.case }}
+    name: ${{ matrix.case_id }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
-        case:
-          - MODERN:P1:JUMPER
-          - MODERN:P1:SLOWBALLER
-          - MODERN:P2:REPULSOR
-          - MODERN:P3:JUMPER
-          - MODERN:P3:BODY_BUILDER
-          - MODERN:P3:REPULSOR
-          - SPEED:P1:JUMPER
-          - SPEED:P3:JUMPER
-          - SPEED:P2:MAVERICK
+        case_id:
+          - MODERN-P1-JUMPER
+          - MODERN-P1-SLOWBALLER
+          - MODERN-P2-REPULSOR
+          - MODERN-P3-JUMPER
+          - MODERN-P3-BODY_BUILDER
+          - MODERN-P3-REPULSOR
+          - SPEED-P1-JUMPER
+          - SPEED-P3-JUMPER
+          - SPEED-P2-MAVERICK
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
           set +e
           mvn -B -ntp -pl common \
             "-Dtest=FullRunFailureDiagnosticTest" \
-            "-Dmonstermaze.diag.case=${{ matrix.case }}" \
+            "-Dmonstermaze.diag.case=$(echo "${{ matrix.case_id }}" | sed "s/-/:/1; s/-/:/1")" \
             "-Dsurefire.useFile=false" \
             "-Dsurefire.redirectTestOutputToFile=false" \
             test 2>&1 | tee simulation-artifacts/behavior.log
@@ -61,12 +61,12 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## Behavioral replay: ${{ matrix.case }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Behavioral replay: ${{ matrix.case_id }}" >> "$GITHUB_STEP_SUMMARY"
           cat simulation-artifacts/behavior-summary.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
       - name: Upload behavioral artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: monstermaze-behavior-${{ matrix.case }}-${{ github.sha }}
+          name: monstermaze-behavior-${{ matrix.case_id }}-${{ github.sha }}
           path: simulation-artifacts/
           if-no-files-found: warn

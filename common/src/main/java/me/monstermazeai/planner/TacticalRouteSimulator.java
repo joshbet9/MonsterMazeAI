@@ -188,7 +188,7 @@ public final class TacticalRouteSimulator {
          * Goal completion still wins unconditionally above, so this cannot make
          * the planner prefer a safe stall over actually reaching the pad.
          */
-        long damagePenalty = damage * 250_000_000L;
+        long damagePenalty = damage * 125_000_000L;
         return remaining * 1_000_000_000_000L + distance * 1_000_000L + damagePenalty;
     }
 

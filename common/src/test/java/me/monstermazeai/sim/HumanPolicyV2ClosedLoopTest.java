@@ -510,9 +510,9 @@ class HumanPolicyV2ClosedLoopTest {
             return new Action(
                     out[0],
                     out[1],
-                    out[2] * 30.0F,
+                    out[2] >= 0.5,
                     out[3] >= 0.5,
-                    out[4] >= 0.5,
+                    (float) (out[4] * 30.0),
                     out[5] >= 0.5);
         }
 

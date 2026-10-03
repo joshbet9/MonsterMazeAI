@@ -407,18 +407,11 @@ public final class StableLiveMovementController {
                 || hasPassedWaypointAlongSegment(state, waypointIndex))) {
 
             /*
-             * A physics step can carry the player beyond the corner before the
-             * next observation arrives. Do not immediately rotate into the next
-             * segment while substantial velocity still points down the old one:
-             * that is exactly how the player previously crossed an exposed block
-             * while the camera was still turning. Spend only the minimum bounded
-             * reverse input required to bleed that residual momentum, then advance.
+             * Once physical progress has crossed the waypoint, advance immediately.
+             * The next observation must see the next cardinal segment so the normal
+             * motor can steer into it; holding the old segment here caused repeated
+             * reverse-input recovery and corner stalls.
              */
-            if (hasPassedWaypointAlongSegment(state, waypointIndex)) {
-                Action overshootBrake = cornerOvershootBrake(state, waypointIndex);
-                if (overshootBrake != null) return overshootBrake;
-            }
-
             int previousWaypoint = waypointIndex;
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {

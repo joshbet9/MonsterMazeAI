@@ -6,6 +6,7 @@ on:
     branches:
       - feature/seamless-physics-movement-v1
       - architecture/cpu-opponents-v2
+      - autonomous/matrix-lab
     paths:
       - 'common/**'
       - 'common-api/**'

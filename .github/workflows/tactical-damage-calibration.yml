@@ -1,0 +1,127 @@
+name: Tactical Damage Debt Calibration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - calibration/results-matrix-v15-damage-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Compile common module
+        run: mvn -B -ntp -pl common -am -DskipTests compile
+
+      - name: Sweep tactical damage debt
+        run: |
+          set -o pipefail
+          : > damage-debt-sweep.log
+          for debt in 0.25 0.50 0.75 1.00; do
+            echo "===== DEBT ${debt} =====" | tee -a damage-debt-sweep.log
+            mvn -B -ntp -pl common -am \
+              -Dtest=TacticalDamageDebtSweepTest \
+              -Dmonstermaze.tactical.damageDebtPerFourHealth=${debt} \
+              -Dsurefire.useFile=false \
+              -Dsurefire.redirectTestOutputToFile=false \
+              -Dsurefire.failIfNoSpecifiedTests=false \
+              test 2>&1 | tee -a damage-debt-sweep.log
+          done
+          test -s damage-debt-sweep.log
+
+      - name: Select calibrated debt value
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path('damage-debt-sweep.log').read_text(encoding='utf-8', errors='replace')
+          rows = []
+          pattern = re.compile(r'DAMAGE_DEBT_SWEEP_SUMMARY debt=([0-9.]+) cases=(\d+) stageSum=(\d+) completed=(\d+)')
+          for m in pattern.finditer(text):
+              rows.append({
+                  'debt': float(m.group(1)),
+                  'cases': int(m.group(2)),
+                  'stageSum': int(m.group(3)),
+                  'completed': int(m.group(4)),
+              })
+          if len(rows) != 4:
+              raise SystemExit(f'expected 4 sweep summaries, found {len(rows)}')
+          rows.sort(key=lambda r: (-r['stageSum'], -r['completed'], r['debt']))
+          best = rows[0]
+          print('SWEEP_RESULT=' + str(rows))
+          print(f"SELECTED_DAMAGE_DEBT={best['debt']:.2f}")
+          Path('selected-damage-debt.txt').write_text(f"{best['debt']:.2f}\n", encoding='utf-8')
+          Path('damage-debt-sweep-summary.json').write_text(
+              __import__('json').dumps({'candidates': rows, 'selected': best}, indent=2) + '\n',
+              encoding='utf-8')
+          PY
+
+      - name: Run full 15 Speed + 15 Modern matrix with calibrated debt
+        run: |
+          debt=$(cat selected-damage-debt.txt)
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dmonstermaze.tactical.damageDebtPerFourHealth=${debt} \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee calibrated-full-matrix.log
+
+      - name: Summarize calibrated matrix
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          text = Path('calibrated-full-matrix.log').read_text(encoding='utf-8', errors='replace')
+          rx = re.compile(r'(SPEED_FULL_RUN|MODERN_FULL_RUN) pattern=(\d+) kit=([A-Z_]+) maxStage=(\d+) ticks=(\d+) health=([-\d.]+)')
+          rows = []
+          for m in rx.finditer(text):
+              rows.append({'mode':m.group(1).split('_')[0],'pattern':int(m.group(2)),'kit':m.group(3),'maxStage':int(m.group(4)),'ticks':int(m.group(5)),'health':float(m.group(6))})
+          if len(rows) != 30:
+              raise SystemExit(f'expected 30 matrix rows, found {len(rows)}')
+          baseline = json.loads(Path('docs/calibration/results-matrix-v12.json').read_text(encoding='utf-8'))
+          base = {(x['mode'],x['pattern'],x['kit']):x['maxStage'] for x in baseline['rows']}
+          for r in rows:
+              r['baselineMaxStage']=base[(r['mode'],r['pattern'],r['kit'])]
+              r['deltaMaxStage']=r['maxStage']-r['baselineMaxStage']
+          summary={
+            'selectedDamageDebtPerFourHealth': float(Path('selected-damage-debt.txt').read_text()),
+            'cases':len(rows),
+            'stageSum':sum(r['maxStage'] for r in rows),
+            'baselineStageSum':sum(base.values()),
+            'improvedCells':sum(r['deltaMaxStage']>0 for r in rows),
+            'worsenedCells':sum(r['deltaMaxStage']<0 for r in rows),
+            'unchangedCells':sum(r['deltaMaxStage']==0 for r in rows),
+            'rows':rows,
+          }
+          Path('calibrated-matrix-summary.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps({k:v for k,v in summary.items() if k!='rows'},indent=2))
+          PY
+
+      - name: Upload calibration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-v15-damage-calibration-${{ github.sha }}
+          path: |
+            damage-debt-sweep.log
+            damage-debt-sweep-summary.json
+            selected-damage-debt.txt
+            calibrated-full-matrix.log
+            calibrated-matrix-summary.json
+          if-no-files-found: warn

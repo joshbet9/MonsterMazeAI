@@ -89,7 +89,12 @@ public final class StableLiveMovementController {
     private static final double MAX_TURNING_SPEED = 0.035;
     /** Begin acquiring the next cardinal heading before the corner while enough momentum remains. */
     private static final double CORNER_PREP_MIN_LEAD = 0.35D;
-    private static final double CORNER_PREP_MAX_LEAD = 1.60D;
+    /*
+     * Do not cap braking below the source-physics stopping distance. At 0.25
+     * blocks/tick, vanilla 1.8 ground friction needs about 2.8 blocks of coast
+     * to dissipate momentum, so a 1.6-block cap still permits corner overshoot.
+     */
+    private static final double CORNER_PREP_MAX_LEAD = 3.25D;
     private static final double CORNER_PREP_RELEASE = 0.08D;
     private static final double CORNER_STAGED_SPEED = 0.035D;
     /** Do not attempt lane recovery once the player is already near the cell edge. */

@@ -644,6 +644,9 @@ class StableLiveMovementControllerTest {
         s.tick = 2;
 
         boolean sawWorldBacktrack = false;
+        long backtrackTick = -1;
+        Action backtrackAction = null;
+        double backtrackProgress = 0.0D;
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false);
 
@@ -659,8 +662,11 @@ class StableLiveMovementControllerTest {
             double worldZ = (Math.cos(yaw) * action.forward())
                     + (Math.sin(yaw) * action.strafe());
             double goalProgress = worldX + worldZ;
-            if (goalProgress < -1.0E-6) {
+            if (goalProgress < -1.0E-6 && !sawWorldBacktrack) {
                 sawWorldBacktrack = true;
+                backtrackTick = s.tick;
+                backtrackAction = action;
+                backtrackProgress = goalProgress;
             }
 
             physics.tick(s.player, action, s.maze, 0);
@@ -670,8 +676,11 @@ class StableLiveMovementControllerTest {
         }
 
         assertFalse(sawWorldBacktrack,
-                "corner recovery emitted world-space backtracking: "
-                        + controller.lastDecisionDetail());
+                "corner recovery emitted world-space backtracking"
+                        + " tick=" + backtrackTick
+                        + " action=" + backtrackAction
+                        + " progress=" + backtrackProgress
+                        + " detail=" + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);

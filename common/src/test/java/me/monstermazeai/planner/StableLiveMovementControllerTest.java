@@ -481,6 +481,44 @@ class StableLiveMovementControllerTest {
 
 
     @Test
+    void cancelsCornerCommitmentWhenPhysicsReversesTheCurrentSegment() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        boolean sawCornerPrep = false;
+        for (int tick = 1; tick <= 120; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")) {
+                sawCornerPrep = true;
+
+                // Simulate a post-commit physics reversal, such as a monster
+                // bump, before the actual corner is crossed.
+                s.player.vz = -0.12D;
+                s.player.vx = 0.0D;
+                s.tick++;
+                Action recovery = controller.nextAction(s, new Cell(8, 8), false);
+
+                assertFalse(controller.lastDecisionDetail().contains("CORNER_PREP"),
+                        "stale corner commitment survived a reversed segment: "
+                                + controller.lastDecisionDetail());
+                assertTrue(Math.abs(recovery.forward()) > 1.0E-6
+                                || Math.abs(recovery.strafe()) > 1.0E-6
+                                || Math.abs(recovery.yawDelta()) > 1.0E-6,
+                        "reversed segment produced no recovery command: "
+                                + controller.lastDecisionDetail());
+                return;
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+        }
+
+        assertTrue(sawCornerPrep,
+                "test never reached predictive corner staging");
+    }
+
+    @Test
     void advancesWhenPhysicsHasCrossedCornerByOnlyTwoCentimetres() {
         GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

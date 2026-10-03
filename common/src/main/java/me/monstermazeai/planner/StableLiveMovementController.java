@@ -430,6 +430,29 @@ public final class StableLiveMovementController {
             }
         }
 
+        /*
+         * A background/recovery route can be installed while the player is still
+         * physically on an earlier cell of that same route. The waypoint index is
+         * intentionally a turn/goal index, so distance-to-waypoint alone cannot
+         * detect this case: the player may be two or three cells before the next
+         * corner while still being perfectly on the route corridor. Rebase the
+         * motor to the next turn from the actually supported route cell before
+         * computing the lane anchor. This prevents a future perpendicular segment
+         * from being mistaken for a lateral lane error and avoids the resulting
+         * EDGE_GUARD zero-input loop.
+         */
+        int supportedRouteIndex = route.cells().indexOf(supportedCell);
+        if (supportedRouteIndex >= 0 && supportedRouteIndex < waypointIndex - 1) {
+            int rebasedWaypoint = nextTurnWaypoint(route, supportedRouteIndex);
+            if (rebasedWaypoint < waypointIndex) {
+                waypointIndex = rebasedWaypoint;
+                anchoredSegmentIndex = -1;
+                lastDecisionDetail += " WAYPOINT_REBASE"
+                        + " supportIndex=" + supportedRouteIndex
+                        + " waypoint=" + waypointIndex;
+            }
+        }
+
         if (waypointIndex >= route.size()) {
             lastDecisionDetail = "REACHED routeSize=" + route.size();
             return Action.IDLE;

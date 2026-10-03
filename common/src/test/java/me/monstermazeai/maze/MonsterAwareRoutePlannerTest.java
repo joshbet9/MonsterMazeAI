@@ -228,6 +228,27 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void fastRoutingWakesThreatAwareSearchForAFarMovingMonster() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.vx = 0.20;
+        state.player.vz = 0.0;
+
+        MonsterState incoming = new MonsterState(32, 0.5, 0.0, 30.5);
+        incoming.vx = 0.0;
+        incoming.vz = -0.20;
+        state.monsters.add(incoming);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeFast(state, new Cell(0, 0), new Cell(0, 20));
+
+        assertFalse(route.cells().stream().allMatch(cell -> cell.row() == 0),
+                "a far incoming monster should make bootstrap routing consider a detour");
+    }
+
+    @Test
     void threatAwarePathfinderAvoidsAProjectedMonsterCrossing() {
         GameState state = new GameState();
         state.maze = openMaze();

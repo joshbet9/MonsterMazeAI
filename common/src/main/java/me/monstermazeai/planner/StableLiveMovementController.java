@@ -1986,6 +1986,17 @@ public final class StableLiveMovementController {
             strafe /= magnitude;
         }
 
+        /*
+         * Once support has already been lost, backward input is usually the
+         * wrong recovery primitive: it keeps the camera pointed away from the
+         * nearest live floor while the player is falling. Preserve lateral
+         * air-control toward the support target and let yaw correction bring
+         * the camera around instead of issuing a reverse-drive command.
+         */
+        if (forward < 0.0D) {
+            forward = 0.0D;
+        }
+
         boolean emergencyJump = allowJump
                 && state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && state.ability.charges > 0

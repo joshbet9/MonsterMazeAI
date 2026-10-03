@@ -1452,6 +1452,7 @@ public final class StableLiveMovementController {
         return Math.abs(lateral) <= 0.65D;
     }
 
+    // route-stability candidate validation: suppress false whole-route recovery churn.
     private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
         if (route == null || route.size() < 2
                 || targetIndex <= 0 || targetIndex >= route.size()) return 0.0D;

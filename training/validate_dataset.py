@@ -12,6 +12,13 @@ from pathlib import Path
 
 FEATURE_COUNT = 96
 PROFILE_COUNT = 17
+KIT_ORDINAL = {
+    "JUMPER": 0,
+    "SLOWBALLER": 1,
+    "BODY_BUILDER": 2,
+    "REPULSOR": 3,
+    "MAVERICK": 4,
+}
 
 
 def finite_number(value):
@@ -44,6 +51,7 @@ def main() -> int:
     nonzero_yaw = 0
     topology_missing = 0
     competitor_nonzero = 0
+    kit_feature_mismatch = 0
 
     with args.dataset.open("r", encoding="utf-8") as handle:
         for line_number, raw in enumerate(handle, 1):
@@ -104,8 +112,14 @@ def main() -> int:
                     nonzero_yaw += 1
 
             run = str(row.get("run", "UNKNOWN"))
-            kit = str(row.get("kit", "UNKNOWN"))
-            mode = str(row.get("mode", "UNKNOWN"))
+            kit = str(row.get("kit", "UNKNOWN")).upper()
+            mode = str(row.get("mode", "UNKNOWN")).upper()
+
+            if isinstance(observation, list) and len(observation) >= 24 and kit in KIT_ORDINAL:
+                expected_kit = KIT_ORDINAL[kit] / 4.0
+                if abs(float(observation[23]) - expected_kit) > 1e-7:
+                    problems.append("kit_feature_mismatch")
+                    kit_feature_mismatch += 1
             stage = int(row.get("stage", 0) or 0)
 
             runs[run] += 1
@@ -144,6 +158,7 @@ def main() -> int:
     print(f"nonzeroYawRows={nonzero_yaw}")
     print(f"topologyMissingRows={topology_missing}")
     print(f"competitorNonzeroRows={competitor_nonzero}")
+    print(f"kitFeatureMismatchRows={kit_feature_mismatch}")
     print("stages=" + json.dumps(dict(sorted(stages.items())), sort_keys=True))
 
     if rows == 0 or bad:

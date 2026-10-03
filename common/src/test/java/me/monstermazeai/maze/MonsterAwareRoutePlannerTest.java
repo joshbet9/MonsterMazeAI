@@ -228,6 +228,35 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void fullRoutingKeepsFarThreatAwareAlternativeAvailableForStrategicReplanning() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.vx = 0.20;
+        state.player.vz = 0.0;
+
+        MonsterState incoming = new MonsterState(33, 0.5, 0.0, 30.5);
+        incoming.vx = 0.0;
+        incoming.vz = -0.20;
+        state.monsters.add(incoming);
+
+        MonsterAwareRoutePlanner planner = new MonsterAwareRoutePlanner();
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "cachedCandidatesFor", GameState.class, Cell.class, Cell.class,
+                int.class, int.class, boolean.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<PlayerRoute> candidates = (List<PlayerRoute>) method.invoke(
+                planner, state, new Cell(0, 0), new Cell(0, 20), 0, 8, false);
+
+        assertTrue(candidates.stream().anyMatch(
+                route -> route.cells().stream().anyMatch(cell -> cell.row() != 0)),
+                "far projected threats must survive into the strategic planner candidate set");
+    }
+
+    @Test
     void fastRoutingWakesThreatAwareSearchForAFarMovingMonster() {
         GameState state = new GameState();
         state.maze = openMaze();

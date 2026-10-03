@@ -360,8 +360,19 @@ public final class StableLiveMovementController {
             scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
-            boolean routeInvalid = (!gapExecutionActive && !route.cells().contains(new Cell(startRow, startColumn)))
-                    || (!gapExecutionActive && distanceFromRouteCorridor(state, route, waypointIndex) > ROUTE_DEVIATION);
+            Cell supportedCell = new Cell(startRow, startColumn);
+            boolean supportedCellOnRoute = route.cells().contains(supportedCell);
+            /*
+             * Continuous Minecraft momentum can move the player's centre away from
+             * the exact route centreline while the 0.6-wide AABB still overlaps the
+             * intended route cell. The supported logical cell is therefore the
+             * topology test; current-segment deviation is the physical correction
+             * guard. Avoid rebuilding the route merely because the player is
+             * temporarily offset inside the same supported corridor.
+             */
+            boolean routeInvalid = !gapExecutionActive
+                    && (!supportedCellOnRoute
+                    || currentSegmentDeviation(state, route, waypointIndex) > 1.10D);
 
             if (routeInvalid) {
                 /*
@@ -1446,6 +1457,62 @@ public final class StableLiveMovementController {
                 toRow + 0.5D, toColumn + 0.5D,
                 dirRow, dirColumn);
         return Math.abs(lateral) <= 0.65D;
+    }
+
+    private double currentSegmentDeviation(GameState state, PlayerRoute route, int targetIndex) {
+        if (route == null || route.size() < 2
+                || targetIndex <= 0 || targetIndex >= route.size()) return 0.0D;
+
+        List<Cell> cells = route.cells();
+        Cell from = cells.get(targetIndex - 1);
+        Cell to = cells.get(targetIndex);
+        int rowDirection = Integer.signum(to.row() - from.row());
+        int columnDirection = Integer.signum(to.column() - from.column());
+        int segmentLength = Math.abs(to.row() - from.row())
+                + Math.abs(to.column() - from.column());
+        if (Math.abs(rowDirection) + Math.abs(columnDirection) != 1) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        int runStart = targetIndex - 1;
+        while (runStart > 0) {
+            Cell previous = cells.get(runStart - 1);
+            Cell current = cells.get(runStart);
+            int previousRowDirection = Integer.signum(current.row() - previous.row());
+            int previousColumnDirection = Integer.signum(current.column() - previous.column());
+            int previousLength = Math.abs(current.row() - previous.row())
+                    + Math.abs(current.column() - previous.column());
+            if (previousRowDirection != rowDirection
+                    || previousColumnDirection != columnDirection
+                    || previousLength != segmentLength) {
+                break;
+            }
+            runStart--;
+        }
+
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = runStart; i < targetIndex; i++) {
+            Cell a = cells.get(i);
+            Cell b = cells.get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double dx = bx - ax;
+            double dz = bz - az;
+            double lengthSquared = dx * dx + dz * dz;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double px = state.player.x - ax;
+            double pz = state.player.z - az;
+            double projection = (px * dx + pz * dz) / lengthSquared;
+            projection = Math.max(0.0D, Math.min(1.0D, projection));
+            double nearestX = ax + projection * dx;
+            double nearestZ = az + projection * dz;
+            best = Math.min(best, Math.hypot(
+                    state.player.x - nearestX, state.player.z - nearestZ));
+        }
+        return best == Double.POSITIVE_INFINITY ? 0.0D : best;
     }
 
     private double distanceFromRouteCorridor(GameState state, PlayerRoute route, int targetIndex) {

@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -239,12 +240,9 @@ class StableLiveMovementControllerTest {
         s.player.yaw = -2.0F;
         s.tick = 2;
         Action second = controller.nextAction(s, new Cell(0, 8), false);
-        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0);
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
+                "the live motor must continue controlling while the strategic planner evaluates in the background");
         assertFalse(controller.lastDecisionDetail().contains("BOOTSTRAP_FACING"));
-
-
-        s.tick = 2;
-        Action second = controller.nextAction(s, new Cell(0, 8), false);
         assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
                 "the live motor must continue controlling while the strategic planner evaluates in the background");
         assertFalse(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),

@@ -6,6 +6,11 @@ on:
     branches:
       - feature/seamless-physics-movement-v1
       - architecture/cpu-opponents-v2
+    paths:
+      - 'common/**'
+      - 'common-api/**'
+      - 'pom.xml'
+      - '**/pom.xml'
   pull_request:
     branches:
       - main

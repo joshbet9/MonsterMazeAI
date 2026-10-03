@@ -12,6 +12,8 @@ from typing import Iterable
 
 import numpy as np
 
+from human_policy_v2 import split_by_run
+
 
 SCHEMA_VERSION = 2
 FEATURE_COUNT = 96
@@ -211,15 +213,15 @@ def main() -> int:
     model = load_model(Path(args.model))
     target, prediction = predict(model, rows)
 
-    validation_runs = set(
-        str(value)
-        for value in model.get("training", {}).get("validation_runs", [])
+    training_meta = model.get("training", {})
+    seed = int(training_meta.get("seed", 1337))
+    validation_fraction = float(training_meta.get("validation_fraction", 0.20))
+    _, _, validation_run_list = split_by_run(
+        rows,
+        validation_fraction,
+        seed,
     )
-    if not validation_runs:
-        # The training artifact historically stores validation_runs outside the
-        # training object only in console output. Treat all rows as all-data and
-        # report run-level results without pretending to have a holdout split.
-        validation_runs = set()
+    validation_runs = set(validation_run_list)
 
     all_metrics = metrics(target, prediction)
     holdout_indices = [

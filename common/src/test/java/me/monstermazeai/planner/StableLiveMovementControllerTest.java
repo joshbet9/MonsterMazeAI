@@ -568,15 +568,19 @@ class StableLiveMovementControllerTest {
         s.player.vz = 0.08D;
         s.player.vx = 0.0D;
         s.player.grounded = true;
-        // Establish the physical route/lane anchor first, then introduce the
-        // lateral drift that the recovery branch must correct.
+        // Establish the physical route/lane anchor first. The async route
+        // result may arrive on the next observation, so give it one more tick
+        // before introducing the lateral drift.
         s.tick = 1;
         controller.nextAction(s, new Cell(8, 8), false);
+        s.tick = 2;
+        controller.nextAction(s, new Cell(8, 8), false);
+
         s.player.x = 2.75D;
         s.player.z = 2.50D;
         s.player.vz = 0.08D;
         s.player.vx = 0.0D;
-        s.tick = 2;
+        s.tick = 3;
 
         Action action = controller.nextAction(s, new Cell(8, 8), false);
 
@@ -652,6 +656,40 @@ class StableLiveMovementControllerTest {
 
         assertTrue(controller.lastDecisionDetail().contains("dir=1,0"),
                 controller.lastDecisionDetail());
+    }
+
+    @Test
+    void finalApproachBrakesBeforeHighMomentumCarriesPastGoal() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // Put the player on the final +X segment with substantial residual
+        // vanilla momentum and still outside the terminal goal surface.
+        s.player.x = 7.0D;
+        s.player.z = 8.5D;
+        s.player.vx = 0.20D;
+        s.player.vz = 0.0D;
+        s.player.yaw = -90.0F;
+        s.player.grounded = true;
+        s.player.y = 0.0D;
+
+        for (int tick = 2; tick <= 10; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+            if (action.forward() == 0.0D && action.strafe() == 0.0D) {
+                assertTrue(s.player.x < 8.8D,
+                        "final braking engaged too late: " + s.player.x);
+                return;
+            }
+            physics.tick(s.player, action, s.maze, 0);
+        }
+
+        throw new AssertionError("final approach never entered braking: "
+                + controller.lastDecisionDetail());
     }
 
     @Test

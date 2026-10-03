@@ -514,6 +514,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
 
     phase_starts: Dict[int, int] = {}
     rows: List[dict] = []
+    skipped_invalid_observations = 0
 
     for index, tick in enumerate(shared_ticks):
         while topology_next is not None:
@@ -547,6 +548,17 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
         world_row = world[tick]
         movement_row = movement[tick]
         input_row = inputs[tick]
+
+        # The human corpus can contain startup/teardown telemetry before the
+        # observer has a valid Monster Maze centre/cell. Those rows do not have
+        # a meaningful 96-feature maze observation and must not be represented
+        # as nine zero topology values.
+        if (
+            not bool(world_row.get("mazeDetected", False))
+            or find_center(world_row) is None
+        ):
+            skipped_invalid_observations += 1
+            continue
 
         stage = int(world_row.get("stage", 1) or 1)
         phase_remaining = int(finite(world_row.get("phaseTimerSeconds"), 0.0))
@@ -655,6 +667,7 @@ def build_run_dataset(root: Path, prefix: str) -> Tuple[List[dict], dict]:
         "kit": kit,
         "mode": mode,
         "rows": len(rows),
+        "skippedInvalidObservations": skipped_invalid_observations,
         "firstTick": shared_ticks[0] if shared_ticks else None,
         "lastTick": shared_ticks[-1] if shared_ticks else None,
         "reachedStage": None,
@@ -729,11 +742,13 @@ def main() -> int:
         return 0
 
     total_rows = 0
+    skipped_invalid_observations = 0
     dataset_meta: List[dict] = []
     with args.output.open("w", encoding="utf-8", newline="\n") as handle:
         for item in catalog:
             rows, meta = build_run_dataset(root, item["run"])
             total_rows += len(rows)
+            skipped_invalid_observations += int(meta.get("skippedInvalidObservations", 0) or 0)
             dataset_meta.append(meta)
             for row in rows:
                 handle.write(
@@ -747,6 +762,7 @@ def main() -> int:
     print(f"profileCount={PROFILE_COUNT}")
     print(f"runs={len(catalog)}")
     print(f"rows={total_rows}")
+    print(f"skippedInvalidObservations={skipped_invalid_observations}")
     print(f"output={args.output}")
     return 0
 

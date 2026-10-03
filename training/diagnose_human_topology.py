@@ -257,7 +257,13 @@ def main() -> int:
             f"ageTicks={row.get('topologyAgeTicks')}"
         )
         print(
-            f"SNAPSHOT tick={snapshot['tick']} stage={snapshot['stage']} "
+            f"DATASET_TOPOLOGY source={row.get('topologySource')} "
+            f"snapshotTick={row.get('topologySnapshotTick')} "
+            f"snapshotStage={row.get('topologySnapshotStage')} "
+            f"ageTicks={row.get('topologyAgeTicks')}"
+        )
+        print(
+            f"RAW_SNAPSHOT tick={snapshot['tick']} stage={snapshot['stage']} "
             f"physicalAvailable={snapshot['physicalFloor'] is not None}"
         )
         print(f"LOGICAL 3x3={matrix3(snapshot['maze'], nav_row_idx, nav_col_idx)}")

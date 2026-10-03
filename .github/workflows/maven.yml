@@ -74,8 +74,44 @@ jobs:
 
           Path("common/target/full-results-matrix.json").write_text(
               json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+
+          baseline_path = Path("docs/calibration/results-matrix-v12.json")
+          baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+          base = {
+              (r["mode"], r["pattern"], r["kit"]): r["maxStage"]
+              for r in baseline["rows"]
+          }
+          comparisons = []
+          for row in rows:
+              key = (row["mode"], row["pattern"], row["kit"])
+              if key in base:
+                  comparisons.append({
+                      **row,
+                      "baselineMaxStage": base[key],
+                      "deltaMaxStage": row["maxStage"] - base[key],
+                  })
+
+          comparison = {
+              "baseline": "v12",
+              "cases": len(comparisons),
+              "improvedCells": sum(x["deltaMaxStage"] > 0 for x in comparisons),
+              "worsenedCells": sum(x["deltaMaxStage"] < 0 for x in comparisons),
+              "unchangedCells": sum(x["deltaMaxStage"] == 0 for x in comparisons),
+              "stageSumBaseline": sum(base[(x["mode"], x["pattern"], x["kit"])] for x in comparisons),
+              "stageSumCurrent": sum(x["maxStage"] for x in comparisons),
+              "rows": sorted(comparisons, key=lambda x: (x["mode"], x["pattern"], x["kit"])),
+          }
+          Path("common/target/full-results-matrix-v12-comparison.json").write_text(
+              json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps({
+              "improvedCells": comparison["improvedCells"],
+              "worsenedCells": comparison["worsenedCells"],
+              "unchangedCells": comparison["unchangedCells"],
+              "stageSumBaseline": comparison["stageSumBaseline"],
+              "stageSumCurrent": comparison["stageSumCurrent"],
+          }, indent=2))
           assert len(rows) == 30, f"expected 30 matrix rows, found {len(rows)}"
-          print(json.dumps(summary["byMode"], indent=2))
+          assert len(comparisons) == 30, f"expected 30 baseline matches, found {len(comparisons)}"
           PY
 
       - name: Upload full matrix evidence
@@ -86,6 +122,7 @@ jobs:
           path: |
             common/target/full-results-matrix.log
             common/target/full-results-matrix.json
+            common/target/full-results-matrix-v12-comparison.json
           if-no-files-found: warn
 
       - name: First-pad deterministic physics simulation

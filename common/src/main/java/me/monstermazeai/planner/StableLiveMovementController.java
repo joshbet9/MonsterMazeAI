@@ -40,14 +40,24 @@ import java.util.concurrent.Future;
  */
 public final class StableLiveMovementController {
     private final AiProfile profile;
+    private final boolean backgroundPlanningEnabled;
 
     public StableLiveMovementController() {
-        this(AiProfile.BASELINE);
+        this(AiProfile.BASELINE, true);
     }
 
     public StableLiveMovementController(AiProfile profile) {
+        this(profile, true);
+    }
+
+    StableLiveMovementController(boolean backgroundPlanningEnabled) {
+        this(AiProfile.BASELINE, backgroundPlanningEnabled);
+    }
+
+    StableLiveMovementController(AiProfile profile, boolean backgroundPlanningEnabled) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        this.backgroundPlanningEnabled = backgroundPlanningEnabled;
     }
 
     public AiProfile profile() {
@@ -843,6 +853,7 @@ public final class StableLiveMovementController {
     }
 
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
+        if (!backgroundPlanningEnabled) return;
         if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
 
         GameState snapshot = liveState.copyForSimulation();

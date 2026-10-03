@@ -35,7 +35,7 @@ jobs:
       - name: Install common-api
         run: mvn -B -ntp -pl common-api -am install -DskipTests
       - name: Run focused movement suite
-        run: mvn -B -ntp -pl common "-Dtest=StableLiveMovementControllerTest" "-Dmonstermaze.sim.deterministic=true" test
+        run: mvn -B -ntp -pl common "-Dtest=StableLiveMovementControllerTest" test
 
   full-matrix:
     name: Full natural-termination matrix

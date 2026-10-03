@@ -97,6 +97,52 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void dynamicThreatRiskPredictsMovingMonsterAcrossNearTermRoute() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.tick = 100;
+
+        MonsterState moving = new MonsterState(9, 0.5, 0.0, 2.5);
+        moving.vz = 0.20;
+        state.monsters.add(moving);
+
+        PlayerRoute exposed = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2),
+                new Cell(0, 3), new Cell(0, 4), new Cell(0, 5)));
+        PlayerRoute alternate = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(1, 0), new Cell(2, 0),
+                new Cell(3, 0), new Cell(4, 0), new Cell(5, 0)));
+
+        MonsterAwareRoutePlanner planner = new MonsterAwareRoutePlanner();
+        double exposedRisk = planner.dynamicThreatRisk(state, exposed);
+        double alternateRisk = planner.dynamicThreatRisk(state, alternate);
+
+        assertTrue(exposedRisk > alternateRisk + 0.05D,
+                "predictive risk should distinguish the moving threat: exposed="
+                        + exposedRisk + " alternate=" + alternateRisk);
+    }
+
+    @Test
+    void dynamicThreatRiskIgnoresMonstersOutsideLocalInteractionEnvelope() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+
+        MonsterState distant = new MonsterState(10, 30.5, 0.0, 0.5);
+        distant.vz = -2.0;
+        state.monsters.add(distant);
+
+        PlayerRoute route = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2)));
+
+        double risk = new MonsterAwareRoutePlanner().dynamicThreatRisk(state, route);
+        assertEquals(0.0D, risk, 1.0e-9);
+    }
+
+    @Test
     void usefulKnockbackIsNotPenalizedAsAThreat() {
         GameState state = new GameState();
         state.maze = openMaze();

@@ -521,52 +521,6 @@ public final class StableLiveMovementController {
         double speed = Math.hypot(state.player.vx, state.player.vz);
 
         /*
-         * Immediately redirect residual post-corner momentum into the current
-         * cardinal segment. This is intentionally world-cardinal and therefore
-         * cannot cut diagonally through an air cell.
-         */
-        if ((crossedCornerThisTick || postCornerRedirectTicks > 0)
-                && Math.abs(yawError) > HEADING_TOLERANCE
-                && Math.abs(yawError) <= 135.0F
-                && distance <= 6.50D) {
-            double errorRad = Math.toRadians(yawError);
-            double forward = Math.cos(errorRad) * POST_CORNER_REDIRECT_DRIVE;
-            double strafe = -Math.sin(errorRad) * POST_CORNER_REDIRECT_DRIVE;
-            boolean jump = shouldSpeedJump(state, allowJump);
-            action = new Action(forward, strafe, jump, false,
-                    clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
-                    false);
-            lastDecisionDetail += " POST_CORNER_REDIRECT";
-            postCornerRedirectTicks = Math.max(0, postCornerRedirectTicks - 1);
-
-            if (!gapExecutionActive) {
-                Action guarded = guardProjectedSupport(
-                        state, action, dirRow, dirColumn);
-                if (guarded != action) {
-                    lastDecisionDetail += " EDGE_GUARD";
-                    action = guarded;
-                }
-            }
-
-            lastDecisionDetail += " waypoint=" + waypointIndex + "/" + (route.size() - 1)
-                    + " target=" + targetX + "," + targetZ
-                    + " dist=" + format(distance)
-                    + " dir=" + dirRow + "," + dirColumn
-                    + " yawError=" + format(yawError)
-                    + " crossTrack=" + format(crossTrack)
-                    + " speed=" + format(speed)
-                    + " output=f=" + action.forward()
-                    + ",s=" + action.strafe()
-                    + ",jump=" + action.jump()
-                    + ",yawDelta=" + action.yawDelta();
-            return action;
-        }
-
-        if (postCornerRedirectTicks > 0) {
-            postCornerRedirectTicks = Math.max(0, postCornerRedirectTicks - 1);
-        }
-
-        /*
          * Keep the player on the route's cell centreline. Normally this error
          * is tiny. If physics nudges the player sideways inside the current
          * floor cell, briefly correct toward that centre before resuming the
@@ -602,11 +556,42 @@ public final class StableLiveMovementController {
                 state.player.x, state.player.z, laneAnchorX, laneAnchorZ,
                 dirRow, dirColumn);
 
+        /*
+         * Immediately redirect residual post-corner momentum into the current
+         * cardinal segment. This is intentionally world-cardinal and runs
+         * before predictive preparation for a later turn, because the immediate
+         * segment has not yet had time to acquire its new camera heading.
+         */
+        Action postCornerRedirect = null;
+        if ((crossedCornerThisTick || postCornerRedirectTicks > 0)
+                && Math.abs(yawError) > HEADING_TOLERANCE
+                && Math.abs(yawError) <= 135.0F
+                && distance <= 6.50D) {
+            double errorRad = Math.toRadians(yawError);
+            double forward = Math.cos(errorRad) * POST_CORNER_REDIRECT_DRIVE;
+            double strafe = -Math.sin(errorRad) * POST_CORNER_REDIRECT_DRIVE;
+            boolean jump = shouldSpeedJump(state, allowJump);
+            postCornerRedirect = new Action(
+                    forward,
+                    strafe,
+                    jump,
+                    false,
+                    clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
+                    false);
+            lastDecisionDetail += " POST_CORNER_REDIRECT"
+                    + " drive=" + format(POST_CORNER_REDIRECT_DRIVE);
+            postCornerRedirectTicks = Math.max(0, postCornerRedirectTicks - 1);
+        } else if (postCornerRedirectTicks > 0) {
+            postCornerRedirectTicks = Math.max(0, postCornerRedirectTicks - 1);
+        }
+
         Action cornerPreparation = maybePrepareUpcomingTurn(
                 state, waypointIndex, dirRow, dirColumn, speed, crossTrack);
         Action action;
 
-        if (cornerPreparation != null) {
+        if (postCornerRedirect != null) {
+            action = postCornerRedirect;
+        } else if (cornerPreparation != null) {
             action = cornerPreparation;
         } else if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
             /*

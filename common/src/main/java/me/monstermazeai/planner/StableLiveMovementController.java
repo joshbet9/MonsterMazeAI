@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
  */
 public final class StableLiveMovementController {
     // Matrix trigger: validate the bounded corner-drive experiment.
+    // Best-speed19 behavior replay enabled.
     // Behavior workflow trigger after lab harness correction. 1791021083676
     private final AiProfile profile;
 

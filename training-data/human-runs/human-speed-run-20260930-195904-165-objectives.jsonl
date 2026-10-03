@@ -1,0 +1,2 @@
+{"recordType":"header","jsonVersion":2,"stream":"objectives"}
+{"tick":14010155,"stage":1,"safePadSeconds":60,"activePad":{"row":83,"column":27,"distanceSq":1629.5,"reached":false},"beacons":[{"row":83,"column":27,"x":34,"y":63,"z":-22,"active":true,"previewCandidate":false}],"note":"Beacon scan is performed only near the preview/transition window."}

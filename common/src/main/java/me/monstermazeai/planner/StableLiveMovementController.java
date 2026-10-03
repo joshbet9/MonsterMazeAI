@@ -912,7 +912,8 @@ public final class StableLiveMovementController {
          * producing alternating first headings and left/right oscillation.
          */
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)) {
+                state, planned.route, startRow, startColumn)
+                && !currentRouteThreatenedByMonster(state)) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -931,6 +932,63 @@ public final class StableLiveMovementController {
                 + " plannedTick=" + planned.requestedTick;
         fullRouteEvaluationPending = false;
         lastTacticalSignature = Long.MIN_VALUE;
+    }
+
+    /*
+     * A strategic route is allowed to change the immediate heading when the
+     * current route is itself exposed to a nearby, advancing monster. Without
+     * this exception, the live motor can keep the old cardinal segment solely
+     * to preserve heading continuity, then repeatedly recover from the same
+     * threat until the phase timer expires.
+     */
+    private boolean currentRouteThreatenedByMonster(GameState state) {
+        if (route == null || route.size() < 2
+                || waypointIndex <= 0 || waypointIndex >= route.size()) return false;
+
+        int firstSegment = Math.max(0, waypointIndex - 1);
+        int lastSegment = Math.min(route.size() - 2, firstSegment + 8);
+
+        for (int i = firstSegment; i <= lastSegment; i++) {
+            Cell a = route.cells().get(i);
+            Cell b = route.cells().get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double sx = bx - ax;
+            double sz = bz - az;
+            double lenSq = sx * sx + sz * sz;
+            if (lenSq <= 1.0E-9D) continue;
+
+            double px = state.player.x - ax;
+            double pz = state.player.z - az;
+            double projection = Math.max(0.0D, Math.min(1.0D,
+                    (px * sx + pz * sz) / lenSq));
+            double nearestX = ax + projection * sx;
+            double nearestZ = az + projection * sz;
+
+            for (MonsterState monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+                double distanceToRoute = Math.hypot(
+                        monster.x - nearestX, monster.z - nearestZ);
+                if (distanceToRoute > 1.45D) continue;
+
+                double dx = monster.x - state.player.x;
+                double dz = monster.z - state.player.z;
+                double distance = Math.hypot(dx, dz);
+                if (distance > 2.60D || distance < 0.05D) continue;
+
+                double closing = -(monster.vx * dx + monster.vz * dz)
+                        / Math.max(distance, 1.0E-6D);
+                double aheadAlong = dx * sx + dz * sz;
+                if (aheadAlong <= -0.25D && i == firstSegment) continue;
+
+                if (closing > 0.0D || distance <= 1.15D) return true;
+            }
+        }
+        return false;
     }
 
     private static final class PlannedRoute {

@@ -566,7 +566,7 @@ public final class StableLiveMovementController {
 
             if (cornerPreparation != null) {
                 action = cornerPreparation;
-        } else if (Math.abs(crossTrack) > 0.18) {
+            } else if (Math.abs(crossTrack) > 0.18) {
             /*
              * Correct cross-track error without surrendering forward progress.
              * The old controller often stopped to rotate/correct once the player

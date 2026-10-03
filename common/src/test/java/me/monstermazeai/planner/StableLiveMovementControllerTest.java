@@ -711,7 +711,8 @@ class StableLiveMovementControllerTest {
         s.player.y = 0.0;
         s.tick = 2;
 
-        boolean sawReverseWorldInput = false;
+        boolean sawUnexpectedReverseWorldInput = false;
+        boolean sawOvershootBrake = false;
         for (int tick = 0; tick < 80; tick++) {
             Action action = controller.nextAction(s, new Cell(8, 8), false);
             double yawRadians = Math.toRadians(s.player.yaw + action.yawDelta());
@@ -724,10 +725,13 @@ class StableLiveMovementControllerTest {
             double worldZ = forwardWorldZ * action.forward()
                     + strafeWorldZ * action.strafe();
 
-            // The old +Z segment must never receive a negative world-space
-            // component merely because its local W/A/D representation changed.
-            if (worldZ < -1.0E-6) {
-                sawReverseWorldInput = true;
+            if (controller.lastDecisionDetail().contains("CORNER_OVERSHOOT_BRAKE")) {
+                sawOvershootBrake = true;
+                assertTrue(Math.abs(worldZ) <= 0.65D + 1.0E-6,
+                        "overshoot brake was too strong: "
+                                + controller.lastDecisionDetail());
+            } else if (worldZ < -1.0E-6) {
+                sawUnexpectedReverseWorldInput = true;
             }
             physics.tick(s.player, action, s.maze, 0);
 
@@ -735,8 +739,10 @@ class StableLiveMovementControllerTest {
             s.tick++;
         }
 
-        assertFalse(sawReverseWorldInput,
-                "corner recovery emitted reverse world-space input: " + controller.lastDecisionDetail());
+        assertTrue(sawOvershootBrake,
+                "corner overshoot never engaged a momentum brake: " + controller.lastDecisionDetail());
+        assertFalse(sawUnexpectedReverseWorldInput,
+                "corner recovery emitted unexpected reverse world-space input: " + controller.lastDecisionDetail());
         assertTrue(s.player.x > 2.0,
                 "post-corner movement did not acquire the next +X segment: "
                         + s.player.x + "," + s.player.z);

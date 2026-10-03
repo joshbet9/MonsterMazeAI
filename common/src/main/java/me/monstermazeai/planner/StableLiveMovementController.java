@@ -39,6 +39,7 @@ import java.util.concurrent.Future;
  * remains the shortest cardinal route selected by the planner.
  */
 public final class StableLiveMovementController {
+    // Autonomous matrix control checkpoint: known-green movement baseline.
     private final AiProfile profile;
 
     public StableLiveMovementController() {

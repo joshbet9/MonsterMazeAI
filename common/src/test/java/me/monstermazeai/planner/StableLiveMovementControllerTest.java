@@ -464,6 +464,42 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void predictiveCornerTurnKeepsPhysicalDriveActiveWhileYawChanges() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        boolean sawCornerPrep = false;
+        boolean sawDrivenCornerPrep = false;
+
+        for (int tick = 1; tick <= 360; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")) {
+                sawCornerPrep = true;
+                if (Math.hypot(action.forward(), action.strafe()) > 0.1D) {
+                    sawDrivenCornerPrep = true;
+                }
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (!s.player.grounded && s.player.y < -0.25D) {
+                break;
+            }
+            if (sawDrivenCornerPrep && s.player.x > 8.0D) {
+                break;
+            }
+        }
+
+        assertTrue(sawCornerPrep,
+                "test never entered predictive corner preparation");
+        assertTrue(sawDrivenCornerPrep,
+                "predictive corner preparation still stopped physical movement");
+    }
+
+    @Test
     void physicsDrivenLeftTurnBrakesBeforeCornerAndReachesGoal() {
         CornerResult result = simulateCorner(
                 8, 1, 8, 8, 2, 8,

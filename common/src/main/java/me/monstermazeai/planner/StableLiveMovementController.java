@@ -880,6 +880,17 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
+        if (planned.route == null) {
+            /*
+             * The background planner may legitimately fail when a just-disabled
+             * maze surface temporarily leaves no physical candidate. Treat that
+             * as a stale plan and keep the live physical route; never turn a
+             * planner failure into an agent-level null dereference.
+             */
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
         long currentThreat = threatSignature(state);
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn

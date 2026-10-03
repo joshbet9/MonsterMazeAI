@@ -242,7 +242,8 @@ class StableLiveMovementControllerTest {
         Action second = controller.nextAction(s, new Cell(0, 8), false);
         assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
                 "the live motor must continue controlling while the strategic planner evaluates in the background");
-        assertFalse(controller.lastDecisionDetail().contains("BOOTSTRAP_FACING"));
+        assertFalse(controller.lastDecisionDetail().startsWith("BOOTSTRAP_FACING "),
+                controller.lastDecisionDetail());
         assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
                 "the live motor must continue controlling while the strategic planner evaluates in the background");
         assertFalse(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),

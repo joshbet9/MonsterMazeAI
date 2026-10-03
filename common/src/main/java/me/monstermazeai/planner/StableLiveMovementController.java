@@ -539,12 +539,33 @@ public final class StableLiveMovementController {
                 state.player.x, state.player.z, laneAnchorX, laneAnchorZ,
                 dirRow, dirColumn);
 
-        Action cornerPreparation = maybePrepareUpcomingTurn(
-                state, waypointIndex, dirRow, dirColumn, speed, crossTrack);
         Action action;
+        boolean finalApproachBrake = waypointIndex == route.size() - 1
+                && shouldBrakeForFinalApproach(
+                state, distance, closingSpeed(state, dx, dz));
 
-        if (cornerPreparation != null) {
-            action = cornerPreparation;
+        /*
+         * Terminal braking has priority over lane/corner steering. A lateral
+         * recovery vector can otherwise re-accelerate a player who has already
+         * reached the physics-derived braking envelope for the SafePad.
+         */
+        if (finalApproachBrake) {
+            float brakeYawDelta = Math.abs(yawError) <= HEADING_TOLERANCE
+                    ? 0.0F
+                    : clamp(yawError * 0.5F,
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            action = new Action(
+                    0.0, 0.0, false, false, brakeYawDelta, false);
+            lastDecisionDetail += " FINAL_APPROACH_BRAKE"
+                    + " distance=" + format(distance)
+                    + " closingSpeed=" + format(closingSpeed(state, dx, dz))
+                    + " yawDelta=" + format(brakeYawDelta);
+        } else {
+            Action cornerPreparation = maybePrepareUpcomingTurn(
+                    state, waypointIndex, dirRow, dirColumn, speed, crossTrack);
+
+            if (cornerPreparation != null) {
+                action = cornerPreparation;
         } else if (Math.abs(crossTrack) > 0.18) {
             /*
              * Correct cross-track error without surrendering forward progress.
@@ -671,6 +692,8 @@ public final class StableLiveMovementController {
             double forward = brake ? 0.0 : 1.0;
             boolean jump = shouldSpeedJump(state, allowJump);
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
+            }
+
         }
 
         if (!gapExecutionActive

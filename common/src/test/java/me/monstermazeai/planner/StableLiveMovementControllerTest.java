@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -501,6 +502,31 @@ class StableLiveMovementControllerTest {
 
         assertTrue(controller.lastDecisionDetail().contains("dir=1,0"),
                 controller.lastDecisionDetail());
+    }
+
+    @Test
+    void fallbackMobYieldMovesAwayAfterReverseAlignment() {
+        GameState s = state(2.5, 2.5, 180.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.activePadRow = 2;
+        s.activePadColumn = 8;
+
+        // Bootstrap the route once; the next tick exercises live mob avoidance.
+        s.tick = 1;
+        controller.nextAction(s, new Cell(2, 8), false);
+
+        s.maze.setPhysicalFloor(1, 2, false);
+        s.maze.setPhysicalFloor(3, 2, false);
+        MonsterState monster = new MonsterState(1, 2.5, 0.0, 3.8);
+        s.monsters.add(monster);
+
+        s.tick = 2;
+        Action action = controller.nextAction(s, new Cell(2, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_YIELD"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0,
+                "fallback yield still uses forward-negative input: " + action);
     }
 
     @Test

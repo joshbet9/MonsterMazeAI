@@ -408,3 +408,30 @@ It must not become a second divergent game server.
 MonsterMazeEngine supplies a fast mechanics model for development and training; MonsterMaze remains the final live arbiter.
 
 The AI should not encode Minecraft/Bukkit classes in the common policy layer.
+
+
+## Prefer authoritative simulation state
+
+The final server CPU has a significant advantage over the current 1.8 client prototype: it receives authoritative state directly.
+
+The learned policy should therefore be trained against the same compact semantic observation that the server can provide, rather than against a simulated visual/perceptual pipeline.
+
+The observation should intentionally exclude information a player would not reasonably have. This prevents the policy from learning server omniscience and lets difficulty/awareness attributes control how much contextual information reaches the brain.
+
+## Route catalogue
+
+The policy should consume route context produced by a static route catalogue.
+
+The catalogue can be built from the fixed three maze patterns and provides candidate physical route families, gap opportunities and turn context.
+
+The production policy selects among route context; it does not run pathfinding.
+
+This makes route knowledge deterministic game knowledge and leaves the learned component responsible for deciding how to execute and when to trade time, risk and competition.
+
+## Training implication
+
+The teacher can still use expensive route search and trajectory simulation.
+
+The exported policy must learn the result of that reasoning rather than carrying the search algorithm into production.
+
+This is the intended distillation boundary.

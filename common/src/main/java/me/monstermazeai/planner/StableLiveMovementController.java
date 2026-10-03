@@ -362,9 +362,12 @@ public final class StableLiveMovementController {
              * discarded useful momentum at the exact moments a high-skill player
              * should be carrying speed through a segment.
              */
+            boolean currentSegmentMiss = !gapExecutionActive
+                    && currentSegmentDeviation(state, route, waypointIndex) > 1.10D;
             boolean routeInvalid = !gapExecutionActive
                     && (!supportedCellOnRoute
-                        || distanceFromRouteCorridor(state, route, waypointIndex) > 1.10D);
+                        || distanceFromRouteCorridor(state, route, waypointIndex) > 1.10D
+                        || currentSegmentMiss);
 
             if (routeInvalid) {
                 /*

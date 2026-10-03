@@ -178,7 +178,16 @@ public final class TacticalRouteSimulator {
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        /*
+         * A four-health Monster Maze bump is meaningful tactical debt. The old
+         * ranking treated damage as a unit-scale tiebreaker, so a branch that
+         * advanced even one waypoint could beat a branch that preserved the
+         * player's health. Match the proven v13 weighting: roughly four damage
+         * points equals one waypoint of tactical debt, while goal completion
+         * still wins unconditionally.
+         */
+        long damagePenalty = damage * 250_000_000L;
+        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damagePenalty;
     }
 
     private boolean needsTacticalSearch(GameState state) {

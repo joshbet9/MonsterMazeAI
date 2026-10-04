@@ -228,6 +228,27 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void strategicRoutingCanChooseADetourForAProjectedFarMonster() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.vx = 0.20;
+
+        MonsterState incoming = new MonsterState(41, 0.5, 0.0, 30.5);
+        incoming.vz = -0.20;
+        state.monsters.add(incoming);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .route(state, new Cell(0, 0), new Cell(0, 20));
+
+        assertEquals(new Cell(0, 0), route.cells().get(0));
+        assertEquals(new Cell(0, 20), route.cells().get(route.size() - 1));
+        assertTrue(route.cells().stream().anyMatch(cell -> cell.row() != 0),
+                "full strategic routing must evaluate a detour when a distant moving monster is projected into the direct lane");
+    }
+
+    @Test
     void fullRoutingRetainsAnOrdinaryRouteEvenWhenGapCandidatesExist() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

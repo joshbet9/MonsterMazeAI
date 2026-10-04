@@ -655,7 +655,13 @@ public final class StableLiveMovementController {
                  * cardinal segment instead of waiting in place or strafing blindly.
                  */
                 double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.65D;
+                /*
+                 * Do not backpedal around a live one-cell corner. A large
+                 * recoverable heading error should use forward/strafe or pure
+                 * strafe while the camera turns; negative W sends the player
+                 * away from the active route and amplifies edge/recovery churn.
+                 */
+                double forward = Math.max(0.0D, Math.cos(errorRad)) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
                 /*

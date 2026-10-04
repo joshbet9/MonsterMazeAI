@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.maze.PlayerRoute;
+import me.monstermazeai.player.Action;
 import me.monstermazeai.kit.Kit;
 import org.junit.jupiter.api.Test;
 

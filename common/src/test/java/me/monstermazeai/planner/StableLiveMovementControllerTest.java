@@ -118,6 +118,25 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void asyncRouteSuffixStartsAtCurrentSupportedCell() {
+        PlayerRoute planned = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2)));
+
+        PlayerRoute suffix = StableLiveMovementController.suffixFromCurrentCell(
+                planned, new Cell(0, 2));
+
+        assertNotNull(suffix);
+        assertEquals(List.of(
+                new Cell(0, 2),
+                new Cell(1, 2)), suffix.cells());
+        assertNull(StableLiveMovementController.suffixFromCurrentCell(
+                planned, new Cell(9, 9)));
+    }
+
+    @Test
     void usesCornerVectorForLargeHeadingErrorNearCorner() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;

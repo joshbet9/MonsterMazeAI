@@ -14,16 +14,10 @@ permissions:
   pull-requests: write
 
 jobs:
-  matrix-case:
-    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
+  matrix:
+    name: Full 30-cell natural-termination matrix
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [SPEED, MODERN]
-        pattern: [1, 2, 3]
-        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,46 +32,15 @@ jobs:
       - name: Install common-api
         run: mvn -B -ntp -pl common-api -am -DskipTests install
 
-      - name: Run one natural-termination matrix cell
+      - name: Run full natural-termination matrix
         run: |
           set -o pipefail
           mvn -B -ntp -pl common -am \
-            -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
-            -DmatrixMode=${{ matrix.mode }} \
-            -DmatrixPattern=${{ matrix.pattern }} \
-            -DmatrixKit=${{ matrix.kit }} \
+            -Dtest=NaturalTerminationMatrixIT#allNaturalTerminationCases \
             -Dsurefire.failIfNoSpecifiedTests=false \
             -Dsurefire.useFile=false \
             -Dsurefire.redirectTestOutputToFile=false \
-            test 2>&1 | tee matrix-cell.log
-
-      - name: Extract matrix row
-        run: |
-          grep 'FULL_MATRIX ' matrix-cell.log | tail -1 > matrix-row.txt
-          test -s matrix-row.txt
-          cat matrix-row.txt
-
-      - name: Upload cell evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: matrix-row-${{ matrix.mode }}-${{ matrix.pattern }}-${{ matrix.kit }}
-          path: |
-            matrix-row.txt
-            matrix-cell.log
-
-  aggregate:
-    name: Aggregate full 30-cell matrix
-    needs: matrix-case
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all matrix cell artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: matrix-row-*
-          path: matrix-results
-          merge-multiple: false
+            test 2>&1 | tee matrix-v43.log
 
       - name: Summarize matrix
         run: |
@@ -90,8 +53,8 @@ jobs:
               r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
               r"stage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
           )
-          for path in Path('matrix-results').glob('**/matrix-row.txt'):
-              m = rx.search(path.read_text(encoding='utf-8', errors='replace'))
+          for line in Path('matrix-v43.log').read_text(encoding='utf-8', errors='replace').splitlines():
+              m = rx.search(line)
               if m:
                   rows.append({
                       'mode': m.group(1),
@@ -101,17 +64,17 @@ jobs:
                       'ticks': int(m.group(5)),
                       'health': float(m.group(6)),
                   })
-          rows.sort(key=lambda r: (r['mode'], r['pattern'], r['kit']))
+          # Surefire can echo the test output more than once; de-duplicate exact cells.
+          unique = {(r['mode'], r['pattern'], r['kit']): r for r in rows}
+          rows = sorted(unique.values(), key=lambda r: (r['mode'], r['pattern'], r['kit']))
           if len(rows) != 30:
-              raise SystemExit(f'expected 30 matrix rows, found {len(rows)}')
+              raise SystemExit(f'expected 30 unique matrix rows, found {len(rows)}')
 
-          stage_sum = sum(r['maxStage'] for r in rows)
           speed = [r['maxStage'] for r in rows if r['mode'] == 'SPEED']
           modern = [r['maxStage'] for r in rows if r['mode'] == 'MODERN']
-
           summary = {
-              'cases': len(rows),
-              'stageSum': stage_sum,
+              'cases': 30,
+              'stageSum': sum(r['maxStage'] for r in rows),
               'speedMeanStage': sum(speed) / 15,
               'modernMeanStage': sum(modern) / 15,
               'speedPeak': max(speed),
@@ -119,7 +82,7 @@ jobs:
               'baselineStageSum': 458,
               'baselineSpeedMeanStage': 21.67,
               'baselineModernMeanStage': 8.87,
-              'deltaStageSum': stage_sum - 458,
+              'deltaStageSum': sum(r['maxStage'] for r in rows) - 458,
               'deltaSpeedMeanStage': sum(speed) / 15 - 21.67,
               'deltaModernMeanStage': sum(modern) / 15 - 8.87,
               'targetSpeedPeak': 70,
@@ -127,7 +90,6 @@ jobs:
               'rows': rows,
           }
           Path('matrix-v43.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
-
           print(json.dumps({k: v for k, v in summary.items() if k != 'rows'}, indent=2))
           print('\n'.join(
               f"{r['mode']} P{r['pattern']} {r['kit']}: stage={r['maxStage']} ticks={r['ticks']} health={r['health']:.2f}"
@@ -135,12 +97,14 @@ jobs:
           ))
           PY
 
-      - name: Upload aggregate matrix
+      - name: Upload matrix evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: matrix-v43-summary
-          path: matrix-v43.json
+          name: matrix-v43-full-summary
+          path: |
+            matrix-v43.json
+            matrix-v43.log
 
       - name: Publish matrix to PR
         if: github.event_name == 'pull_request' && hashFiles('matrix-v43.json') != ''

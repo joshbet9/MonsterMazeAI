@@ -228,7 +228,7 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
-    void strategicRoutingCanChooseADetourForAProjectedFarMonster() {
+    void strategicRoutingCanChooseADetourForAProjectedFarMonster() throws Exception {
         GameState state = new GameState();
         state.maze = openMaze();
         state.player.x = 0.5;

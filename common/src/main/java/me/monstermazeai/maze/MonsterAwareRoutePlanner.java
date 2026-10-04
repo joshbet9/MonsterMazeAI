@@ -509,6 +509,31 @@ public final class MonsterAwareRoutePlanner {
                     + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
             int timeCompare = Double.compare(candidateTime, incumbentTime);
             if (timeCompare != 0) return timeCompare < 0;
+        } else {
+            /*
+             * TacticalRouteSimulator ranks non-terminal branches by forward route
+             * progress before damage. Preserve that information here. Previously
+             * a branch that advanced several route waypoints could lose to a
+             * stationary/safe branch simply because it finished with more health,
+             * making dynamic detour selection prefer routes that survive briefly
+             * but make little actual progress toward the pad.
+             */
+            int progressCompare = Integer.compare(
+                    candidate.finalWaypoint(), incumbent.finalWaypoint());
+            if (progressCompare != 0) return progressCompare > 0;
+
+            double candidateDistance = candidate.finalState() == null
+                    ? Double.POSITIVE_INFINITY
+                    : Math.hypot(
+                            candidate.finalState().player.x - (goal.row() + 0.5D),
+                            candidate.finalState().player.z - (goal.column() + 0.5D));
+            double incumbentDistance = incumbent.finalState() == null
+                    ? Double.POSITIVE_INFINITY
+                    : Math.hypot(
+                            incumbent.finalState().player.x - (goal.row() + 0.5D),
+                            incumbent.finalState().player.z - (goal.column() + 0.5D));
+            int distanceCompare = Double.compare(candidateDistance, incumbentDistance);
+            if (distanceCompare != 0) return distanceCompare < 0;
         }
 
         if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {

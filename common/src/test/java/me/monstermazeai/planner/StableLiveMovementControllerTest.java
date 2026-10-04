@@ -286,6 +286,20 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void largeRecoverableCornerErrorDoesNotBackpedal() {
+        GameState s = state(0.5, 0.5, -119.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 4), false);
+
+        assertTrue(action.forward() >= 0.0D,
+                "large recoverable corner turns should not send negative forward input away from the route");
+        assertTrue(Math.abs(action.strafe()) > 0.0D,
+                "the corner turn should retain a lateral steering component");
+        assertTrue(action.sprint());
+    }
+
+    @Test
     void largeHeadingErrorFarFromCornerKeepsSafeForwardDrive() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r <= 12; r++) raw[r][0] = 1;

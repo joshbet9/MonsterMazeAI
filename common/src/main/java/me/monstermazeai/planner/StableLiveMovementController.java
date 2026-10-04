@@ -83,7 +83,13 @@ public final class StableLiveMovementController {
      * Maximum heading error for simultaneous forward movement and cursor
      * steering. Larger errors are reserved for in-place corner acquisition.
      */
-    private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
+    /*
+     * Far from a corner, acquire the next cardinal heading while continuing
+     * forward. Near the corner, retain the conservative 45-degree ceiling so
+     * a large late turn still uses the topology-safe corner vector.
+     */
+    private static final float MAX_DRIVE_STEER_ERROR = 55.0F;
+    private static final float MAX_NEAR_CORNER_DRIVE_ERROR = 45.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
     /** Do not attempt lane recovery once the player is already near the cell edge. */
@@ -591,7 +597,10 @@ public final class StableLiveMovementController {
             float turn = clamp((float) (yawError * turnGain),
                     -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
-            if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
+            boolean farFromCorner = distance > 4.50D;
+            boolean canDriveAndSteer = Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR
+                    && (farFromCorner || Math.abs(yawError) <= MAX_NEAR_CORNER_DRIVE_ERROR);
+            if (canDriveAndSteer) {
                 boolean brake = distance < waypointBrakeDistance()
                         && closingSpeed(state, dx, dz) > 0.04;
                 /*

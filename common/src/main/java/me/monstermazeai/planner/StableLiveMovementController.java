@@ -422,57 +422,6 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        /*
-         * The route has now been selected against the freshest available
-         * topology/threat snapshot. Tactical search gets first refusal when a
-         * genuine contact horizon is active so a source-faithful ability or
-         * charged jump can win over a generic lateral dodge.
-         *
-         * Movement-only tactical actions remain hints to the motor and are not
-         * replayed here; the motor below remains authoritative for continuous
-         * corridor-safe steering.
-         */
-        long currentThreatSignature = threatSignature(state);
-        boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
-                || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
-        /*
-         * Movement-only tactical actions are deliberately ignored below; the
-         * live motor remains authoritative for continuous steering. Non-Jumpers
-         * therefore gain nothing from paying for the synchronous tactical beam,
-         * while the strategic/background planner still evaluates those routes.
-         * Jumper is the exception because its charged jump is a discrete command
-         * the tactical layer can legitimately own.
-         */
-        boolean tacticalMovementRelevant = routePlanner.shouldUseTacticalAction(state);
-        if (tacticalMovementRelevant
-                && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
-            Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            lastTacticalSignature = currentThreatSignature;
-            lastTacticalDecisionTick = state.tick;
-
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump, state.kit)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
-            }
-
-            /*
-             * For non-Jumpers, the tactical beam may still find a substantially
-             * better W/A/D steering vector around moving mobs. Do not let it own
-             * discrete jump or ability mechanics; merge only its continuous
-             * movement/yaw recommendation into the normal motor.
-             */
-            if (tactical != null
-                    && !tactical.useAbility()
-                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
-                Action merged = mergeTacticalMovement(state, tactical, allowJump);
-                if (merged != null) {
-                    lastDecisionDetail += " TACTICAL_MOVE=" + merged;
-                    return merged;
-                }
-            }
-        }
-
         Action mobAvoidance = avoidIncomingMonster(state, allowJump);
         if (mobAvoidance != null) return mobAvoidance;
 
@@ -523,6 +472,57 @@ public final class StableLiveMovementController {
             }
         }
 
+
+        /*
+         * The route has now been selected against the freshest available
+         * topology/threat snapshot. Tactical search gets first refusal when a
+         * genuine contact horizon is active so a source-faithful ability or
+         * charged jump can win over a generic lateral dodge.
+         *
+         * Movement-only tactical actions remain hints to the motor and are not
+         * replayed here; the motor below remains authoritative for continuous
+         * corridor-safe steering.
+         */
+        long currentThreatSignature = threatSignature(state);
+        boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
+                || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
+        /*
+         * Movement-only tactical actions are deliberately ignored below; the
+         * live motor remains authoritative for continuous steering. Non-Jumpers
+         * therefore gain nothing from paying for the synchronous tactical beam,
+         * while the strategic/background planner still evaluates those routes.
+         * Jumper is the exception because its charged jump is a discrete command
+         * the tactical layer can legitimately own.
+         */
+        boolean tacticalMovementRelevant = routePlanner.shouldUseTacticalAction(state);
+        if (tacticalMovementRelevant
+                && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
+            Action tactical = routePlanner.tacticalAction(
+                    state, route, goal, regionRadius);
+            lastTacticalSignature = currentThreatSignature;
+            lastTacticalDecisionTick = state.tick;
+
+            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump, state.kit)) {
+                lastDecisionDetail += " TACTICAL=" + tactical;
+                return tactical;
+            }
+
+            /*
+             * For non-Jumpers, the tactical beam may still find a substantially
+             * better W/A/D steering vector around moving mobs. Do not let it own
+             * discrete jump or ability mechanics; merge only its continuous
+             * movement/yaw recommendation into the normal motor.
+             */
+            if (tactical != null
+                    && !tactical.useAbility()
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+                Action merged = mergeTacticalMovement(state, tactical, allowJump);
+                if (merged != null) {
+                    lastDecisionDetail += " TACTICAL_MOVE=" + merged;
+                    return merged;
+                }
+            }
+        }
         double targetX = route.targetX(waypointIndex);
         double targetZ = route.targetZ(waypointIndex);
         double dx = targetX - state.player.x;

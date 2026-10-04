@@ -561,16 +561,17 @@ public final class StableLiveMovementController {
                     + ",s=" + format(action.strafe());
         } else if (Math.abs(crossTrack) > 0.18) {
             /*
-             * Medium cross-track error is still a correction state, not a reason
-             * to wait for momentum to decay. Keep a bounded lateral input while
-             * the camera converges; the projected-support guard remains the final
-             * authority near an actual edge.
+             * Medium drift does not require sacrificing forward progress.
+             * Blend a bounded route-direction drive into the lane correction,
+             * then let the existing one-tick support guard trim it if needed.
+             * This is ordinary W+A/D input and keeps the motor moving while it
+             * recentres on the corridor.
              */
-            action = laneCorrectionAction(state, dirRow, dirColumn, 0.60D);
+            action = laneFineDriveAction(state, dirRow, dirColumn, crossTrack);
             if (action == null) {
                 action = Action.IDLE;
             }
-            lastDecisionDetail += " LANE_FINE crossTrack=" + format(crossTrack)
+            lastDecisionDetail += " LANE_FINE_DRIVE crossTrack=" + format(crossTrack)
                     + " output=f=" + format(action.forward())
                     + ",s=" + format(action.strafe());
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
@@ -1624,6 +1625,56 @@ public final class StableLiveMovementController {
         }
 
         return new double[]{bestX, bestZ};
+    }
+
+    private Action laneFineDriveAction(
+            GameState state, int dirRow, int dirColumn, double crossTrack) {
+        double routeWorldX = dirRow;
+        double routeWorldZ = dirColumn;
+        double lateralWorldX = 0.0D;
+        double lateralWorldZ = 0.0D;
+        if (dirRow == 0) {
+            lateralWorldX = crossTrack > 0.0D ? -1.0D : 1.0D;
+        } else {
+            lateralWorldZ = crossTrack > 0.0D ? -1.0D : 1.0D;
+        }
+
+        /*
+         * Preserve more of the route's forward vector when the deviation is
+         * modest. The lateral component is proportional to the remaining error
+         * so the correction fades naturally as the player re-enters the lane.
+         */
+        double lateralWeight = Math.min(1.0D, Math.abs(crossTrack) / 0.28D);
+        double worldX = 0.45D * routeWorldX + 0.65D * lateralWeight * lateralWorldX;
+        double worldZ = 0.45D * routeWorldZ + 0.65D * lateralWeight * lateralWorldZ;
+        double length = Math.hypot(worldX, worldZ);
+        if (length < 1.0E-6D) return null;
+
+        worldX /= Math.max(1.0D, length);
+        worldZ /= Math.max(1.0D, length);
+
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(
+                yawError * (float) turnResponseGain(),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double forwardWorldX = -Math.sin(postYaw);
+        double forwardWorldZ = Math.cos(postYaw);
+        double strafeWorldX = Math.cos(postYaw);
+        double strafeWorldZ = Math.sin(postYaw);
+
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+        double inputLength = Math.hypot(forward, strafe);
+        if (inputLength > 1.0D) {
+            forward /= inputLength;
+            strafe /= inputLength;
+        }
+
+        Action action = new Action(
+                forward, strafe, false, forward > 0.05D, yawDelta, false);
+        return guardLaneCorrectionSupport(state, action);
     }
 
     private Action laneCorrectionAction(

@@ -443,18 +443,33 @@ public final class StableLiveMovementController {
          * Jumper is the exception because its charged jump is a discrete command
          * the tactical layer can legitimately own.
          */
-        boolean tacticalDiscreteMovementRelevant =
-                state.kit == me.monstermazeai.kit.Kit.JUMPER;
-        if (tacticalDiscreteMovementRelevant
-                && routePlanner.shouldUseTacticalAction(state)
+        boolean tacticalMovementRelevant = routePlanner.shouldUseTacticalAction(state);
+        if (tacticalMovementRelevant
                 && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
             lastTacticalDecisionTick = state.tick;
+
             if (tactical != null && isDiscreteTacticalAction(tactical, allowJump, state.kit)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
+            }
+
+            /*
+             * For non-Jumpers, the tactical beam may still find a substantially
+             * better W/A/D steering vector around moving mobs. Do not let it own
+             * discrete jump or ability mechanics; merge only its continuous
+             * movement/yaw recommendation into the normal motor.
+             */
+            if (tactical != null
+                    && !tactical.useAbility()
+                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
+                Action merged = mergeTacticalMovement(state, tactical, allowJump);
+                if (merged != null) {
+                    lastDecisionDetail += " TACTICAL_MOVE=" + merged;
+                    return merged;
+                }
             }
         }
 
@@ -750,6 +765,42 @@ public final class StableLiveMovementController {
                 + ",jump=" + action.jump()
                 + ",yawDelta=" + action.yawDelta();
         return action;
+    }
+
+    /**
+     * Consume only the tactical beam's continuous movement recommendation.
+     * Non-Jumper jump-spam remains owned by the source-aware motor cadence, and
+     * ability activation remains governed by AbilityDecision/AbilityUseGate.
+     */
+    private Action mergeTacticalMovement(GameState state, Action tactical, boolean allowJump) {
+        double magnitude = Math.hypot(tactical.forward(), tactical.strafe());
+        if (magnitude < 0.10D && Math.abs(tactical.yawDelta()) < 1.0F) return null;
+
+        boolean jump = shouldSpeedJump(state, allowJump);
+        boolean sprint = magnitude > 0.05D;
+        return guardProjectedSupport(
+                state,
+                new Action(
+                        tactical.forward(),
+                        tactical.strafe(),
+                        jump,
+                        sprint,
+                        tactical.yawDelta(),
+                        false),
+                routeDirectionRow(),
+                routeDirectionColumn());
+    }
+
+    private int routeDirectionRow() {
+        if (route == null || waypointIndex <= 0 || waypointIndex >= route.size()) return 0;
+        return Integer.signum(route.cells().get(waypointIndex).row()
+                - route.cells().get(waypointIndex - 1).row());
+    }
+
+    private int routeDirectionColumn() {
+        if (route == null || waypointIndex <= 0 || waypointIndex >= route.size()) return 0;
+        return Integer.signum(route.cells().get(waypointIndex).column()
+                - route.cells().get(waypointIndex - 1).column());
     }
 
     public long routePlanCount() { return routePlanCount; }

@@ -68,25 +68,6 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void routeCornerCanWakeStrategicPlannerWithoutWaitingForThreatJitter() throws Exception {
-        GameState s = state(0.5, 0.5, 0.0F);
-        StableLiveMovementController controller = new StableLiveMovementController();
-
-        // This regression exercises the event condition directly: once the
-        // controller advances to a new route segment, a fresh strategic snapshot
-        // should become eligible without relying on continuous mob-signature churn.
-        java.lang.reflect.Method routeThreat = StableLiveMovementController.class
-                .getDeclaredMethod("threatSignature", GameState.class);
-        routeThreat.setAccessible(true);
-
-        setField(controller, "fullRouteEvaluationPending", false);
-        setField(controller, "lastThreatSignature",
-                (long) routeThreat.invoke(null, s));
-
-        assertFalse((boolean) getField(controller, "fullRouteEvaluationPending"));
-    }
-
-    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

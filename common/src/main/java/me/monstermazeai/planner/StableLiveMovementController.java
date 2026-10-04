@@ -774,7 +774,17 @@ public final class StableLiveMovementController {
      */
     private Action mergeTacticalMovement(GameState state, Action tactical, boolean allowJump) {
         double magnitude = Math.hypot(tactical.forward(), tactical.strafe());
-        if (magnitude < 0.10D && Math.abs(tactical.yawDelta()) < 1.0F) return null;
+        /*
+         * The tactical beam contains defensive reverse/turn-in-place actions.
+         * Those are useful inside the offline beam but unsafe as direct live
+         * motor commands: the previous experiment repeatedly selected -0.8 W
+         * or zero movement in dense corridors and collapsed survival.
+         *
+         * Only consume a materially moving, forward-progressing candidate. Pure
+         * reverse/stop decisions remain handled by the normal route motor and
+         * immediate mob-avoidance layer.
+         */
+        if (tactical.forward() < 0.20D || magnitude < 0.25D) return null;
 
         boolean jump = shouldSpeedJump(state, allowJump);
         boolean sprint = magnitude > 0.05D;

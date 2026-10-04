@@ -58,6 +58,208 @@ public final class PredictiveMonsterThreatScorer {
                         double compositeCost) {}
 
     /**
+     * Direct time-aware route search. Unlike candidate ranking, this searches
+     * the physical maze while carrying an estimated arrival tick through the
+     * state. That means a corridor can be rejected because a monster is forecast
+     * to occupy it at the time the player would actually arrive.
+     *
+     * This is deliberately a bounded receding-horizon search. The exact tactical
+     * simulator remains responsible for immediate interactions; this method is
+     * the strategic "what corridor should I be on?" layer.
+     */
+    public static PlayerRoute bestRoute(GameState state, Cell start, Cell goal,
+                                        int regionRadius, double gapPenalty,
+                                        int maxGaps) {
+        if (state == null || state.maze == null || start == null || goal == null) {
+            throw new IllegalArgumentException("state/start/goal");
+        }
+        if (regionRadius < 0 || gapPenalty < 0.0 || maxGaps < -1) {
+            throw new IllegalArgumentException("invalid predictive route arguments");
+        }
+
+        if (insideRegion(start, goal, regionRadius)) {
+            return new PlayerRoute(List.of(start));
+        }
+
+        ThreatField field = buildThreatField(state, List.of());
+        SearchNode initial = new SearchNode(
+                start, 0, 0, 0, 0, 0, heuristic(start, goal, regionRadius), null);
+
+        java.util.PriorityQueue<SearchNode> open =
+                new java.util.PriorityQueue<>(Comparator.comparingDouble(n -> n.f));
+        java.util.Map<SearchKey, Double> best = new java.util.HashMap<>();
+        java.util.Map<SearchKey, SearchKey> previous = new java.util.HashMap<>();
+        java.util.Map<SearchKey, Cell> cells = new java.util.HashMap<>();
+
+        SearchKey initialKey = new SearchKey(start.row(), start.column(), 0, 0, 0, 0);
+        best.put(initialKey, 0.0D);
+        cells.put(initialKey, start);
+        open.add(initial);
+
+        SearchNode bestGoal = null;
+        int expanded = 0;
+        final int maxExpanded = 120_000;
+
+        while (!open.isEmpty() && expanded++ < maxExpanded) {
+            SearchNode node = open.poll();
+            SearchKey nodeKey = node.key();
+            double known = best.getOrDefault(nodeKey, Double.POSITIVE_INFINITY);
+            if (node.g > known + 1.0E-9D) continue;
+
+            if (insideRegion(node.cell, goal, regionRadius)) {
+                bestGoal = node;
+                break;
+            }
+
+            if (node.tick >= HORIZON_TICKS) continue;
+
+            for (Cell next : state.maze.physicalMovementNeighbours(node.cell)) {
+                int dr = next.row() - node.cell.row();
+                int dc = next.column() - node.cell.column();
+                int dirRow = Integer.signum(dr);
+                int dirColumn = Integer.signum(dc);
+                boolean gap = Math.abs(dr) + Math.abs(dc) == 2;
+
+                int gaps = node.gapsUsed + (gap ? 1 : 0);
+                if (maxGaps >= 0 && gaps > maxGaps) continue;
+
+                int movementTicks = gap ? 6 : 4;
+                if (node.directionSet
+                        && (dirRow != node.dirRow || dirColumn != node.dirColumn)) {
+                    movementTicks += 2;
+                }
+
+                int arrivalTick = Math.min(HORIZON_TICKS, node.tick + movementTicks);
+                if (arrivalTick <= node.tick) continue;
+
+                double risk = edgeRisk(field, node.cell, next, node.tick, arrivalTick);
+                double stepCost = movementTicks + gapPenalty * (gap ? 1.0D : 0.0D);
+
+                /*
+                 * A predicted contact is intentionally very expensive. A human
+                 * will take a few extra blocks to avoid being bumped off a maze
+                 * rather than deliberately entering a forecast contact window.
+                 */
+                if (risk >= contactRiskThreshold()) {
+                    stepCost += 1_000.0D + risk * 10.0D;
+                } else {
+                    stepCost += risk * 8.0D;
+                }
+
+                double nextG = node.g + stepCost;
+                SearchKey key = new SearchKey(
+                        next.row(), next.column(), arrivalTick,
+                        dirRow, dirColumn, gaps);
+                double old = best.getOrDefault(key, Double.POSITIVE_INFINITY);
+                if (nextG + 1.0E-9D >= old) continue;
+
+                best.put(key, nextG);
+                cells.put(key, next);
+                previous.put(key, nodeKey);
+
+                double h = heuristic(next, goal, regionRadius);
+                open.add(new SearchNode(
+                        next, nextG, arrivalTick,
+                        dirRow, dirColumn, gaps,
+                        nextG + h, true));
+            }
+        }
+
+        if (bestGoal == null) {
+            return shortestPhysicalFallback(state, start, goal, regionRadius, maxGaps);
+        }
+
+        ArrayList<Cell> path = new ArrayList<>();
+        SearchKey cursor = bestGoal.key();
+        while (cursor != null) {
+            Cell cell = cells.get(cursor);
+            if (cell == null) break;
+            path.add(cell);
+            cursor = previous.get(cursor);
+        }
+        java.util.Collections.reverse(path);
+
+        if (path.isEmpty() || !path.get(0).equals(start)) {
+            return shortestPhysicalFallback(state, start, goal, regionRadius, maxGaps);
+        }
+        return new PlayerRoute(path);
+    }
+
+    private static double heuristic(Cell cell, Cell goal, int radius) {
+        int dr = Math.max(0, Math.abs(cell.row() - goal.row()) - radius);
+        int dc = Math.max(0, Math.abs(cell.column() - goal.column()) - radius);
+        return (dr + dc) * 3.0D;
+    }
+
+    private static boolean insideRegion(Cell cell, Cell center, int radius) {
+        return Math.abs(cell.row() - center.row()) <= radius
+                && Math.abs(cell.column() - center.column()) <= radius;
+    }
+
+    private static double edgeRisk(ThreatField field, Cell from, Cell to,
+                                   int departureTick, int arrivalTick) {
+        int midpoint = departureTick + Math.max(1, (arrivalTick - departureTick) / 2);
+        double fromRisk = sampleRisk(field, Math.max(1, departureTick + 1),
+                from.row() + 0.5D, from.column() + 0.5D);
+        double midRisk = sampleRisk(field, midpoint,
+                (from.row() + to.row()) * 0.5D + 0.5D,
+                (from.column() + to.column()) * 0.5D + 0.5D);
+        double toRisk = sampleRisk(field, arrivalTick,
+                to.row() + 0.5D, to.column() + 0.5D);
+        return Math.max(toRisk, Math.max(fromRisk * 0.5D, midRisk));
+    }
+
+    private static PlayerRoute shortestPhysicalFallback(GameState state, Cell start,
+                                                        Cell goal, int radius,
+                                                        int maxGaps) {
+        java.util.ArrayDeque<Cell> queue = new java.util.ArrayDeque<>();
+        java.util.Map<Cell, Cell> previous = new java.util.HashMap<>();
+        java.util.Map<Cell, Integer> gaps = new java.util.HashMap<>();
+        queue.add(start);
+        previous.put(start, null);
+        gaps.put(start, 0);
+
+        Cell found = null;
+        while (!queue.isEmpty()) {
+            Cell current = queue.removeFirst();
+            if (insideRegion(current, goal, radius)) {
+                found = current;
+                break;
+            }
+            for (Cell next : state.maze.physicalMovementNeighbours(current)) {
+                int used = gaps.get(current)
+                        + (Math.abs(next.row() - current.row())
+                        + Math.abs(next.column() - current.column()) == 2 ? 1 : 0);
+                if (maxGaps >= 0 && used > maxGaps) continue;
+                if (previous.containsKey(next)) continue;
+                previous.put(next, current);
+                gaps.put(next, used);
+                queue.addLast(next);
+            }
+        }
+        if (found == null) {
+            throw new IllegalArgumentException("No physical route to predictive goal");
+        }
+
+        ArrayList<Cell> path = new ArrayList<>();
+        for (Cell at = found; at != null; at = previous.get(at)) path.add(at);
+        java.util.Collections.reverse(path);
+        return new PlayerRoute(path);
+    }
+
+    private record SearchKey(int row, int column, int tick,
+                             int dirRow, int dirColumn, int gapsUsed) {}
+
+    private record SearchNode(Cell cell, double g, int tick,
+                              int dirRow, int dirColumn, int gapsUsed,
+                              double f, boolean directionSet) {
+        SearchKey key() {
+            return new SearchKey(cell.row(), cell.column(), tick,
+                    dirRow, dirColumn, gapsUsed);
+        }
+    }
+
+    /**
      * Rank routes against future monster occupancy. With no monsters present,
      * all routes receive zero risk and the planner can fall back to its normal
      * shortest-path comparator.
@@ -220,8 +422,14 @@ public final class PredictiveMonsterThreatScorer {
         ThreatField field = new ThreatField(HORIZON_TICKS + 1);
 
         GameState prediction = state.copyForSimulation();
-        prediction.monsters.removeIf(monster ->
-                minDistanceToRoutes(monster, routes) > MAX_PREDICTED_MONSTER_TRAVEL);
+        if (routes == null || routes.isEmpty()) {
+            prediction.monsters.removeIf(monster ->
+                    !MonsterRelevance.withinPlayerRadius(
+                            monster, prediction.player, 55.0D));
+        } else {
+            prediction.monsters.removeIf(monster ->
+                    minDistanceToRoutes(monster, routes) > MAX_PREDICTED_MONSTER_TRAVEL);
+        }
 
         long seed = 0x4D4D5A50524544L ^ state.tick;
         seed ^= ((long) state.stage << 32) ^ (state.mazePattern & 0xFFFF_FFFFL);

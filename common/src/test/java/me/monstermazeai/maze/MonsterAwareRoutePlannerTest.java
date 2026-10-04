@@ -285,6 +285,57 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void partialTacticalRouteProgressBeatsSaferNonProgressBranch() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.mode = Mode.MODERN;
+        state.kit = Kit.MAVERICK;
+
+        PlayerRoute advancingRoute = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(0, 3),
+                new Cell(0, 4)));
+        PlayerRoute saferRoute = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(1, 0),
+                new Cell(2, 0),
+                new Cell(3, 0)));
+
+        GameState advancingState = state.copyForSimulation();
+        advancingState.player.x = 0.5D;
+        advancingState.player.z = 3.5D;
+        advancingState.player.health = 12.0D;
+
+        GameState saferState = state.copyForSimulation();
+        saferState.player.x = 0.5D;
+        saferState.player.z = 0.5D;
+        saferState.player.health = 20.0D;
+
+        var advancingResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                false, Integer.MAX_VALUE, 12.0D, 8.0D, advancingState, 3);
+        var saferResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                false, Integer.MAX_VALUE, 20.0D, 0.0D, saferState, 0);
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "better",
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class,
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class);
+        method.setAccessible(true);
+
+        boolean advancingWins = (boolean) method.invoke(
+                new MonsterAwareRoutePlanner(),
+                advancingResult, advancingRoute,
+                saferResult, saferRoute);
+
+        assertTrue(advancingWins,
+                "a partial route that advances several waypoints should not lose solely because a stalled branch preserved more health");
+    }
+
+    @Test
     void fullRoutingRetainsAnOrdinaryRouteEvenWhenGapCandidatesExist() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

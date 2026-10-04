@@ -363,10 +363,18 @@ public final class StableLiveMovementController {
                 lastTacticalSignature = Long.MIN_VALUE;
                 lastThreatSignature = threat;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
-            } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
+            } else if (fullRouteEvaluationPending) {
+                /*
+                 * A moving monster is a changing observation, not a route/topology
+                 * invalidation. Keep the committed v40 route until an explicit
+                 * recovery/objective event requests a strategic replacement.
+                 * Immediate contact is handled by avoidIncomingMonster().
+                 */
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+            } else {
+                lastThreatSignature = threat;
             }
         }
 

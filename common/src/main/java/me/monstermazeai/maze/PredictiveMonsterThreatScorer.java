@@ -260,9 +260,20 @@ public final class PredictiveMonsterThreatScorer {
         if (!state.maze.hasPadSurface(cell.row(), cell.column())) return true;
 
         /*
-         * Active/preview pads remain available. Only inactive pads in the live
-         * decay map have a finite lifetime.
+         * Active and preview SafePads remain valid even when their footprint
+         * overlaps an older pad that is currently decaying.
          */
+        if (state.activePadRow >= 0
+                && Math.abs(cell.row() - state.activePadRow) <= 2
+                && Math.abs(cell.column() - state.activePadColumn) <= 2) {
+            return true;
+        }
+        if (state.previewPadRow >= 0
+                && Math.abs(cell.row() - state.previewPadRow) <= 2
+                && Math.abs(cell.column() - state.previewPadColumn) <= 2) {
+            return true;
+        }
+
         for (var entry : state.oldPadDecaySeconds.entrySet()) {
             Cell pad = entry.getKey();
             if (Math.abs(cell.row() - pad.row()) <= 2

@@ -612,7 +612,7 @@ public final class StableLiveMovementController {
                 else if (absError <= 35.0) steeringForward = 0.80;
                 else steeringForward = 0.50;
                 double forward = brake ? 0.0 : steeringForward;
-                boolean sprint = forward >= 0.95 && absError <= 15.0;
+                boolean sprint = forward > 0.05D;
                 // Non-Jumpers use the source Jump -10 + sprint-jump interaction
                 // as their normal speed mechanic. Jumper vertical jumps remain
                 // reserved for explicit terrain decisions.
@@ -630,7 +630,7 @@ public final class StableLiveMovementController {
                 double forward = Math.cos(errorRad) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
-                action = new Action(forward, strafe, jump, false, turn, false);
+                action = new Action(forward, strafe, jump, forward > 0.05D, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
                 float yawCommand = turn;

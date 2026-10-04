@@ -106,6 +106,12 @@ public final class MonsterAwareRoutePlanner {
         validate(state, start, goal);
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
+        if (!hasRelevantMonster(state)) {
+            return PredictiveMonsterThreatScorer.bestRoute(
+                    state, start, goal, 0, gapJumpPolicy.riskCostPerGap(),
+                    jumperGapBudget(state));
+        }
+
         List<PlayerRoute> candidates = cachedCandidatesFor(
                 state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
         return choose(state, restrictJumperGapBudget(state, candidates), goal, false, 0);
@@ -119,6 +125,12 @@ public final class MonsterAwareRoutePlanner {
                 regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
                 regionCenter.column() + 0.5)) {
             return new PlayerRoute(List.of(start));
+        }
+
+        if (!hasRelevantMonster(state)) {
+            return PredictiveMonsterThreatScorer.bestRoute(
+                    state, start, regionCenter, radius,
+                    gapJumpPolicy.riskCostPerGap(), jumperGapBudget(state));
         }
 
         List<PlayerRoute> candidates = cachedCandidatesFor(

@@ -123,6 +123,65 @@ public final class MonsterAwareRoutePlanner {
         return false;
     }
 
+    /**
+     * Strategic-only projected threat gate. A moving monster that is harmless
+     * at the player's current position can still cross the selected route by
+     * the time the player reaches it. This only wakes the full route evaluator;
+     * the proven live motor remains unchanged.
+     */
+    private static boolean projectedMonsterThreatOnRoute(GameState state, List<Cell> cells) {
+        if (state == null || cells == null || cells.size() < 2) return false;
+
+        double playerSpeed = Math.max(
+                Math.hypot(state.player.vx, state.player.vz), 0.18D);
+        double routeDistance = 0.0D;
+
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell a = cells.get(i);
+            Cell b = cells.get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double dx = bx - ax;
+            double dz = bz - az;
+            double length = Math.hypot(dx, dz);
+            if (length <= 1.0E-9D) continue;
+
+            double midpointX = (ax + bx) * 0.5D;
+            double midpointZ = (az + bz) * 0.5D;
+            double arrivalTicks = Math.min(
+                    100.0D,
+                    (routeDistance + length * 0.5D) / playerSpeed);
+
+            for (var monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+                double distance = Math.hypot(
+                        monster.x - state.player.x,
+                        monster.z - state.player.z);
+                double speed = Math.hypot(monster.vx, monster.vz);
+                if (distance > 60.0D || speed < 0.08D) continue;
+
+                double predictedX = monster.x + monster.vx * arrivalTicks;
+                double predictedZ = monster.z + monster.vz * arrivalTicks;
+                double projection = ((predictedX - ax) * dx + (predictedZ - az) * dz)
+                        / (length * length);
+                projection = Math.max(0.0D, Math.min(1.0D, projection));
+                double nearestX = ax + projection * dx;
+                double nearestZ = az + projection * dz;
+
+                if (Math.hypot(predictedX - nearestX, predictedZ - nearestZ) <= 2.75D
+                        && Math.hypot(predictedX - midpointX, predictedZ - midpointZ) <= 3.0D) {
+                    return true;
+                }
+            }
+            routeDistance += length;
+        }
+        return false;
+    }
+
     private static long threatSignature(GameState state) {
         long h = 1469598103934665603L;
         boolean relevant = false;
@@ -245,8 +304,19 @@ public final class MonsterAwareRoutePlanner {
             }
 
             List<Cell> normal = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
-            if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
             List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
+            boolean projectedThreat = projectedMonsterThreatOnRoute(state, normal)
+                    || projectedMonsterThreatOnRoute(state, gap);
+            if (hasRelevantMonster(state) || projectedThreat) {
+                ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+                List<Cell> threatNormal = threatAware.shortestPathToRegion(
+                        state, start, goal, 0, false);
+                List<Cell> threatGap = threatAware.shortestPathToRegion(
+                        state, start, goal, 0, true);
+                if (!threatNormal.isEmpty()) generated.add(new PlayerRoute(threatNormal));
+                if (!threatGap.isEmpty()) generated.add(new PlayerRoute(threatGap));
+            }
+            if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
             if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
             candidates = distinct(generated, limit * 3);
@@ -260,7 +330,13 @@ public final class MonsterAwareRoutePlanner {
              * available for throughput, but a fresh threat-aware route is included
              * whenever a monster can materially affect the approach.
              */
-            if (hasRelevantMonster(state)) {
+            List<Cell> normalRegion = pathfinder.shortestPathToRegionWithoutGaps(
+                    state.maze, start, goal, regionRadius);
+            List<Cell> gapRegion = pathfinder.shortestPathToRegion(
+                    state.maze, start, goal, regionRadius);
+            boolean projectedThreat = projectedMonsterThreatOnRoute(state, normalRegion)
+                    || projectedMonsterThreatOnRoute(state, gapRegion);
+            if (hasRelevantMonster(state) || projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
                         state, start, goal, regionRadius, false);
@@ -333,7 +409,10 @@ public final class MonsterAwareRoutePlanner {
                 break;
             }
         }
-        if (!hasRelevantMonster) return shortest(candidates);
+        boolean projectedCandidateThreat = candidates.stream()
+                .anyMatch(candidate -> projectedMonsterThreatOnRoute(
+                        state, candidate.cells()));
+        if (!hasRelevantMonster && !projectedCandidateThreat) return shortest(candidates);
 
         int[] evaluationIndices = simulationCandidateIndices(state, candidates, goal);
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];

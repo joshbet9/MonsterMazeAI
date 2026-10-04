@@ -522,16 +522,18 @@ public final class MonsterAwareRoutePlanner {
                     candidate.finalWaypoint(), incumbent.finalWaypoint());
             if (progressCompare != 0) return progressCompare > 0;
 
+            int candidateTerminal = Math.max(0, candidateRoute.size() - 1);
+            int incumbentTerminal = Math.max(0, incumbentRoute.size() - 1);
             double candidateDistance = candidate.finalState() == null
                     ? Double.POSITIVE_INFINITY
                     : Math.hypot(
-                            candidate.finalState().player.x - (goal.row() + 0.5D),
-                            candidate.finalState().player.z - (goal.column() + 0.5D));
+                            candidate.finalState().player.x - candidateRoute.targetX(candidateTerminal),
+                            candidate.finalState().player.z - candidateRoute.targetZ(candidateTerminal));
             double incumbentDistance = incumbent.finalState() == null
                     ? Double.POSITIVE_INFINITY
                     : Math.hypot(
-                            incumbent.finalState().player.x - (goal.row() + 0.5D),
-                            incumbent.finalState().player.z - (goal.column() + 0.5D));
+                            incumbent.finalState().player.x - incumbentRoute.targetX(incumbentTerminal),
+                            incumbent.finalState().player.z - incumbentRoute.targetZ(incumbentTerminal));
             int distanceCompare = Double.compare(candidateDistance, incumbentDistance);
             if (distanceCompare != 0) return distanceCompare < 0;
         }

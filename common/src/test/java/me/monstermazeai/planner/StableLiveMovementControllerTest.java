@@ -67,6 +67,18 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void preservesForwardMomentumUntilCloseToAlignedWaypoint() {
+        GameState s = state(0.5, 7.8, 0.0F);
+        s.player.vz = 0.15;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() > 0.0,
+                "an aligned player should keep driving until the reduced waypoint brake window");
+    }
+
+    @Test
     void sourceSafePadLaneOffsetIsPreservedAfterHeadingAligns() {
         GameState s = state(0.0, 0.0, -90.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

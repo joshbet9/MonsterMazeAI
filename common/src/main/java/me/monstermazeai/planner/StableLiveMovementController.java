@@ -1809,8 +1809,8 @@ public final class StableLiveMovementController {
 
         forward = blendedWorldX * forwardWorldX + blendedWorldZ * forwardWorldZ;
         strafe = blendedWorldX * strafeWorldX + blendedWorldZ * strafeWorldZ;
-        correctionForward = forward * magnitude;
-        correctionStrafe = strafe * magnitude;
+        double correctionForward = forward * magnitude;
+        double correctionStrafe = strafe * magnitude;
         boolean correctionSprint = correctionForward > 0.05;
         Action correction = new Action(
                 correctionForward,

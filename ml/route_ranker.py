@@ -423,6 +423,7 @@ def main():
     train_parser.set_defaults(func=train)
 
     inspect_parser = sub.add_parser("inspect")
+    inspect_parser.add_argument("--input", required=True)
     inspect_parser.set_defaults(func=inspect)
 
     args = parser.parse_args()

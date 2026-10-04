@@ -250,7 +250,7 @@ class StableLiveMovementControllerTest {
     @Test
     void refreshesTacticalObservationEvenWhenQuantisedThreatSignatureIsUnchanged() {
         GameState s = state(0.5, 0.5, 0.0F);
-        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.kit = me.monstermazeai.kit.Kit.SLOWBALLER;
         s.player.health = 20.0;
         s.monsters.add(new me.monstermazeai.monster.MonsterState(
                 77, 0.5, 0.0, 1.5));

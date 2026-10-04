@@ -138,6 +138,27 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void carriesMoreCornerVectorWhenResidualMomentumIsAlreadyPresent() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        s.player.vx = 0.30D;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(2, 0), false);
+
+        assertEquals(0.0, action.forward(), 1.0e-6);
+        assertEquals(0.90, action.strafe(), 1.0e-6,
+                "an already-moving player should retain more corner drive authority");
+        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
     void largeHeadingErrorFarFromCornerKeepsSafeForwardDrive() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r <= 12; r++) raw[r][0] = 1;

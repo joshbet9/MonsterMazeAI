@@ -131,6 +131,13 @@ public final class StableLiveMovementController {
     private boolean fullRouteEvaluationPending = true;
     /** Local threat state for which the expensive tactical branch was last evaluated. */
     private long lastTacticalSignature = Long.MIN_VALUE;
+    /**
+     * Tactical actions are receding-horizon decisions. Monster positions can
+     * change materially between two coarse threat signatures, so never let a
+     * tactical command remain authoritative for more than two observations.
+     */
+    private static final long MAX_TACTICAL_ACTION_AGE_TICKS = 2L;
+    private long lastTacticalDecisionTick = Long.MIN_VALUE;
     private long routePlanCount;
     private double laneAnchorX;
     private double laneAnchorZ;
@@ -458,8 +465,10 @@ public final class StableLiveMovementController {
         // This is what makes deliberate contact and ability use real live actions,
         // rather than merely simulated route preferences.
         long currentThreatSignature = threatSignature(state);
+        boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
+                || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
         if (routePlanner.shouldUseTacticalAction(state)
-                && currentThreatSignature != lastTacticalSignature) {
+                && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
             /*
              * Tactical search is a receding-horizon event, not a held command.
              * Only its first action is returned. The next observation falls back
@@ -469,6 +478,7 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
+            lastTacticalDecisionTick = state.tick;
             if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
@@ -721,6 +731,7 @@ public final class StableLiveMovementController {
         bootstrapRoutePending = true;
         fullRouteEvaluationPending = true;
         lastTacticalSignature = Long.MIN_VALUE;
+        lastTacticalDecisionTick = Long.MIN_VALUE;
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
         mobHitRecoveryUntilTick = Long.MIN_VALUE;

@@ -1152,8 +1152,13 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        // The repeated Jump -10 + sprint-jump acceleration is a Speed-mode
-        // mechanic. Modern non-Jumpers must stay on ordinary source movement.
+        /*
+         * Source-faithful 1.8 "speeding" is active in Original, Speed and
+         * Modern. Non-Jumpers receive Jump -10, which suppresses vertical lift
+         * but still allows a sprint-jump press to supply its horizontal impulse.
+         * The mode changes spawning/progression/kit availability, not this
+         * movement mechanic.
+         */
 
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE

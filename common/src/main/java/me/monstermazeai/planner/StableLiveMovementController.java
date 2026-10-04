@@ -990,18 +990,19 @@ public final class StableLiveMovementController {
          * segment is still physically valid. Monster updates were otherwise
          * producing alternating first headings and left/right oscillation.
          */
+        boolean freshThreatSnapshot = planned.threatSignature == threatSignature(state);
         if (route != null && !strategicRoutePreservesCurrentHeading(
                 state, planned.route, startRow, startColumn)
-                && !currentRouteThreatenedByMonster(state)) {
+                && !currentRouteThreatenedByMonster(state)
+                && !freshThreatSnapshot) {
             /*
-             * This route is already a valid alternative, but changing headings
-             * from the middle of a straight corridor is deliberately deferred.
-             * Do not mark another full evaluation pending: that would enqueue
-             * the same heading-changing plan again on the very next observation
-             * and can monopolise the single strategic-planner worker.
+             * A stale heading-changing plan is deliberately deferred from the
+             * middle of a straight corridor. If the planner evaluated the same
+             * quantised threat snapshot we see now, however, it is a genuinely
+             * fresh closed-loop route decision and may replace the current route.
              *
-             * A real threat/topology change will still schedule a fresh plan
-             * through the normal threat-signature path.
+             * Freshness is only a permission to change the first heading;
+             * topology/start/objective validation above still has to pass.
              */
             fullRouteEvaluationPending = false;
             return;

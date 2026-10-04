@@ -433,7 +433,18 @@ public final class StableLiveMovementController {
         long currentThreatSignature = threatSignature(state);
         boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
                 || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
-        if (routePlanner.shouldUseTacticalAction(state)
+        /*
+         * Movement-only tactical actions are deliberately ignored below; the
+         * live motor remains authoritative for continuous steering. Non-Jumpers
+         * therefore gain nothing from paying for the synchronous tactical beam,
+         * while the strategic/background planner still evaluates those routes.
+         * Jumper is the exception because its charged jump is a discrete command
+         * the tactical layer can legitimately own.
+         */
+        boolean tacticalDiscreteMovementRelevant =
+                state.kit == me.monstermazeai.kit.Kit.JUMPER;
+        if (tacticalDiscreteMovementRelevant
+                && routePlanner.shouldUseTacticalAction(state)
                 && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);

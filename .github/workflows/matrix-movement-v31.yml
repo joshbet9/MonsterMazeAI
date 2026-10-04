@@ -2,6 +2,13 @@ name: Matrix v31 - Movement Corner Continuity
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - autonomous/matrix-movement-corner-continuity-v31-main
+    paths:
+      - 'common/**'
+      - 'common-api/**'
+      - '.github/workflows/matrix-movement-v31.yml'
   pull_request:
     branches:
       - main

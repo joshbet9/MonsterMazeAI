@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "source": "Results Matrix Calibration run 18 on calibration/results-matrix-v12",
+  "rows": [
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "JUMPER",
+      "maxStage": 1,
+      "ticks": 1200,
+      "health": 0
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "SLOWBALLER",
+      "maxStage": 17,
+      "ticks": 6280,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "BODY_BUILDER",
+      "maxStage": 20,
+      "ticks": 7220,
+      "health": 4
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "REPULSOR",
+      "maxStage": 21,
+      "ticks": 6920,
+      "health": 0
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "MAVERICK",
+      "maxStage": 19,
+      "ticks": 6500,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "JUMPER",
+      "maxStage": 16,
+      "ticks": 5560,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "SLOWBALLER",
+      "maxStage": 19,
+      "ticks": 6620,
+      "health": 0
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "BODY_BUILDER",
+      "maxStage": 22,
+      "ticks": 6820,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "REPULSOR",
+      "maxStage": 22,
+      "ticks": 8000,
+      "health": 0
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "MAVERICK",
+      "maxStage": 22,
+      "ticks": 5240,
+      "health": 6
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "JUMPER",
+      "maxStage": 18,
+      "ticks": 6920,
+      "health": 0
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "SLOWBALLER",
+      "maxStage": 19,
+      "ticks": 7980,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "BODY_BUILDER",
+      "maxStage": 19,
+      "ticks": 7620,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "REPULSOR",
+      "maxStage": 15,
+      "ticks": 6540,
+      "health": -2
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "MAVERICK",
+      "maxStage": 17,
+      "ticks": 6460,
+      "health": -2
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "JUMPER",
+      "maxStage": 4,
+      "ticks": 2160,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "SLOWBALLER",
+      "maxStage": 8,
+      "ticks": 2720,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "BODY_BUILDER",
+      "maxStage": 2,
+      "ticks": 900,
+      "health": 18
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "REPULSOR",
+      "maxStage": 10,
+      "ticks": 3440,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "MAVERICK",
+      "maxStage": 7,
+      "ticks": 2480,
+      "health": -2
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "JUMPER",
+      "maxStage": 2,
+      "ticks": 1120,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "SLOWBALLER",
+      "maxStage": 1,
+      "ticks": 700,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "BODY_BUILDER",
+      "maxStage": 9,
+      "ticks": 2600,
+      "health": 6
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "REPULSOR",
+      "maxStage": 7,
+      "ticks": 2180,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "MAVERICK",
+      "maxStage": 12,
+      "ticks": 2960,
+      "health": 4
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "JUMPER",
+      "maxStage": 2,
+      "ticks": 1160,
+      "health": 0
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "SLOWBALLER",
+      "maxStage": 9,
+      "ticks": 3380,
+      "health": -2
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "BODY_BUILDER",
+      "maxStage": 4,
+      "ticks": 2040,
+      "health": -2
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "REPULSOR",
+      "maxStage": 2,
+      "ticks": 1020,
+      "health": 20
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "MAVERICK",
+      "maxStage": 9,
+      "ticks": 2660,
+      "health": -2
+    }
+  ]
+}

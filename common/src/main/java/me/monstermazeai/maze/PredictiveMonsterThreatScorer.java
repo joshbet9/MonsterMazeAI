@@ -34,8 +34,8 @@ public final class PredictiveMonsterThreatScorer {
     private static final double CONTACT_Y_DISTANCE = 1.0D;
     private static final double MAX_PREDICTED_MONSTER_TRAVEL = 40.0D;
     private static final double TURN_PENALTY_TICKS = 1.25D;
-    private static final int STRAIGHT_MOVE_TICKS = 3;
-    private static final int GAP_MOVE_TICKS = 5;
+    private static final int STRAIGHT_MOVE_TICKS = 5;
+    private static final int GAP_MOVE_TICKS = 6;
     private static final int TURN_EXTRA_TICKS = 2;
     private static final int WAIT_TICKS = 1;
     private static final double WAIT_COST = 1.15D;
@@ -170,11 +170,13 @@ public final class PredictiveMonsterThreatScorer {
                 if (maxGaps >= 0 && gaps > maxGaps) continue;
 
                 /*
-                 * The scorer's high-skill speed estimate is about 0.31 blocks
-                 * per tick at sprint speed. Three ticks per ordinary block is
-                 * therefore the correct integer arrival bucket; corners add two
-                 * ticks for the camera/velocity transition. A one-block gap
-                 * gets a five-tick bucket because of the committed jump window.
+                 * The source-faithful high-skill ground model settles around
+                 * 0.286 blocks/tick at sprint terminal speed. Five ticks per
+                 * ordinary block is therefore a conservative arrival bucket;
+                 * corners add two ticks for the camera/velocity transition.
+                 * A one-block void is given a shorter six-tick bucket because
+                 * the source speeding jump contributes an additional horizontal
+                 * impulse at takeoff.
                  */
                 int movementTicks = gap ? GAP_MOVE_TICKS : STRAIGHT_MOVE_TICKS;
                 if (node.directionSet

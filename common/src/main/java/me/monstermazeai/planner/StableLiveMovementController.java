@@ -1792,8 +1792,25 @@ public final class StableLiveMovementController {
             strafe /= inputLength;
         }
 
-        double correctionForward = forward * magnitude;
-        double correctionStrafe = strafe * magnitude;
+        /*
+         * A human correcting modest lane drift normally keeps W held while
+         * feeding A/D. Pure lateral recovery drops the sprint acceleration and
+         * makes every small mob knockback or edge nudge cost route distance.
+         * Blend a bounded amount of the authoritative segment direction into the
+         * correction; the existing physical-support guard remains the final
+         * authority near an actual edge.
+         */
+        double laneBlend = Math.abs(worldX) + Math.abs(worldZ) > 0.70D ? 0.55D : 0.35D;
+        double blendedWorldX = worldX + dirRow * laneBlend;
+        double blendedWorldZ = worldZ + dirColumn * laneBlend;
+        double blendedLength = Math.hypot(blendedWorldX, blendedWorldZ);
+        blendedWorldX /= Math.max(blendedLength, 1.0E-9D);
+        blendedWorldZ /= Math.max(blendedLength, 1.0E-9D);
+
+        forward = blendedWorldX * forwardWorldX + blendedWorldZ * forwardWorldZ;
+        strafe = blendedWorldX * strafeWorldX + blendedWorldZ * strafeWorldZ;
+        correctionForward = forward * magnitude;
+        correctionStrafe = strafe * magnitude;
         boolean correctionSprint = correctionForward > 0.05;
         Action correction = new Action(
                 correctionForward,

@@ -107,6 +107,33 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void rebasesCompletedRouteWhenPlayerAdvancesBeforePlannerFinishes() {
+        java.util.List<Cell> plannedCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(0, 3),
+                new Cell(1, 3),
+                new Cell(2, 3));
+
+        me.monstermazeai.maze.PlayerRoute planned =
+                new me.monstermazeai.maze.PlayerRoute(plannedCells);
+
+        me.monstermazeai.maze.PlayerRoute rebased =
+                StableLiveMovementController.rebaseRouteForCurrentCell(
+                        planned, new Cell(0, 2));
+
+        assertNotNull(rebased);
+        assertEquals(
+                java.util.List.of(
+                        new Cell(0, 2),
+                        new Cell(0, 3),
+                        new Cell(1, 3),
+                        new Cell(2, 3)),
+                rebased.cells());
+    }
+
+    @Test
     void deferredHeadingChangeDoesNotKeepFullRouteEvaluationPending() throws Exception {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

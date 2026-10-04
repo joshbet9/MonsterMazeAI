@@ -407,9 +407,29 @@ public final class StableLiveMovementController {
 
         /*
          * The route has now been selected against the freshest available
-         * topology/threat snapshot. Ordinary monster avoidance is therefore a
-         * motor refinement of that route, not a competing route planner.
+         * topology/threat snapshot. Tactical search gets first refusal when a
+         * genuine contact horizon is active so a source-faithful ability or
+         * charged jump can win over a generic lateral dodge.
+         *
+         * Movement-only tactical actions remain hints to the motor and are not
+         * replayed here; the motor below remains authoritative for continuous
+         * corridor-safe steering.
          */
+        long currentThreatSignature = threatSignature(state);
+        boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
+                || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
+        if (routePlanner.shouldUseTacticalAction(state)
+                && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
+            Action tactical = routePlanner.tacticalAction(
+                    state, route, goal, regionRadius);
+            lastTacticalSignature = currentThreatSignature;
+            lastTacticalDecisionTick = state.tick;
+            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+                lastDecisionDetail += " TACTICAL=" + tactical;
+                return tactical;
+            }
+        }
+
         Action mobAvoidance = avoidIncomingMonster(state, allowJump);
         if (mobAvoidance != null) return mobAvoidance;
 
@@ -457,31 +477,6 @@ public final class StableLiveMovementController {
                         Integer.signum(gapTo.column() - gapFrom.column()),
                         allowJump);
                 if (gapAction != null) return gapAction;
-            }
-        }
-
-        // When a source interaction is close enough to matter this tick, hand
-        // control to the same tactical simulator used during route selection.
-        // This is what makes deliberate contact and ability use real live actions,
-        // rather than merely simulated route preferences.
-        long currentThreatSignature = threatSignature(state);
-        boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
-                || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
-        if (routePlanner.shouldUseTacticalAction(state)
-                && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
-            /*
-             * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
-             */
-            Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            lastTacticalSignature = currentThreatSignature;
-            lastTacticalDecisionTick = state.tick;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
             }
         }
 

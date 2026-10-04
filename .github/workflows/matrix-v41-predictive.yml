@@ -60,7 +60,7 @@ jobs:
         run: |
           set -o pipefail
           mvn -B -ntp -pl common -am \
-            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dtest=AuthenticStage10SimulationTest#fullNaturalTerminationMatrix \
             -Dsurefire.useFile=false \
             -Dsurefire.redirectTestOutputToFile=false \
             -Dsurefire.failIfNoSpecifiedTests=false \
@@ -75,13 +75,13 @@ jobs:
 
           text = Path("matrix-v41.log").read_text(encoding="utf-8", errors="replace")
           rx = re.compile(
-              r"(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
-              r"maxStage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
+              r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
+              r"stage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
           )
           rows = []
           for m in rx.finditer(text):
               rows.append({
-                  "mode": m.group(1).replace("_FULL_RUN", ""),
+                  "mode": m.group(1),
                   "pattern": int(m.group(2)),
                   "kit": m.group(3),
                   "maxStage": int(m.group(4)),

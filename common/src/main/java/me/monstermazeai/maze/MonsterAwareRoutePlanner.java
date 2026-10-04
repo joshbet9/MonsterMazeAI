@@ -90,13 +90,6 @@ public final class MonsterAwareRoutePlanner {
         return candidates.get(0).cells().get(0);
     }
 
-    private static boolean hasRelevantMonster(GameState state) {
-        for (var monster : state.monsters) {
-            if (MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) return true;
-        }
-        return false;
-    }
 
     private static List<Cell> toRoute(List<Cell> cells) {
         return cells;

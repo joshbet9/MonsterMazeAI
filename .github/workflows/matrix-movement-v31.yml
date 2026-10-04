@@ -1,0 +1,76 @@
+name: Matrix v31 - Movement Corner Continuity
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - autonomous/matrix-movement-corner-continuity-v31
+    paths:
+      - 'common/**'
+      - 'common-api/**'
+      - '.github/workflows/matrix-movement-v31.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monstermaze-v31-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  movement-regressions:
+    name: Movement + routing regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - name: Run focused movement suite
+        run: mvn -B -ntp -pl common "-Dtest=StableLiveMovementControllerTest,MonsterAwareRoutePlannerTest,TacticalRouteSimulatorTest" test
+
+  full-matrix:
+    name: Full 30-cell natural-termination matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am install -DskipTests
+      - name: Run unrestricted Speed + Modern matrix
+        shell: bash
+        run: |
+          mkdir -p simulation-artifacts
+          set +e
+          mvn -B -ntp -pl common             "-Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest"             "-Dsurefire.useFile=false"             "-Dsurefire.redirectTestOutputToFile=false"             test 2>&1 | tee simulation-artifacts/full-matrix.log
+          rc=${PIPESTATUS[0]}
+          grep -E '^(SPEED_FULL_RUN|MODERN_FULL_RUN) ' simulation-artifacts/full-matrix.log > simulation-artifacts/full-matrix-rows.txt || true
+          grep -E '^(TERMINAL_DECISION) ' simulation-artifacts/full-matrix.log > simulation-artifacts/terminal-decisions.txt || true
+          echo "maven_exit_code=${rc}" | tee simulation-artifacts/status.txt
+          exit "${rc}"
+      - name: Publish matrix summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Matrix v31" >> "$GITHUB_STEP_SUMMARY"
+          cat simulation-artifacts/full-matrix-rows.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-v31-matrix-${{ github.sha }}
+          path: simulation-artifacts/
+          if-no-files-found: warn

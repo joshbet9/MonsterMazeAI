@@ -195,5 +195,25 @@ class AbilityModelTest {
         assertFalse(AbilityDecision.shouldUse(s, "ROUTE_OPENING", "monster is off route"));
     }
 
+    @Test
+    void modernRepulsorCanClearADevelopingTwoMonsterCorridor() {
+        GameState s = new GameState();
+        s.mode = Mode.MODERN;
+        s.kit = Kit.REPULSOR;
+        s.activePadRow = 0;
+        s.activePadColumn = 20;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.ability.charges = 3;
+
+        s.monsters.add(new MonsterState(41, 0.5, 0.0, 4.5));
+        s.monsters.add(new MonsterState(42, 1.5, 0.0, 4.5));
+
+        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "corridor threat"));
+
+        s.mode = Mode.SPEED;
+        assertFalse(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "same geometry outside Modern policy"));
+    }
+
 }
 

@@ -32,4 +32,4 @@ jobs:
 
       - name: Fast regressions + representative smoke
         run: |
-          mvn -B -ntp -pl common -am             -Dtest=StableLiveMovementControllerTest,MonsterAwareRoutePlannerTest,AbilityModelTest,BottleneckSmokeSimulationTest             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             -Dsurefire.failIfNoSpecifiedTests=false             test
+          mvn -B -ntp -pl common -am             -Dtest=StableLiveMovementControllerTest,MonsterAwareRoutePlannerTest,TacticalRouteSimulatorTest,AbilityModelTest,BottleneckSmokeSimulationTest             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             -Dsurefire.failIfNoSpecifiedTests=false             test

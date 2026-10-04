@@ -959,6 +959,14 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
+        if (planned.route == null) {
+            // A disconnected background search is not a reason to discard the
+            // live route. Keep executing the current closed-loop plan and let
+            // the next fresh observation schedule another search.
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
         long currentThreat = threatSignature(state);
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn

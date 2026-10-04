@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.PadModel;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
+import me.monstermazeai.maze.LocalBranchThreatRerouter;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
@@ -99,6 +100,7 @@ public final class StableLiveMovementController {
     private static final double MAX_INITIAL_LANE_OFFSET = 0.65;
 
     private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
+    private final LocalBranchThreatRerouter localBranchRerouter = new LocalBranchThreatRerouter();
     private final LegacyMovementModel movementProjection = new LegacyMovementModel();
     /*
      * Strategic route simulation is deliberately isolated from the live motor.
@@ -134,6 +136,9 @@ public final class StableLiveMovementController {
     private long routePlanCount;
     private double laneAnchorX;
     private double laneAnchorZ;
+    private boolean localBranchActive;
+    private int localBranchRejoinIndex = -1;
+    private long lastLocalBranchThreatSignature = Long.MIN_VALUE;
 
     /*
      * A real Monster Maze bump is not just another route deviation. The source
@@ -310,7 +315,7 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        if (!padEntryCommitment && !gapExecutionActive) {
+        if (!padEntryCommitment && !gapExecutionActive && !localBranchActive) {
             applyCompletedRoutePlan(state, startRow, startColumn, goal, regionRadius);
         }
 
@@ -386,7 +391,8 @@ public final class StableLiveMovementController {
                 lastTacticalSignature = Long.MIN_VALUE;
                 lastThreatSignature = threat;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
-            } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
+            } else if (!localBranchActive
+                    && (fullRouteEvaluationPending || threat != lastThreatSignature)) {
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
@@ -396,6 +402,13 @@ public final class StableLiveMovementController {
         if (route.size() == 1) {
             lastDecisionDetail = "REACHED routeSize=1";
             return Action.IDLE;
+        }
+
+        if (localBranchActive && waypointIndex >= localBranchRejoinIndex) {
+            localBranchActive = false;
+            localBranchRejoinIndex = -1;
+            lastLocalBranchThreatSignature = Long.MIN_VALUE;
+            fullRouteEvaluationPending = true;
         }
 
         /*
@@ -431,6 +444,40 @@ public final class StableLiveMovementController {
         if (waypointIndex >= route.size()) {
             lastDecisionDetail = "REACHED routeSize=" + route.size();
             return Action.IDLE;
+        }
+
+        if (!localBranchActive) {
+            long localThreat = threatSignature(state);
+            if (localThreat != lastLocalBranchThreatSignature) {
+                LocalBranchThreatRerouter.Choice choice = localBranchRerouter.choose(
+                        state,
+                        route,
+                        waypointIndex,
+                        new Cell(startRow, startColumn));
+                lastLocalBranchThreatSignature = localThreat;
+                if (choice != null
+                        && choice.rejoinIndex > 0
+                        && choice.rejoinIndex < choice.route.size()
+                        && strategicRoutePreservesCurrentHeading(
+                                state, choice.route, startRow, startColumn)) {
+                    route = choice.route;
+                    waypointIndex = firstTurnWaypoint(route);
+                    anchoredSegmentIndex = -1;
+                    localBranchActive = true;
+                    localBranchRejoinIndex = choice.rejoinIndex;
+                    completedRoutePlan = null;
+                    fullRouteEvaluationPending = false;
+                    lastThreatSignature = localThreat;
+                    lastTacticalSignature = Long.MIN_VALUE;
+                    routePlanCount++;
+                    lastDecisionDetail = "LOCAL_TACTICAL_BRANCH"
+                            + " threat=" + choice.firstThreatSegment + "-" + choice.lastThreatSegment
+                            + " rejoin=" + choice.rejoinIndex
+                            + " score=" + format(choice.score)
+                            + " selected=" + choice.selectedResult
+                            + " baseline=" + choice.baselineResult;
+                }
+            }
         }
 
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
@@ -724,6 +771,9 @@ public final class StableLiveMovementController {
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
         mobHitRecoveryUntilTick = Long.MIN_VALUE;
+        localBranchActive = false;
+        localBranchRejoinIndex = -1;
+        lastLocalBranchThreatSignature = Long.MIN_VALUE;
         previousHealth = Double.NaN;
         clearPadEntryCommitment();
         clearGapCommitment();

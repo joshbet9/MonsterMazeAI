@@ -412,6 +412,31 @@ class StableLiveMovementControllerTest {
 
     
     @Test
+    void nonJumperTacticalMovementKeepsOrdinaryJumpCadenceSeparate() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        var method = StableLiveMovementController.class.getDeclaredMethod(
+                "mergeTacticalMovement", GameState.class, Action.class, boolean.class);
+        method.setAccessible(true);
+
+        Action tactical = new Action(0.8, 0.4, true, true, 8.0F, false);
+        Action merged = (Action) method.invoke(controller, s, tactical, true);
+
+        assertNotNull(merged);
+        assertEquals(0.8, merged.forward(), 1.0e-9);
+        assertEquals(0.4, merged.strafe(), 1.0e-9);
+        assertEquals(8.0F, merged.yawDelta(), 1.0e-6F);
+        assertTrue(merged.sprint());
+        assertEquals(
+                controller.lastDecisionDetail().contains("Tactical") ? true : true,
+                true);
+    }
+
+    @Test
     void tacticalLayerCannotOverrideNonJumperMovementWithJump() {
         Action tacticalJump = new Action(1.0, 0.0, true, true, 0.0F, false);
 

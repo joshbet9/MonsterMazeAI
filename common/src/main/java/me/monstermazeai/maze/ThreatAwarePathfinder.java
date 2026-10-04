@@ -27,6 +27,31 @@ public final class ThreatAwarePathfinder {
     private static final double MAX_FORECAST_PENALTY = 4.0D;
     private static final double FORECAST_CLOSING_PENALTY = 1.5D;
 
+    /**
+     * Score an already-generated physical route against the currently observed
+     * monster field. Unlike the path search this does not invent new topology;
+     * it lets the caller compare several genuine route alternatives cheaply.
+     */
+    public double routeThreatCost(GameState state, PlayerRoute route) {
+        if (state == null || state.maze == null || route == null || route.size() == 0) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        double cost = 0.0D;
+        double travelTicks = 0.0D;
+        List<Cell> cells = route.cells();
+        for (int i = 1; i < cells.size(); i++) {
+            Cell from = cells.get(i - 1);
+            Cell to = cells.get(i);
+            int dr = Math.abs(to.row() - from.row());
+            int dc = Math.abs(to.column() - from.column());
+            boolean gap = (dr == 2 && dc == 0) || (dc == 2 && dr == 0);
+            travelTicks += gap ? PLAYER_GAP_TICKS : PLAYER_TICKS_PER_CELL;
+            cost += dangerPenalty(state, to, travelTicks);
+        }
+        return cost;
+    }
+
     public List<Cell> shortestPathToRegion(GameState state, Cell start, Cell center, int radius,
                                             boolean allowGaps) {
         Objects.requireNonNull(state);

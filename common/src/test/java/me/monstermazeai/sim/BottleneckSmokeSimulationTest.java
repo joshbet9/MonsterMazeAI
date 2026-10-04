@@ -29,9 +29,15 @@ class BottleneckSmokeSimulationTest {
                         pattern, kit, AiProfile.HIGH_SKILL, mode, targetStage);
 
         System.out.printf(
-                "BOTTLENECK_SMOKE case=%s mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%s avgSpeed=%.3f%n",
+                "BOTTLENECK_SMOKE case=%s mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%s " +
+                        "avgSpeed=%.3f moveShare=%.3f zeroShare=%.3f stationaryShare=%.3f " +
+                        "edge=%d corner=%d steer=%d recovery=%d%n",
                 name, mode, pattern + 1, kit, result.maxStage(), result.ticks(),
-                Double.toString(result.health()), result.averageHorizontalSpeed());
+                Double.toString(result.health()), result.averageHorizontalSpeed(),
+                result.movementInputShare(), result.zeroInputShare(),
+                result.stationaryShare(), result.edgeGuardTicks(),
+                result.cornerVectorTicks(), result.steerDriveTicks(),
+                result.fastRecoveryRouteTicks());
 
         assertTrue(result.maxStage() >= 5,
                 "Smoke regression: " + name + " reached only stage "

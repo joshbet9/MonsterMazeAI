@@ -1,6 +1,8 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.GameProgressionModel;
+import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MonsterRelevance;
@@ -465,10 +467,14 @@ public final class PredictiveMonsterThreatScorer {
 
         MonsterSimulator simulator = new MonsterSimulator(
                 prediction.maze, new Random(seed), 1.4D);
+        AbilityModel forecastAbilities = new AbilityModel();
+        GameProgressionModel progression = new GameProgressionModel(forecastAbilities);
 
         for (int tick = 1; tick <= HORIZON_TICKS; tick++) {
             prediction.tick = state.tick + tick;
             simulator.tick(prediction);
+            progression.tick(prediction);
+            progression.syncPadSurfaces(prediction);
             int base = tick * ThreatField.CELL_COUNT;
 
             for (MonsterState monster : prediction.monsters) {

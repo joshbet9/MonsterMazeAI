@@ -84,7 +84,13 @@ public final class RobustLiveController {
             return Action.IDLE;
         }
 
-        if (stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
+        boolean deliberateTurn = Math.abs(action.yawDelta()) >= 5.0F
+                && Math.abs(action.forward()) < 0.05D
+                && Math.abs(action.strafe()) < 0.05D;
+        if (stuckTicks >= STUCK_TICKS
+                && allowJump
+                && state.player.grounded
+                && !deliberateTurn) {
             stuckTicks = 0;
             Action jump = new Action(action.forward(), action.strafe(), true,
                     action.sprint(), action.yawDelta(), action.useAbility());

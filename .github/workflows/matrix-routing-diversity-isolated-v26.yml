@@ -58,7 +58,7 @@ jobs:
           from pathlib import Path
           text = Path("matrix-v26.log").read_text(encoding="utf-8", errors="replace")
           rx = re.compile(r'(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+' +
-              r'maxStage=(\d+)\s+ticks=(\d+)\s+health=([-\\d.]+)')
+              r'maxStage=(\d+)\s+ticks=(\d+)\s+health=([-\d.]+)')
           rows = [{
               "mode": m.group(1).split("_")[0],
               "pattern": int(m.group(2)),

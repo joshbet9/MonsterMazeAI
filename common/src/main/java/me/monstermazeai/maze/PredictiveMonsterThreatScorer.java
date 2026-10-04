@@ -538,6 +538,8 @@ public final class PredictiveMonsterThreatScorer {
         ThreatField field = new ThreatField(HORIZON_TICKS + 1);
 
         GameState prediction = state.copyForSimulation();
+        // Forecast progression mutates pad surfaces; never mutate the caller's live maze.
+        prediction.maze = state.maze == null ? null : state.maze.copy();
         if (routes == null || routes.isEmpty()) {
             prediction.monsters.removeIf(monster ->
                     !MonsterRelevance.withinPlayerRadius(

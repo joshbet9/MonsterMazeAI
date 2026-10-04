@@ -42,7 +42,7 @@ jobs:
         run: |
           set -o pipefail
           mvn -B -ntp -pl common -am \
-            -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
+            -Dtest=NaturalTerminationMatrixTest#naturalTerminationCase \
             -DmatrixMode=${{ matrix.mode }} \
             -DmatrixPattern=${{ matrix.pattern }} \
             -DmatrixKit=${{ matrix.kit }} \

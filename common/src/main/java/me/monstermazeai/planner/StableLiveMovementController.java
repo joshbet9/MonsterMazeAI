@@ -851,13 +851,24 @@ public final class StableLiveMovementController {
          */
         if (planned.route == null
                 || planned.route.cells().isEmpty()
-                || planned.startRow != startRow
-                || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || state.maze.dynamicSignature() != planned.topologySignature
                 || state.tick - planned.requestedTick > 10L) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * Reuse a completed plan from the player's current supported cell when
+         * the player has advanced while the async planner was working. The suffix
+         * must already exist in the computed physical route; no new topology is
+         * invented and the current heading still has veto power below.
+         */
+        Cell currentCell = new Cell(startRow, startColumn);
+        PlayerRoute usableRoute = suffixFromCurrentCell(planned.route, currentCell);
+        if (usableRoute == null || usableRoute.size() < 2) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -869,13 +880,13 @@ public final class StableLiveMovementController {
          * producing alternating first headings and left/right oscillation.
          */
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)
+                state, usableRoute, startRow, startColumn)
                 && !currentRouteThreatenedByMonster(state)) {
             fullRouteEvaluationPending = true;
             return;
         }
 
-        route = planned.route;
+        route = usableRoute;
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
@@ -914,6 +925,14 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    static PlayerRoute suffixFromCurrentCell(PlayerRoute plannedRoute, Cell currentCell) {
+        if (plannedRoute == null || currentCell == null) return null;
+        List<Cell> cells = plannedRoute.cells();
+        int index = cells.indexOf(currentCell);
+        if (index < 0) return null;
+        return new PlayerRoute(cells.subList(index, cells.size()));
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

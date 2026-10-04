@@ -1383,7 +1383,21 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
+        /*
+         * Preserve a scaled version of the intended action before considering
+         * a stop. High-handling players can often remain supported with a small
+         * reduction in input, which is preferable to creating an avoidable
+         * zero-input stall at the edge of a one-block corridor.
+         */
+        double supportScale = 0.20D + 0.50D * profile.attributes.handling;
         Action[] alternatives = {
+                new Action(
+                        action.forward() * supportScale,
+                        action.strafe() * supportScale,
+                        action.jump(),
+                        action.sprint(),
+                        action.yawDelta(),
+                        false),
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),

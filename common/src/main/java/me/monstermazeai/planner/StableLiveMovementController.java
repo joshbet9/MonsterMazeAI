@@ -801,7 +801,7 @@ public final class StableLiveMovementController {
                 continue;
             }
 
-            ArrayList<Cell> cells = new ArrayList<>(
+            java.util.ArrayList<Cell> cells = new java.util.ArrayList<>(
                     route.cells().subList(i, route.size()));
             cells.add(0, supportedCell);
             return new PlayerRoute(cells);

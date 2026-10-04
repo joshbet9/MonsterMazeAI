@@ -2583,12 +2583,14 @@ public final class StableLiveMovementController {
          */
         boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
-                && progress < GAP_JUMP_PROGRESS
+                && progress < 0.90D
+                && !playerAabbOverlapsCell(state, toRow, toColumn)
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
         if (nonJumperSpeedPulse) {
             jumpThisTick = true;
             lastSpeedJumpInputTick = state.tick;
+            gapTakeoffStarted = progress >= GAP_JUMP_PROGRESS || gapTakeoffStarted;
             lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
                     + " progress=" + format(progress)
                     + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();

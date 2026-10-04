@@ -19,4 +19,9 @@ jobs:
           cache: maven
       - run: mvn -B -ntp -pl common-api -am -DskipTests install
       - run: |
-          mvn -B -ntp -pl common -am             -Dtest=FailureDiagnosticIT             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test
+          mvn -B -ntp -pl common -am \
+            -Dtest=FailureDiagnosticIT \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            test

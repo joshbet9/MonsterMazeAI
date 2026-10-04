@@ -181,16 +181,24 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
-                trace.addLast("tick=" + state.tick
-                        + " pos=" + format(state.player.x) + "," + format(state.player.z)
-                        + " y=" + format(state.player.y)
-                        + " yaw=" + format(state.player.yaw)
-                        + " v=" + format(state.player.vx) + "," + format(state.player.vz)
-                        + " decision=" + decisionBeforeTick.replace(' ', '_')
-                        + " action=" + currentAction.replace(' ', '_'));
-                while (trace.size() > 30) trace.removeFirst();
-            }
+            trace.addLast("tick=" + state.tick
+                    + " stage=" + state.stage
+                    + " hp=" + format(state.player.health)
+                    + " pos=" + format(state.player.x) + "," + format(state.player.z)
+                    + " y=" + format(state.player.y)
+                    + " yaw=" + format(state.player.yaw)
+                    + " v=" + format(state.player.vx) + "," + format(state.player.vy) + "," + format(state.player.vz)
+                    + " mobs=" + state.monsters.stream()
+                        .filter(m -> !m.removed && !m.launched(state.tick) && !m.frozen(state.tick))
+                        .map(m -> format(Math.hypot(m.x - state.player.x, m.z - state.player.z))
+                                + "@" + format(m.x) + "," + format(m.z)
+                                + "/v" + format(m.vx) + "," + format(m.vz))
+                        .sorted()
+                        .limit(4)
+                        .reduce((a,b) -> a + ";" + b).orElse("none")
+                    + " decision=" + decisionBeforeTick.replace(' ', '_')
+                    + " action=" + currentAction.replace(' ', '_'));
+            while (trace.size() > 30) trace.removeFirst();
 
             simulator.tick(state, action.action);
 

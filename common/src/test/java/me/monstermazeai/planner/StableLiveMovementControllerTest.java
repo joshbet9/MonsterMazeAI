@@ -447,4 +447,96 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    private static GameState cornerState(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float yaw) {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+
+        int rowStep = Integer.signum(cornerRow - startRow);
+        int columnStep = Integer.signum(cornerColumn - startColumn);
+        int row = startRow;
+        int column = startColumn;
+        raw[row][column] = 1;
+
+        while (row != cornerRow) {
+            row += rowStep;
+            raw[row][column] = 1;
+        }
+        while (column != goalColumn) {
+            column += columnStep;
+            raw[row][column] = 1;
+        }
+
+        int goalRowStep = Integer.signum(goalRow - cornerRow);
+        row = cornerRow;
+        while (row != goalRow) {
+            row += goalRowStep;
+            raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = goalRow;
+        s.activePadColumn = goalColumn;
+        s.player.x = startRow + 0.5D;
+        s.player.z = startColumn + 0.5D;
+        s.player.y = 0.0D;
+        s.player.yaw = yaw;
+        s.player.grounded = true;
+        return s;
+    }
+
+    @Test
+    void preparesNextHeadingBeforeCornerWhilePreservingCurrentMomentum() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        s.player.z = 7.5D;
+        s.player.vz = 0.38D;
+        s.player.vx = 0.0D;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("CORNER_PREP"),
+                controller.lastDecisionDetail());
+        assertEquals(0.0, action.forward(), 1.0E-9);
+        assertEquals(0.0, action.strafe(), 1.0E-9);
+        assertEquals(-30.0F, action.yawDelta(), 1.0E-6F);
+    }
+
+    @Test
+    void resumesProjectedDriveAfterCornerHeadingIsAcquired() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, -90.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        s.player.z = 7.5D;
+        s.player.vz = 0.04D;
+        s.player.vx = 0.0D;
+        s.player.yaw = -90.0F;
+        s.player.grounded = true;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("CORNER_STAGE"),
+                controller.lastDecisionDetail());
+        assertEquals(0.0F, action.yawDelta(), 1.0E-6F);
+        assertTrue(Math.hypot(action.forward(), action.strafe()) > 0.15,
+                "aligned corner staging must keep the current-axis drive alive");
+    }
+
+
 }

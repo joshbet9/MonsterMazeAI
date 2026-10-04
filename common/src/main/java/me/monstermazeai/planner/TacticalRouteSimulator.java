@@ -294,8 +294,20 @@ public final class TacticalRouteSimulator {
         float desiredYaw = (float)Math.toDegrees(Math.atan2(-dx, dz));
         float error = normalise(desiredYaw - state.player.yaw);
         float delta = Math.max(-30, Math.min(30, error));
-        double forward = Math.abs(error) > 70 ? 0 : 1;
-        boolean sprint = forward != 0;
+        double absError = Math.abs(error);
+        /*
+         * Keep the tactical model aligned with the live motor: a large but
+         * recoverable heading error is corrected while still carrying forward
+         * momentum. Only an almost-opposite heading becomes a true turn-in-place
+         * state, because driving through that angle would cross the wrong side
+         * of a one-cell corridor.
+         */
+        double forward = absError <= 45.0
+                ? 1.0
+                : absError < 135.0
+                ? 0.35
+                : 0.0;
+        boolean sprint = forward > 0.0;
         return new Action(forward, 0, false, sprint, delta, false);
     }
 

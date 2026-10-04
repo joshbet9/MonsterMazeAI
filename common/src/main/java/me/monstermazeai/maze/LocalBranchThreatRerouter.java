@@ -63,7 +63,7 @@ public final class LocalBranchThreatRerouter {
         double baselineScore = score(baselineResult);
 
         Choice best = null;
-        for (int rejoinIndex = minimumRejoin; rejoinIndex <= maximumRejoin; rejoinIndex++) {
+        for (int rejoinIndex = minimumRejoin; rejoinIndex <= Math.min(maximumRejoin, minimumRejoin + 2); rejoinIndex++) {
             Cell rejoin = route.cells().get(rejoinIndex);
             List<PlayerRoute> branches = branchCandidates(
                     state, currentCell, rejoin, from, to, route, waypointIndex);
@@ -132,7 +132,7 @@ public final class LocalBranchThreatRerouter {
         addIfDistinct(generated, shortestWithFirstHeading(
                 state, start, goal, dirRow, dirColumn, true));
 
-        for (PlayerRoute alt : alternatives.generate(state.maze, start, goal, 4)) {
+        for (PlayerRoute alt : alternatives.generate(state.maze, start, goal, 2)) {
             if (preservesFirstHeading(alt, start, dirRow, dirColumn)) {
                 addIfDistinct(generated, alt);
             }

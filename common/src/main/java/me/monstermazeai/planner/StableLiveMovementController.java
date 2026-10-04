@@ -868,9 +868,25 @@ public final class StableLiveMovementController {
          * segment is still physically valid. Monster updates were otherwise
          * producing alternating first headings and left/right oscillation.
          */
+        boolean currentThreatened = currentRouteThreatenedByMonster(state);
         if (route != null && !strategicRoutePreservesCurrentHeading(
                 state, planned.route, startRow, startColumn)
-                && !currentRouteThreatenedByMonster(state)) {
+                && !currentThreatened) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * Preserve momentum through dynamic hazards. A route that demands a
+         * 90-degree-or-greater first-heading reversal is not safe to install
+         * while the player is already moving quickly on a one-cell corridor.
+         * Let the live motor finish the current physical segment and reconsider
+         * from the next observation instead.
+         */
+        if (route != null
+                && currentThreatened
+                && firstHeadingTurnMagnitude(route, planned.route) >= 90.0D
+                && Math.hypot(state.player.vx, state.player.vz) > 0.20D) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -914,6 +930,24 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    private static double firstHeadingTurnMagnitude(PlayerRoute current, PlayerRoute planned) {
+        if (current == null || planned == null || current.size() < 2 || planned.size() < 2) {
+            return 0.0D;
+        }
+        int currentRow = Integer.signum(
+                current.cells().get(1).row() - current.cells().get(0).row());
+        int currentColumn = Integer.signum(
+                current.cells().get(1).column() - current.cells().get(0).column());
+        int plannedRow = Integer.signum(
+                planned.cells().get(1).row() - planned.cells().get(0).row());
+        int plannedColumn = Integer.signum(
+                planned.cells().get(1).column() - planned.cells().get(0).column());
+        int dot = currentRow * plannedRow + currentColumn * plannedColumn;
+        if (dot >= 1) return 0.0D;
+        if (dot <= -1) return 180.0D;
+        return 90.0D;
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

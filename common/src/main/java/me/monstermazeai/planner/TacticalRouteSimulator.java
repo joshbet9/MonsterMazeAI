@@ -35,6 +35,8 @@ public final class TacticalRouteSimulator {
     private static final double WAYPOINT_TOLERANCE = 0.30;
 
     private final LegacyMovementModel physics = new LegacyMovementModel();
+    private final AbilityModel abilities = new AbilityModel();
+
     public Action nextAction(GameState source, PlayerRoute route, Cell goal,
                               boolean regionGoal, int regionRadius) {
         int waypoint = route.nextWaypoint(

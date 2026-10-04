@@ -376,14 +376,13 @@ public final class StableLiveMovementController {
             } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
                 boolean threatChanged = threat != lastThreatSignature;
                 lastThreatSignature = threat;
-                fullRouteEvaluationPending = false;
 
                 /*
-                 * Do not replace the whole strategic route merely because a mob
-                 * moved. When a monster actually enters the near route horizon,
-                 * search only to the next few cells and splice the best local
-                 * branch back into the already-validated route. This preserves
-                 * current momentum and most of the existing route commitment.
+                 * A moving monster should trigger a local branch check, but the
+                 * expensive strategic planner may still find a better global
+                 * corridor. Local avoidance preserves the current segment first;
+                 * the background route only arrives through the existing
+                 * start/goal/topology/threat/time gates.
                  */
                 if (threatChanged) {
                     PlayerRoute localDetour = tryLocalThreatDetour(
@@ -403,6 +402,13 @@ public final class StableLiveMovementController {
                     }
                 }
 
+                /*
+                 * Preserve v40 behaviour: every materially changed threat state
+                 * can refresh the global strategic route. The test here isolates
+                 * whether local branch-preserving detours can improve that proven
+                 * global planner without changing its route-cost model.
+                 */
+                fullRouteEvaluationPending = false;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
             }
         }

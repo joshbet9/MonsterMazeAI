@@ -819,9 +819,17 @@ public final class StableLiveMovementController {
         long topology = snapshot.maze.dynamicSignature();
         pendingRoutePlan = routePlanningExecutor.submit(() -> {
             try {
+                /*
+                 * The background planner exists to react before the next route
+                 * turn becomes urgent. Full tactical candidate simulation is
+                 * deliberately too expensive for that role: it can finish after
+                 * the player has already crossed several cells. Use the fast
+                 * source-geometry + live-threat route here and leave detailed
+                 * monster interaction to the synchronous tactical motor.
+                 */
                 PlayerRoute planned = regionRadius > 0
-                        ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
-                        : backgroundRoutePlanner.route(snapshot, start, goal);
+                        ? backgroundRoutePlanner.routeToRegionFast(snapshot, start, goal, regionRadius)
+                        : backgroundRoutePlanner.routeFast(snapshot, start, goal);
                 if (planned == null || planned.cells().isEmpty()) {
                     throw new IllegalStateException("Strategic planner returned no route");
                 }

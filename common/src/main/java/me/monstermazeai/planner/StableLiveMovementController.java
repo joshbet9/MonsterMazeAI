@@ -1073,8 +1073,32 @@ public final class StableLiveMovementController {
         int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
         int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());
 
-        return currentRowDirection == plannedRowDirection
-                && currentColumnDirection == plannedColumnDirection;
+        if (currentRowDirection == plannedRowDirection
+                && currentColumnDirection == plannedColumnDirection) {
+            return true;
+        }
+
+        /*
+         * A defensive detour may need to turn at the player's current cell.
+         * Exact-heading equality was safe but over-constrained: it allowed the
+         * monster to occupy the current corridor while the safer alternative
+         * began perpendicular to it. Permit a perpendicular/non-opposing turn
+         * only while a live threat is actually present. At low speed, turning
+         * in place is safe; otherwise reject a true reversal so momentum can
+         * never drive the player back through already-traversed geometry.
+         */
+        if (!routeHasReactiveThreat(state)) return false;
+
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        if (speed < 0.08D) return true;
+
+        double currentX = currentRowDirection;
+        double currentZ = currentColumnDirection;
+        double plannedX = plannedRowDirection;
+        double plannedZ = plannedColumnDirection;
+        double momentumAlongPlanned = state.player.vx * plannedX
+                + state.player.vz * plannedZ;
+        return momentumAlongPlanned >= -0.01D;
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {

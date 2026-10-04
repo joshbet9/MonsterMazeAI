@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [ main ]
+    paths:
+      - .github/matrix-promotion.txt
   push:
     branches:
       - 'calibration/results-matrix-*'

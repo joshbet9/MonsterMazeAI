@@ -781,28 +781,31 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        long currentThreat = threatSignature(state);
-        if (planned.startRow != startRow
-                || planned.startColumn != startColumn
-                || planned.goalRow != goal.row()
+        if (planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || distanceFromRouteCorridor(state, planned.route, 0) > 1.25D) {
             fullRouteEvaluationPending = true;
             return;
         }
 
         /*
-         * A background tactical route may improve the long-term path, but it
-         * must not reverse the motor's immediate cardinal segment while that
-         * segment is still physically valid. Monster updates were otherwise
-         * producing alternating first headings and left/right oscillation.
+         * A strategic plan is a snapshot, not a command with a fixed start
+         * cell. The player may have advanced several cells while the planner
+         * was working. v40's re-anchor is specifically what makes that safe:
+         * install the same topology at the player's current position and let
+         * momentum select the occupied segment.
+         *
+         * The threat signature is intentionally not an acceptance gate. A
+         * changed monster position does not invalidate a route's topology, and
+         * rejecting every result after a few ticks was making the strategic
+         * planner effectively unreachable in live control. The next observation
+         * still schedules a replacement whenever the quantised threat state has
+         * changed materially.
          */
-        if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)) {
+        if (route != null && !strategicRoutePreservesCurrentHeading(state, planned.route)) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -810,14 +813,16 @@ public final class StableLiveMovementController {
         route = planned.route;
         waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
-        lastRouteTick = planned.requestedTick;
+        lastRouteTick = state.tick;
         routePlanCount++;
         lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
                 + " size=" + route.size()
                 + " regionRadius=" + regionRadius
-                + " start=" + startRow + "," + startColumn
+                + " oldStart=" + planned.startRow + "," + planned.startColumn
+                + " currentStart=" + startRow + "," + startColumn
                 + " goal=" + goal.row() + "," + goal.column()
-                + " plannedTick=" + planned.requestedTick;
+                + " plannedTick=" + planned.requestedTick
+                + " planAge=" + (state.tick - planned.requestedTick);
         fullRouteEvaluationPending = false;
         lastTacticalSignature = Long.MIN_VALUE;
     }
@@ -1006,7 +1011,7 @@ public final class StableLiveMovementController {
     }
 
     private boolean strategicRoutePreservesCurrentHeading(
-            GameState state, PlayerRoute planned, int startRow, int startColumn) {
+            GameState state, PlayerRoute planned) {
         if (planned == null || planned.size() < 2 || route == null || route.size() < 2) {
             return true;
         }
@@ -1017,11 +1022,10 @@ public final class StableLiveMovementController {
         int currentRowDirection = Integer.signum(currentTo.row() - currentFrom.row());
         int currentColumnDirection = Integer.signum(currentTo.column() - currentFrom.column());
 
-        Cell plannedFrom = planned.cells().get(0);
-        Cell plannedTo = planned.cells().get(1);
-        if (plannedFrom.row() != startRow || plannedFrom.column() != startColumn) {
-            return false;
-        }
+        int plannedWaypoint = reanchorWaypointIndex(state, planned);
+        int plannedTargetIndex = Math.max(1, Math.min(plannedWaypoint, planned.size() - 1));
+        Cell plannedFrom = planned.cells().get(plannedTargetIndex - 1);
+        Cell plannedTo = planned.cells().get(plannedTargetIndex);
 
         int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
         int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());

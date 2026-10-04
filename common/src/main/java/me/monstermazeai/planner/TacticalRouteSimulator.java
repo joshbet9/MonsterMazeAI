@@ -52,6 +52,8 @@ public final class TacticalRouteSimulator {
     public Result simulate(GameState source, PlayerRoute route, Cell goal,
                            boolean regionGoal, int regionRadius) {
         GameState state = MonsterRelevance.copyForRoute(source, route);
+        // Progression mutates pad surfaces, so this branch must own its maze copy.
+        state.maze = source.maze == null ? null : source.maze.copy();
         initialiseMissingAbilityState(state);
         int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, WAYPOINT_TOLERANCE);
         MonsterSimulator monsters = monsterSimulator(state, source.tick);

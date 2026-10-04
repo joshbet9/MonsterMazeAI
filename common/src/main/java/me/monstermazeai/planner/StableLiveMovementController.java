@@ -2313,6 +2313,9 @@ public final class StableLiveMovementController {
                     double playerAlong = ((state.player.x - ax) * sx
                             + (state.player.z - az) * sz) / lengthSquared;
                     playerAlong = Math.max(0.0D, Math.min(1.0D, playerAlong));
+                    // A monster already behind the player must not wake a new
+                    // route search merely because it still overlaps the corridor.
+                    if (projection + 0.05D < playerAlong) continue;
                     double pointAlongDistance = projection * length;
                     double playerAlongDistance = playerAlong * length;
                     routeDistanceToPoint = Math.max(

@@ -508,6 +508,17 @@ public final class StableLiveMovementController {
         long currentThreatSignature = threatSignature(state);
         boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
                 || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
+        // Intentional source-faithful mob contact is a routing fallback.
+        // Keep it ahead of generic tactical/mob steering for source-authentic
+        // knockback routes, but after committed gap ownership so a gap action
+        // cannot be replaced for one tick.
+        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(
+                state, profile.tendencies.positiveMobKnockback);
+        if (intentionalBump != null) {
+            Action bumpAction = steerIntoMonster(state, intentionalBump);
+            if (bumpAction != null) return bumpAction;
+        }
+
         /*
          * The tactical beam can propose continuous movement for non-Jumpers, but
          * only forward-progressing candidates are accepted below. Discrete jump
@@ -527,16 +538,6 @@ public final class StableLiveMovementController {
             }
 
 
-        }
-
-        // Intentional source-faithful mob contact is a last-resort routing
-        // fallback. It must never pre-empt a committed gap crossing or a real
-        // tactical Jumper/ability action.
-        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(
-                state, profile.tendencies.positiveMobKnockback);
-        if (intentionalBump != null) {
-            Action bumpAction = steerIntoMonster(state, intentionalBump);
-            if (bumpAction != null) return bumpAction;
         }
 
         // Ordinary forward/lateral monster avoidance remains a motor-layer
@@ -2244,16 +2245,11 @@ public final class StableLiveMovementController {
                 || waypointIndex <= 0 || waypointIndex >= route.size()) return false;
 
         /*
-         * The old guard only considered monsters already within ~2.6 blocks of
-         * the player. That made the route lookahead mostly cosmetic: a monster
-         * could sit several cells ahead on the chosen corridor, begin moving
-         * toward it, and only become "threatening" after the player was already
-         * committed to that corridor.
-         *
-         * Predict the encounter at the time the player is expected to reach each
-         * inspected route segment. This remains an input/controller decision;
-         * MonsterState physics stays authoritative. The 20-block source
-         * interaction sphere bounds the observation horizon.
+         * Predict contact at the point on each inspected route segment where the
+         * monster is actually heading, not at a fixed segment midpoint. The old
+         * midpoint check could miss a stationary monster sitting several cells
+         * ahead on a long straight corridor, delaying replanning until the player
+         * was nearly committed to it.
          */
         int firstSegment = Math.max(0, waypointIndex - 1);
         int lookaheadSegments = routeThreatLookaheadSegments();
@@ -2261,8 +2257,27 @@ public final class StableLiveMovementController {
         double playerSpeed = Math.max(
                 Math.hypot(state.player.vx, state.player.vz),
                 0.12D);
-        double routeDistance = 0.0D;
 
+        double remainingCurrentSegment = 0.0D;
+        if (firstSegment < route.size() - 1) {
+            Cell a = route.cells().get(firstSegment);
+            Cell b = route.cells().get(firstSegment + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double sx = bx - ax;
+            double sz = bz - az;
+            double length = Math.hypot(sx, sz);
+            if (length > 1.0E-9D) {
+                double along = ((state.player.x - ax) * sx
+                        + (state.player.z - az) * sz) / (length * length);
+                along = Math.max(0.0D, Math.min(1.0D, along));
+                remainingCurrentSegment = length * (1.0D - along);
+            }
+        }
+
+        double routeBaseDistance = 0.0D;
         for (int i = firstSegment; i <= lastSegment; i++) {
             Cell a = route.cells().get(i);
             Cell b = route.cells().get(i + 1);
@@ -2272,32 +2287,9 @@ public final class StableLiveMovementController {
             double bz = b.column() + 0.5D;
             double sx = bx - ax;
             double sz = bz - az;
-            double length = Math.hypot(sx, sz);
-            if (length <= 1.0E-9D) continue;
-
-            /*
-             * Approximate the point where the player reaches this segment by its
-             * midpoint, but measure the arrival time along the actual route rather
-             * than mixing route distance with a straight-line player distance.
-             * This keeps future-threat timing stable around corners and while the
-             * player is already partway through the current segment.
-             */
-            double segmentMidX = (ax + bx) * 0.5D;
-            double segmentMidZ = (az + bz) * 0.5D;
-            double timeDistance;
-            if (i == firstSegment) {
-                double unitX = sx / length;
-                double unitZ = sz / length;
-                double alongFromStart = (state.player.x - ax) * unitX
-                        + (state.player.z - az) * unitZ;
-                alongFromStart = Math.max(0.0D, Math.min(length, alongFromStart));
-                timeDistance = Math.max(0.0D, (length * 0.5D) - alongFromStart);
-                routeDistance = Math.max(0.0D, length - alongFromStart);
-            } else {
-                timeDistance = routeDistance + (length * 0.5D);
-                routeDistance += length;
-            }
-            double timeToSegment = timeDistance / playerSpeed;
+            double lengthSquared = sx * sx + sz * sz;
+            if (lengthSquared <= 1.0E-9D) continue;
+            double length = Math.sqrt(lengthSquared);
 
             for (MonsterState monster : state.monsters) {
                 if (monster == null || monster.removed
@@ -2310,52 +2302,63 @@ public final class StableLiveMovementController {
                     continue;
                 }
 
-                double predictedX = monster.x + monster.vx * timeToSegment;
-                double predictedZ = monster.z + monster.vz * timeToSegment;
-
-                double projection = ((predictedX - ax) * sx
-                        + (predictedZ - az) * sz) / (length * length);
+                double projection = ((monster.x - ax) * sx
+                        + (monster.z - az) * sz) / lengthSquared;
                 projection = Math.max(0.0D, Math.min(1.0D, projection));
                 double nearestX = ax + projection * sx;
                 double nearestZ = az + projection * sz;
-                double routeDistanceAtThreat = Math.hypot(
-                        predictedX - nearestX,
-                        predictedZ - nearestZ);
 
-                if (routeDistanceAtThreat > 1.45D) continue;
+                double routeDistanceToPoint;
+                if (i == firstSegment) {
+                    double playerAlong = ((state.player.x - ax) * sx
+                            + (state.player.z - az) * sz) / lengthSquared;
+                    playerAlong = Math.max(0.0D, Math.min(1.0D, playerAlong));
+                    double pointAlongDistance = projection * length;
+                    double playerAlongDistance = playerAlong * length;
+                    routeDistanceToPoint = Math.max(
+                            0.0D, pointAlongDistance - playerAlongDistance);
+                } else {
+                    routeDistanceToPoint = remainingCurrentSegment
+                            + routeBaseDistance
+                            + projection * length;
+                }
 
-                /*
-                 * Require a meaningful future encounter rather than reacting to
-                 * every monster merely occupying the observation sphere. A
-                 * stationary mob on the route is still a valid obstacle; a mob
-                 * already moving away is ignored unless the projected encounter
-                 * remains inside the close-contact envelope.
-                 */
-                double predictedPlayerX = segmentMidX;
-                double predictedPlayerZ = segmentMidZ;
-                double predictedPlayerDistance = Math.hypot(
-                        predictedX - predictedPlayerX,
-                        predictedZ - predictedPlayerZ);
+                double timeToThreat = routeDistanceToPoint / playerSpeed;
+                double predictedX = monster.x + monster.vx * timeToThreat;
+                double predictedZ = monster.z + monster.vz * timeToThreat;
 
-                double velocityTowardPlayer = 0.0D;
+                double playerThreatX = nearestX;
+                double playerThreatZ = nearestZ;
+                if (i == firstSegment && routeDistanceToPoint <= 0.0D) {
+                    playerThreatX = state.player.x;
+                    playerThreatZ = state.player.z;
+                }
+
+                double predictedSeparation = Math.hypot(
+                        predictedX - playerThreatX,
+                        predictedZ - playerThreatZ);
+
                 double currentDx = monster.x - state.player.x;
                 double currentDz = monster.z - state.player.z;
                 double currentDistance = Math.max(
                         Math.hypot(currentDx, currentDz), 1.0E-6D);
-                velocityTowardPlayer = -(
+                double velocityTowardPlayer = -(
                         monster.vx * currentDx + monster.vz * currentDz)
                         / currentDistance;
 
-                boolean projectedContact = predictedPlayerDistance <= 1.60D;
+                boolean stationaryOnCorridor = Math.hypot(monster.vx, monster.vz) < 0.02D
+                        && Math.hypot(monster.x - nearestX, monster.z - nearestZ) <= 1.45D;
+                boolean projectedContact = predictedSeparation <= 1.60D;
                 boolean movingIntoRoute = velocityTowardPlayer > 0.02D
                         || Math.hypot(monster.vx, monster.vz) < 0.02D;
 
-                if (projectedContact && movingIntoRoute) return true;
+                if (stationaryOnCorridor || (projectedContact && movingIntoRoute)) {
+                    return true;
+                }
             }
 
-            if (i == firstSegment) {
-                // routeDistance already contains only the remaining portion of
-                // the current segment; subsequent iterations add full segments.
+            if (i > firstSegment) {
+                routeBaseDistance += length;
             }
         }
         return false;

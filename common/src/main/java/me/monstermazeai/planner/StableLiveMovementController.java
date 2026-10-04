@@ -429,7 +429,7 @@ public final class StableLiveMovementController {
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
             lastTacticalDecisionTick = state.tick;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump, state.kit)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }
@@ -1495,8 +1495,20 @@ public final class StableLiveMovementController {
         return false;
     }
 
-    private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+    static boolean isDiscreteTacticalAction(Action action, boolean allowJump,
+                                                   me.monstermazeai.kit.Kit kit) {
+        /*
+         * Only the real Jumper kit may let the tactical layer take ownership of
+         * a jump command. Non-Jumper Speed jump-spam is ordinary motor behaviour
+         * (jump -10 + sprint momentum), and letting the tactical beam inject it
+         * overrides the corridor motor's source-faithful steering/edge guards.
+         * Ability activation remains tactical-owned for kits that actually expose
+         * a source ability.
+         */
+        return action.useAbility()
+                || (allowJump
+                && action.jump()
+                && kit == me.monstermazeai.kit.Kit.JUMPER);
     }
 
     private boolean detectLiveMobHit(GameState state) {

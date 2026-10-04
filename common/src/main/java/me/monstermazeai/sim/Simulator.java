@@ -84,6 +84,78 @@ public final class Simulator {
     }
 
     /**
+     * Counterfactual rollout helper. Returns the simulated state after each
+     * tick and stops at the first stage transition so external responsibilities
+     * such as next-pad selection and monster spawning are never silently omitted
+     * from the learned target.
+     */
+    public java.util.List<GameState> forecastSnapshotsUntilStageChange(
+            GameState source, Action[] actions, long seed) {
+        GameState state=source.copy();
+        Simulator predictor=new Simulator(physics,monsters.fork(seed),collision,abilities);
+        java.util.ArrayList<GameState> snapshots=new java.util.ArrayList<>(actions.length);
+        int startStage=state.stage;
+        for(Action action:actions){
+            if(!state.alive || state.stage!=startStage) break;
+            predictor.tick(state,action);
+            snapshots.add(state.copy());
+            if(state.stage!=startStage) break;
+        }
+        return java.util.List.copyOf(snapshots);
+    }
+
+    public GameState forecastUntilStageChange(GameState source, Action[] actions, long seed) {
+        java.util.List<GameState> snapshots =
+                forecastSnapshotsUntilStageChange(source, actions, seed);
+        return snapshots.isEmpty() ? source.copy() : snapshots.get(snapshots.size()-1).copy();
+    }
+
+    /**
+     * Counterfactual one-step intervention followed by source-faithful baseline
+     * continuation. The continuation is supplied by the caller so the simulator
+     * remains independent of planner classes.
+     */
+    public java.util.List<GameState> forecastCounterfactual(
+            GameState source,
+            Action firstAction,
+            int horizon,
+            long seed,
+            java.util.function.Function<GameState, Action> continuation) {
+        if (source == null || firstAction == null) {
+            throw new IllegalArgumentException("source and firstAction are required");
+        }
+        if (horizon < 1) throw new IllegalArgumentException("horizon");
+        if (continuation == null) throw new IllegalArgumentException("continuation");
+
+        GameState state = source.copy();
+        Simulator predictor = new Simulator(
+                physics, monsters.fork(seed), collision, abilities);
+        int startStage = state.stage;
+        java.util.ArrayList<GameState> snapshots =
+                new java.util.ArrayList<>(horizon);
+
+        predictor.tick(state, firstAction);
+        snapshots.add(state.copy());
+
+        if (needsExternalNextPad(state)) {
+            return java.util.List.copyOf(snapshots);
+        }
+
+        for (int i = 1; i < horizon && state.alive && state.stage == startStage; i++) {
+            Action next = continuation.apply(state);
+            if (next == null) next = Action.IDLE;
+            predictor.tick(state, next);
+            snapshots.add(state.copy());
+            if (needsExternalNextPad(state)) break;
+        }
+        return java.util.List.copyOf(snapshots);
+    }
+
+    private static boolean needsExternalNextPad(GameState state) {
+        return state.previewPadRequested && state.previewPadRow < 0;
+    }
+
+    /**
      * Returns every observed future state after each simulated tick.
      * This is used by the planner's short-horizon monster predictor so risk is
      * based on the same monster movement implementation as the simulator.

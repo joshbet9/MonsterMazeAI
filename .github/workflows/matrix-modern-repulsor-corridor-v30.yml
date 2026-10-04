@@ -45,15 +45,22 @@ jobs:
       - name: Run full matrix
         run: |
           set -o pipefail
-          mvn -B -ntp -pl common -am             -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             -Dsurefire.failIfNoSpecifiedTests=false             test 2>&1 | tee matrix-v30.log
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee matrix-v30.log
       - name: Summarize matrix
         run: |
           python - <<'PY'
           import json, re
           from pathlib import Path
           text = Path("matrix-v30.log").read_text(encoding="utf-8", errors="replace")
-          rx = re.compile(r'(SPEED_FULL_RUN|MODERN_FULL_RUN)s+pattern=(d+)s+kit=([A-Z_]+)s+' +
-              r'maxStage=(d+)s+ticks=(d+)s+health=([-d.]+)')
+          rx = re.compile(
+              r'(SPEED_FULL_RUN|MODERN_FULL_RUN)\\s+pattern=(\\d+)\\s+kit=([A-Z_]+)\\s+' +
+              r'maxStage=(\\d+)\\s+ticks=(\\d+)\\s+health=([-\\d.]+)'
+          )
           rows = [{
               "mode": m.group(1).split("_")[0],
               "pattern": int(m.group(2)),
@@ -73,8 +80,10 @@ jobs:
               "stageSum": sum(r["maxStage"] for r in rows),
               "rows": rows
           }
-          Path("matrix-v30.json").write_text(json.dumps(summary, indent=2) + "
-", encoding="utf-8")
+          Path("matrix-v30.json").write_text(
+              json.dumps(summary, indent=2) + "\\n",
+              encoding="utf-8"
+          )
           print(json.dumps({k:v for k,v in summary.items() if k != "rows"}, indent=2))
           PY
       - name: Upload matrix evidence

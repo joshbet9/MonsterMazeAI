@@ -3,7 +3,7 @@ name: Matrix v40 — Route Re-anchor
 on:
   push:
     branches:
-      - autonomous/routing-state-reanchor-v40
+      - autonomous/local-threat-reanchor-v43
   pull_request:
     branches: [ main ]
 
@@ -38,7 +38,7 @@ jobs:
             -Dsurefire.useFile=false \
             -Dsurefire.redirectTestOutputToFile=false \
             -Dsurefire.failIfNoSpecifiedTests=false \
-            test 2>&1 | tee matrix-v40.log
+            test 2>&1 | tee matrix-v43.log
 
       - name: Summarize matrix
         run: |
@@ -49,8 +49,8 @@ jobs:
 
           text = Path("matrix-v40.log").read_text(encoding="utf-8", errors="replace")
           rx = re.compile(
-              r"(SPEED_FULL_RUN|MODERN_FULL_RUN)\\s+pattern=(\\d+)\\s+kit=([A-Z_]+)\\s+"
-              r"maxStage=(\\d+)\\s+ticks=(\\d+)\\s+health=([\\-\\d.]+)"
+              r"(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
+              r"maxStage=(\d+)\s+ticks=(\d+)\s+health=([-\d.]+)"
           )
           rows = []
           for m in rx.finditer(text):
@@ -84,7 +84,7 @@ jobs:
               "modernPeak": by_mode["MODERN"]["maxStage"],
               "rows": rows,
           }
-          Path("matrix-v40.json").write_text(json.dumps(summary, indent=2) + "\\n", encoding="utf-8")
+          Path("matrix-v43.json").write_text(json.dumps(summary, indent=2) + "\\n", encoding="utf-8")
           print(json.dumps({k: v for k, v in summary.items() if k != "rows"}, indent=2))
           PY
 
@@ -92,7 +92,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: matrix-v40-${{ github.sha }}
+          name: matrix-v43-${{ github.sha }}
           path: |
             matrix-v40.log
             matrix-v40.json

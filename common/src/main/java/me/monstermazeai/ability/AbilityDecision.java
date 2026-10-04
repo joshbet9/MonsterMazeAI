@@ -35,6 +35,7 @@ public final class AbilityDecision {
     private static final double BODY_RUSH_TRIGGER_SQ = 6.25;
     private static final double CRYO_TRIGGER_SQ = 36.0;
     private static final double CRYO_ROUTE_CORRIDOR = 1.65;
+    private static final double REPULSOR_POST_HIT_SAFE_HEALTH = 8.0D;
 
     private AbilityDecision() {}
 
@@ -53,7 +54,8 @@ public final class AbilityDecision {
                     && !isOnActivePad(state)
                     && (repulsorDeadlineEmergency(state, objectiveReason)
                     || repulsorLethalEmergency(state)
-                    || repulsorImmediateThreat(state));
+                    || repulsorImmediateThreat(state)
+                    || repulsorPostHitRecovery(state));
         }
 
         if (state.kit == Kit.BODY_BUILDER) {
@@ -163,6 +165,24 @@ public final class AbilityDecision {
         return false;
     }
 
+    /**
+     * A normal Monster Maze bump launches the player and grants only a short
+     * contact-recharge window. For a Repulsor, spending one charge immediately
+     * after a genuine hit can prevent the second/third contact that turns a
+     * recoverable bump into an unrecoverable fall. This is deliberately gated
+     * to the post-hit window and requires another live monster inside ability
+     * range; it does not make Repulsor a generic proximity button.
+     */
+    private static boolean repulsorPostHitRecovery(GameState state) {
+        if (state.player.recentMobHitUntilTick <= state.tick
+                || state.player.mobHitGraceUntilTick <= state.tick) return false;
+        if (state.player.health <= REPULSOR_POST_HIT_SAFE_HEALTH) return true;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            if (distanceSq(state, monster) <= REPULSOR_RANGE_SQ) return true;
+        }
+        return false;
+    }
     private static boolean repulsorImmediateThreat(GameState state) {
         int nearby = 0;
         for (MonsterState monster : state.monsters) {

@@ -1627,7 +1627,7 @@ public final class StableLiveMovementController {
                 && a.useAbility() == b.useAbility();
     }
 
-    private static boolean hasUsableTacticalProgress(
+    private boolean hasUsableTacticalProgress(
             GameState state, Action action, int dirRow, int dirColumn) {
         if (action == null) return false;
         if (Math.abs(action.forward()) < 1.0E-9

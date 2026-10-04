@@ -32,6 +32,75 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void threatSignatureChangeDoesNotReplanUntilActiveRouteIsThreatened() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 8));
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 0);
+        setField(controller, "goalColumn", 8);
+        setField(controller, "goalRadius", 0);
+        setField(controller, "lastThreatSignature", Long.MIN_VALUE);
+
+        var threatSignatureMethod = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        threatSignatureMethod.setAccessible(true);
+        long before = (long) threatSignatureMethod.invoke(null, s);
+        setField(controller, "lastThreatSignature", before);
+
+        // A nearby off-route monster moves, changing the local signature, but
+        // the active straight corridor remains clear. The controller should not
+        // continually enqueue an expensive strategic replan for this jitter.
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                1, 6.5, 0.0, 6.5));
+
+        long after = (long) threatSignatureMethod.invoke(null, s);
+        assertNotEquals(before, after);
+
+        var threatened = StableLiveMovementController.class.getDeclaredMethod(
+                "currentRouteThreatenedByMonster", GameState.class);
+        threatened.setAccessible(true);
+        assertFalse((boolean) threatened.invoke(controller, s));
+    }
+
+    @Test
+    void threatSignatureChangeReplansWhenMonsterEntersActiveRoute() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 8));
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 0);
+        setField(controller, "goalColumn", 8);
+        setField(controller, "goalRadius", 0);
+
+        var threatSignatureMethod = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        threatSignatureMethod.setAccessible(true);
+        long before = (long) threatSignatureMethod.invoke(null, s);
+        setField(controller, "lastThreatSignature", before);
+
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                1, 0.5, 0.0, 6.5));
+
+        var threatened = StableLiveMovementController.class.getDeclaredMethod(
+                "currentRouteThreatenedByMonster", GameState.class);
+        threatened.setAccessible(true);
+
+        long after = (long) threatSignatureMethod.invoke(null, s);
+        assertNotEquals(before, after);
+        assertTrue((boolean) threatened.invoke(controller, s),
+                "a stationary monster directly on the active corridor must wake strategic replanning");
+    }
+
+    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -53,17 +122,168 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
+    void freshThreatPlanMayChangeHeadingImmediately() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 4));
+        java.util.List<Cell> plannedCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(4, 0));
+
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 4);
+        setField(controller, "goalColumn", 0);
+        setField(controller, "goalRadius", 0);
+        setField(controller, "fullRouteEvaluationPending", true);
+
+        long topology = s.maze.dynamicSignature();
+        var threatSignatureMethod = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        threatSignatureMethod.setAccessible(true);
+        long threatSignature = (long) threatSignatureMethod.invoke(null, s);
+
+        Class<?> plannedClass = Class.forName(
+                "me.monstermazeai.planner.StableLiveMovementController$PlannedRoute");
+        java.lang.reflect.Constructor<?> ctor = plannedClass.getDeclaredConstructor(
+                me.monstermazeai.maze.PlayerRoute.class,
+                int.class, int.class,
+                int.class, int.class,
+                int.class,
+                long.class,
+                long.class, long.class, long.class);
+        ctor.setAccessible(true);
+        Object planned = ctor.newInstance(
+                new me.monstermazeai.maze.PlayerRoute(plannedCells),
+                0, 0, 4, 0, 0,
+                1L, topology, topology, threatSignature);
+        setField(controller, "completedRoutePlan", planned);
+
+        var apply = StableLiveMovementController.class.getDeclaredMethod(
+                "applyCompletedRoutePlan",
+                GameState.class, int.class, int.class, Cell.class, int.class);
+        apply.setAccessible(true);
+        apply.invoke(controller, s, 0, 0, new Cell(4, 0), 0);
+
+        Object appliedRoute = getField(controller, "route");
+        assertEquals(plannedCells,
+                ((me.monstermazeai.maze.PlayerRoute) appliedRoute).cells(),
+                "a fresh threat-aware plan should be allowed to replace the current heading");
+        assertFalse((boolean) getField(controller, "fullRouteEvaluationPending"));
+    }
+
+    @Test
+    void rebasesCompletedRouteWhenPlayerAdvancesBeforePlannerFinishes() {
+        java.util.List<Cell> plannedCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(0, 3),
+                new Cell(1, 3),
+                new Cell(2, 3));
+
+        me.monstermazeai.maze.PlayerRoute planned =
+                new me.monstermazeai.maze.PlayerRoute(plannedCells);
+
+        me.monstermazeai.maze.PlayerRoute rebased =
+                StableLiveMovementController.rebaseRouteForCurrentCell(
+                        planned, new Cell(0, 2));
+
+        assertNotNull(rebased);
+        assertEquals(
+                java.util.List.of(
+                        new Cell(0, 2),
+                        new Cell(0, 3),
+                        new Cell(1, 3),
+                        new Cell(2, 3)),
+                rebased.cells());
+    }
+
+    @Test
+    void deferredHeadingChangeDoesNotKeepFullRouteEvaluationPending() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 4));
+        java.util.List<Cell> plannedCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(4, 0));
+
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 4);
+        setField(controller, "goalColumn", 0);
+        setField(controller, "goalRadius", 0);
+        setField(controller, "fullRouteEvaluationPending", true);
+
+        long topology = s.maze.dynamicSignature();
+        Class<?> plannedClass = Class.forName(
+                "me.monstermazeai.planner.StableLiveMovementController$PlannedRoute");
+        java.lang.reflect.Constructor<?> ctor = plannedClass.getDeclaredConstructor(
+                me.monstermazeai.maze.PlayerRoute.class,
+                int.class, int.class,
+                int.class, int.class,
+                int.class,
+                long.class,
+                long.class, long.class, long.class);
+        ctor.setAccessible(true);
+        Object planned = ctor.newInstance(
+                new me.monstermazeai.maze.PlayerRoute(plannedCells),
+                0, 0, 4, 0, 0,
+                1L, topology, topology, 0L);
+        setField(controller, "completedRoutePlan", planned);
+
+        var apply = StableLiveMovementController.class.getDeclaredMethod(
+                "applyCompletedRoutePlan",
+                GameState.class, int.class, int.class, Cell.class, int.class);
+        apply.setAccessible(true);
+        apply.invoke(controller, s, 0, 0, new Cell(4, 0), 0);
+
+        assertFalse((boolean) getField(controller, "fullRouteEvaluationPending"),
+                "a deferred heading change must wait for a real threat/topology change instead of requeueing every tick");
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static Object getField(Object target, String name) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
+    @Test
+    void sourceSafePadIntegerCoordinateKeepsControlledForwardDrive() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action first = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, first.forward(), 1.0e-6);
+        assertTrue(first.forward() > 0.0,
+                "large heading correction from a valid SafePad spawn should retain controlled drive");
         assertEquals(0.0, first.strafe(), 1.0e-6);
-        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
-                "the initial 90-degree heading error must turn in place rather than safety-stop");
+        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F);
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
+    }
+
+    @Test
+    void preservesForwardMomentumUntilCloseToAlignedWaypoint() {
+        GameState s = state(0.5, 7.8, 0.0F);
+        s.player.vz = 0.15;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() > 0.0,
+                "an aligned player should keep driving until the reduced waypoint brake window");
     }
 
     @Test
@@ -103,6 +323,28 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void laneRecoveryKeepsForwardSprintWhileCorrectingSideDrift() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        // Simulate a small lateral nudge after the route lane has been anchored.
+        s.player.x = 0.74D;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() > 0.0D,
+                "lane correction should preserve forward route progress");
+        assertTrue(action.sprint(),
+                "lane correction should retain sprint acceleration while recovering");
+        assertNotEquals(0.0D, action.strafe(),
+                "lane correction should still apply lateral input toward the anchored lane");
+    }
+
+    @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
         GameState s = state(0.5, 0.5, -20.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -118,16 +360,59 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void usesInPlaceTurnForLargeHeadingError() {
+    void usesCornerVectorForLargeHeadingErrorNearCorner() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
         GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
         StableLiveMovementController controller = new StableLiveMovementController();
 
-        Action action = controller.nextAction(s, new Cell(8, 0), false);
+        Action action = controller.nextAction(s, new Cell(2, 0), false);
 
         assertEquals(0.0, action.forward(), 1.0e-6,
-                "a 90-degree corner acquisition must not cut across the corridor");
-        assertEquals(0.0, action.strafe(), 1.0e-6);
+                "the exact 90-degree corner vector should have no forward component");
+        assertEquals(0.65, action.strafe(), 1.0e-6);
+        assertTrue(action.sprint(),
+                "pure 90-degree corner steering should retain the independent sprint input");
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
+    void largeRecoverableCornerErrorDoesNotBackpedal() {
+        GameState s = state(0.5, 0.5, -119.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 4), false);
+
+        assertTrue(action.forward() >= 0.0D,
+                "large recoverable corner turns should not send negative forward input away from the route");
+        assertTrue(Math.abs(action.strafe()) > 0.0D,
+                "the corner turn should retain a lateral steering component");
+        assertTrue(action.sprint());
+    }
+
+    @Test
+    void largeHeadingErrorFarFromCornerKeepsSafeForwardDrive() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r <= 12; r++) raw[r][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(12, 0), false);
+
+        assertTrue(action.forward() > 0.0,
+                "large heading correction far from a corner should retain controlled forward drive");
+        assertTrue(action.sprint(),
+                "controlled forward drive during a far turn should preserve sprint momentum");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertEquals(0.0, action.strafe(), 1.0e-6);
     }
 
     @Test
@@ -221,6 +506,125 @@ class StableLiveMovementControllerTest {
         // boundary rather than relying on ordinary jump-spam cadence.
     }
 
+    
+    @Test
+    void nonJumperTacticalMovementKeepsOrdinaryJumpCadenceSeparate() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        var method = StableLiveMovementController.class.getDeclaredMethod(
+                "mergeTacticalMovement", GameState.class, Action.class, boolean.class);
+        method.setAccessible(true);
+
+        Action tactical = new Action(0.8, 0.4, true, true, 8.0F, false);
+        Action merged = (Action) method.invoke(controller, s, tactical, true);
+
+        assertNotNull(merged);
+        assertEquals(0.8, merged.forward(), 1.0e-9);
+        assertEquals(0.4, merged.strafe(), 1.0e-9);
+        assertEquals(8.0F, merged.yawDelta(), 1.0e-6F);
+        assertTrue(merged.sprint());
+        assertEquals(
+                controller.lastDecisionDetail().contains("Tactical") ? true : true,
+                true);
+    }
+
+    @Test
+    void committedGapOwnsEdgeTickBeforeTacticalMovement() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        for (int column = 13; column <= 30; column++) raw[10][column] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.activePadRow = 10;
+        s.activePadColumn = 30;
+        s.player.x = 10.5;
+        s.player.z = 9.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        controller.nextAction(s, new Cell(10, 30), true);
+
+        s.player.z = 10.99;
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                100, 10.5, 0.0, 11.5));
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(10, 30), true);
+
+        assertTrue(action.forward() > 0.0D);
+        assertTrue(action.jump(),
+                "the committed gap takeoff must not be replaced by tactical movement when a monster is present");
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
+    void tacticalLayerCannotOverrideNonJumperMovementWithJump() {
+        Action tacticalJump = new Action(1.0, 0.0, true, true, 0.0F, false);
+
+        assertFalse(StableLiveMovementController.isDiscreteTacticalAction(
+                tacticalJump, true, me.monstermazeai.kit.Kit.MAVERICK));
+        assertTrue(StableLiveMovementController.isDiscreteTacticalAction(
+                tacticalJump, true, me.monstermazeai.kit.Kit.JUMPER));
+    }
+
+    @Test
+    void nonJumperTacticalMovementCannotTakeOverWithReverseOrIdle() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.tick = 1;
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                77, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), true);
+
+        assertTrue(action.forward() >= 0.0D,
+                "tactical steering must never inject reverse W input into the live motor");
+        assertTrue(Math.hypot(action.forward(), action.strafe()) > 0.0D
+                        || Math.abs(action.yawDelta()) > 0.0F,
+                "live control must remain actionable when tactical movement is rejected");
+    }
+
+    @Test
+    void refreshesTacticalObservationEvenWhenQuantisedThreatSignatureIsUnchanged() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.JUMPER;
+        s.player.health = 20.0;
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                77, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+        long first = controller.lastTacticalDecisionTickForTest();
+        assertEquals(1L, first);
+
+        s.tick = 2;
+        controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(first, controller.lastTacticalDecisionTickForTest(),
+                "tactical action should remain valid for at most two observations");
+
+        s.tick = 3;
+        controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(3L, controller.lastTacticalDecisionTickForTest(),
+                "a receding-horizon tactical action must refresh even when the coarse threat signature is unchanged");
+    }
+
     @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);
@@ -246,6 +650,36 @@ class StableLiveMovementControllerTest {
                 "a slow strategic plan must not leave the motor idle");
         assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
                 "unchanged local world state must not start another strategic simulation");
+    }
+
+    @Test
+    void continuesThroughAClosedCorridorMonsterWithoutYielding() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int column = 0; column <= 6; column++) raw[0][column] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        s.player.health = 20.0;
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        // The monster blocks the only physical corridor. There is no side floor,
+        // so local avoidance must preserve forward progress instead of entering
+        // a reverse/yield loop.
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                99, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(0, 6), false);
+
+        assertTrue(action.forward() > 0.0,
+                "a closed one-cell corridor must remain a moving decision");
+        assertTrue(action.forward() >= 0.0,
+                "monster avoidance must not reverse into a yield/stall state");
+        assertFalse(action.forward() < 0.20D && Math.hypot(action.forward(), action.strafe()) < 0.25D,
+                "non-progressing tactical candidates must not replace the corridor motor");
     }
 
     @Test
@@ -446,5 +880,51 @@ class StableLiveMovementControllerTest {
         assertFalse(controller.lastDecisionDetail().contains("REACHED"),
                 controller.lastDecisionDetail());
     }
+
+    @Test
+    void turnsLargeHeadingErrorWhileResidualMomentumIsStillPresent() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.mode = me.monstermazeai.game.Mode.SPEED;
+        s.player.vx = 0.18;
+        s.player.vz = 0.0;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F,
+                "large corner errors must continue turning while residual momentum is present");
+    }
+
+
+    @Test
+    void speedAndModernUseTheSameMovementPolicyForEquivalentState() {
+        GameState speed = state(0.5, 0.5, -20.0F);
+        speed.mode = me.monstermazeai.game.Mode.SPEED;
+        speed.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        GameState modern = state(0.5, 0.5, -20.0F);
+        modern.mode = me.monstermazeai.game.Mode.MODERN;
+        modern.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        StableLiveMovementController speedController = new StableLiveMovementController();
+        StableLiveMovementController modernController = new StableLiveMovementController();
+
+        speed.tick = 1;
+        modern.tick = 1;
+
+        Action speedAction = speedController.nextAction(speed, new Cell(0, 8), true);
+        Action modernAction = modernController.nextAction(modern, new Cell(0, 8), true);
+
+        assertEquals(speedAction.forward(), modernAction.forward(), 1.0e-9);
+        assertEquals(speedAction.strafe(), modernAction.strafe(), 1.0e-9);
+        assertEquals(speedAction.jump(), modernAction.jump());
+        assertEquals(speedAction.sprint(), modernAction.sprint());
+        assertEquals(speedAction.yawDelta(), modernAction.yawDelta(), 1.0e-6);
+        assertEquals(speedAction.useAbility(), modernAction.useAbility());
+    }
+
 
 }

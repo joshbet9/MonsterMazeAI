@@ -54,4 +54,26 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Normal PR verification must not silently execute the 30-cell natural-end matrix. -->
+        <profile>
+            <id>fast-verify</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.2</version>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/SpeedFullRunDiagnosticTest.java</exclude>
+                                <exclude>**/ModernFullRunDiagnosticTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

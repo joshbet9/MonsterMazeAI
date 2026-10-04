@@ -1,6 +1,7 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,23 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void nearbyMonsterDoesNotCauseSafePadGlobalDetour() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 2.5;
+        state.player.z = 2.5;
+        MonsterState monster = new MonsterState(9, 2.5, 0.0, 3.5);
+        state.monsters.add(monster);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeToRegionFast(state, new Cell(2, 2), new Cell(2, 6), 0);
+
+        assertEquals(List.of(
+                new Cell(2, 2), new Cell(2, 3), new Cell(2, 4),
+                new Cell(2, 5), new Cell(2, 6)), route.cells());
+    }
+
+    @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();
@@ -141,11 +159,218 @@ class MonsterAwareRoutePlannerTest {
         raw[10][11] = 0;
         raw[10][13] = 0;
         state.maze = new MazeModel(raw);
+        state.mode = Mode.SPEED;
+        state.kit = Kit.MAVERICK;
 
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
         assertEquals(List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void baselineRoutePolicyUsesARealGapShortcutWhenItSavesRouteEdges() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        raw[10][11] = 0;
+        raw[10][13] = 0;
+        state.maze = new MazeModel(raw);
+        state.mode = Mode.SPEED;
+        state.kit = Kit.MAVERICK;
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
+
+        assertEquals(List.of(
+                new Cell(10, 10),
+                new Cell(10, 12),
+                new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void modernNonJumperSharesSpeedGapMechanic() {
+        GameState state = new GameState();
+        state.mode = Mode.MODERN;
+        state.kit = Kit.MAVERICK;
+
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        raw[10][11] = 0;
+        raw[10][13] = 0;
+        state.maze = new MazeModel(raw);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
+                .route(state, new Cell(10, 10), new Cell(10, 14));
+
+        assertEquals(List.of(
+                new Cell(10, 10),
+                new Cell(10, 12),
+                new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void impossibleMonsterAwareRouteFailsExplicitlyInsteadOfReturningNull() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[4][4] = 1;
+        state.maze = new MazeModel(raw);
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.monsters.add(new MonsterState(12, 0.5, 0.0, 1.5));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new MonsterAwareRoutePlanner().route(
+                        state, new Cell(0, 0), new Cell(4, 4)));
+    }
+
+    @Test
+    void regionCandidateSelectionRetainsLongerRoutesForTacticalEvaluation() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        List<PlayerRoute> generated = new java.util.ArrayList<>();
+        for (int length = 2; length <= 21; length++) {
+            List<Cell> cells = new java.util.ArrayList<>();
+            for (int i = 0; i < length; i++) cells.add(new Cell(0, i));
+            generated.add(new PlayerRoute(cells));
+        }
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "selectDiverseRegionCandidates", GameState.class, List.class, int.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<PlayerRoute> selected = (List<PlayerRoute>) method.invoke(
+                new MonsterAwareRoutePlanner(), state, generated, 12);
+
+        assertEquals(12, selected.size());
+        assertTrue(selected.stream()
+                        .mapToInt(PlayerRoute::size)
+                        .max()
+                        .orElse(0) > 12,
+                "a longer detour must survive region candidate culling");
+    }
+
+    @Test
+    void exactGoalCandidateSelectionIsBoundedWithoutLosingLongerRoutes() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        List<PlayerRoute> generated = new java.util.ArrayList<>();
+        for (int length = 2; length <= 24; length++) {
+            List<Cell> cells = new java.util.ArrayList<>();
+            for (int i = 0; i < length; i++) cells.add(new Cell(0, i));
+            generated.add(new PlayerRoute(cells));
+        }
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "selectDiverseCandidates", GameState.class, List.class, int.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<PlayerRoute> selected = (List<PlayerRoute>) method.invoke(
+                new MonsterAwareRoutePlanner(), state, generated, 8);
+
+        assertEquals(8, selected.size(),
+                "exact-goal tactical evaluation must stay within MAX_ROUTE_CANDIDATES");
+        assertTrue(selected.stream()
+                        .mapToInt(PlayerRoute::size)
+                        .max()
+                        .orElse(0) > 8,
+                "candidate culling must retain a longer route for tactical diversity");
+    }
+
+    @Test
+    void partialTacticalRouteProgressBeatsSaferNonProgressBranch() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.mode = Mode.MODERN;
+        state.kit = Kit.MAVERICK;
+
+        PlayerRoute advancingRoute = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(0, 3),
+                new Cell(0, 4)));
+        PlayerRoute saferRoute = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(1, 0),
+                new Cell(2, 0),
+                new Cell(3, 0)));
+
+        GameState advancingState = state.copyForSimulation();
+        advancingState.player.x = 0.5D;
+        advancingState.player.z = 3.5D;
+        advancingState.player.health = 12.0D;
+
+        GameState saferState = state.copyForSimulation();
+        saferState.player.x = 0.5D;
+        saferState.player.z = 0.5D;
+        saferState.player.health = 20.0D;
+
+        var advancingResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                false, Integer.MAX_VALUE, 12.0D, 8.0D, advancingState, 3);
+        var saferResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                false, Integer.MAX_VALUE, 20.0D, 0.0D, saferState, 0);
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "better",
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class,
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class);
+        method.setAccessible(true);
+
+        boolean advancingWins = (boolean) method.invoke(
+                new MonsterAwareRoutePlanner(),
+                advancingResult, advancingRoute,
+                saferResult, saferRoute);
+
+        assertTrue(advancingWins,
+                "a partial route that advances several waypoints should not lose solely because a stalled branch preserved more health");
+    }
+
+    @Test
+    void nearEqualSuccessfulRoutePrefersAvoidingOneFullMobHit() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        PlayerRoute fast = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2)));
+        PlayerRoute safer = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(1, 0), new Cell(1, 1), new Cell(0, 1), new Cell(0, 2)));
+
+        GameState fastState = state.copyForSimulation();
+        GameState saferState = state.copyForSimulation();
+
+        var fastResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                true, 40, 12.0D, 8.0D, fastState, 2);
+        var saferResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                true, 60, 16.0D, 4.0D, saferState, 4);
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "better",
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class,
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class);
+        method.setAccessible(true);
+
+        assertTrue((boolean) method.invoke(
+                new MonsterAwareRoutePlanner(),
+                saferResult, safer,
+                fastResult, fast),
+                "saving one full four-damage hit should outweigh a modest route-time difference");
+        assertFalse((boolean) method.invoke(
+                new MonsterAwareRoutePlanner(),
+                fastResult, fast,
+                saferResult, safer),
+                "the faster hit-prone route should not win the same near-equal comparison");
     }
 
     @Test

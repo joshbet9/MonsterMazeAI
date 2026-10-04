@@ -249,7 +249,7 @@ public final class MonsterAwareRoutePlanner {
             List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
             if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
-            candidates = distinct(generated, limit * 3);
+            candidates = selectDiverseCandidates(state, generated, limit);
         } else {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
             Set<String> seen = new HashSet<>();
@@ -569,6 +569,61 @@ public final class MonsterAwareRoutePlanner {
             if ((dr == 2 && dc == 0) || (dc == 2 && dr == 0)) count++;
         }
         return count;
+    }
+
+    /**
+     * Bound exact-goal tactical simulation to the same candidate budget used by
+     * the planner while preserving dynamic route diversity. The previous
+     * limit*3 expansion could push 24 routes through the source-faithful simulator
+     * for one observation, keeping the asynchronous planner behind live monster
+     * motion without materially improving the set of routes that reach evaluation.
+     */
+    private List<PlayerRoute> selectDiverseCandidates(GameState state,
+                                                        List<PlayerRoute> generated,
+                                                        int limit) {
+        List<PlayerRoute> distinctGenerated = distinct(generated, Math.max(limit, 1));
+        if (distinctGenerated.size() <= limit) return distinctGenerated;
+
+        ArrayList<PlayerRoute> byCost = new ArrayList<>(distinctGenerated);
+        byCost.sort(this::compareByGapRisk);
+        LinkedHashMap<String, PlayerRoute> selected = new LinkedHashMap<>();
+
+        if (hasRelevantMonster(state)) {
+            addSelected(selected, distinctGenerated, 0);
+            addSelected(selected, distinctGenerated, 1);
+        }
+
+        addSelected(selected, byCost, 0);
+
+        PlayerRoute fewestTurns = byCost.stream().min((a, b) -> {
+            int turns = Integer.compare(routeTurnCount(a), routeTurnCount(b));
+            return turns != 0 ? turns : compareByGapRisk(a, b);
+        }).orElse(null);
+        if (fewestTurns != null) selected.put(routeKey(fewestTurns), fewestTurns);
+
+        PlayerRoute fewestGaps = byCost.stream().min((a, b) -> {
+            int gaps = Integer.compare(gapCount(a), gapCount(b));
+            return gaps != 0 ? gaps : compareByGapRisk(a, b);
+        }).orElse(null);
+        if (fewestGaps != null) selected.put(routeKey(fewestGaps), fewestGaps);
+
+        int remainingSlots = Math.max(0, limit - selected.size());
+        for (int i = 0; i < remainingSlots && selected.size() < limit; i++) {
+            int index = remainingSlots <= 1
+                    ? 0
+                    : (int) Math.round(
+                            i * (byCost.size() - 1.0) / (remainingSlots - 1.0));
+            PlayerRoute route = byCost.get(Math.max(0,
+                    Math.min(byCost.size() - 1, index)));
+            selected.put(routeKey(route), route);
+        }
+
+        for (PlayerRoute route : byCost) {
+            if (selected.size() >= limit) break;
+            selected.put(routeKey(route), route);
+        }
+
+        return List.copyOf(selected.values());
     }
 
     /**

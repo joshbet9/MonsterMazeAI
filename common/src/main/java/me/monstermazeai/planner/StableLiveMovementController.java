@@ -267,13 +267,6 @@ public final class StableLiveMovementController {
          * a nearby monster can be used as a source-faithful bump toward the
          * active pad. MobInteractionDecision refuses this at <= 2 hearts.
          */
-        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(
-                state, profile.tendencies.positiveMobKnockback);
-        if (intentionalBump != null) {
-            Action bumpAction = steerIntoMonster(state, intentionalBump);
-            if (bumpAction != null) return bumpAction;
-        }
-
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
         boolean objectiveChanged = goal.row() != goalRow
@@ -502,6 +495,16 @@ public final class StableLiveMovementController {
             }
 
 
+        }
+
+        // Intentional source-faithful mob contact is a last-resort routing
+        // fallback. It must never pre-empt a committed gap crossing or a real
+        // tactical Jumper/ability action.
+        MonsterState intentionalBump = MobInteractionDecision.chooseIntentionalBump(
+                state, profile.tendencies.positiveMobKnockback);
+        if (intentionalBump != null) {
+            Action bumpAction = steerIntoMonster(state, intentionalBump);
+            if (bumpAction != null) return bumpAction;
         }
 
         // Ordinary forward/lateral monster avoidance remains a motor-layer

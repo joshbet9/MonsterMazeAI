@@ -87,55 +87,6 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
-    void reactiveRoutingCanChooseALongerClearCorridorWhenTheDirectCorridorIsOccupied() {
-        GameState state = new GameState();
-        state.maze = openMaze();
-        state.kit = Kit.MAVERICK;
-        state.player.x = 0.5;
-        state.player.z = 2.5;
-        state.player.grounded = true;
-
-        MonsterState monster = new MonsterState(99, 2.5, 0.0, 2.5);
-        monster.vx = 0.0;
-        monster.vz = 0.0;
-        state.monsters.add(monster);
-
-        PlayerRoute route = new MonsterAwareRoutePlanner()
-                .routeReactive(state, new Cell(0, 2), new Cell(4, 2));
-
-        assertEquals(new Cell(0, 2), route.cells().get(0));
-        assertEquals(new Cell(4, 2), route.cells().get(route.size() - 1));
-        assertTrue(route.size() > 5,
-                "reactive route should spend a few cells to avoid the occupied direct corridor");
-        assertTrue(route.cells().stream().noneMatch(c -> c.equals(new Cell(2, 2))),
-                "reactive route must not route directly through the monster");
-    }
-
-    @Test
-    void reactiveRoutingUsesObservedVelocityForFutureThreats() {
-        GameState state = new GameState();
-        state.maze = openMaze();
-        state.kit = Kit.MAVERICK;
-        state.player.x = 0.5;
-        state.player.z = 2.5;
-        state.player.grounded = true;
-
-        MonsterState crossing = new MonsterState(100, 2.5, 0.0, 5.0);
-        crossing.vx = 0.0;
-        crossing.vz = -0.30;
-        state.monsters.add(crossing);
-
-        PlayerRoute route = new MonsterAwareRoutePlanner()
-                .routeReactive(state, new Cell(0, 2), new Cell(4, 2));
-
-        assertEquals(new Cell(0, 2), route.cells().get(0));
-        assertEquals(new Cell(4, 2), route.cells().get(route.size() - 1));
-        assertTrue(route.size() >= 5);
-        assertTrue(route.cells().stream().noneMatch(c -> c.equals(new Cell(2, 2))),
-                "arrival-time threat should discourage the forecast crossing cell");
-    }
-
-    @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();

@@ -22,6 +22,30 @@ class TacticalRouteSimulatorTest {
     }
 
     @Test
+    void routeFollowerUsesConservativeCornerVectorNearCardinalTurn() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.kit = Kit.MAVERICK;
+        state.player.x = 0.5D;
+        state.player.z = 0.5D;
+        state.player.yaw = 90.0F;
+        state.player.grounded = true;
+
+        PlayerRoute route = new PlayerRoute(java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 4)));
+
+        Action action = new TacticalRouteSimulator().nextAction(
+                state, route, new Cell(0, 4), false, 0);
+
+        assertEquals(0.0D, action.forward(), 1.0e-6D);
+        assertEquals(0.65D, action.strafe(), 1.0e-6D);
+        assertFalse(action.sprint(),
+                "pure 90-degree corner steering must retain the validated conservative edge policy");
+        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
     void routeFollowerCarriesForwardThroughRecoverableLargeHeadingError() {
         GameState state = new GameState();
         state.maze = openMaze();

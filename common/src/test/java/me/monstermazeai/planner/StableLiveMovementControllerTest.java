@@ -68,6 +68,39 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void threatSignatureChangeReplansWhenMonsterEntersActiveRoute() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 8));
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 0);
+        setField(controller, "goalColumn", 8);
+        setField(controller, "goalRadius", 0);
+
+        var threatSignatureMethod = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        threatSignatureMethod.setAccessible(true);
+        long before = (long) threatSignatureMethod.invoke(null, s);
+        setField(controller, "lastThreatSignature", before);
+
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                1, 0.5, 0.0, 6.5));
+
+        var threatened = StableLiveMovementController.class.getDeclaredMethod(
+                "currentRouteThreatenedByMonster", GameState.class);
+        threatened.setAccessible(true);
+
+        long after = (long) threatSignatureMethod.invoke(null, s);
+        assertNotEquals(before, after);
+        assertTrue((boolean) threatened.invoke(controller, s),
+                "a stationary monster directly on the active corridor must wake strategic replanning");
+    }
+
+    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

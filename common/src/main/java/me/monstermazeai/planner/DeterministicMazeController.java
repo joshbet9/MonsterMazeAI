@@ -58,6 +58,7 @@ public final class DeterministicMazeController {
     private long routePlanCount;
     private long lastRouteTick = Long.MIN_VALUE;
     private long lastThreatRerouteTick = Long.MIN_VALUE;
+    private long lastSpeedJumpTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
     private String lastDecisionDetail = "RESET";
 
@@ -436,9 +437,8 @@ public final class DeterministicMazeController {
         if (!allowJump || !state.player.grounded || state.kit == Kit.JUMPER) return false;
 
         long cadence = profile.attributes.nonJumperJumpCadenceTicks();
-        long last = Math.max(lastRouteTick, state.tick - cadence);
-        if (state.tick - last < cadence) return false;
-
+        if (state.tick - lastSpeedJumpTick < cadence) return false;
+        lastSpeedJumpTick = state.tick;
         return true;
     }
 
@@ -648,6 +648,7 @@ public final class DeterministicMazeController {
         routePlanCount = 0;
         lastRouteTick = Long.MIN_VALUE;
         lastThreatRerouteTick = Long.MIN_VALUE;
+        lastSpeedJumpTick = Long.MIN_VALUE;
         previousHealth = Double.NaN;
         lastDecisionDetail = "RESET";
     }

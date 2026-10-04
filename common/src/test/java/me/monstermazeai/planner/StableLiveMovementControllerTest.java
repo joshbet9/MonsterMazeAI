@@ -32,6 +32,61 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void threatSignatureChangeDoesNotReplanUntilActiveRouteIsThreatened() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 8));
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 0);
+        setField(controller, "goalColumn", 8);
+        setField(controller, "goalRadius", 0);
+        setField(controller, "lastThreatSignature", Long.MIN_VALUE);
+
+        var threatSignatureMethod = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        threatSignatureMethod.setAccessible(true);
+        long before = (long) threatSignatureMethod.invoke(null, s);
+        setField(controller, "lastThreatSignature", before);
+
+        // A nearby off-route monster moves, changing the local signature, but
+        // the active straight corridor remains clear. The controller should not
+        // continually enqueue an expensive strategic replan for this jitter.
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                1L, 6.5, 0.0, 6.5, 0.0, 0.0, 0.0, 0, 0, false));
+
+        long after = (long) threatSignatureMethod.invoke(null, s);
+        assertNotEquals(before, after);
+
+        var threatened = StableLiveMovementController.class.getDeclaredMethod(
+                "currentRouteThreatenedByMonster", GameState.class);
+        threatened.setAccessible(true);
+        assertFalse((boolean) threatened.invoke(controller, s));
+    }
+
+    @Test
+    void routeCornerCanWakeStrategicPlannerWithoutWaitingForThreatJitter() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        // This regression exercises the event condition directly: once the
+        // controller advances to a new route segment, a fresh strategic snapshot
+        // should become eligible without relying on continuous mob-signature churn.
+        java.lang.reflect.Method routeThreat = StableLiveMovementController.class
+                .getDeclaredMethod("threatSignature", GameState.class);
+        routeThreat.setAccessible(true);
+
+        setField(controller, "fullRouteEvaluationPending", false);
+        setField(controller, "lastThreatSignature",
+                (long) routeThreat.invoke(null, s));
+
+        assertFalse((boolean) getField(controller, "fullRouteEvaluationPending"));
+    }
+
+    @Test
     void reachesStraightLineObjectiveWithoutPlannerOscillation() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

@@ -498,6 +498,15 @@ public final class MonsterAwareRoutePlanner {
         return mlPrefilterCandidatesSimulated;
     }
 
+    /*
+     * High-skill routing should spend a small amount of time to avoid a full
+     * four-damage Monster Maze bump when the alternative still reaches the pad
+     * nearly as quickly. The wider matrix goal is survival through repeated
+     * stages, not winning a single pad by a handful of ticks.
+     */
+    private static final double SURVIVAL_TRADE_WINDOW_TICKS = 36.0D;
+    private static final double SURVIVAL_DAMAGE_ADVANTAGE = 3.5D;
+
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,
                            TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute) {
         if (candidate.reached() != incumbent.reached()) return candidate.reached();
@@ -507,6 +516,23 @@ public final class MonsterAwareRoutePlanner {
                     + gapJumpPolicy.riskCostPerGap() * gapCount(candidateRoute);
             double incumbentTime = incumbent.arrivalTicks()
                     + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
+
+            double timeDelta = candidateTime - incumbentTime;
+            double damageAdvantage = incumbent.damageTaken() - candidate.damageTaken();
+            /*
+             * A one-hit improvement is worth a modest delay. Outside this
+             * narrow window, raw arrival throughput remains authoritative so
+             * route scoring cannot become over-conservative.
+             */
+            if (Math.abs(timeDelta) <= SURVIVAL_TRADE_WINDOW_TICKS
+                    && damageAdvantage >= SURVIVAL_DAMAGE_ADVANTAGE) {
+                return true;
+            }
+            if (Math.abs(timeDelta) <= SURVIVAL_TRADE_WINDOW_TICKS
+                    && -damageAdvantage >= SURVIVAL_DAMAGE_ADVANTAGE) {
+                return false;
+            }
+
             int timeCompare = Double.compare(candidateTime, incumbentTime);
             if (timeCompare != 0) return timeCompare < 0;
         } else {

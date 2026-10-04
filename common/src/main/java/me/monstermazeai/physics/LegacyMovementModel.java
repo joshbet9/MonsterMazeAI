@@ -9,7 +9,9 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final float GROUND_FRICTION = 0.91F;
     private static final float WALK_SPEED = 0.10F;
     private static final float SPRINT_MULTIPLIER = 1.30F;
-    private static final float AIR_MOVE_FACTOR = 0.026F;
+    private static final float AIR_MOVE_FACTOR = 0.020F;
+    /** Source Monster Maze sprint air movement factor. */
+    private static final float SPRINT_AIR_MOVE_FACTOR = 0.026F;
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
@@ -78,8 +80,14 @@ public final class LegacyMovementModel implements PhysicsModel {
                     * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
                     * (0.16277136F / (friction * friction * friction));
         } else {
-            movementFactor = AIR_MOVE_FACTOR
-                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F);
+            /*
+             * Air control uses the source jumpMovementFactor directly. Sprinting
+             * raises that air factor to 0.026; do not multiply 0.026 by the
+             * ground 1.3 sprint multiplier a second time.
+             */
+            movementFactor = action.sprint()
+                    ? SPRINT_AIR_MOVE_FACTOR
+                    : AIR_MOVE_FACTOR;
         }
 
         moveFlying(p, action.strafe(), action.forward(), movementFactor);

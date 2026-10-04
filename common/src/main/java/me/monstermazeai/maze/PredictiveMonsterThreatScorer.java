@@ -24,12 +24,12 @@ import java.util.Random;
  * tactical simulator remains authoritative for near-contact actions.
  */
 public final class PredictiveMonsterThreatScorer {
-    private static final int HORIZON_TICKS = 96;
+    private static final int HORIZON_TICKS = 144;
     private static final int TIMING_WINDOW_TICKS = 2;
     private static final double DANGER_RADIUS = 2.75D;
     private static final double CONTACT_DISTANCE = 1.0D;
     private static final double CONTACT_Y_DISTANCE = 1.0D;
-    private static final double MAX_PREDICTED_MONSTER_TRAVEL = 30.0D;
+    private static final double MAX_PREDICTED_MONSTER_TRAVEL = 40.0D;
     private static final double TURN_PENALTY_TICKS = 1.25D;
 
     /*

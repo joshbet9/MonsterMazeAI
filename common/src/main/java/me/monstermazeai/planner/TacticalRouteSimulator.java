@@ -154,6 +154,9 @@ public final class TacticalRouteSimulator {
             for (Node node : beam) {
                 for (Action action : tacticalActions(node.state, route, node.waypoint)) {
                     GameState s = node.state.copyForSimulation();
+                    // Every beam branch advances progression independently, so
+                    // each branch must own a mutable maze surface state.
+                    s.maze = node.state.maze == null ? null : node.state.maze.copy();
                     s.tick = source.tick + depth + 1;
                     MonsterSimulator branchMonsters = monsterSimulator(s, source.tick + depth + 1);
                     int wp = route.nextWaypoint(s.player.x, s.player.z, node.waypoint, WAYPOINT_TOLERANCE);

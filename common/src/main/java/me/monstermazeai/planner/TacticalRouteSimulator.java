@@ -41,8 +41,22 @@ public final class TacticalRouteSimulator {
 
     public Action nextAction(GameState source, PlayerRoute route, Cell goal,
                               boolean regionGoal, int regionRadius) {
-        if (!needsTacticalSearch(source)) return routeFollowerAction(source, route, 0);
-        return chooseTacticalAction(source, route, 0, goal, regionGoal, regionRadius);
+        return nextAction(source, route, 0, goal, regionGoal, regionRadius);
+    }
+
+    /**
+     * Live tactical entry point. The current waypoint belongs to the live
+     * controller and must be preserved; starting every tactical search at zero
+     * makes a mid-route player steer back toward already-passed geometry.
+     */
+    public Action nextAction(GameState source, PlayerRoute route, int waypoint,
+                              Cell goal, boolean regionGoal, int regionRadius) {
+        int currentWaypoint = Math.max(0, Math.min(waypoint, route.size() - 1));
+        if (!needsTacticalSearch(source)) {
+            return routeFollowerAction(source, route, currentWaypoint);
+        }
+        return chooseTacticalAction(
+                source, route, currentWaypoint, goal, regionGoal, regionRadius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

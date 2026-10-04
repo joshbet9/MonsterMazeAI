@@ -118,6 +118,30 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void equivalentAsyncRoutePrefixIsNotConsideredAReplan() {
+        PlayerRoute current = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+        PlayerRoute samePrefix = new PlayerRoute(List.of(
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+        PlayerRoute divergent = new PlayerRoute(List.of(
+                new Cell(0, 1),
+                new Cell(1, 1),
+                new Cell(1, 2)));
+
+        assertTrue(StableLiveMovementController.routeSharesPrefixFromCurrentCell(
+                current, samePrefix, 0, 1, 3));
+        assertFalse(StableLiveMovementController.routeSharesPrefixFromCurrentCell(
+                current, divergent, 0, 1, 3));
+    }
+
+    @Test
     void usesCornerVectorForLargeHeadingErrorNearCorner() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;

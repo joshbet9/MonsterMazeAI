@@ -396,7 +396,7 @@ public final class StableLiveMovementController {
             } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
-                scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+                scheduleStrategicRoute(state, routingState, new Cell(startRow, startColumn), goal, regionRadius);
             }
         }
 

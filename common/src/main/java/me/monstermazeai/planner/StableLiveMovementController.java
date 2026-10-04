@@ -504,22 +504,19 @@ public final class StableLiveMovementController {
                 int turnTicks = Math.max(1, (int) Math.ceil(
                         Math.abs(nextYawError) / MAX_TURN_PER_TICK));
 
-                double incomingSpeed = projectedIncomingSpeed(
-                        state.player.vx, state.player.vz, dirRow, dirColumn);
-                double retainedSpeed = incomingSpeed;
-                double turnTravel = 0.0D;
-                for (int i = 0; i < turnTicks; i++) {
-                    turnTravel += retainedSpeed;
-                    retainedSpeed *= PHYSICS_GROUND_FRICTION * PHYSICS_SLIPPERINESS;
-                }
-                turnTravel = Math.max(turnTravel, 0.10D);
-
-                cornerApproach = cornerDistance <= turnTravel + 0.20D;
+                /*
+                 * Do not start a full corner turn from a velocity-sized distance
+                 * away. With 1.8 friction, an otherwise correct coasting state
+                 * can decay to zero before the player reaches the corner. Begin
+                 * the actual heading change only at the cell-entry boundary.
+                 */
+                double turnLead = 0.18D;
+                cornerApproach = cornerDistance <= turnLead;
                 if (cornerApproach) {
                     steeringRow = nextRow;
                     steeringColumn = nextColumn;
                     Cell containing = containingCell(state.player.x, state.player.z);
-                    cornerAtEntry = cornerDistance <= 0.12D
+                    cornerAtEntry = cornerDistance <= 0.05D
                             || containing.equals(route.cells().get(waypointIndex));
                 }
             }
@@ -605,23 +602,21 @@ public final class StableLiveMovementController {
             }
         } else if (cornerApproach) {
             /*
-             * Rotate onto the outgoing segment before entering the corner cell.
-             * Do not add a diagonal W vector while the player is still outside
-             * that cell: the retained vanilla momentum is the travel mechanism.
+             * The turn begins at the physical cell boundary, not at the corner
+             * centre. Keep meaningful W input during the 30-degree pulses so the
+             * player's existing velocity is reinforced rather than discarded.
+             * The route/support guard remains authoritative against cutting air.
              */
             float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            if (cornerAtEntry && Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
-                double absError = Math.abs(yawError);
-                double forward = absError <= 25.0 ? 1.0 : 0.35;
-                boolean jump = shouldSpeedJump(state, allowJump);
-                action = new Action(forward, 0.0, jump, forward >= 0.95, turn, false);
-                lastDecisionDetail += " CORNER_RELEASE";
-            } else {
-                action = new Action(
-                        0.0, 0.0, false, false, turn, false);
-                lastDecisionDetail += " CORNER_COAST"
-                        + " distance=" + format(cornerDistance);
-            }
+            double absError = Math.abs(yawError);
+            double forward = absError <= 35.0 ? 1.0 : 0.65;
+            boolean sprint = absError <= 20.0;
+            boolean jump = shouldSpeedJump(state, allowJump);
+            action = new Action(forward, 0.0, jump, sprint, turn, false);
+            lastDecisionDetail += cornerAtEntry
+                    ? " CORNER_RELEASE"
+                    : " CORNER_TURN"
+                    + " distance=" + format(cornerDistance);
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Straight-segment heading correction: turn and drive together.

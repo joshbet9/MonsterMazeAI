@@ -28,6 +28,12 @@ class BottleneckSmokeSimulationTest {
         assertTrue(failures.isEmpty(), String.join(System.lineSeparator(), failures));
     }
 
+    private static String compact(String value) {
+        if (value == null || value.isBlank()) return "NONE";
+        String normalized = value.replace('\n', ' ').replace('\r', ' ');
+        return normalized.length() <= 900 ? normalized : normalized.substring(normalized.length() - 900);
+    }
+
     private static String run(String name, int pattern, Kit kit, Mode mode, int targetStage,
                               int requiredStage) {
         AuthenticStage10SimulationTest.RunResult result =
@@ -38,14 +44,15 @@ class BottleneckSmokeSimulationTest {
                 "BOTTLENECK_SMOKE case=%s mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%s " +
                         "avgSpeed=%.3f moveShare=%.3f zeroShare=%.3f stationaryShare=%.3f " +
                         "edge=%d corner=%d steer=%d recovery=%d firstFallTick=%d terminalTick=%d " +
-                        "firstFallV=%.3f,%.3f%n",
+                        "firstFallV=%.3f,%.3f firstFallDecision=%s%n",
                 name, mode, pattern + 1, kit, result.maxStage(), result.ticks(),
                 Double.toString(result.health()), result.averageHorizontalSpeed(),
                 result.movementInputShare(), result.zeroInputShare(),
                 result.stationaryShare(), result.edgeGuardTicks(),
                 result.cornerVectorTicks(), result.steerDriveTicks(),
                 result.fastRecoveryRouteTicks(), result.firstFallTick(),
-                result.terminalTick(), result.firstFallVx(), result.firstFallVz());
+                result.terminalTick(), result.firstFallVx(), result.firstFallVz(),
+                compact(result.firstFallDecision()));
 
         if (result.maxStage() < requiredStage) {
             return "Smoke regression: " + name + " reached only stage "

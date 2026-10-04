@@ -1,9 +1,9 @@
 name: Matrix v30 — Modern Repulsor Corridor
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
+      - autonomous/matrix-modern-repulsor-corridor-v30
 
 permissions:
   contents: read

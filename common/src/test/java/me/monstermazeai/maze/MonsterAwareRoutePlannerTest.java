@@ -336,6 +336,44 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void nearEqualSuccessfulRoutePrefersAvoidingOneFullMobHit() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        PlayerRoute fast = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2)));
+        PlayerRoute safer = new PlayerRoute(List.of(
+                new Cell(0, 0), new Cell(1, 0), new Cell(1, 1), new Cell(0, 1), new Cell(0, 2)));
+
+        GameState fastState = state.copyForSimulation();
+        GameState saferState = state.copyForSimulation();
+
+        var fastResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                true, 40, 12.0D, 8.0D, fastState, 2);
+        var saferResult = new me.monstermazeai.planner.TacticalRouteSimulator.Result(
+                true, 60, 16.0D, 4.0D, saferState, 4);
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "better",
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class,
+                me.monstermazeai.planner.TacticalRouteSimulator.Result.class,
+                PlayerRoute.class);
+        method.setAccessible(true);
+
+        assertTrue((boolean) method.invoke(
+                new MonsterAwareRoutePlanner(),
+                saferResult, safer,
+                fastResult, fast),
+                "saving one full four-damage hit should outweigh a modest route-time difference");
+        assertFalse((boolean) method.invoke(
+                new MonsterAwareRoutePlanner(),
+                fastResult, fast,
+                saferResult, safer),
+                "the faster hit-prone route should not win the same near-equal comparison");
+    }
+
+    @Test
     void fullRoutingRetainsAnOrdinaryRouteEvenWhenGapCandidatesExist() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

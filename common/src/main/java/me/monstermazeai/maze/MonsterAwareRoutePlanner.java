@@ -83,6 +83,13 @@ public final class MonsterAwareRoutePlanner {
         return chosen;
     }
 
+    private static Cell routeStart(List<PlayerRoute> candidates) {
+        if (candidates == null || candidates.isEmpty() || candidates.get(0).size() == 0) {
+            throw new IllegalArgumentException("No route candidates");
+        }
+        return candidates.get(0).cells().get(0);
+    }
+
     private static boolean hasRelevantMonster(GameState state) {
         for (var monster : state.monsters) {
             if (MonsterRelevance.withinPlayerRadius(
@@ -252,22 +259,33 @@ public final class MonsterAwareRoutePlanner {
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
         boolean hasRelevantMonster = hasRelevantMonster(state);
+
+        /*
+         * With no immediate contact threat, use the direct time-expanded
+         * predictive search instead of asking a bounded K-shortest generator to
+         * guess which detour matters. This is the strategic routing authority.
+         */
+        if (!hasRelevantMonster) {
+            return PredictiveMonsterThreatScorer.bestRoute(
+                    state,
+                    routeStart(candidates),
+                    goal,
+                    regionGoal ? regionRadius : 0,
+                    gapJumpPolicy.riskCostPerGap(),
+                    jumperGapBudget(state));
+        }
+
         List<PredictiveMonsterThreatScorer.Score> predictive =
                 PredictiveMonsterThreatScorer.rank(state, candidates);
 
         if (predictive.isEmpty()) return shortest(candidates);
 
         /*
-         * Strategic routing now sees future monster occupancy before a mob
-         * reaches the 20-block immediate-interaction sphere. When the threat is
-         * only future, the predictive route is already the useful decision.
          * When a monster is already locally relevant, keep the exact tactical
          * simulator, but only spend that expensive beam on the best predictive
-         * candidates. This both improves foresight and prevents stale brute
-         * force from dominating the planner.
+         * candidates. This preserves detailed collision/ability evaluation while
+         * still using future occupancy to order the candidates.
          */
-        if (!hasRelevantMonster) return choosePredictive(state, candidates, predictive);
-
         List<PlayerRoute> tacticalCandidates = predictive.stream()
                 .limit(Math.min(MAX_EXACT_TACTICAL_CANDIDATES, predictive.size()))
                 .map(PredictiveMonsterThreatScorer.Score::route)

@@ -164,4 +164,28 @@ class MonsterAwareRoutePlannerTest {
         assertEquals(new Cell(10, 14), route.cells().get(route.size() - 1));
         assertTrue(route.size() > 1);
     }
+    @Test
+    void predictiveThreatSeesMonsterBeyondImmediateInteractionRadiusAndChoosesDetour() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.tick = 0;
+        state.player.x = 10.5;
+        state.player.z = 0.5;
+        state.player.grounded = true;
+
+        // 21 blocks ahead: deliberately outside the 20-block immediate
+        // interaction sphere, but inside the strategic prediction horizon.
+        MonsterState futureThreat = new MonsterState(99, 10.5, 0.0, 21.5);
+        futureThreat.frozenUntilTick = 250L;
+        state.monsters.add(futureThreat);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .route(state, new Cell(10, 0), new Cell(10, 30));
+
+        assertEquals(new Cell(10, 0), route.cells().get(0));
+        assertEquals(new Cell(10, 30), route.cells().get(route.size() - 1));
+        assertFalse(route.cells().contains(new Cell(10, 21)),
+                "strategic routing should leave the future monster crossing before it becomes locally relevant");
+    }
+
 }

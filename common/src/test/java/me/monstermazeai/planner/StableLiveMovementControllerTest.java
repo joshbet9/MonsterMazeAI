@@ -118,6 +118,26 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void headingTurnMagnitudeDetectsCardinalReversal() {
+        PlayerRoute current = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1)));
+        PlayerRoute same = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1)));
+        PlayerRoute perpendicular = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(1, 0)));
+        PlayerRoute reverse = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, -1)));
+
+        assertEquals(0.0, StableLiveMovementController.firstHeadingTurnMagnitude(current, same));
+        assertEquals(90.0, StableLiveMovementController.firstHeadingTurnMagnitude(current, perpendicular));
+        assertEquals(180.0, StableLiveMovementController.firstHeadingTurnMagnitude(current, reverse));
+    }
+
+    @Test
     void usesCornerVectorForLargeHeadingErrorNearCorner() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;

@@ -35,12 +35,20 @@ public final class TacticalRouteSimulator {
     private static final double WAYPOINT_TOLERANCE = 0.30;
 
     private final LegacyMovementModel physics = new LegacyMovementModel();
-    private final AbilityModel abilities = new AbilityModel();
-
     public Action nextAction(GameState source, PlayerRoute route, Cell goal,
                               boolean regionGoal, int regionRadius) {
-        if (!needsTacticalSearch(source)) return routeFollowerAction(source, route, 0);
-        return chooseTacticalAction(source, route, 0, goal, regionGoal, regionRadius);
+        int waypoint = route.nextWaypoint(
+                source.player.x, source.player.z, 0, WAYPOINT_TOLERANCE);
+        return nextAction(source, route, waypoint, goal, regionGoal, regionRadius);
+    }
+
+    public Action nextAction(GameState source, PlayerRoute route, int waypoint, Cell goal,
+                              boolean regionGoal, int regionRadius) {
+        int safeWaypoint = Math.max(0, Math.min(waypoint, route.size() - 1));
+        if (!needsTacticalSearch(source)) {
+            return routeFollowerAction(source, route, safeWaypoint);
+        }
+        return chooseTacticalAction(source, route, safeWaypoint, goal, regionGoal, regionRadius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

@@ -196,6 +196,28 @@ class AbilityModelTest {
     }
 
     @Test
+    void modernRepulsorUsesLiveTravelCorridorWhenPadLineDiffers() {
+        GameState s = new GameState();
+        s.mode = Mode.MODERN;
+        s.kit = Kit.REPULSOR;
+        s.activePadRow = 20;
+        s.activePadColumn = 0;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.player.vx = 0.0;
+        s.player.vz = 1.0;
+        s.ability.charges = 3;
+
+        // The monsters sit on the player's actual travel corridor (+Z), while
+        // the active pad is off-axis (+X). Direct pad-line geometry alone would
+        // miss them; the human-like travel-corridor rule should clear them.
+        s.monsters.add(new MonsterState(51, 0.5, 0.0, 4.5));
+        s.monsters.add(new MonsterState(52, 0.5, 0.0, 5.5));
+
+        assertTrue(AbilityDecision.shouldUse(s, "MOVEMENT_PLANNER", "travel corridor threat"));
+    }
+
+    @Test
     void modernRepulsorCanClearADevelopingTwoMonsterCorridor() {
         GameState s = new GameState();
         s.mode = Mode.MODERN;

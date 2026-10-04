@@ -437,6 +437,44 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void committedGapOwnsEdgeTickBeforeTacticalMovement() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][9] = 1;
+        raw[10][10] = 1;
+        raw[10][12] = 1;
+        for (int column = 13; column <= 30; column++) raw[10][column] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.activePadRow = 10;
+        s.activePadColumn = 30;
+        s.player.x = 10.5;
+        s.player.z = 9.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        controller.nextAction(s, new Cell(10, 30), true);
+
+        s.player.z = 10.99;
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                100, 10.5, 0.0, 11.5));
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(10, 30), true);
+
+        assertTrue(action.forward() > 0.0D);
+        assertTrue(action.jump(),
+                "the committed gap takeoff must not be replaced by tactical movement when a monster is present");
+        assertTrue(controller.lastDecisionDetail().contains("GAP_"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void tacticalLayerCannotOverrideNonJumperMovementWithJump() {
         Action tacticalJump = new Action(1.0, 0.0, true, true, 0.0F, false);
 

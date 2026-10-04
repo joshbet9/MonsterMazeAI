@@ -213,4 +213,42 @@ class MonsterAwareRoutePlannerTest {
                 "direct predictive search should discover a spatial detour around a future contact");
     }
 
+    @Test
+    void predictiveSearchDoesNotRouteThroughAnOldPadThatExpiresBeforeArrival() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 0;
+
+        // Permanent corridor above and below the expiring pad shortcut.
+        for (int column = 0; column <= 16; column++) {
+            raw[0][column] = 1;
+            raw[2][column] = 1;
+        }
+        // Temporary old SafePad fills the middle row.
+        MazeModel maze = new MazeModel(raw);
+        Cell oldPad = new Cell(1, 8);
+        for (int row = oldPad.row() - 2; row <= oldPad.row() + 2; row++) {
+            for (int column = oldPad.column() - 2; column <= oldPad.column() + 2; column++) {
+                maze.setPadSurface(row, column, true);
+                maze.setDisabled(row, column, true);
+            }
+        }
+
+        state.maze = maze;
+        state.player.x = 1.5;
+        state.player.z = 0.5;
+        state.player.grounded = true;
+        state.oldPads.add(oldPad);
+        state.oldPadDecaySeconds.put(oldPad, 1);
+
+        PlayerRoute route = PredictiveMonsterThreatScorer.bestRoute(
+                state, new Cell(1, 0), new Cell(1, 16), 0, 1.0, -1);
+
+        assertTrue(route.cells().stream().noneMatch(c ->
+                        Math.abs(c.row() - oldPad.row()) <= 2
+                                && Math.abs(c.column() - oldPad.column()) <= 2),
+                "the predictive route must not depend on an old pad surface that expires before arrival");
+    }
+
 }

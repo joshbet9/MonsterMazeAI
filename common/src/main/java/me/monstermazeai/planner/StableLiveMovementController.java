@@ -827,7 +827,8 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        if (planned.goalRow != goal.row()
+        if (planned.route == null
+                || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()

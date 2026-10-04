@@ -1275,27 +1275,34 @@ public final class StableLiveMovementController {
      * 20-block interaction sphere does. Immediate tactical control still uses
      * the current observation when a contact search is required.
      */
+    /**
+     * Strategic threat signature for the receding-horizon route selector.
+     *
+     * This is deliberately wider than the 20-block tactical interaction sphere:
+     * the predictive planner needs to wake up while a monster is still several
+     * seconds away from contact. Coarser buckets prevent every sub-block monster
+     * movement from synchronously invoking the predictive scorer.
+     */
+    private static final double STRATEGIC_THREAT_RADIUS = 45.0D;
+
     private static long threatSignature(GameState state) {
         long h = 1469598103934665603L;
         for (me.monstermazeai.monster.MonsterState monster : state.monsters) {
             if (!me.monstermazeai.monster.MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS)) continue;
+                    monster, state.player, STRATEGIC_THREAT_RADIUS)) continue;
 
             /*
-             * Cell-only signatures were too coarse for live Monster Maze.
-             * Monsters can move a substantial fraction of a block without
-             * crossing a cell boundary, while their velocity changes the
-             * source-faithful predicted contact. Quantise position to 0.5
-             * blocks and velocity to 0.05 so tactical evaluation is refreshed
-             * when the threat meaningfully changes, without forcing a full
-             * simulation for every floating-point packet variation.
+             * Strategic prediction is intentionally less granular than the
+             * immediate tactical trigger. A one-block spatial bucket and 0.1
+             * velocity bucket are enough to wake the receding-horizon selector
+             * when a future crossing becomes materially different.
              */
             h = mix(h, monster.id);
-            h = mix(h, quantise(monster.x, 0.5D));
-            h = mix(h, quantise(monster.y, 0.5D));
-            h = mix(h, quantise(monster.z, 0.5D));
-            h = mix(h, quantise(monster.vx, 0.05D));
-            h = mix(h, quantise(monster.vz, 0.05D));
+            h = mix(h, quantise(monster.x, 1.0D));
+            h = mix(h, quantise(monster.y, 1.0D));
+            h = mix(h, quantise(monster.z, 1.0D));
+            h = mix(h, quantise(monster.vx, 0.1D));
+            h = mix(h, quantise(monster.vz, 0.1D));
             h = mix(h, monster.launched(state.tick) ? 1L : 0L);
             h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
         }

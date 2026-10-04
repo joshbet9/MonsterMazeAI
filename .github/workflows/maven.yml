@@ -30,8 +30,8 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Build and test common
-        run: mvn -B -ntp verify
+      - name: Build and test common (fast verification; matrix promotion-only)
+        run: mvn -B -ntp -Pfast-verify verify
 
       - name: First-pad deterministic physics simulation
         run: mvn -B -ntp -pl common -am -Dtest=FirstPadMovementControllerTest,FirstPadMovementPhysicsSimulationTest -Dsurefire.failIfNoSpecifiedTests=false test

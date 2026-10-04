@@ -873,7 +873,13 @@ public final class StableLiveMovementController {
                     throw new IllegalStateException("Strategic planner returned no route");
                 }
                 synchronized (routePlanLock) {
-                    if (generation == routePlanGeneration) {
+                    /*
+                     * A newer observation already supersedes this result. Do not
+                     * publish the old route even when its topology still matches;
+                     * otherwise the live motor can briefly consume stale routing
+                     * immediately before the queued plan completes.
+                     */
+                    if (generation == routePlanGeneration && queuedRouteRequest == null) {
                         completedRoutePlan = new PlannedRoute(
                                 planned,
                                 request.start.row(), request.start.column(),

@@ -366,6 +366,41 @@ public final class StableLiveMovementController {
             } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
+
+                /*
+                 * Do not make the live controller wait for the asynchronous
+                 * source-faithful beam. A quantised threat change is enough to
+                 * justify one cheap predictive candidate ranking on this tick.
+                 * The exact strategic planner is still scheduled immediately
+                 * afterwards as a higher-quality refinement.
+                 */
+                try {
+                    PlayerRoute reactive = regionRadius > 0
+                            ? routePlanner.routeToRegionReactive(
+                                    state, new Cell(startRow, startColumn), goal, regionRadius)
+                            : routePlanner.routeReactive(
+                                    state, new Cell(startRow, startColumn), goal);
+
+                    boolean changed = route == null || !sameRoute(route, reactive);
+                    if (changed && (route == null
+                            || strategicRoutePreservesCurrentHeading(state, reactive))) {
+                        route = reactive;
+                        waypointIndex = reanchorWaypointIndex(state, route);
+                        anchoredSegmentIndex = -1;
+                        lastRouteTick = state.tick;
+                        routePlanCount++;
+                        lastTacticalSignature = Long.MIN_VALUE;
+                        lastDecisionDetail = "REACTIVE_ROUTE_APPLIED"
+                                + " size=" + route.size()
+                                + " regionRadius=" + regionRadius
+                                + " start=" + startRow + "," + startColumn
+                                + " goal=" + goal.row() + "," + goal.column();
+                    }
+                } catch (RuntimeException failure) {
+                    lastDecisionDetail += " REACTIVE_ROUTE_FAILED="
+                            + failure.getClass().getSimpleName();
+                }
+
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
             }
         }
@@ -1202,6 +1237,10 @@ public final class StableLiveMovementController {
                     state.player.z - nearestZ));
         }
         return best == Double.POSITIVE_INFINITY ? 0.0 : best;
+    }
+
+    private static boolean sameRoute(PlayerRoute a, PlayerRoute b) {
+        return a != null && b != null && a.cells().equals(b.cells());
     }
 
     private static boolean insideRegion(int row, int column, Cell center, int radius) {

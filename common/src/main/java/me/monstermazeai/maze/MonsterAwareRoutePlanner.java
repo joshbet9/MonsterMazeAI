@@ -219,11 +219,9 @@ public final class MonsterAwareRoutePlanner {
      */
     public PlayerRoute routeReactive(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
-        if (start.equals(goal)) return new PlayerRoute(List.of(start));
-
-        List<PlayerRoute> candidates = cachedCandidatesFor(
-                state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
-        return choosePredictive(state, restrictJumperGapBudget(state, candidates));
+        return PredictiveMonsterThreatScorer.bestRoute(
+                state, start, goal, 0, gapJumpPolicy.riskCostPerGap(),
+                jumperGapBudget(state));
     }
 
     /**
@@ -240,9 +238,9 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
-        List<PlayerRoute> candidates = cachedCandidatesFor(
-                state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
-        return choosePredictive(state, restrictJumperGapBudget(state, candidates));
+        return PredictiveMonsterThreatScorer.bestRoute(
+                state, start, regionCenter, radius, gapJumpPolicy.riskCostPerGap(),
+                jumperGapBudget(state));
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

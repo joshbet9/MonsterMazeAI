@@ -720,6 +720,10 @@ public final class StableLiveMovementController {
         return lastDecisionDetail;
     }
 
+    long lastTacticalDecisionTickForTest() {
+        return lastTacticalDecisionTick;
+    }
+
     public void reset() {
         clearRoute();
         goalRow = -1;

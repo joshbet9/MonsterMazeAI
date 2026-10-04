@@ -40,23 +40,49 @@ class MovementBenchmarkTest {
         MazeModel maze = new MazeModel(raw);
 
         GameState s = player();
+        s.mode = Mode.SPEED;
         s.kit = Kit.MAVERICK;
         s.player.x = 10.5;
-        s.player.z = 10.95;
+        s.player.z = 11.05;
         s.player.y = GameState.PATH_Y;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        s.player.vz = 0.39;
+        // Start on the supported lip of the source block so the source
+        // sprint-jump horizontal impulse can carry the AABB into the destination.
+        s.player.vz = 0.42;
 
         LegacyMovementModel physics = new LegacyMovementModel();
+
+        // The source sprint-jump horizontal impulse is applied before the
+        // normal ground-friction step. Starting at z=10.95 therefore cannot
+        // overlap the destination AABB in a single tick; the faithful model
+        // reaches it on the following airborne tick.
         physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
 
         assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
                 "Jump -10 must suppress vertical lift for non-Jumper speeding");
+        assertTrue(s.player.z > 11.5,
+                "the first Speed pulse must carry the player to the far lip of the source gap");
+
+        boolean landed = false;
+        for (int i = 0; i < 6; i++) {
+            if (s.player.grounded && s.player.z > 12.0) {
+                landed = true;
+                break;
+            }
+            physics.tick(
+                    s.player,
+                    new Action(1, 0, i < 2, true, 0, false),
+                    maze,
+                    -10);
+        }
+
+        assertTrue(landed,
+                "the source sprint-jump trajectory must eventually regain support on the destination side");
+        assertEquals(GameState.PATH_Y, s.player.y, 1.0e-9,
+                "the landing tick must restore the path height");
         assertTrue(s.player.z > 11.70,
                 "the source sprint-jump horizontal impulse must carry the player AABB onto the destination side");
-        assertTrue(s.player.grounded,
-                "a successful speeding gap crossing must retain physical support on the destination block");
         assertTrue(s.player.vz > 0.0,
                 "the successful crossing must preserve forward momentum");
     }

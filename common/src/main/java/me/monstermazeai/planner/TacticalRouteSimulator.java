@@ -26,7 +26,7 @@ import java.util.Random;
  * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
-    private static final int TACTICAL_HORIZON = 6;
+    private static final int TACTICAL_HORIZON = 12;
     private static final int TACTICAL_BEAM = 10;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
@@ -178,7 +178,18 @@ public final class TacticalRouteSimulator {
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        /*
+         * A Monster Maze bump is normally four health. The old rank put damage
+         * after route progress by twelve orders of magnitude, so a branch that
+         * advanced a single waypoint could be preferred even when that progress
+         * required taking a full bump. Real high-skill runs consistently trade a
+         * tiny amount of route progress for avoiding unnecessary contact; make a
+         * four-damage bump roughly equivalent to one waypoint of tactical debt.
+         * Goal completion still wins unconditionally above, so this cannot make
+         * the planner prefer a safe stall over actually reaching the pad.
+         */
+        long damagePenalty = damage * 125_000_000L;
+        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damagePenalty;
     }
 
     private boolean needsTacticalSearch(GameState state) {
@@ -234,7 +245,8 @@ public final class TacticalRouteSimulator {
         addMovement(out, 1, 0, false, -30);
         addMovement(out, 1, 0, false, 30);
 
-        if (state.kit != me.monstermazeai.kit.Kit.JUMPER || jumperGap) {
+        boolean nonJumperSpeed = state.kit != me.monstermazeai.kit.Kit.JUMPER;
+        if (jumperGap || nonJumperSpeed) {
             addMovement(out, 1, 0, true, 0);
             addMovement(out, 1, -1, true, 0);
             addMovement(out, 1, 1, true, 0);
@@ -244,7 +256,7 @@ public final class TacticalRouteSimulator {
 
         // Ability activation itself is independent of the Jumper charge budget.
         out.add(new Action(0, 0, false, false, 0, true));
-        if (state.kit != me.monstermazeai.kit.Kit.JUMPER || jumperGap) {
+        if (jumperGap || nonJumperSpeed) {
             out.add(new Action(1, 0, true, true, 0, true));
         }
         return out;

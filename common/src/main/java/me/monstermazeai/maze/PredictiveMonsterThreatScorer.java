@@ -111,6 +111,7 @@ public final class PredictiveMonsterThreatScorer {
             SearchKey nodeKey = node.key();
             double known = best.getOrDefault(nodeKey, Double.POSITIVE_INFINITY);
             if (node.g > known + 1.0E-9D) continue;
+            if (!floorAvailableAtArrival(state, node.cell, node.tick)) continue;
 
             if (insideRegion(node.cell, goal, regionRadius)) {
                 bestGoal = node;

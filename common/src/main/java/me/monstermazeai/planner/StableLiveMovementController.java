@@ -944,7 +944,7 @@ public final class StableLiveMovementController {
         }
     }
 
-    private static boolean routeSharesPrefixFromCurrentCell(
+    static boolean routeSharesPrefixFromCurrentCell(
             PlayerRoute current, PlayerRoute planned,
             int currentRow, int currentColumn, int prefixCells) {
         Cell currentCell = new Cell(currentRow, currentColumn);

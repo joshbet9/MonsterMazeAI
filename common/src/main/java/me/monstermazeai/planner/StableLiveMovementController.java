@@ -479,20 +479,17 @@ public final class StableLiveMovementController {
          * genuine contact horizon is active so a source-faithful ability or
          * charged jump can win over a generic lateral dodge.
          *
-         * Movement-only tactical actions remain hints to the motor and are not
-         * replayed here; the motor below remains authoritative for continuous
-         * corridor-safe steering.
+         * Movement-only tactical actions remain bounded hints to the motor; the
+         * source-aware corridor motor stays authoritative for physics, support,
+         * jump cadence and edge safety.
          */
         long currentThreatSignature = threatSignature(state);
         boolean tacticalActionExpired = lastTacticalDecisionTick == Long.MIN_VALUE
                 || state.tick - lastTacticalDecisionTick >= MAX_TACTICAL_ACTION_AGE_TICKS;
         /*
-         * Movement-only tactical actions are deliberately ignored below; the
-         * live motor remains authoritative for continuous steering. Non-Jumpers
-         * therefore gain nothing from paying for the synchronous tactical beam,
-         * while the strategic/background planner still evaluates those routes.
-         * Jumper is the exception because its charged jump is a discrete command
-         * the tactical layer can legitimately own.
+         * The tactical beam can propose continuous movement for non-Jumpers, but
+         * only forward-progressing candidates are accepted below. Discrete jump
+         * ownership remains restricted to the real Jumper kit.
          */
         boolean tacticalMovementRelevant = routePlanner.shouldUseTacticalAction(state);
         if (tacticalMovementRelevant

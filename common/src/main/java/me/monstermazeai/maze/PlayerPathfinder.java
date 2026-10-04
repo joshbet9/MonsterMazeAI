@@ -14,29 +14,8 @@ public final class PlayerPathfinder {
 
     private List<Cell> shortestPath(MazeModel maze, Cell start, Cell goal, boolean allowGaps) {
         if (!isPhysicalFloor(maze, start) || !isPhysicalFloor(maze, goal)) return List.of();
-
-        ArrayDeque<Cell> queue = new ArrayDeque<>();
-        Map<Cell, Cell> previous = new HashMap<>();
-        queue.add(start);
-        previous.put(start, null);
-
-        while (!queue.isEmpty()) {
-            Cell current = queue.removeFirst();
-            if (current.equals(goal)) return reconstruct(previous, goal);
-
-            int r = current.row(), c = current.column();
-            add(maze, current, new Cell(r - 1, c), queue, previous);
-            add(maze, current, new Cell(r + 1, c), queue, previous);
-            add(maze, current, new Cell(r, c - 1), queue, previous);
-            add(maze, current, new Cell(r, c + 1), queue, previous);
-            if (allowGaps) {
-                addMovement(maze, current, new Cell(r - 2, c), queue, previous);
-                addMovement(maze, current, new Cell(r + 2, c), queue, previous);
-                addMovement(maze, current, new Cell(r, c - 2), queue, previous);
-                addMovement(maze, current, new Cell(r, c + 2), queue, previous);
-            }
-        }
-        return List.of();
+        SearchResult result = search(maze, start, goal, allowGaps, false, null, 0);
+        return result.path();
     }
 
     public List<Cell> shortestPathToRegion(MazeModel maze, Cell start, Cell center, int radius) {
@@ -53,49 +32,139 @@ public final class PlayerPathfinder {
         if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
         if (!isPhysicalFloor(maze, start)) return List.of();
 
-        ArrayDeque<Cell> queue = new ArrayDeque<>();
-        Map<Cell, Cell> previous = new HashMap<>();
-        Map<Cell, Integer> distance = new HashMap<>();
-        queue.add(start);
-        previous.put(start, null);
-        distance.put(start, 0);
+        SearchResult result = search(maze, start, null, allowGaps, true, center, radius);
+        return result.path();
+    }
 
-        int bestDistance = Integer.MAX_VALUE;
-        Cell bestGoal = null;
-        while (!queue.isEmpty()) {
-            Cell current = queue.removeFirst();
-            int currentDistance = distance.get(current);
-            if (currentDistance > bestDistance) break;
+    /**
+     * Lexicographic physical routing:
+     *
+     *   1. shortest executable edge count;
+     *   2. among equal-length routes, fewest heading changes;
+     *   3. deterministic cell ordering as the final tie-break.
+     *
+     * This matters because the maze contains many equal-length alternatives.
+     * BFS insertion order can otherwise return a zig-zag route that has the same
+     * topology length but costs substantially more real movement/turn time.
+     *
+     * Gap transitions remain one executable edge. Their finite Jumper charge
+     * budget is enforced by MonsterAwareRoutePlanner after candidate generation.
+     */
+    private SearchResult search(MazeModel maze, Cell start, Cell exactGoal,
+                                boolean allowGaps, boolean regionGoal,
+                                Cell regionCenter, int regionRadius) {
+        Comparator<Node> comparator = Comparator
+                .comparingInt((Node n) -> n.edges)
+                .thenComparingInt(n -> n.turns)
+                .thenComparingInt(n -> n.cell.row())
+                .thenComparingInt(n -> n.cell.column())
+                .thenComparingInt(n -> n.direction);
 
-            if (insideRegion(current, center, radius)) {
-                if (bestGoal == null || compareRegionGoal(current, bestGoal, center) < 0) {
-                    bestGoal = current;
-                    bestDistance = currentDistance;
-                }
+        PriorityQueue<Node> open = new PriorityQueue<>(comparator);
+        Map<StateKey, Cost> best = new HashMap<>();
+        Map<StateKey, StateKey> previous = new HashMap<>();
+
+        StateKey startKey = new StateKey(start, -1);
+        best.put(startKey, new Cost(0, 0));
+        previous.put(startKey, null);
+        open.add(new Node(start, -1, 0, 0));
+
+        Node bestGoal = null;
+        while (!open.isEmpty()) {
+            Node current = open.poll();
+            StateKey currentKey = new StateKey(current.cell, current.direction);
+            Cost known = best.get(currentKey);
+            if (known == null
+                    || current.edges != known.edges
+                    || current.turns != known.turns) {
                 continue;
             }
 
-            int r = current.row(), c = current.column();
-            add(maze, current, new Cell(r - 1, c), queue, previous, distance, currentDistance + 1);
-            add(maze, current, new Cell(r + 1, c), queue, previous, distance, currentDistance + 1);
-            add(maze, current, new Cell(r, c - 1), queue, previous, distance, currentDistance + 1);
-            add(maze, current, new Cell(r, c + 1), queue, previous, distance, currentDistance + 1);
+            if (exactGoal != null && current.cell.equals(exactGoal)) {
+                bestGoal = current;
+                break;
+            }
+            if (regionGoal && insideRegion(current.cell, regionCenter, regionRadius)) {
+                if (bestGoal == null || compareGoal(current, bestGoal, regionCenter) < 0) {
+                    bestGoal = current;
+                }
+                /*
+                 * Once this edge-count layer is exhausted, a later node can only
+                 * tie the current region goal or lose on turns. Continue processing
+                 * the same lexicographic frontier so we deterministically choose
+                 * the lowest-turn endpoint inside the region.
+                 */
+                if (!open.isEmpty() && open.peek().edges > current.edges) break;
+                continue;
+            }
+
+            int r = current.cell.row();
+            int c = current.cell.column();
+
+            for (int direction = 0; direction < 4; direction++) {
+                int nr;
+                int nc;
+                switch (direction) {
+                    case 0 -> { nr = r - 1; nc = c; }
+                    case 1 -> { nr = r + 1; nc = c; }
+                    case 2 -> { nr = r; nc = c - 1; }
+                    default -> { nr = r; nc = c + 1; }
+                }
+                relax(maze, current, new Cell(nr, nc), direction,
+                        open, best, previous);
+            }
+
             if (allowGaps) {
-                addMovement(maze, current, new Cell(r - 2, c), queue, previous, distance, currentDistance + 1);
-                addMovement(maze, current, new Cell(r + 2, c), queue, previous, distance, currentDistance + 1);
-                addMovement(maze, current, new Cell(r, c - 2), queue, previous, distance, currentDistance + 1);
-                addMovement(maze, current, new Cell(r, c + 2), queue, previous, distance, currentDistance + 1);
+                int[] gapRows = {r - 2, r + 2, r, r};
+                int[] gapColumns = {c, c, c - 2, c + 2};
+                for (int i = 0; i < 4; i++) {
+                    Cell next = new Cell(gapRows[i], gapColumns[i]);
+                    int direction = i;
+                    if (isGapEdge(maze, current.cell, next)) {
+                        relax(maze, current, next, direction,
+                                open, best, previous);
+                    }
+                }
             }
         }
-        return bestGoal == null ? List.of() : reconstruct(previous, bestGoal);
+
+        return bestGoal == null
+                ? new SearchResult(List.of(), Integer.MAX_VALUE, Integer.MAX_VALUE)
+                : reconstruct(previous, new StateKey(bestGoal.cell, bestGoal.direction),
+                        bestGoal.edges, bestGoal.turns);
     }
 
-    private static int compareRegionGoal(Cell a, Cell b, Cell center) {
-        int da = Math.abs(a.row() - center.row()) + Math.abs(a.column() - center.column());
-        int db = Math.abs(b.row() - center.row()) + Math.abs(b.column() - center.column());
+    private static int compareGoal(Node a, Node b, Cell center) {
+        if (a.edges != b.edges) return Integer.compare(a.edges, b.edges);
+        if (a.turns != b.turns) return Integer.compare(a.turns, b.turns);
+        int da = Math.abs(a.cell.row() - center.row()) + Math.abs(a.cell.column() - center.column());
+        int db = Math.abs(b.cell.row() - center.row()) + Math.abs(b.cell.column() - center.column());
         if (da != db) return Integer.compare(da, db);
-        if (a.row() != b.row()) return Integer.compare(a.row(), b.row());
-        return Integer.compare(a.column(), b.column());
+        if (a.cell.row() != b.cell.row()) return Integer.compare(a.cell.row(), b.cell.row());
+        return Integer.compare(a.cell.column(), b.cell.column());
+    }
+
+    private void relax(MazeModel maze, Node current, Cell next, int direction,
+                       PriorityQueue<Node> open, Map<StateKey, Cost> best,
+                       Map<StateKey, StateKey> previous) {
+        if (!isPhysicalFloor(maze, next)) return;
+
+        int turns = current.turns;
+        if (current.direction >= 0 && current.direction != direction) turns++;
+
+        StateKey nextKey = new StateKey(next, direction);
+        Cost candidate = new Cost(current.edges + 1, turns);
+        Cost prior = best.get(nextKey);
+        if (prior != null && compareCost(candidate, prior) >= 0) return;
+
+        best.put(nextKey, candidate);
+        previous.put(nextKey, new StateKey(current.cell, current.direction));
+        open.add(new Node(next, direction, candidate.edges, candidate.turns));
+    }
+
+    private static int compareCost(Cost a, Cost b) {
+        int edges = Integer.compare(a.edges, b.edges);
+        return edges != 0 ? edges : Integer.compare(a.turns, b.turns);
     }
 
     private static boolean insideRegion(Cell cell, Cell center, int radius) {
@@ -104,37 +173,9 @@ public final class PlayerPathfinder {
     }
 
     private boolean isPhysicalFloor(MazeModel maze, Cell cell) {
-        return maze.isPhysicalFloor(cell.row(), cell.column());
-    }
-
-    private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
-                     Map<Cell, Cell> previous) {
-        if (!isPhysicalFloor(maze, next) || previous.containsKey(next)) return;
-        previous.put(next, current);
-        queue.addLast(next);
-    }
-
-    private void addMovement(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
-                             Map<Cell, Cell> previous) {
-        if (!isGapEdge(maze, current, next) || previous.containsKey(next)) return;
-        previous.put(next, current);
-        queue.addLast(next);
-    }
-
-    private void add(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
-                     Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
-        if (!isPhysicalFloor(maze, next) || previous.containsKey(next)) return;
-        previous.put(next, current);
-        distance.put(next, nextDistance);
-        queue.addLast(next);
-    }
-
-    private void addMovement(MazeModel maze, Cell current, Cell next, ArrayDeque<Cell> queue,
-                             Map<Cell, Cell> previous, Map<Cell, Integer> distance, int nextDistance) {
-        if (!isGapEdge(maze, current, next) || previous.containsKey(next)) return;
-        previous.put(next, current);
-        distance.put(next, nextDistance);
-        queue.addLast(next);
+        return cell.row() >= 0 && cell.row() < MazeModel.SIZE
+                && cell.column() >= 0 && cell.column() < MazeModel.SIZE
+                && maze.isPhysicalFloor(cell.row(), cell.column());
     }
 
     private boolean isGapEdge(MazeModel maze, Cell from, Cell to) {
@@ -147,10 +188,18 @@ public final class PlayerPathfinder {
                 && isPhysicalFloor(maze, to);
     }
 
-    private List<Cell> reconstruct(Map<Cell, Cell> previous, Cell goal) {
+    private SearchResult reconstruct(Map<StateKey, StateKey> previous, StateKey goal,
+                                     int edges, int turns) {
         ArrayList<Cell> path = new ArrayList<>();
-        for (Cell at = goal; at != null; at = previous.get(at)) path.add(at);
+        for (StateKey at = goal; at != null; at = previous.get(at)) {
+            path.add(at.cell);
+        }
         Collections.reverse(path);
-        return path;
+        return new SearchResult(path, edges, turns);
     }
+
+    private record StateKey(Cell cell, int direction) {}
+    private record Cost(int edges, int turns) {}
+    private record Node(Cell cell, int direction, int edges, int turns) {}
+    private record SearchResult(List<Cell> path, int edges, int turns) {}
 }

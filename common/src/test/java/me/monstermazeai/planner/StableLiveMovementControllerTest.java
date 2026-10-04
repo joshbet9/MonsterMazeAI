@@ -3,9 +3,12 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -53,16 +56,16 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
+    void sourceSafePadIntegerCoordinateKeepsControlledForwardDrive() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action first = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, first.forward(), 1.0e-6);
+        assertTrue(first.forward() > 0.0,
+                "large heading correction from a valid SafePad spawn should retain controlled drive");
         assertEquals(0.0, first.strafe(), 1.0e-6);
-        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
-                "the initial 90-degree heading error must turn in place rather than safety-stop");
+        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F);
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
     }
 
@@ -118,16 +121,65 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void usesInPlaceTurnForLargeHeadingError() {
+    void equivalentAsyncRoutePrefixIsNotConsideredAReplan() {
+        PlayerRoute current = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+        PlayerRoute samePrefix = new PlayerRoute(List.of(
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+        PlayerRoute divergent = new PlayerRoute(List.of(
+                new Cell(0, 1),
+                new Cell(1, 1),
+                new Cell(1, 2)));
+
+        assertTrue(StableLiveMovementController.routeSharesPrefixFromCurrentCell(
+                current, samePrefix, 0, 1, 3));
+        assertFalse(StableLiveMovementController.routeSharesPrefixFromCurrentCell(
+                current, divergent, 0, 1, 3));
+    }
+
+    @Test
+    void usesCornerVectorForLargeHeadingErrorNearCorner() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[1][0] = 1;
+        raw[2][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
         GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
         StableLiveMovementController controller = new StableLiveMovementController();
 
-        Action action = controller.nextAction(s, new Cell(8, 0), false);
+        Action action = controller.nextAction(s, new Cell(2, 0), false);
 
         assertEquals(0.0, action.forward(), 1.0e-6,
-                "a 90-degree corner acquisition must not cut across the corridor");
-        assertEquals(0.0, action.strafe(), 1.0e-6);
+                "the exact 90-degree corner vector should have no forward component");
+        assertEquals(0.65, action.strafe(), 1.0e-6);
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+    }
+
+    @Test
+    void largeHeadingErrorFarFromCornerKeepsSafeForwardDrive() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r <= 12; r++) raw[r][0] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(12, 0), false);
+
+        assertTrue(action.forward() > 0.0,
+                "large heading correction far from a corner should retain controlled forward drive");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertEquals(0.0, action.strafe(), 1.0e-6);
     }
 
     @Test
@@ -246,6 +298,36 @@ class StableLiveMovementControllerTest {
                 "a slow strategic plan must not leave the motor idle");
         assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
                 "unchanged local world state must not start another strategic simulation");
+    }
+
+    @Test
+    void continuesThroughAClosedCorridorMonsterWithoutYielding() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int column = 0; column <= 6; column++) raw[0][column] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.maze = maze;
+        s.player.health = 20.0;
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        // The monster blocks the only physical corridor. There is no side floor,
+        // so local avoidance must preserve forward progress instead of entering
+        // a reverse/yield loop.
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                99, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(0, 6), false);
+
+        assertTrue(action.forward() > 0.0,
+                "a closed one-cell corridor must remain a moving decision");
+        assertTrue(action.forward() >= 0.0,
+                "monster avoidance must not reverse into a yield/stall state");
+        assertTrue(controller.lastDecisionDetail().contains("MOB_CONTINUE"),
+                controller.lastDecisionDetail());
     }
 
     @Test
@@ -446,5 +528,51 @@ class StableLiveMovementControllerTest {
         assertFalse(controller.lastDecisionDetail().contains("REACHED"),
                 controller.lastDecisionDetail());
     }
+
+    @Test
+    void turnsLargeHeadingErrorWhileResidualMomentumIsStillPresent() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.mode = me.monstermazeai.game.Mode.SPEED;
+        s.player.vx = 0.18;
+        s.player.vz = 0.0;
+        s.player.grounded = true;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        s.tick = 1;
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F,
+                "large corner errors must continue turning while residual momentum is present");
+    }
+
+
+    @Test
+    void speedAndModernUseTheSameMovementPolicyForEquivalentState() {
+        GameState speed = state(0.5, 0.5, -20.0F);
+        speed.mode = me.monstermazeai.game.Mode.SPEED;
+        speed.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        GameState modern = state(0.5, 0.5, -20.0F);
+        modern.mode = me.monstermazeai.game.Mode.MODERN;
+        modern.kit = me.monstermazeai.kit.Kit.MAVERICK;
+
+        StableLiveMovementController speedController = new StableLiveMovementController();
+        StableLiveMovementController modernController = new StableLiveMovementController();
+
+        speed.tick = 1;
+        modern.tick = 1;
+
+        Action speedAction = speedController.nextAction(speed, new Cell(0, 8), true);
+        Action modernAction = modernController.nextAction(modern, new Cell(0, 8), true);
+
+        assertEquals(speedAction.forward(), modernAction.forward(), 1.0e-9);
+        assertEquals(speedAction.strafe(), modernAction.strafe(), 1.0e-9);
+        assertEquals(speedAction.jump(), modernAction.jump());
+        assertEquals(speedAction.sprint(), modernAction.sprint());
+        assertEquals(speedAction.yawDelta(), modernAction.yawDelta(), 1.0e-6);
+        assertEquals(speedAction.useAbility(), modernAction.useAbility());
+    }
+
 
 }

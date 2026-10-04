@@ -390,54 +390,26 @@ public final class StableLiveMovementController {
 
             if (routeInvalid) {
                 /*
-                 * A one-cell mob dodge can move the player's supported logical
-                 * cell just outside the planned corridor while the existing
-                 * strategic route is still useful. Rejoin that route locally
-                 * when a physical one-step bridge exists; only perform a full
-                 * route reset when no safe local bridge exists.
+                 * Recover immediately with a cheap physical route, then let the
+                 * background planner decide whether a different risk-aware route
+                 * is preferable. Never block the motor waiting for that result.
                  */
-                PlayerRoute rejoined = tryLocalRouteRejoin(state, supportedCell);
-                if (rejoined != null) {
-                    route = rejoined;
-                    waypointIndex = firstTurnWaypoint(route);
-                    anchoredSegmentIndex = -1;
-                    lastRouteTick = state.tick;
-                    lastDecisionDetail = "LOCAL_REJOIN_ROUTE"
-                            + " size=" + route.size()
-                            + " start=" + startRow + "," + startColumn
-                            + " goal=" + goal.row() + "," + goal.column();
-                    fullRouteEvaluationPending = true;
-                    lastTacticalSignature = Long.MIN_VALUE;
-                    lastThreatSignature = threat;
-                    scheduleStrategicRoute(state, routingState,
-                            new Cell(startRow, startColumn), goal, regionRadius);
-                } else {
-                    /*
-                     * Recover immediately with a cheap physical route, then let
-                     * the background planner decide whether a different
-                     * risk-aware route is preferable. Never block the motor
-                     * waiting for that result.
-                     */
-                    route = regionRadius > 0
-                            ? routePlanner.routeToRegionFast(
-                                    routingState, new Cell(startRow, startColumn), goal, regionRadius)
-                            : routePlanner.routeFast(
-                                    routingState, new Cell(startRow, startColumn), goal);
-                    waypointIndex = firstTurnWaypoint(route);
-                    anchoredSegmentIndex = -1;
-                    lastRouteTick = state.tick;
-                    routePlanCount++;
-                    lastDecisionDetail = "FAST_RECOVERY_ROUTE"
-                            + " size=" + route.size()
-                            + " regionRadius=" + regionRadius
-                            + " start=" + startRow + "," + startColumn
-                            + " goal=" + goal.row() + "," + goal.column();
-                    fullRouteEvaluationPending = true;
-                    lastTacticalSignature = Long.MIN_VALUE;
-                    lastThreatSignature = threat;
-                    scheduleStrategicRoute(state, routingState,
-                            new Cell(startRow, startColumn), goal, regionRadius);
-                }
+                route = regionRadius > 0
+                        ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
+                        : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
+                waypointIndex = firstTurnWaypoint(route);
+                anchoredSegmentIndex = -1;
+                lastRouteTick = state.tick;
+                routePlanCount++;
+                lastDecisionDetail = "FAST_RECOVERY_ROUTE"
+                        + " size=" + route.size()
+                        + " regionRadius=" + regionRadius
+                        + " start=" + startRow + "," + startColumn
+                        + " goal=" + goal.row() + "," + goal.column();
+                fullRouteEvaluationPending = true;
+                lastTacticalSignature = Long.MIN_VALUE;
+                lastThreatSignature = threat;
+                scheduleStrategicRoute(state, routingState, new Cell(startRow, startColumn), goal, regionRadius);
             } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
@@ -778,35 +750,6 @@ public final class StableLiveMovementController {
                 + ",jump=" + action.jump()
                 + ",yawDelta=" + action.yawDelta();
         return action;
-    }
-
-    /**
-     * Rejoin a locally displaced player to the active strategic corridor without
-     * recomputing the entire route. Only a one-cell orthogonal bridge to a route
-     * cell immediately around the current waypoint is accepted.
-     */
-    private PlayerRoute tryLocalRouteRejoin(GameState state, Cell supportedCell) {
-        if (route == null || route.size() < 2 || supportedCell == null) return null;
-
-        int first = Math.max(0, waypointIndex - 1);
-        int last = Math.min(route.size() - 1, waypointIndex + 3);
-        for (int i = first; i <= last; i++) {
-            Cell target = route.cells().get(i);
-            if (Math.abs(target.row() - supportedCell.row())
-                    + Math.abs(target.column() - supportedCell.column()) != 1) {
-                continue;
-            }
-            if (!inBounds(target.row(), target.column())
-                    || !state.maze.isPhysicalFloor(target.row(), target.column())) {
-                continue;
-            }
-
-            java.util.ArrayList<Cell> cells = new java.util.ArrayList<>(
-                    route.cells().subList(i, route.size()));
-            cells.add(0, supportedCell);
-            return new PlayerRoute(cells);
-        }
-        return null;
     }
 
     public long routePlanCount() { return routePlanCount; }

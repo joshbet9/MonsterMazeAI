@@ -1,6 +1,7 @@
 package me.monstermazeai.maze;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.monster.MonsterState;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,23 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void nearbyMonsterDoesNotCauseSafePadGlobalDetour() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 2.5;
+        state.player.z = 2.5;
+        MonsterState monster = new MonsterState(9, 2.5, 0.0, 3.5);
+        state.monsters.add(monster);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeToRegionFast(state, new Cell(2, 2), new Cell(2, 6), 0);
+
+        assertEquals(List.of(
+                new Cell(2, 2), new Cell(2, 3), new Cell(2, 4),
+                new Cell(2, 5), new Cell(2, 6)), route.cells());
+    }
+
+    @Test
     void distantMonsterDoesNotDistortShortestRoute() {
         GameState state = new GameState();
         state.maze = openMaze();
@@ -141,11 +159,96 @@ class MonsterAwareRoutePlannerTest {
         raw[10][11] = 0;
         raw[10][13] = 0;
         state.maze = new MazeModel(raw);
+        state.mode = Mode.SPEED;
+        state.kit = Kit.MAVERICK;
 
         PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
                 .routeFast(state, new Cell(10, 10), new Cell(10, 14));
 
         assertEquals(List.of(new Cell(10, 10), new Cell(10, 12), new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void baselineRoutePolicyUsesARealGapShortcutWhenItSavesRouteEdges() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        raw[10][11] = 0;
+        raw[10][13] = 0;
+        state.maze = new MazeModel(raw);
+        state.mode = Mode.SPEED;
+        state.kit = Kit.MAVERICK;
+
+        PlayerRoute route = new MonsterAwareRoutePlanner()
+                .routeFast(state, new Cell(10, 10), new Cell(10, 14));
+
+        assertEquals(List.of(
+                new Cell(10, 10),
+                new Cell(10, 12),
+                new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void modernNonJumperSharesSpeedGapMechanic() {
+        GameState state = new GameState();
+        state.mode = Mode.MODERN;
+        state.kit = Kit.MAVERICK;
+
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+        raw[10][11] = 0;
+        raw[10][13] = 0;
+        state.maze = new MazeModel(raw);
+
+        PlayerRoute route = new MonsterAwareRoutePlanner(new GapJumpPolicy(0.0))
+                .route(state, new Cell(10, 10), new Cell(10, 14));
+
+        assertEquals(List.of(
+                new Cell(10, 10),
+                new Cell(10, 12),
+                new Cell(10, 14)), route.cells());
+    }
+
+    @Test
+    void impossibleMonsterAwareRouteFailsExplicitlyInsteadOfReturningNull() {
+        GameState state = new GameState();
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[0][0] = 1;
+        raw[4][4] = 1;
+        state.maze = new MazeModel(raw);
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.monsters.add(new MonsterState(12, 0.5, 0.0, 1.5));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new MonsterAwareRoutePlanner().route(
+                        state, new Cell(0, 0), new Cell(4, 4)));
+    }
+
+    @Test
+    void strategicRoutingCanChooseADetourForAProjectedFarMonster() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.vx = 0.20;
+
+        MonsterState incoming = new MonsterState(41, 0.5, 0.0, 30.5);
+        incoming.vz = -0.20;
+        state.monsters.add(incoming);
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "projectedMonsterThreatOnRoute", GameState.class, List.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<Cell> direct = new PlayerPathfinder()
+                .shortestPathWithoutGaps(state.maze, new Cell(0, 0), new Cell(0, 20));
+
+        assertTrue((Boolean) method.invoke(null, state, direct),
+                "a moving far monster projected onto the direct lane must wake strategic threat evaluation");
     }
 
     @Test

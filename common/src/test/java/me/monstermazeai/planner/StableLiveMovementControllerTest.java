@@ -56,7 +56,7 @@ class StableLiveMovementControllerTest {
         // the active straight corridor remains clear. The controller should not
         // continually enqueue an expensive strategic replan for this jitter.
         s.monsters.add(new me.monstermazeai.monster.MonsterState(
-                1L, 6.5, 0.0, 6.5, 0.0, 0.0, 0.0, 0, 0, false));
+                1, 6.5, 0.0, 6.5));
 
         long after = (long) threatSignatureMethod.invoke(null, s);
         assertNotEquals(before, after);

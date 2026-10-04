@@ -383,7 +383,7 @@ public final class StableLiveMovementController {
 
                     boolean changed = route == null || !sameRoute(route, reactive);
                     if (changed && (route == null
-                            || strategicRoutePreservesCurrentHeading(state, reactive))) {
+                            || strategicRouteIsSafeToInstall(state, reactive))) {
                         route = reactive;
                         waypointIndex = reanchorWaypointIndex(state, route);
                         anchoredSegmentIndex = -1;

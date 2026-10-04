@@ -40,8 +40,9 @@ public final class DeterministicMazeController {
     private static final double ROUTE_DEVIATION = 0.95D;
     private static final double IMMEDIATE_MONSTER_RADIUS = 2.75D;
     private static final double BLOCKING_MONSTER_RADIUS = 1.05D;
+    private static final double DETOUR_BLOCK_RADIUS = 1.30D;
     private static final int THREAT_LOOKAHEAD_CELLS = 4;
-    private static final int REJOIN_LOOKAHEAD_CELLS = 8;
+    private static final int REJOIN_LOOKAHEAD_CELLS = 18;
     private static final int REJOIN_SEARCH_RADIUS = 2;
     private static final double GAP_TRIGGER_DISTANCE = 0.95D;
     private static final double GAP_LATERAL_LIMIT = 0.55D;
@@ -250,16 +251,60 @@ public final class DeterministicMazeController {
 
             int row = (int) Math.floor(monster.x);
             int col = (int) Math.floor(monster.z);
-            for (int dr = -1; dr <= 1; dr++) {
-                for (int dc = -1; dc <= 1; dc++) {
+            for (int dr = -2; dr <= 2; dr++) {
+                for (int dc = -2; dc <= 2; dc++) {
                     Cell candidate = new Cell(row + dr, col + dc);
                     if (candidate.row() < 0 || candidate.row() >= MazeModel.SIZE
                             || candidate.column() < 0 || candidate.column() >= MazeModel.SIZE) {
                         continue;
                     }
                     if (candidate.equals(start)) continue;
-                    if (state.maze.isPhysicalFloor(candidate.row(), candidate.column())) {
+                    if (!state.maze.isPhysicalFloor(candidate.row(), candidate.column())) continue;
+
+                    /*
+                     * Block physical cells by their actual center distance from
+                     * the mob rather than an unconditional 3x3 square. The
+                     * player's bump envelope is circular (<1 block), while the
+                     * old square rejected safe side cells and frequently left
+                     * no local detour at all.
+                     */
+                    double cx = candidate.row() + 0.5D;
+                    double cz = candidate.column() + 0.5D;
+                    if (Math.hypot(cx - monster.x, cz - monster.z) <= DETOUR_BLOCK_RADIUS) {
                         blocked.add(candidate);
+                    }
+                }
+            }
+
+            /*
+             * A mob can move another quarter-block or so before the player
+             * reaches its current cell. Include a short forward footprint along
+             * its current velocity, but keep the footprint just as local.
+             */
+            double speed = Math.hypot(monster.vx, monster.vz);
+            if (speed > 1.0E-6D) {
+                double ux = monster.vx / speed;
+                double uz = monster.vz / speed;
+                for (int horizon = 1; horizon <= 4; horizon++) {
+                    double mx = monster.x + monster.vx * horizon;
+                    double mz = monster.z + monster.vz * horizon;
+                    int projectedRow = (int) Math.floor(mx);
+                    int projectedCol = (int) Math.floor(mz);
+                    for (int dr = -1; dr <= 1; dr++) {
+                        for (int dc = -1; dc <= 1; dc++) {
+                            Cell candidate = new Cell(projectedRow + dr, projectedCol + dc);
+                            if (candidate.equals(start)
+                                    || candidate.row() < 0 || candidate.row() >= MazeModel.SIZE
+                                    || candidate.column() < 0 || candidate.column() >= MazeModel.SIZE
+                                    || !state.maze.isPhysicalFloor(candidate.row(), candidate.column())) {
+                                continue;
+                            }
+                            double cx = candidate.row() + 0.5D;
+                            double cz = candidate.column() + 0.5D;
+                            if (Math.hypot(cx - mx, cz - mz) <= DETOUR_BLOCK_RADIUS) {
+                                blocked.add(candidate);
+                            }
+                        }
                     }
                 }
             }

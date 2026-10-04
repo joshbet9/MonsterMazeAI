@@ -33,7 +33,7 @@ class TacticalRouteSimulatorTest {
 
         PlayerRoute route = new PlayerRoute(java.util.List.of(
                 new Cell(0, 0),
-                new Cell(0, 4)));
+                new Cell(0, 8)));
 
         Action action = new TacticalRouteSimulator().nextAction(
                 state, route, new Cell(0, 4), false, 0);

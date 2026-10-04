@@ -1040,12 +1040,29 @@ public final class StableLiveMovementController {
          */
         if (planned.route == null
                 || planned.route.cells().isEmpty()
-                || planned.startRow != startRow
-                || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || state.maze.dynamicSignature() != planned.liveTopologySignature) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * The player can legitimately advance several physical cells while the
+         * source-faithful background planner is evaluating the previous
+         * observation. Requiring the exact planning start cell discarded those
+         * otherwise-valid plans before they could ever influence routing.
+         *
+         * Rebase the completed route to the live supported cell when that cell is
+         * still on the planned topology. This keeps the plan's future route while
+         * removing already-traversed cells, so firstTurnWaypoint() starts from the
+         * actual player position instead of sending the motor back toward an old
+         * waypoint.
+         */
+        PlayerRoute rebasedRoute = rebaseRouteForCurrentCell(
+                planned.route, new Cell(startRow, startColumn));
+        if (rebasedRoute == null || rebasedRoute.cells().isEmpty()) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -1058,7 +1075,7 @@ public final class StableLiveMovementController {
          */
         boolean freshThreatSnapshot = planned.threatSignature == threatSignature(state);
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)
+                state, rebasedRoute, startRow, startColumn)
                 && !currentRouteThreatenedByMonster(state)
                 && !freshThreatSnapshot) {
             /*
@@ -1074,7 +1091,7 @@ public final class StableLiveMovementController {
             return;
         }
 
-        route = planned.route;
+        route = rebasedRoute;
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
@@ -1087,6 +1104,14 @@ public final class StableLiveMovementController {
                 + " plannedTick=" + planned.requestedTick;
         fullRouteEvaluationPending = false;
         lastTacticalSignature = Long.MIN_VALUE;
+    }
+
+    static PlayerRoute rebaseRouteForCurrentCell(PlayerRoute planned, Cell current) {
+        if (planned == null || current == null || planned.cells().isEmpty()) return null;
+        List<Cell> cells = planned.cells();
+        int index = cells.indexOf(current);
+        if (index < 0) return null;
+        return new PlayerRoute(List.copyOf(cells.subList(index, cells.size())));
     }
 
     private static final class PlannedRoute {

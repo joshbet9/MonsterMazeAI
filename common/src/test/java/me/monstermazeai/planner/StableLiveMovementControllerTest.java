@@ -107,6 +107,41 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void localOneCellDodgeRejoinsExistingRouteSuffix() throws Exception {
+        GameState s = state(1.5, 2.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> cells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(0, 3),
+                new Cell(0, 4));
+        me.monstermazeai.maze.PlayerRoute route = new me.monstermazeai.maze.PlayerRoute(cells);
+
+        setField(controller, "route", route);
+        setField(controller, "waypointIndex", 3);
+
+        var method = StableLiveMovementController.class.getDeclaredMethod(
+                "tryLocalRouteRejoin", GameState.class, Cell.class);
+        method.setAccessible(true);
+
+        me.monstermazeai.maze.PlayerRoute rejoined =
+                (me.monstermazeai.maze.PlayerRoute) method.invoke(
+                        controller, s, new Cell(1, 2));
+
+        assertNotNull(rejoined);
+        assertEquals(
+                java.util.List.of(
+                        new Cell(1, 2),
+                        new Cell(0, 2),
+                        new Cell(0, 3),
+                        new Cell(0, 4)),
+                rejoined.cells(),
+                "a one-cell lateral dodge should bridge back to the existing strategic route suffix");
+    }
+
+    @Test
     void deferredHeadingChangeDoesNotKeepFullRouteEvaluationPending() throws Exception {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

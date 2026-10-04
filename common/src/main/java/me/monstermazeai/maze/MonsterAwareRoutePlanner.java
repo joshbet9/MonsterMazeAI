@@ -581,7 +581,7 @@ public final class MonsterAwareRoutePlanner {
     private List<PlayerRoute> selectDiverseCandidates(GameState state,
                                                         List<PlayerRoute> generated,
                                                         int limit) {
-        List<PlayerRoute> distinctGenerated = distinct(generated, Math.max(limit, 1));
+        List<PlayerRoute> distinctGenerated = distinct(generated, generated.size());
         if (distinctGenerated.size() <= limit) return distinctGenerated;
 
         ArrayList<PlayerRoute> byCost = new ArrayList<>(distinctGenerated);

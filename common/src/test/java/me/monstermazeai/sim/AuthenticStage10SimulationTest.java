@@ -358,7 +358,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    record RunResult(
             int maxStage,
             long ticks,
             double health,

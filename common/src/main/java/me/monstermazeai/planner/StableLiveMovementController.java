@@ -495,7 +495,7 @@ public final class StableLiveMovementController {
         if (tacticalMovementRelevant
                 && (currentThreatSignature != lastTacticalSignature || tacticalActionExpired)) {
             Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
+                    state, route, goal, regionRadius, waypointIndex);
             lastTacticalSignature = currentThreatSignature;
             lastTacticalDecisionTick = state.tick;
 

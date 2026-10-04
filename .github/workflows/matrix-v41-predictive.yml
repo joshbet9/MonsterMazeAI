@@ -170,3 +170,55 @@ jobs:
         with:
           name: matrix-v41-summary
           path: matrix-v41.json
+
+      - name: Publish matrix to PR
+        if: github.event_name == 'pull_request' && hashFiles('matrix-v41.json') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('matrix-v41.json', 'utf8'));
+            const marker = '<!-- monstermaze-v41-matrix -->';
+            const rows = summary.rows.map(r =>
+              '| ' + r.mode + ' | P' + r.pattern + ' | ' + r.kit +
+              ' | ' + r.maxStage + ' | ' + r.ticks + ' | ' + r.health.toFixed(2) + ' |'
+            ).join('\n');
+
+            const body = [
+              marker,
+              '## v41 natural-termination matrix',
+              '',
+              '**Stage sum:** ' + summary.stageSum + ' (baseline 458; delta ' +
+                (summary.deltaStageSum >= 0 ? '+' : '') + summary.deltaStageSum + ')',
+              '',
+              '**Speed:** mean ' + summary.speedMeanStage.toFixed(2) +
+                ' / peak ' + summary.speedPeak +
+                ' (baseline mean 21.67)',
+              '',
+              '**Modern:** mean ' + summary.modernMeanStage.toFixed(2) +
+                ' / peak ' + summary.modernPeak +
+                ' (baseline mean 8.87)',
+              '',
+              '| Mode | Pattern | Kit | Stage | Ticks | Health |',
+              '|---|---|---|---:|---:|---:|',
+              rows
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue = context.issue.number;
+            const existing = await github.rest.issues.listComments({
+              owner, repo, issue_number: issue, per_page: 100
+            });
+            const previous = existing.data.find(c =>
+              c.user?.type === 'Bot' && c.body?.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue, body
+              });
+            }

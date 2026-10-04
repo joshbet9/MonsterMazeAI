@@ -775,39 +775,67 @@ public final class StableLiveMovementController {
         });
     }
 
+    private static final long MAX_ASYNC_ROUTE_AGE_TICKS = 20L;
+
     private void applyCompletedRoutePlan(GameState state, int startRow, int startColumn,
                                          Cell goal, int regionRadius) {
         PlannedRoute planned = completedRoutePlan;
         if (planned == null) return;
 
         completedRoutePlan = null;
-        long currentThreat = threatSignature(state);
-        if (planned.startRow != startRow
-                || planned.startColumn != startColumn
+
+        /*
+         * The strategic search is source-faithful but it runs asynchronously.
+         * The player's monster field can change before it finishes, so the old
+         * exact threat-signature equality test rejected almost every useful
+         * result. That turns the expensive planner into a route generator whose
+         * answers are systematically discarded.
+         *
+         * Instead, keep the result only while the physical maze/objective are
+         * unchanged and the player is still on the planned physical corridor.
+         * Immediate obstacle avoidance runs before this method, so a monster
+         * entering the current lane still gets first right of refusal. This lets
+         * a human-like plan survive ordinary monster motion without blindly
+         * accepting an off-corridor or incompatible route.
+         */
+        if (planned.route == null
+                || planned.route.cells().isEmpty()
                 || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
-                || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick < planned.requestedTick
+                || state.tick - planned.requestedTick > MAX_ASYNC_ROUTE_AGE_TICKS) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        PlayerRoute usableRoute = suffixStartingAtCell(
+                planned.route, startRow, startColumn);
+        if (usableRoute == null || usableRoute.size() == 0) {
+            /*
+             * The player has left the corridor that the worker planned for.
+             * Do not invent a splice; a synchronous physical recovery route
+             * will handle the new position.
+             */
             fullRouteEvaluationPending = true;
             return;
         }
 
         /*
-         * A background tactical route may improve the long-term path, but it
-         * must not reverse the motor's immediate cardinal segment while that
-         * segment is still physically valid. Monster updates were otherwise
-         * producing alternating first headings and left/right oscillation.
+         * The suffix starts at the player's current supported cell, so heading
+         * compatibility can be checked against the motor's actual current
+         * segment rather than against a stale worker start cell. This preserves
+         * forward momentum while allowing plans computed a few observations ago
+         * to become useful instead of being discarded.
          */
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)) {
+                state, usableRoute, startRow, startColumn)) {
             fullRouteEvaluationPending = true;
             return;
         }
 
-        route = planned.route;
+        route = usableRoute;
         waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
@@ -815,11 +843,26 @@ public final class StableLiveMovementController {
         lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
                 + " size=" + route.size()
                 + " regionRadius=" + regionRadius
-                + " start=" + startRow + "," + startColumn
+                + " current=" + startRow + "," + startColumn
                 + " goal=" + goal.row() + "," + goal.column()
-                + " plannedTick=" + planned.requestedTick;
+                + " plannedStart=" + planned.startRow + "," + planned.startColumn
+                + " plannedTick=" + planned.requestedTick
+                + " age=" + (state.tick - planned.requestedTick);
         fullRouteEvaluationPending = false;
+        lastThreatSignature = threatSignature(state);
         lastTacticalSignature = Long.MIN_VALUE;
+    }
+
+    private static PlayerRoute suffixStartingAtCell(
+            PlayerRoute planned, int startRow, int startColumn) {
+        List<Cell> cells = planned.cells();
+        for (int i = 0; i < cells.size(); i++) {
+            Cell cell = cells.get(i);
+            if (cell.row() == startRow && cell.column() == startColumn) {
+                return new PlayerRoute(List.copyOf(cells.subList(i, cells.size())));
+            }
+        }
+        return null;
     }
 
     private static final class PlannedRoute {

@@ -622,8 +622,18 @@ public final class StableLiveMovementController {
                  * cardinal segment instead of waiting in place or strafing blindly.
                  */
                 double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.65D;
-                double strafe = -Math.sin(errorRad) * 0.65D;
+                /*
+                 * Carry more of the momentum already present at a corner.
+                 * Human-like high-speed turns do not deliberately collapse to a
+                 * fixed 0.65 input vector just because the camera is rotating.
+                 * Keep the stationary/cold-start behaviour unchanged, but allow
+                 * a moving player to use up to 0.90 input while the existing
+                 * projected-support guard remains the final topology authority.
+                 */
+                double momentumFraction = Math.min(1.0D, speed / 0.30D);
+                double cornerMagnitude = 0.65D + (0.25D * momentumFraction);
+                double forward = Math.cos(errorRad) * cornerMagnitude;
+                double strafe = -Math.sin(errorRad) * cornerMagnitude;
                 boolean jump = shouldSpeedJump(state, allowJump);
                 boolean sprint = forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);

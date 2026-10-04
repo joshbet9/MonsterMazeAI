@@ -343,7 +343,7 @@ public final class StableLiveMovementController {
             bootstrapRoutePending = false;
             fullRouteEvaluationPending = true;
             lastTacticalSignature = Long.MIN_VALUE;
-            scheduleStrategicRoute(routingState, new Cell(startRow, startColumn), goal, regionRadius);
+            scheduleStrategicRoute(state, routingState, new Cell(startRow, startColumn), goal, regionRadius);
         } else {
             long threat = threatSignature(state);
             /*
@@ -392,7 +392,7 @@ public final class StableLiveMovementController {
                 fullRouteEvaluationPending = true;
                 lastTacticalSignature = Long.MIN_VALUE;
                 lastThreatSignature = threat;
-                scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+                scheduleStrategicRoute(state, routingState, new Cell(startRow, startColumn), goal, regionRadius);
             } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
@@ -821,12 +821,14 @@ public final class StableLiveMovementController {
         return routingState;
     }
 
-    private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
+    private void scheduleStrategicRoute(GameState liveState, GameState planningState,
+                                           Cell start, Cell goal, int regionRadius) {
         if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
 
-        GameState snapshot = liveState.copyForSimulation();
+        GameState snapshot = planningState.copyForSimulation();
         long requestedTick = liveState.tick;
-        long topology = snapshot.maze.dynamicSignature();
+        long liveTopology = liveState.maze.dynamicSignature();
+        long planningTopology = snapshot.maze.dynamicSignature();
         pendingRoutePlan = routePlanningExecutor.submit(() -> {
             try {
                 PlayerRoute planned = regionRadius > 0
@@ -837,7 +839,7 @@ public final class StableLiveMovementController {
                 }
                 completedRoutePlan = new PlannedRoute(
                         planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
-                        requestedTick, topology, threatSignature(snapshot));
+                        requestedTick, liveTopology, planningTopology, threatSignature(snapshot));
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] background strategic route failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
@@ -855,9 +857,15 @@ public final class StableLiveMovementController {
          * Monster positions are intentionally dynamic. Requiring the exact
          * quantised threat signature from the planning snapshot made otherwise
          * useful routes expire before they could be applied, especially in dense
-         * encounters where velocity changes every few ticks. The route's physical
-         * topology, objective, and current first heading remain authoritative;
-         * live tactical control handles whatever the monsters are doing now.
+         * encounters where velocity changes every few ticks. Validate against
+         * the topology that was live when planning started; the tactical layer
+         * handles the intervening monster motion separately.
+         *
+         * There is deliberately no simulation-tick age cutoff. The async worker
+         * runs in wall-clock time while the deterministic simulator can advance
+         * thousands of game ticks per second. Start-cell/objective/topology and
+         * current-heading checks already make a plan unusable once the player
+         * has moved materially or the maze has changed.
          */
         if (planned.route == null
                 || planned.route.cells().isEmpty()
@@ -866,8 +874,7 @@ public final class StableLiveMovementController {
                 || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
-                || state.maze.dynamicSignature() != planned.topologySignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.maze.dynamicSignature() != planned.liveTopologySignature) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -908,12 +915,14 @@ public final class StableLiveMovementController {
         final int goalColumn;
         final int regionRadius;
         final long requestedTick;
-        final long topologySignature;
+        final long liveTopologySignature;
+        final long planningTopologySignature;
         final long threatSignature;
 
         PlannedRoute(PlayerRoute route, int startRow, int startColumn,
                      int goalRow, int goalColumn, int regionRadius,
-                     long requestedTick, long topologySignature, long threatSignature) {
+                     long requestedTick, long liveTopologySignature,
+                     long planningTopologySignature, long threatSignature) {
             this.route = route;
             this.startRow = startRow;
             this.startColumn = startColumn;
@@ -921,7 +930,8 @@ public final class StableLiveMovementController {
             this.goalColumn = goalColumn;
             this.regionRadius = regionRadius;
             this.requestedTick = requestedTick;
-            this.topologySignature = topologySignature;
+            this.liveTopologySignature = liveTopologySignature;
+            this.planningTopologySignature = planningTopologySignature;
             this.threatSignature = threatSignature;
         }
     }

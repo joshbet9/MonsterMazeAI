@@ -251,4 +251,30 @@ class MonsterAwareRoutePlannerTest {
                 "the predictive route must not depend on an old pad surface that expires before arrival");
     }
 
+    @Test
+    void predictiveForecastDoesNotMutateLiveMazeOrPadState() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.player.grounded = true;
+        Cell oldPad = new Cell(0, 10);
+        for (int row = oldPad.row(); row <= oldPad.row(); row++) {
+            for (int column = oldPad.column() - 2; column <= oldPad.column() + 2; column++) {
+                state.maze.setPadSurface(row, column, true);
+            }
+        }
+        state.oldPads.add(oldPad);
+        state.oldPadDecaySeconds.put(oldPad, 1);
+
+        long signatureBefore = state.maze.dynamicSignature();
+
+        PredictiveMonsterThreatScorer.bestRoute(
+                state, new Cell(0, 0), new Cell(0, 20), 0, 1.0, -1);
+
+        assertEquals(signatureBefore, state.maze.dynamicSignature(),
+                "predictive progression must mutate only its private forecast maze");
+        assertTrue(state.oldPads.contains(oldPad));
+        assertEquals(1, state.oldPadDecaySeconds.get(oldPad));
+    }
+
+
 }

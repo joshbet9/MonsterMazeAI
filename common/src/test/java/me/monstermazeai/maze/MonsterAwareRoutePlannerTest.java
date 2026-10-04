@@ -256,6 +256,35 @@ class MonsterAwareRoutePlannerTest {
     }
 
     @Test
+    void exactGoalCandidateSelectionIsBoundedWithoutLosingLongerRoutes() throws Exception {
+        GameState state = new GameState();
+        state.maze = openMaze();
+
+        List<PlayerRoute> generated = new java.util.ArrayList<>();
+        for (int length = 2; length <= 24; length++) {
+            List<Cell> cells = new java.util.ArrayList<>();
+            for (int i = 0; i < length; i++) cells.add(new Cell(0, i));
+            generated.add(new PlayerRoute(cells));
+        }
+
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "selectDiverseCandidates", GameState.class, List.class, int.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<PlayerRoute> selected = (List<PlayerRoute>) method.invoke(
+                new MonsterAwareRoutePlanner(), state, generated, 8);
+
+        assertEquals(8, selected.size(),
+                "exact-goal tactical evaluation must stay within MAX_ROUTE_CANDIDATES");
+        assertTrue(selected.stream()
+                        .mapToInt(PlayerRoute::size)
+                        .max()
+                        .orElse(0) > 8,
+                "candidate culling must retain a longer route for tactical diversity");
+    }
+
+    @Test
     void fullRoutingRetainsAnOrdinaryRouteEvenWhenGapCandidatesExist() {
         GameState state = new GameState();
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];

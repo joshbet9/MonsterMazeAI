@@ -291,24 +291,51 @@ public final class TacticalRouteSimulator {
         double distance = Math.hypot(dx, dz);
         if (distance <= WAYPOINT_TOLERANCE) return Action.IDLE;
 
-        float desiredYaw = (float)Math.toDegrees(Math.atan2(-dx, dz));
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float error = normalise(desiredYaw - state.player.yaw);
         float delta = Math.max(-30, Math.min(30, error));
         double absError = Math.abs(error);
+
         /*
-         * Keep the tactical model aligned with the live motor: a large but
-         * recoverable heading error is corrected while still carrying forward
-         * momentum. Only an almost-opposite heading becomes a true turn-in-place
-         * state, because driving through that angle would cross the wrong side
-         * of a one-cell corridor.
+         * Mirror the live motor's cardinal-corridor control envelope closely.
+         * Route ranking must not assume that the player has to stop at every
+         * heading correction when the real controller can carry forward input,
+         * or it will systematically over-value low-turn routes and under-value
+         * viable faster detours.
          */
-        double forward = absError <= 45.0
-                ? 1.0
-                : absError < 135.0
-                ? 0.35
-                : 0.0;
-        boolean sprint = forward > 0.0;
-        return new Action(forward, 0, false, sprint, delta, false);
+        double forward;
+        double strafe = 0.0D;
+        boolean sprint;
+
+        if (absError <= 2.0D) {
+            forward = 1.0D;
+            sprint = true;
+        } else if (absError <= 45.0D) {
+            forward = absError <= 20.0D
+                    ? 1.0D
+                    : absError <= 35.0D
+                    ? 0.80D
+                    : 0.50D;
+            sprint = true;
+        } else if (distance <= 4.50D && absError < 135.0D) {
+            /*
+             * Near a true cardinal corner, use the same bounded W+A/D vector as
+             * the live motor. Pure 90-degree lateral steering intentionally
+             * keeps sprint false, matching the validated edge-safe live policy.
+             */
+            double errorRad = Math.toRadians(error);
+            forward = Math.cos(errorRad) * 0.65D;
+            strafe = -Math.sin(errorRad) * 0.65D;
+            sprint = forward > 0.05D;
+        } else if (distance > 4.50D) {
+            forward = 0.35D;
+            sprint = true;
+        } else {
+            forward = 0.0D;
+            sprint = false;
+        }
+
+        return new Action(forward, strafe, false, sprint, delta, false);
     }
 
     private boolean goalReached(GameState state, PlayerRoute route, int waypoint,

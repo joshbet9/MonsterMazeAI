@@ -993,7 +993,17 @@ public final class StableLiveMovementController {
         if (route != null && !strategicRoutePreservesCurrentHeading(
                 state, planned.route, startRow, startColumn)
                 && !currentRouteThreatenedByMonster(state)) {
-            fullRouteEvaluationPending = true;
+            /*
+             * This route is already a valid alternative, but changing headings
+             * from the middle of a straight corridor is deliberately deferred.
+             * Do not mark another full evaluation pending: that would enqueue
+             * the same heading-changing plan again on the very next observation
+             * and can monopolise the single strategic-planner worker.
+             *
+             * A real threat/topology change will still schedule a fresh plan
+             * through the normal threat-signature path.
+             */
+            fullRouteEvaluationPending = false;
             return;
         }
 

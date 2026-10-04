@@ -3,9 +3,12 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -287,6 +290,66 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
         assertTrue(action.forward() >= 0.0,
                 "the controller must not reverse into the already-passed waypoint");
+    }
+
+    @Test
+    void reanchorsNewRouteToSegmentAlreadyOccupiedByPlayer() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int row = 0; row <= 2; row++) {
+            raw[row][0] = 1;
+            raw[row][1] = 1;
+            raw[row][2] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.player.x = 2.8;
+        s.player.z = 2.5;
+        s.player.vx = 0.20;
+        s.player.vz = 0.0;
+
+        PlayerRoute route = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+
+        int waypoint = StableLiveMovementController.reanchorWaypointIndex(s, route);
+
+        assertEquals(4, waypoint,
+                "a replacement route must continue from the segment the player already occupies, not its first turn");
+    }
+
+    @Test
+    void reanchorPrefersForwardSegmentAtExactCornerWhenMomentumExists() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int row = 0; row <= 2; row++) {
+            for (int column = 0; column <= 2; column++) raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.player.x = 0.5;
+        s.player.z = 2.5;
+        s.player.vx = 0.18;
+        s.player.vz = 0.0;
+
+        PlayerRoute route = new PlayerRoute(List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+
+        int waypoint = StableLiveMovementController.reanchorWaypointIndex(s, route);
+
+        assertEquals(4, waypoint,
+                "at a corner, forward momentum should select the outgoing segment");
     }
 
     @Test

@@ -248,14 +248,40 @@ public final class PredictiveMonsterThreatScorer {
     private static double edgeRisk(ThreatField field, Cell from, Cell to,
                                    int departureTick, int arrivalTick) {
         int midpoint = departureTick + Math.max(1, (arrivalTick - departureTick) / 2);
-        double fromRisk = sampleRisk(field, Math.max(1, departureTick + 1),
-                from.row() + 0.5D, from.column() + 0.5D);
-        double midRisk = sampleRisk(field, midpoint,
-                (from.row() + to.row()) * 0.5D + 0.5D,
-                (from.column() + to.column()) * 0.5D + 0.5D);
-        double toRisk = sampleRisk(field, arrivalTick,
-                to.row() + 0.5D, to.column() + 0.5D);
+
+        /*
+         * The threat field is already projected onto every physical cell. The
+         * A* search only needs the occupancy risk of the three route positions
+         * it crosses, plus the small timing window. Re-sampling a 3x3 spatial
+         * neighborhood for every expanded edge was dominating the live search.
+         */
+        double fromRisk = cellRisk(field, Math.max(1, departureTick + 1),
+                from.row(), from.column());
+        double midRisk = cellRisk(field, midpoint,
+                (from.row() + to.row()) / 2,
+                (from.column() + to.column()) / 2);
+        double toRisk = cellRisk(field, arrivalTick,
+                to.row(), to.column());
+
         return Math.max(toRisk, Math.max(fromRisk * 0.5D, midRisk));
+    }
+
+    private static double cellRisk(ThreatField field, int tick, int row, int column) {
+        if (row < 0 || row >= MazeModel.SIZE || column < 0 || column >= MazeModel.SIZE) {
+            return 0.0D;
+        }
+
+        double best = 0.0D;
+        for (int offset = -TIMING_WINDOW_TICKS;
+             offset <= TIMING_WINDOW_TICKS; offset++) {
+            int t = tick + offset;
+            if (t < 1 || t > HORIZON_TICKS) continue;
+            double weight = 1.0D / (1.0D + Math.abs(offset));
+            int index = t * ThreatField.CELL_COUNT
+                    + row * MazeModel.SIZE + column;
+            best = Math.max(best, field.risk[index] * weight);
+        }
+        return best;
     }
 
     private static PlayerRoute shortestPhysicalFallback(GameState state, Cell start,

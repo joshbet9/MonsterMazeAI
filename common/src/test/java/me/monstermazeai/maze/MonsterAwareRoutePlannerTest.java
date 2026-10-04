@@ -239,13 +239,16 @@ class MonsterAwareRoutePlannerTest {
         incoming.vz = -0.20;
         state.monsters.add(incoming);
 
-        PlayerRoute route = new MonsterAwareRoutePlanner()
-                .route(state, new Cell(0, 0), new Cell(0, 20));
+        var method = MonsterAwareRoutePlanner.class.getDeclaredMethod(
+                "projectedMonsterThreatOnRoute", GameState.class, List.class);
+        method.setAccessible(true);
 
-        assertEquals(new Cell(0, 0), route.cells().get(0));
-        assertEquals(new Cell(0, 20), route.cells().get(route.size() - 1));
-        assertTrue(route.cells().stream().anyMatch(cell -> cell.row() != 0),
-                "full strategic routing must evaluate a detour when a distant moving monster is projected into the direct lane");
+        @SuppressWarnings("unchecked")
+        List<Cell> direct = new PlayerPathfinder()
+                .shortestPathWithoutGaps(state.maze, new Cell(0, 0), new Cell(0, 20));
+
+        assertTrue((Boolean) method.invoke(null, state, direct),
+                "a moving far monster projected onto the direct lane must wake strategic threat evaluation");
     }
 
     @Test

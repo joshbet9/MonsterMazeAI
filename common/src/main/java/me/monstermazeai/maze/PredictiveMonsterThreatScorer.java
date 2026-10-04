@@ -160,6 +160,17 @@ public final class PredictiveMonsterThreatScorer {
                     stepCost += risk * 8.0D;
                 }
 
+                /*
+                 * Reaching the active SafePad is the actual survival condition.
+                 * When the remaining phase timer is short, late arrival is much
+                 * worse than taking a modestly riskier route that arrives in time.
+                 */
+                if (state.phaseTicksRemaining > 0
+                        && arrivalTick > state.phaseTicksRemaining) {
+                    stepCost += 2_500.0D
+                            + (arrivalTick - state.phaseTicksRemaining) * 100.0D;
+                }
+
                 double nextG = node.g + stepCost;
                 SearchKey key = new SearchKey(
                         next.row(), next.column(), arrivalTick,

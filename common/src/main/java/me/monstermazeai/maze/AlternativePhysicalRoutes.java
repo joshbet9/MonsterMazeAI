@@ -14,7 +14,17 @@ public final class AlternativePhysicalRoutes {
     public List<PlayerRoute> generate(MazeModel maze, Cell start, Cell goal, int limit) {
         if (limit < 1) throw new IllegalArgumentException("limit must be positive");
 
-        PlayerRoute baseline = PlayerRoute.between(maze, start, goal);
+        /*
+         * Region planning probes many physical cells inside the SafePad area.
+         * Some of those cells can be physically present but disconnected from
+         * the current maze corridor. An unreachable target is simply not an
+         * alternative-route problem; return no candidates instead of throwing
+         * and aborting the entire background strategic planner.
+         */
+        List<Cell> baselinePath = new PlayerPathfinder().shortestPath(maze, start, goal);
+        if (baselinePath.isEmpty()) return List.of();
+
+        PlayerRoute baseline = new PlayerRoute(baselinePath);
         List<PlayerRoute> accepted = new ArrayList<>();
         accepted.add(baseline);
 

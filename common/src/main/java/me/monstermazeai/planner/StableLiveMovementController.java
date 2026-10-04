@@ -61,8 +61,9 @@ public final class StableLiveMovementController {
     private static final double PHYSICS_WALK_SPEED = 0.10D;
     private static final double PHYSICS_SPRINT_MULTIPLIER = 1.30D;
     private static final double PHYSICS_GROUND_FACTOR = 0.16277136D;
-    /** One-tick safety horizon matches the live observe -> decide -> move cadence. */
-    private static final int SUPPORT_LOOKAHEAD_TICKS = 1;
+    /** Normal driving uses a short support horizon; committed gap execution uses the full horizon. */
+    private static final int MIN_SUPPORT_LOOKAHEAD_TICKS = 1;
+    private static final int MAX_SUPPORT_LOOKAHEAD_TICKS = 3;
     /**
      * Every fresh observation is eligible for route replanning. Computational
      * optimisation belongs inside the planner, never in an artificial cadence
@@ -671,7 +672,7 @@ public final class StableLiveMovementController {
         if (!gapExecutionActive
                 && (Math.abs(crossTrack) > 0.20D
                 || (speed > 0.04D
-                && !hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)))) {
+                && !hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))))) {
             Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
             if (guarded != action) {
                 lastDecisionDetail += " EDGE_GUARD"
@@ -1384,7 +1385,7 @@ public final class StableLiveMovementController {
     private Action guardProjectedSupport(GameState state, Action action,
                                          int dirRow, int dirColumn) {
         if (state.maze == null || !state.player.grounded) return action;
-        if (hasPredictedPhysicalSupport(state, action, SUPPORT_LOOKAHEAD_TICKS)) return action;
+        if (hasPredictedPhysicalSupport(state, action, supportLookaheadTicks(state))) return action;
 
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
@@ -1468,6 +1469,133 @@ public final class StableLiveMovementController {
             }
         }
         return false;
+    }
+
+
+    private double turnResponseGain() {
+        return 0.25D + profile.attributes.agility * 0.50D;
+    }
+
+    private int supportLookaheadTicks(GameState state) {
+        return gapExecutionActive
+                ? MAX_SUPPORT_LOOKAHEAD_TICKS
+                : Math.min(2, MAX_SUPPORT_LOOKAHEAD_TICKS);
+    }
+
+    private Action laneFineDriveAction(
+            GameState state, int dirRow, int dirColumn, double crossTrack) {
+        double routeWorldX = dirRow;
+        double routeWorldZ = dirColumn;
+        double lateralWorldX = 0.0D;
+        double lateralWorldZ = 0.0D;
+
+        if (dirRow == 0) {
+            lateralWorldX = crossTrack > 0.0D ? -1.0D : 1.0D;
+        } else {
+            lateralWorldZ = crossTrack > 0.0D ? -1.0D : 1.0D;
+        }
+
+        double lateralWeight = Math.min(1.0D, Math.abs(crossTrack) / 0.28D);
+        double worldX = 0.45D * routeWorldX
+                + 0.65D * lateralWeight * lateralWorldX;
+        double worldZ = 0.45D * routeWorldZ
+                + 0.65D * lateralWeight * lateralWorldZ;
+        double length = Math.hypot(worldX, worldZ);
+        if (length < 1.0E-6D) return null;
+
+        worldX /= Math.max(1.0D, length);
+        worldZ /= Math.max(1.0D, length);
+
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(
+                yawError * (float) turnResponseGain(),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double forwardWorldX = -Math.sin(postYaw);
+        double forwardWorldZ = Math.cos(postYaw);
+        double strafeWorldX = Math.cos(postYaw);
+        double strafeWorldZ = Math.sin(postYaw);
+
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+        double inputLength = Math.hypot(forward, strafe);
+        if (inputLength > 1.0D) {
+            forward /= inputLength;
+            strafe /= inputLength;
+        }
+
+        return guardLaneCorrectionSupport(
+                state,
+                new Action(
+                        forward, strafe, false,
+                        forward > 0.05D, yawDelta, false));
+    }
+
+    private Action laneCorrectionAction(
+            GameState state, int dirRow, int dirColumn, double magnitude) {
+        double targetX = dirRow == 0 ? laneAnchorX : state.player.x;
+        double targetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
+
+        double worldX = targetX - state.player.x;
+        double worldZ = targetZ - state.player.z;
+        double length = Math.hypot(worldX, worldZ);
+        if (length < 1.0E-6D) return null;
+        worldX /= length;
+        worldZ /= length;
+
+        float desiredYaw = cardinalYaw(dirRow, dirColumn);
+        float yawDelta = clamp(
+                normalise(desiredYaw - state.player.yaw)
+                        * (float) turnResponseGain(),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+        double forwardWorldX = -Math.sin(postYaw);
+        double forwardWorldZ = Math.cos(postYaw);
+        double strafeWorldX = Math.cos(postYaw);
+        double strafeWorldZ = Math.sin(postYaw);
+
+        double forward = worldX * forwardWorldX + worldZ * forwardWorldZ;
+        double strafe = worldX * strafeWorldX + worldZ * strafeWorldZ;
+        double inputLength = Math.hypot(forward, strafe);
+        if (inputLength > 1.0D) {
+            forward /= inputLength;
+            strafe /= inputLength;
+        }
+
+        return guardLaneCorrectionSupport(
+                state,
+                new Action(
+                        forward * magnitude,
+                        strafe * magnitude,
+                        false,
+                        forward * magnitude > 0.05D,
+                        yawDelta,
+                        false));
+    }
+
+    private Action guardLaneCorrectionSupport(GameState state, Action correction) {
+        if (state.maze == null || !state.player.grounded) return correction;
+        if (hasPredictedPhysicalSupport(state, correction, 1)) return correction;
+
+        final double[] scales = {0.70D, 0.45D, 0.25D, 0.10D};
+        for (double scale : scales) {
+            Action candidate = new Action(
+                    correction.forward() * scale,
+                    correction.strafe() * scale,
+                    false,
+                    correction.sprint(),
+                    correction.yawDelta(),
+                    false);
+            if (hasPredictedPhysicalSupport(state, candidate, 1)) {
+                return candidate;
+            }
+        }
+        return new Action(
+                0.0, 0.0, false, false,
+                correction.yawDelta(), false);
     }
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {

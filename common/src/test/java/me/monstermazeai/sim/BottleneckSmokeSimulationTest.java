@@ -16,15 +16,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class BottleneckSmokeSimulationTest {
     @Test
-    void representativeBottlenecksReachStageFive() {
-        run("SPEED_P3_MAVERICK", 2, Kit.MAVERICK, Mode.SPEED, 5, 5);
-        run("MODERN_P1_REPULSOR", 0, Kit.REPULSOR, Mode.MODERN, 5, 5);
-        run("MODERN_P2_REPULSOR", 1, Kit.REPULSOR, Mode.MODERN, 10, 10);
-        run("MODERN_P3_SLOWBALLER", 2, Kit.SLOWBALLER, Mode.MODERN, 10, 9);
+    void representativeBottlenecksReachValidatedCheckpoints() {
+        java.util.ArrayList<String> failures = new java.util.ArrayList<>();
+
+        failures.add(run("SPEED_P3_MAVERICK", 2, Kit.MAVERICK, Mode.SPEED, 5, 5));
+        failures.add(run("MODERN_P1_REPULSOR", 0, Kit.REPULSOR, Mode.MODERN, 5, 5));
+        failures.add(run("MODERN_P2_REPULSOR", 1, Kit.REPULSOR, Mode.MODERN, 10, 10));
+        failures.add(run("MODERN_P3_SLOWBALLER", 2, Kit.SLOWBALLER, Mode.MODERN, 10, 9));
+
+        failures.removeIf(java.util.Objects::isNull);
+        assertTrue(failures.isEmpty(), String.join(System.lineSeparator(), failures));
     }
 
-    private static void run(String name, int pattern, Kit kit, Mode mode, int targetStage,
-                            int requiredStage) {
+    private static String run(String name, int pattern, Kit kit, Mode mode, int targetStage,
+                              int requiredStage) {
         AuthenticStage10SimulationTest.RunResult result =
                 AuthenticStage10SimulationTest.runDiagnostic(
                         pattern, kit, AiProfile.HIGH_SKILL, mode, targetStage);
@@ -42,9 +47,10 @@ class BottleneckSmokeSimulationTest {
                 result.fastRecoveryRouteTicks(), result.firstFallTick(),
                 result.terminalTick(), result.firstFallVx(), result.firstFallVz());
 
-        assertTrue(result.maxStage() >= requiredStage,
-                "Smoke regression: " + name + " reached only stage "
-                        + result.maxStage() + " before required stage "
-                        + requiredStage);
+        if (result.maxStage() < requiredStage) {
+            return "Smoke regression: " + name + " reached only stage "
+                    + result.maxStage() + " before required stage " + requiredStage;
+        }
+        return null;
     }
 }

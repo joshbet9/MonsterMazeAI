@@ -34,6 +34,9 @@ public final class PredictiveMonsterThreatScorer {
     private static final double CONTACT_Y_DISTANCE = 1.0D;
     private static final double MAX_PREDICTED_MONSTER_TRAVEL = 40.0D;
     private static final double TURN_PENALTY_TICKS = 1.25D;
+    private static final int STRAIGHT_MOVE_TICKS = 3;
+    private static final int GAP_MOVE_TICKS = 5;
+    private static final int TURN_EXTRA_TICKS = 2;
 
     /*
      * Exact source-derived steady-state estimate for a sprinting player:
@@ -127,10 +130,17 @@ public final class PredictiveMonsterThreatScorer {
                 int gaps = node.gapsUsed + (gap ? 1 : 0);
                 if (maxGaps >= 0 && gaps > maxGaps) continue;
 
-                int movementTicks = gap ? 6 : 4;
+                /*
+                 * The scorer's high-skill speed estimate is about 0.31 blocks
+                 * per tick at sprint speed. Three ticks per ordinary block is
+                 * therefore the correct integer arrival bucket; corners add two
+                 * ticks for the camera/velocity transition. A one-block gap
+                 * gets a five-tick bucket because of the committed jump window.
+                 */
+                int movementTicks = gap ? GAP_MOVE_TICKS : STRAIGHT_MOVE_TICKS;
                 if (node.directionSet
                         && (dirRow != node.dirRow || dirColumn != node.dirColumn)) {
-                    movementTicks += 2;
+                    movementTicks += TURN_EXTRA_TICKS;
                 }
 
                 int arrivalTick = Math.min(HORIZON_TICKS, node.tick + movementTicks);

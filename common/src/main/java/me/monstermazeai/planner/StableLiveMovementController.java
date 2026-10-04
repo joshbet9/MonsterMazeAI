@@ -1463,11 +1463,25 @@ public final class StableLiveMovementController {
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
         double supportScale = 0.20D + (0.50D * profile.attributes.handling);
+        double forwardContinuation = Math.max(
+                0.35D,
+                Math.abs(action.forward()));
         Action[] alternatives = {
                     new Action(action.forward() * supportScale,
                             action.strafe() * supportScale,
                             action.jump(),
                             action.sprint(),
+                            action.yawDelta(),
+                            false),
+                    /*
+                     * Preserve W while turning whenever the projected AABB still
+                     * has physical support. This is the source-valid continuation
+                     * a strong player naturally uses; only fall back to braking or
+                     * reverse/side correction when forward continuation is unsafe.
+                     */
+                    new Action(forwardContinuation, 0.0,
+                            action.jump(),
+                            true,
                             action.yawDelta(),
                             false),
                     new Action(0.0, 0.0, false, false, action.yawDelta(), false),

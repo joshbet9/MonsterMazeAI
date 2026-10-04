@@ -373,37 +373,19 @@ public final class StableLiveMovementController {
                 lastTacticalSignature = Long.MIN_VALUE;
                 lastThreatSignature = threat;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
-            } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
-                boolean threatChanged = threat != lastThreatSignature;
+            } else if (fullRouteEvaluationPending) {
+                /*
+                 * Strategic replanning is reserved for topology/objective
+                 * changes and explicit fast-recovery events. A moving monster is
+                 * not a topology change. Local imminent-contact logic below may
+                 * detour around it, but the committed long route is not replaced
+                 * asynchronously just because the monster crossed a cell bucket.
+                 */
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
-
-                /*
-                 * Do not replace the whole strategic route merely because a mob
-                 * moved. When a monster actually enters the near route horizon,
-                 * search only to the next few cells and splice the best local
-                 * branch back into the already-validated route. This preserves
-                 * current momentum and most of the existing route commitment.
-                 */
-                if (threatChanged) {
-                    PlayerRoute localDetour = tryLocalThreatDetour(
-                            state, new Cell(startRow, startColumn));
-                    if (localDetour != null) {
-                        route = localDetour;
-                        waypointIndex = reanchorWaypointIndex(state, route);
-                        anchoredSegmentIndex = -1;
-                        lastRouteTick = state.tick;
-                        routePlanCount++;
-                        lastTacticalSignature = Long.MIN_VALUE;
-                        lastDecisionDetail = "LOCAL_THREAT_DETOUR"
-                                + " size=" + route.size()
-                                + " start=" + startRow + "," + startColumn
-                                + " goal=" + goal.row() + "," + goal.column()
-                                + " waypoint=" + waypointIndex;
-                    }
-                }
-
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
+            } else {
+                lastThreatSignature = threat;
             }
         }
 

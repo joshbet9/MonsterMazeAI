@@ -182,20 +182,29 @@ public final class DeterministicMazeController {
         float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
         /*
-         * Keep forward momentum through corners. A large reverse-facing error
-         * is the only case where we briefly remove forward input; ordinary
-         * 90-degree turns are handled while driving.
+         * Use both WASD axes to carry the player through a corner. Minecraft's
+         * movement normalises the input vector, so sin/cos(error) gives a
+         * full-strength directional command rather than slowing the player to
+         * turn the camera first. The look-ahead target is on the outgoing
+         * physical corridor, so the vector naturally cuts the corner while
+         * yaw converges toward the new cardinal heading.
          */
         double forward;
+        double strafe;
         boolean sprint;
-        if (Math.abs(yawError) > 110.0F) {
+
+        if (Math.abs(yawError) > 115.0F) {
             forward = 0.0D;
+            strafe = 0.0D;
             sprint = false;
-        } else if (Math.abs(yawError) > 70.0F) {
-            forward = 0.70D;
-            sprint = false;
+        } else if (Math.abs(yawError) > 8.0F) {
+            double errorRad = Math.toRadians(yawError);
+            forward = Math.cos(errorRad);
+            strafe = -Math.sin(errorRad);
+            sprint = true;
         } else {
             forward = 1.0D;
+            strafe = 0.0D;
             sprint = true;
         }
 
@@ -207,9 +216,10 @@ public final class DeterministicMazeController {
                         + " target=" + format(target.x) + "," + format(target.z)
                         + " yawError=" + format(yawError)
                         + " forward=" + format(forward)
+                        + " strafe=" + format(strafe)
                         + " jump=" + jump;
 
-        return new Action(forward, 0.0D, jump, sprint, yawDelta, false);
+        return new Action(forward, strafe, jump, sprint, yawDelta, false);
     }
 
     private PlayerRoute buildShortestRoute(

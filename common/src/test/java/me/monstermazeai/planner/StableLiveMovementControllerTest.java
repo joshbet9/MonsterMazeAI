@@ -447,7 +447,7 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void nonJumperSkipsRedundantSynchronousTacticalBeam() {
+    void nonJumperTacticalMovementCannotTakeOverWithReverseOrIdle() {
         GameState s = state(0.5, 0.5, 0.0F);
         s.kit = me.monstermazeai.kit.Kit.MAVERICK;
         s.tick = 1;
@@ -456,10 +456,13 @@ class StableLiveMovementControllerTest {
 
         StableLiveMovementController controller = new StableLiveMovementController();
 
-        controller.nextAction(s, new Cell(0, 8), true);
+        Action action = controller.nextAction(s, new Cell(0, 8), true);
 
-        assertEquals(Long.MIN_VALUE, controller.lastTacticalDecisionTickForTest(),
-                "non-Jumper movement should not pay for a tactical beam whose movement output is ignored");
+        assertTrue(action.forward() >= 0.0D,
+                "tactical steering must never inject reverse W input into the live motor");
+        assertTrue(Math.hypot(action.forward(), action.strafe()) > 0.0D
+                        || Math.abs(action.yawDelta()) > 0.0F,
+                "live control must remain actionable when tactical movement is rejected");
     }
 
     @Test
@@ -541,8 +544,8 @@ class StableLiveMovementControllerTest {
                 "a closed one-cell corridor must remain a moving decision");
         assertTrue(action.forward() >= 0.0,
                 "monster avoidance must not reverse into a yield/stall state");
-        assertTrue(controller.lastDecisionDetail().contains("MOB_CONTINUE"),
-                controller.lastDecisionDetail());
+        assertFalse(action.forward() < 0.20D && Math.hypot(action.forward(), action.strafe()) < 0.25D,
+                "non-progressing tactical candidates must not replace the corridor motor");
     }
 
     @Test

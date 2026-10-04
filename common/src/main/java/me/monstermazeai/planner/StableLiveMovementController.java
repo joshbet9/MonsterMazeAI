@@ -1393,7 +1393,7 @@ public final class StableLiveMovementController {
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
-            if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+            if (!hasPredictedPhysicalSupport(state, candidate, supportLookaheadTicks(state))) continue;
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
             if (progress > bestProgress) {
                 bestProgress = progress;

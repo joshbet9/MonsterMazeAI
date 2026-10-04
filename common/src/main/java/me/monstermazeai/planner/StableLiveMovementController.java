@@ -403,10 +403,25 @@ public final class StableLiveMovementController {
                 lastTacticalSignature = Long.MIN_VALUE;
                 lastThreatSignature = threat;
                 scheduleStrategicRoute(state, routingState, new Cell(startRow, startColumn), goal, regionRadius);
-            } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
+            } else if (fullRouteEvaluationPending) {
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
                 scheduleStrategicRoute(state, routingState, new Cell(startRow, startColumn), goal, regionRadius);
+            } else if (threat != lastThreatSignature) {
+                /*
+                 * Local monster motion is frequent, but most sub-block changes do
+                 * not justify replacing a physically valid route. Let the cheap
+                 * corridor-threat predictor decide whether this signature change
+                 * is actually relevant to the route ahead. This prevents the
+                 * single strategic-planner worker from spending its entire time
+                 * replaying harmless monster jitter while the player advances.
+                 */
+                lastThreatSignature = threat;
+                if (currentRouteThreatenedByMonster(state)) {
+                    fullRouteEvaluationPending = false;
+                    scheduleStrategicRoute(state, routingState,
+                            new Cell(startRow, startColumn), goal, regionRadius);
+                }
             }
         }
 
@@ -427,6 +442,7 @@ public final class StableLiveMovementController {
 
         // A route waypoint is a turn cell. Once its centre is reached, switch
         // to the next segment. Never skip over a corner and then turn back.
+        boolean waypointAdvanced = false;
         while (waypointIndex < route.size() - 1
                 && (distanceToWaypoint(state, waypointIndex) <= WAYPOINT_ARRIVAL
                 || hasPassedWaypointAlongSegment(state, waypointIndex))) {
@@ -434,12 +450,28 @@ public final class StableLiveMovementController {
             waypointIndex = nextTurnWaypoint(route, waypointIndex);
             if (waypointIndex != previousWaypoint) {
                 anchoredSegmentIndex = -1;
+                waypointAdvanced = true;
             }
         }
 
         if (waypointIndex >= route.size()) {
             lastDecisionDetail = "REACHED routeSize=" + route.size();
             return Action.IDLE;
+        }
+
+        /*
+         * A corner is a natural human replanning point: the player has just
+         * committed to a new physical heading, so the next route can be chosen
+         * from the exact supported cell with the latest monster layout. This is
+         * deliberately event-driven instead of tick-driven, keeping the
+         * background planner responsive without sacrificing closed-loop routing.
+         */
+        if (waypointAdvanced && !padEntryCommitment && !gapExecutionActive) {
+            fullRouteEvaluationPending = false;
+            lastThreatSignature = threatSignature(state);
+            scheduleStrategicRoute(state, routingState,
+                    new Cell(startRow, startColumn), goal, regionRadius);
+            lastDecisionDetail += " ROUTE_REPLAN_CORNER";
         }
 
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);

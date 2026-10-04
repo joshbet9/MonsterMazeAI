@@ -53,7 +53,8 @@ public final class AbilityDecision {
                     && !isOnActivePad(state)
                     && (repulsorDeadlineEmergency(state, objectiveReason)
                     || repulsorLethalEmergency(state)
-                    || repulsorImmediateThreat(state));
+                    || repulsorImmediateThreat(state)
+                    || repulsorModernCorridorThreat(state));
         }
 
         if (state.kit == Kit.BODY_BUILDER) {
@@ -108,6 +109,48 @@ public final class AbilityDecision {
                 + DEADLINE_MARGIN_TICKS;
 
         return requiredTicks >= state.phaseTicksRemaining;
+    }
+
+    /**
+     * Modern has the dense 225-monster starter field. A strong player can spend
+     * one of three Repulsor charges before actual contact when multiple mobs
+     * occupy the six-block corridor toward the active pad. Keep the rule
+     * conservative: two corridor threats, or one close corridor threat already
+     * closing on the player.
+     */
+    private static boolean repulsorModernCorridorThreat(GameState state) {
+        if (state.mode != me.monstermazeai.game.Mode.MODERN
+                || state.activePadRow < 0 || state.activePadColumn < 0) {
+            return false;
+        }
+
+        double toPadX = state.activePadRow + 0.5 - state.player.x;
+        double toPadZ = state.activePadColumn + 0.5 - state.player.z;
+        double padDistance = Math.hypot(toPadX, toPadZ);
+        if (padDistance < 1.0E-6) return false;
+
+        double ux = toPadX / padDistance;
+        double uz = toPadZ / padDistance;
+        int corridorThreats = 0;
+
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            double distance = Math.hypot(dx, dz);
+            if (distance > 6.0 || distance < 0.15) continue;
+
+            double along = dx * ux + dz * uz;
+            double lateral = Math.abs(dx * uz - dz * ux);
+            if (along < -0.5 || along > padDistance + 1.0 || lateral > 1.75) continue;
+
+            corridorThreats++;
+            if (distance <= 4.0 && imminentClosingContact(state, monster)) {
+                return true;
+            }
+        }
+
+        return corridorThreats >= 2;
     }
 
     private static boolean bodyRushDeadlineEmergency(GameState state, String objectiveReason) {

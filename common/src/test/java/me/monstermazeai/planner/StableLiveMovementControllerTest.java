@@ -53,6 +53,64 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void deferredHeadingChangeDoesNotKeepFullRouteEvaluationPending() throws Exception {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        java.util.List<Cell> currentCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 4));
+        java.util.List<Cell> plannedCells = java.util.List.of(
+                new Cell(0, 0),
+                new Cell(4, 0));
+
+        setField(controller, "route", new me.monstermazeai.maze.PlayerRoute(currentCells));
+        setField(controller, "waypointIndex", 1);
+        setField(controller, "goalRow", 4);
+        setField(controller, "goalColumn", 0);
+        setField(controller, "goalRadius", 0);
+        setField(controller, "fullRouteEvaluationPending", true);
+
+        long topology = s.maze.dynamicSignature();
+        Class<?> plannedClass = Class.forName(
+                "me.monstermazeai.planner.StableLiveMovementController$PlannedRoute");
+        java.lang.reflect.Constructor<?> ctor = plannedClass.getDeclaredConstructor(
+                me.monstermazeai.maze.PlayerRoute.class,
+                int.class, int.class,
+                int.class, int.class,
+                int.class,
+                long.class,
+                long.class, long.class, long.class);
+        ctor.setAccessible(true);
+        Object planned = ctor.newInstance(
+                new me.monstermazeai.maze.PlayerRoute(plannedCells),
+                0, 0, 4, 0, 0,
+                1L, topology, topology, 0L);
+        setField(controller, "completedRoutePlan", planned);
+
+        var apply = StableLiveMovementController.class.getDeclaredMethod(
+                "applyCompletedRoutePlan",
+                GameState.class, int.class, int.class, Cell.class, int.class);
+        apply.setAccessible(true);
+        apply.invoke(controller, s, 0, 0, new Cell(4, 0), 0);
+
+        assertFalse((boolean) getField(controller, "fullRouteEvaluationPending"),
+                "a deferred heading change must wait for a real threat/topology change instead of requeueing every tick");
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static Object getField(Object target, String name) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
+    @Test
     void sourceSafePadIntegerCoordinateKeepsControlledForwardDrive() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

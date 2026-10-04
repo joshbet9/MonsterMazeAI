@@ -2,6 +2,7 @@ package me.monstermazeai.planner;
 
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.GameProgressionModel;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterSimulator;
@@ -36,6 +37,7 @@ public final class TacticalRouteSimulator {
 
     private final LegacyMovementModel physics = new LegacyMovementModel();
     private final AbilityModel abilities = new AbilityModel();
+    private final GameProgressionModel progression = new GameProgressionModel(abilities);
 
     public Action nextAction(GameState source, PlayerRoute route, Cell goal,
                               boolean regionGoal, int regionRadius) {
@@ -94,32 +96,30 @@ public final class TacticalRouteSimulator {
     private void step(GameState state, Action action, MonsterSimulator monsters) {
         if (action.useAbility()) abilities.activate(state);
 
-        boolean wasGrounded = state.player.grounded;
         int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER
                 ? (state.ability.charges > 0 ? 0 : -10)
                 : -10;
+
+        /*
+         * Keep the exact closed-loop simulator ordering:
+         * physics -> monster movement -> bump -> progression -> Jumper charge
+         * consumption. The previous tactical branch consumed the Jumper charge
+         * before monster contact and never advanced phase/old-pad state.
+         */
         physics.tick(state.player, action, state.maze, jumpAmplifier);
 
-        // Preserve source recovery/fall behaviour; only unrecoverable fall ends
-        // a branch.
         if (state.player.y < -3.0) {
             state.alive = false;
             return;
         }
 
-        // Source jumpEvent semantics: consume only after becoming airborne.
-        if (state.kit == me.monstermazeai.kit.Kit.JUMPER
-                && !wasGrounded && state.player.y > GameState.PATH_Y) {
-            abilities.consumeJumperCharge(state);
-        }
-
         monsters.tick(state);
-        // MonsterManager/UtilAction remains authoritative for the bump itself.
         MonsterMazeBumpModel.apply(state);
+        progression.tick(state);
 
-        if (isOnActivePad(state)) {
-            abilities.onReachedPad(state, true);
-            state.padReached = true;
+        if (state.player.y > 0.0
+                && state.kit == me.monstermazeai.kit.Kit.JUMPER) {
+            abilities.consumeJumperCharge(state);
         }
     }
 

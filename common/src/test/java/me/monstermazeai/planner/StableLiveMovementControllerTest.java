@@ -168,8 +168,8 @@ class StableLiveMovementControllerTest {
         assertEquals(0.0, action.forward(), 1.0e-6,
                 "the exact 90-degree corner vector should have no forward component");
         assertEquals(0.65, action.strafe(), 1.0e-6);
-        assertFalse(action.sprint(),
-                "pure 90-degree corner A/D steering remains conservative to avoid excess lateral acceleration at the edge");
+        assertTrue(action.sprint(),
+                "pure 90-degree corner steering should retain the independent sprint input");
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
     }
 

@@ -132,13 +132,27 @@ jobs:
           if len(rows) != 30:
               raise SystemExit(f'expected 30 matrix rows, found {len(rows)}')
 
+          stage_sum = sum(r['maxStage'] for r in rows)
+          speed_mean = sum(r['maxStage'] for r in rows if r['mode'] == 'SPEED') / 15
+          modern_mean = sum(r['maxStage'] for r in rows if r['mode'] == 'MODERN') / 15
+          speed_peak = max(r['maxStage'] for r in rows if r['mode'] == 'SPEED')
+          modern_peak = max(r['maxStage'] for r in rows if r['mode'] == 'MODERN')
+
           summary = {
               'cases': len(rows),
-              'stageSum': sum(r['maxStage'] for r in rows),
-              'speedMeanStage': sum(r['maxStage'] for r in rows if r['mode'] == 'SPEED') / 15,
-              'modernMeanStage': sum(r['maxStage'] for r in rows if r['mode'] == 'MODERN') / 15,
-              'speedPeak': max(r['maxStage'] for r in rows if r['mode'] == 'SPEED'),
-              'modernPeak': max(r['maxStage'] for r in rows if r['mode'] == 'MODERN'),
+              'stageSum': stage_sum,
+              'speedMeanStage': speed_mean,
+              'modernMeanStage': modern_mean,
+              'speedPeak': speed_peak,
+              'modernPeak': modern_peak,
+              'baselineStageSum': 458,
+              'baselineSpeedMeanStage': 21.67,
+              'baselineModernMeanStage': 8.87,
+              'deltaStageSum': stage_sum - 458,
+              'deltaSpeedMeanStage': speed_mean - 21.67,
+              'deltaModernMeanStage': modern_mean - 8.87,
+              'targetSpeedPeak': 70,
+              'targetModernPeak': 40,
               'rows': rows,
           }
 

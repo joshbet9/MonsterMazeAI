@@ -475,7 +475,7 @@ public final class StableLiveMovementController {
              * a better dodge without the live motor ever executing it.
              */
             Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
+                    state, route, waypointIndex, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
             if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;

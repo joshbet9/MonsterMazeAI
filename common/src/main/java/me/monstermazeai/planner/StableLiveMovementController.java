@@ -83,7 +83,7 @@ public final class StableLiveMovementController {
      * Maximum heading error for simultaneous forward movement and cursor
      * steering. Larger errors are reserved for in-place corner acquisition.
      */
-    private static final float MAX_DRIVE_STEER_ERROR = 45.0F;
+    private static final float MAX_DRIVE_STEER_ERROR = 55.0F;
     /** Let vanilla friction kill lateral/forward momentum before a corner turn. */
     private static final double MAX_TURNING_SPEED = 0.035;
     /** Do not attempt lane recovery once the player is already near the cell edge. */

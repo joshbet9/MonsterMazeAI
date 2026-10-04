@@ -522,7 +522,8 @@ class StableLiveMovementControllerTest {
         s.tick = 1;
         controller.nextAction(s, new Cell(8, 8), false);
 
-        s.player.z = 7.5D;
+        // Enter the pre-corner staging window while already facing the next segment.
+        s.player.z = 8.0D;
         s.player.vz = 0.04D;
         s.player.vx = 0.0D;
         s.player.yaw = -90.0F;

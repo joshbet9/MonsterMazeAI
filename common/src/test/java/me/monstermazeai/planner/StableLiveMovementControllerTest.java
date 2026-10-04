@@ -115,6 +115,28 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void laneRecoveryKeepsForwardSprintWhileCorrectingSideDrift() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        // Simulate a small lateral nudge after the route lane has been anchored.
+        s.player.x = 0.74D;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() > 0.0D,
+                "lane correction should preserve forward route progress");
+        assertTrue(action.sprint(),
+                "lane correction should retain sprint acceleration while recovering");
+        assertNotEquals(0.0D, action.strafe(),
+                "lane correction should still apply lateral input toward the anchored lane");
+    }
+
+    @Test
     void combinesForwardDriveWithYawSteeringForModerateHeadingError() {
         GameState s = state(0.5, 0.5, -20.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

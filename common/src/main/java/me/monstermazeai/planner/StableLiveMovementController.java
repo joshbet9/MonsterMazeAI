@@ -55,7 +55,7 @@ public final class StableLiveMovementController {
     }
     private static final double WAYPOINT_ARRIVAL = 0.18;
     private static final double WAYPOINT_BRAKE = 0.70;
-    private static final double ROUTE_DEVIATION = 0.55;
+    private static final double ROUTE_DEVIATION = 1.20;
     private static final double PHYSICS_SLIPPERINESS = 0.6D;
     private static final double PHYSICS_GROUND_FRICTION = 0.91D;
     private static final double PHYSICS_WALK_SPEED = 0.10D;
@@ -471,9 +471,62 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        float desiredYaw = cardinalYaw(dirRow, dirColumn);
-        float yawError = normalise(desiredYaw - state.player.yaw);
         double speed = Math.hypot(state.player.vx, state.player.vz);
+
+        /*
+         * A corner is a change of cardinal route direction, not a waypoint that
+         * needs a full stop. Start acquiring the next heading only when the
+         * remaining distance to the target-cell entry boundary is small enough
+         * for the current momentum to carry the player through the turn.
+         *
+         * This mirrors how a strong human runs the maze: keep the route committed,
+         * preserve momentum, rotate just before the corner, and resume full W as
+         * soon as the outgoing heading is usable. The old controller braked at
+         * every waypoint, which converted a simple graph traversal into repeated
+         * stop/turn/go cycles.
+         */
+        int steeringRow = dirRow;
+        int steeringColumn = dirColumn;
+        boolean cornerApproach = false;
+        boolean cornerAtEntry = false;
+        double cornerDistance = Double.POSITIVE_INFINITY;
+
+        if (!gapEdge && waypointIndex + 1 < route.size()) {
+            Cell nextCell = route.cells().get(waypointIndex + 1);
+            int nextRow = Integer.signum(nextCell.row() - targetCellRow);
+            int nextColumn = Integer.signum(nextCell.column() - targetCellColumn);
+            if (nextRow != dirRow || nextColumn != dirColumn) {
+                cornerDistance = distanceToCellEntryBoundary(
+                        state.player.x, state.player.z,
+                        route.cells().get(waypointIndex), dirRow, dirColumn);
+                float nextYaw = cardinalYaw(nextRow, nextColumn);
+                float nextYawError = normalise(nextYaw - state.player.yaw);
+                int turnTicks = Math.max(1, (int) Math.ceil(
+                        Math.abs(nextYawError) / MAX_TURN_PER_TICK));
+
+                double incomingSpeed = projectedIncomingSpeed(
+                        state.player.vx, state.player.vz, dirRow, dirColumn);
+                double retainedSpeed = incomingSpeed;
+                double turnTravel = 0.0D;
+                for (int i = 0; i < turnTicks; i++) {
+                    turnTravel += retainedSpeed;
+                    retainedSpeed *= PHYSICS_GROUND_FRICTION * PHYSICS_SLIPPERINESS;
+                }
+                turnTravel = Math.max(turnTravel, 0.10D);
+
+                cornerApproach = cornerDistance <= turnTravel + 0.20D;
+                if (cornerApproach) {
+                    steeringRow = nextRow;
+                    steeringColumn = nextColumn;
+                    Cell containing = containingCell(state.player.x, state.player.z);
+                    cornerAtEntry = cornerDistance <= 0.12D
+                            || containing.equals(route.cells().get(waypointIndex));
+                }
+            }
+        }
+
+        float desiredYaw = cardinalYaw(steeringRow, steeringColumn);
+        float yawError = normalise(desiredYaw - state.player.yaw);
 
         /*
          * Keep the player on the route's cell centreline. Normally this error
@@ -550,51 +603,46 @@ public final class StableLiveMovementController {
             } else {
                 action = new Action(1.0, 0.0, false, true, 0.0F, false);
             }
+        } else if (cornerApproach) {
+            /*
+             * Rotate onto the outgoing segment before entering the corner cell.
+             * Do not add a diagonal W vector while the player is still outside
+             * that cell: the retained vanilla momentum is the travel mechanism.
+             */
+            float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            if (cornerAtEntry && Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
+                double absError = Math.abs(yawError);
+                double forward = absError <= 25.0 ? 1.0 : 0.35;
+                boolean jump = shouldSpeedJump(state, allowJump);
+                action = new Action(forward, 0.0, jump, forward >= 0.95, turn, false);
+                lastDecisionDetail += " CORNER_RELEASE";
+            } else {
+                action = new Action(
+                        0.0, 0.0, false, false, turn, false);
+                lastDecisionDetail += " CORNER_COAST"
+                        + " distance=" + format(cornerDistance);
+            }
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
-             * Normal steering is concurrent with forward movement. This is
-             * deliberately not a time/cadence throttle: every fresh
-             * observation can adjust both axes immediately.
-             *
-             * For moderate errors, Minecraft receives forward input and a
-             * bounded cursor/yaw correction in the same tick. This lets the
-             * player naturally arc onto the cardinal corridor instead of
-             * stopping for several ticks at every heading correction.
-             *
-             * A large error is different: a 90-degree corner cannot safely
-             * be cut across a one-cell corridor, so acquire the heading first.
+             * Straight-segment heading correction: turn and drive together.
+             * There is no waypoint brake here; braking belongs only to explicit
+             * gap/pad commitments, not ordinary cardinal corners.
              */
             float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
+            if (Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
-                boolean brake = distance < waypointBrakeDistance()
-                        && closingSpeed(state, dx, dz) > 0.04;
-                /*
-                 * Keep forward input concurrent with cursor movement, but do not
-                 * carry full sprint acceleration through a sharp heading change.
-                 * The player is on a floating one-cell corridor: preserving the
-                 * route centreline is more important than squeezing maximum
-                 * horizontal speed out of the first few steering ticks.
-                 */
-                double steeringForward;
                 double absError = Math.abs(yawError);
-                if (absError <= 20.0) steeringForward = 1.0;
-                else if (absError <= 35.0) steeringForward = 0.80;
-                else steeringForward = 0.50;
-                double forward = brake ? 0.0 : steeringForward;
+                double steeringForward = absError <= 20.0
+                        ? 1.0 : (absError <= 35.0 ? 0.80 : 0.50);
+                double forward = steeringForward;
                 boolean sprint = forward >= 0.95 && absError <= 15.0;
-                // Non-Jumpers use the source Jump -10 + sprint-jump interaction
-                // as their normal speed mechanic. Jumper vertical jumps remain
-                // reserved for explicit terrain decisions.
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
             } else if (distance <= 4.50 && Math.abs(yawError) < 135.0F) {
                 /*
-                 * Near a cardinal corner, keep a bounded W+A/D vector active while
-                 * the camera turns. The vector is derived from the actual
-                 * heading error, so it rotates smoothly toward the next
-                 * cardinal segment instead of waiting in place or strafing blindly.
+                 * Bootstrap/recovery turn only. Once a route corner is being
+                 * approached, the corner branch above owns the command.
                  */
                 double errorRad = Math.toRadians(yawError);
                 double forward = Math.cos(errorRad) * 0.65D;
@@ -609,11 +657,9 @@ public final class StableLiveMovementController {
                         false);
             }
         } else {
-            boolean brake = distance < waypointBrakeDistance()
-                    && closingSpeed(state, dx, dz) > 0.04;
-            double forward = brake ? 0.0 : 1.0;
+            double forward = 1.0;
             boolean jump = shouldSpeedJump(state, allowJump);
-            action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
+            action = new Action(forward, 0.0, jump, true, 0.0F, false);
         }
 
         if (!gapExecutionActive
@@ -1085,6 +1131,30 @@ public final class StableLiveMovementController {
             }
         }
         return false;
+    }
+
+    private static double distanceToCellEntryBoundary(
+            double x, double z, Cell target, int incomingRowDirection, int incomingColumnDirection) {
+        double boundaryX = target.row() + 0.5D;
+        double boundaryZ = target.column() + 0.5D;
+        if (incomingRowDirection > 0) boundaryX = target.row();
+        else if (incomingRowDirection < 0) boundaryX = target.row() + 1.0D;
+        if (incomingColumnDirection > 0) boundaryZ = target.column();
+        else if (incomingColumnDirection < 0) boundaryZ = target.column() + 1.0D;
+        double dx = incomingRowDirection == 0 ? 0.0D : x - boundaryX;
+        double dz = incomingColumnDirection == 0 ? 0.0D : z - boundaryZ;
+        return Math.abs(dx) + Math.abs(dz);
+    }
+
+    private static double projectedIncomingSpeed(
+            double vx, double vz, int rowDirection, int columnDirection) {
+        double directionX = rowDirection == 0 ? 0.0D : -rowDirection;
+        double directionZ = columnDirection == 0 ? 0.0D : columnDirection;
+        return Math.max(0.0D, vx * directionX + vz * directionZ);
+    }
+
+    private static Cell containingCell(double x, double z) {
+        return new Cell((int) Math.floor(x), (int) Math.floor(z));
     }
 
     private static float cardinalYaw(int rowDirection, int columnDirection) {

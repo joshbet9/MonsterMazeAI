@@ -138,6 +138,25 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void fiftyDegreeHeadingErrorKeepsDriveBeforeCorner() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int c = 0; c <= 12; c++) raw[0][c] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = state(0.5, 0.5, 50.0F);
+        s.maze = maze;
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 12), false);
+
+        assertTrue(action.forward() > 0.0,
+                "a 50-degree heading error should still acquire the turn while carrying forward momentum");
+        assertEquals(0.0, action.strafe(), 1.0e-6);
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+    }
+
+    @Test
     void largeHeadingErrorFarFromCornerKeepsSafeForwardDrive() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int r = 0; r <= 12; r++) raw[r][0] = 1;

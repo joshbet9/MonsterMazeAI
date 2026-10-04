@@ -296,6 +296,22 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void nonJumperSkipsRedundantSynchronousTacticalBeam() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.tick = 1;
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                77, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        controller.nextAction(s, new Cell(0, 8), true);
+
+        assertEquals(Long.MIN_VALUE, controller.lastTacticalDecisionTickForTest(),
+                "non-Jumper movement should not pay for a tactical beam whose movement output is ignored");
+    }
+
+    @Test
     void refreshesTacticalObservationEvenWhenQuantisedThreatSignatureIsUnchanged() {
         GameState s = state(0.5, 0.5, 0.0F);
         s.kit = me.monstermazeai.kit.Kit.SLOWBALLER;

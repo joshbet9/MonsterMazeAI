@@ -877,7 +877,8 @@ public final class StableLiveMovementController {
         }
 
         route = planned.route;
-        waypointIndex = firstTurnWaypoint(route);
+        /* Re-anchor only background strategic replacements. Bootstrap and synchronous recovery already start at the player's exact cell and are safer with their original first-turn semantics. */
+        waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
         routePlanCount++;

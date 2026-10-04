@@ -38,13 +38,10 @@ jobs:
 
       - name: Run full natural-termination matrix
         run: |
-          set -o pipefail
-          mvn -B -ntp -pl common -am \
-            -Dtest=NaturalTerminationMatrixIT#allNaturalTerminationCases \
-            -Dsurefire.failIfNoSpecifiedTests=false \
-            -Dsurefire.useFile=false \
-            -Dsurefire.redirectTestOutputToFile=false \
-            test 2>&1 | tee matrix-v43.log
+          cmd /c "mvn -B -ntp -pl common -am -Dtest=NaturalTerminationMatrixIT#allNaturalTerminationCases -Dsurefire.failIfNoSpecifiedTests=false -Dsurefire.useFile=false -Dsurefire.redirectTestOutputToFile=false test > matrix-v43.log 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content matrix-v43.log
+          if ($code -ne 0) { exit $code }
 
       - name: Summarize matrix
         run: |

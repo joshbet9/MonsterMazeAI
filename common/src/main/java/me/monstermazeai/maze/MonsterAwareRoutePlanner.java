@@ -213,28 +213,50 @@ public final class MonsterAwareRoutePlanner {
         return simulator.shouldUseTacticalAction(state);
     }
 
+    private static final int MAX_EXACT_TACTICAL_CANDIDATES = 4;
+
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
-        boolean hasRelevantMonster = false;
-        for (var monster : state.monsters) {
-            if (MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
-                hasRelevantMonster = true;
-                break;
-            }
-        }
-        if (!hasRelevantMonster) return shortest(candidates);
+        boolean hasRelevantMonster = hasRelevantMonster(state);
+        List<PredictiveMonsterThreatScorer.Score> predictive =
+                PredictiveMonsterThreatScorer.rank(state, candidates);
 
-        TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
-        IntStream.range(0, candidates.size()).parallel().forEach(i -> {
+        if (predictive.isEmpty()) return shortest(candidates);
+
+        /*
+         * Strategic routing now sees future monster occupancy before a mob
+         * reaches the 20-block immediate-interaction sphere. When the threat is
+         * only future, the predictive route is already the useful decision.
+         * When a monster is already locally relevant, keep the exact tactical
+         * simulator, but only spend that expensive beam on the best predictive
+         * candidates. This both improves foresight and prevents stale brute
+         * force from dominating the planner.
+         */
+        if (!hasRelevantMonster) {
+            return predictive.stream()
+                    .min(Comparator.comparingDouble(score ->
+                            score.compositeCost()
+                                    + gapJumpPolicy.riskCostPerGap() * gapCount(score.route())))
+                    .orElseThrow()
+                    .route();
+        }
+
+        List<PlayerRoute> tacticalCandidates = predictive.stream()
+                .limit(Math.min(MAX_EXACT_TACTICAL_CANDIDATES, predictive.size()))
+                .map(PredictiveMonsterThreatScorer.Score::route)
+                .toList();
+
+        TacticalRouteSimulator.Result[] results =
+                new TacticalRouteSimulator.Result[tacticalCandidates.size()];
+        IntStream.range(0, tacticalCandidates.size()).parallel().forEach(i -> {
             results[i] = simulator.simulate(
-                    state, candidates.get(i), goal, regionGoal, regionRadius);
+                    state, tacticalCandidates.get(i), goal, regionGoal, regionRadius);
         });
 
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
-        for (int i = 0; i < candidates.size(); i++) {
-            PlayerRoute candidate = candidates.get(i);
+        for (int i = 0; i < tacticalCandidates.size(); i++) {
+            PlayerRoute candidate = tacticalCandidates.get(i);
             TacticalRouteSimulator.Result result = results[i];
             if (bestResult == null || better(result, candidate, bestResult, best)) {
                 best = candidate;
@@ -242,6 +264,16 @@ public final class MonsterAwareRoutePlanner {
             }
         }
         return best;
+    }
+
+    private static boolean hasRelevantMonster(GameState state) {
+        for (var monster : state.monsters) {
+            if (MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,

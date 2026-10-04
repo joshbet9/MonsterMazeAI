@@ -74,10 +74,10 @@ class MovementBenchmarkTest {
 
         physics.tick(s.player, new Action(1, 0, false, true, 0, false));
 
-        // 0.026 air movement factor * 1.3 sprint multiplier, followed by
-        // vanilla 0.91 horizontal air drag.
-        assertEquals(0.030758D, s.player.vz, 0.0005D);
-        assertEquals(0.0338D, s.player.z, 0.0005D);
+        // Sprint uses the source 0.026 jumpMovementFactor directly, followed
+        // by vanilla 0.91 horizontal air drag.
+        assertEquals(0.02366D, s.player.vz, 0.0005D);
+        assertEquals(0.026D, s.player.z, 0.0005D);
     }
 
 

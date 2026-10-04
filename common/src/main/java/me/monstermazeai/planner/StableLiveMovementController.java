@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.PadModel;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
+import me.monstermazeai.maze.LocalThreatDetourPlanner;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
@@ -98,6 +99,7 @@ public final class StableLiveMovementController {
     private static final double MAX_INITIAL_LANE_OFFSET = 0.65;
 
     private final MonsterAwareRoutePlanner routePlanner = new MonsterAwareRoutePlanner();
+    private final LocalThreatDetourPlanner localThreatDetourPlanner = new LocalThreatDetourPlanner();
     private final LegacyMovementModel movementProjection = new LegacyMovementModel();
     /*
      * Strategic route simulation is deliberately isolated from the live motor.
@@ -145,6 +147,8 @@ public final class StableLiveMovementController {
      */
     private static final long MOB_HIT_RECOVERY_TICKS = 40L;
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
+    private boolean localDetourCommitment;
+    private int localDetourReleaseIndex = -1;
     /** Keep a non-Jumper grounded long enough to enter a source gap cleanly. */
     private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 1.80D;
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
@@ -248,9 +252,6 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
-
         int previousGoalRow = goalRow;
         int previousGoalColumn = goalColumn;
         boolean objectiveChanged = goal.row() != goalRow
@@ -323,7 +324,7 @@ public final class StableLiveMovementController {
             route = regionRadius > 0
                     ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
                     : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
-            waypointIndex = firstTurnWaypoint(route);
+            waypointIndex = reanchorWaypointIndex(state, route);
             lastRouteTick = state.tick;
             routePlanCount++;
             lastThreatSignature = threatSignature(state);
@@ -350,7 +351,7 @@ public final class StableLiveMovementController {
                 route = regionRadius > 0
                         ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
                         : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
-                waypointIndex = firstTurnWaypoint(route);
+                waypointIndex = reanchorWaypointIndex(state, route);
                 anchoredSegmentIndex = -1;
                 lastRouteTick = state.tick;
                 routePlanCount++;
@@ -373,6 +374,43 @@ public final class StableLiveMovementController {
         if (route.size() == 1) {
             lastDecisionDetail = "REACHED routeSize=1";
             return Action.IDLE;
+        }
+
+        if (localDetourCommitment && waypointIndex >= localDetourReleaseIndex) {
+            localDetourCommitment = false;
+            localDetourReleaseIndex = -1;
+            fullRouteEvaluationPending = true;
+            lastDecisionDetail = "LOCAL_DETOUR_RELEASE";
+        }
+
+        if (!padTransitionFacing && !localDetourCommitment) {
+            PlayerRoute detour = localThreatDetourPlanner.findDetour(
+                    state,
+                    route,
+                    waypointIndex,
+                    new Cell(startRow, startColumn));
+            if (detour != null && !detour.cells().equals(route.cells())
+                    && strategicRoutePreservesCurrentHeading(
+                            state, detour, startRow, startColumn)) {
+                PlayerRoute previousRoute = route;
+                int releaseIndex = findRejoinIndex(detour, previousRoute, waypointIndex);
+                if (releaseIndex > 0 && releaseIndex < detour.size()) {
+                    route = detour;
+                    waypointIndex = reanchorWaypointIndex(state, route);
+                    anchoredSegmentIndex = -1;
+                    localDetourCommitment = true;
+                    localDetourReleaseIndex = releaseIndex;
+                    completedRoutePlan = null;
+                    fullRouteEvaluationPending = false;
+                    lastThreatSignature = threatSignature(state);
+                    lastTacticalSignature = Long.MIN_VALUE;
+                    routePlanCount++;
+                    lastDecisionDetail = "LOCAL_THREAT_DETOUR"
+                            + " size=" + route.size()
+                            + " releaseIndex=" + releaseIndex
+                            + " start=" + startRow + "," + startColumn;
+                }
+            }
         }
 
         /*
@@ -400,6 +438,16 @@ public final class StableLiveMovementController {
         if (waypointIndex >= route.size()) {
             lastDecisionDetail = "REACHED routeSize=" + route.size();
             return Action.IDLE;
+        }
+
+        /*
+         * Local route detours own the decision while committed. When no
+         * detour is necessary or possible, retain v40's proven immediate
+         * source-valid dodge/yield as the emergency fallback.
+         */
+        if (!localDetourCommitment) {
+            Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+            if (mobAvoidance != null) return mobAvoidance;
         }
 
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
@@ -667,6 +715,8 @@ public final class StableLiveMovementController {
         laneAnchorX = 0.0;
         laneAnchorZ = 0.0;
         mobHitRecoveryUntilTick = Long.MIN_VALUE;
+        localDetourCommitment = false;
+        localDetourReleaseIndex = -1;
         previousHealth = Double.NaN;
         clearPadEntryCommitment();
         clearGapCommitment();
@@ -780,6 +830,11 @@ public final class StableLiveMovementController {
         PlannedRoute planned = completedRoutePlan;
         if (planned == null) return;
 
+        if (localDetourCommitment) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
         completedRoutePlan = null;
         long currentThreat = threatSignature(state);
         if (planned.startRow != startRow
@@ -808,7 +863,7 @@ public final class StableLiveMovementController {
         }
 
         route = planned.route;
-        waypointIndex = firstTurnWaypoint(route);
+        waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
         routePlanCount++;
@@ -848,9 +903,105 @@ public final class StableLiveMovementController {
         }
     }
 
+    /**
+     * Re-anchor a newly installed route to the player's actual position.
+     *
+     * A recovery/replan route normally starts at the player's supported cell,
+     * but the player may already be part-way through that cell corridor when the
+     * new route is installed. Resetting to the route's first turn can therefore
+     * command the motor to travel backwards through a turn it has already passed.
+     *
+     * Select the physical route segment nearest to the player. When two segments
+     * meet at a corner, prefer the segment matching current momentum; if momentum
+     * is neutral, prefer the later segment so an overshot corner is never treated
+     * as an unfinished waypoint. The result is then advanced to the next actual
+     * turn/goal waypoint for the existing motor.
+     */
+    static int reanchorWaypointIndex(GameState state, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() <= 1) {
+            return candidate == null ? 0 : candidate.size();
+        }
+
+        List<Cell> cells = candidate.cells();
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        double velocityX = speed > 1.0E-6 ? state.player.vx / speed : 0.0;
+        double velocityZ = speed > 1.0E-6 ? state.player.vz / speed : 0.0;
+
+        int bestSegment = 0;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        double bestMomentum = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < cells.size() - 1; i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+            double startX = from.row() + 0.5D;
+            double startZ = from.column() + 0.5D;
+            double endX = to.row() + 0.5D;
+            double endZ = to.column() + 0.5D;
+            double segmentX = endX - startX;
+            double segmentZ = endZ - startZ;
+            double lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double playerX = state.player.x - startX;
+            double playerZ = state.player.z - startZ;
+            double progress = (playerX * segmentX + playerZ * segmentZ) / lengthSquared;
+            progress = Math.max(0.0D, Math.min(1.0D, progress));
+
+            double nearestX = startX + progress * segmentX;
+            double nearestZ = startZ + progress * segmentZ;
+            double distance = Math.hypot(state.player.x - nearestX, state.player.z - nearestZ);
+
+            double segmentLength = Math.sqrt(lengthSquared);
+            double directionX = segmentX / segmentLength;
+            double directionZ = segmentZ / segmentLength;
+            double momentum = speed > 1.0E-6
+                    ? velocityX * directionX + velocityZ * directionZ
+                    : 0.0D;
+
+            boolean closer = distance < bestDistance - 0.12D;
+            boolean comparable = Math.abs(distance - bestDistance) <= 0.12D;
+            if (closer
+                    || (comparable && momentum > bestMomentum + 0.05D)
+                    || (comparable && Math.abs(momentum - bestMomentum) <= 0.05D && i > bestSegment)) {
+                bestSegment = i;
+                bestDistance = distance;
+                bestMomentum = momentum;
+            }
+        }
+
+        return nextTurnWaypoint(candidate, bestSegment);
+    }
+
     private static int firstTurnWaypoint(PlayerRoute route) {
         if (route.size() <= 1) return route.size();
         return nextTurnWaypoint(route, 0);
+    }
+
+    private static int findRejoinIndex(PlayerRoute candidate,
+                                          PlayerRoute original, int originalStartIndex) {
+        if (candidate == null || original == null) return -1;
+        List<Cell> candidateCells = candidate.cells();
+        List<Cell> originalCells = original.cells();
+
+        for (int i = 1; i < candidateCells.size(); i++) {
+            for (int j = Math.max(originalStartIndex + 1, 1);
+                 j < originalCells.size(); j++) {
+                int remaining = candidateCells.size() - i;
+                int originalRemaining = originalCells.size() - j;
+                if (remaining != originalRemaining) continue;
+
+                boolean sameSuffix = true;
+                for (int k = 0; k < remaining; k++) {
+                    if (!candidateCells.get(i + k).equals(originalCells.get(j + k))) {
+                        sameSuffix = false;
+                        break;
+                    }
+                }
+                if (sameSuffix) return i;
+            }
+        }
+        return -1;
     }
 
     private static int nextTurnWaypoint(PlayerRoute route, int fromIndex) {

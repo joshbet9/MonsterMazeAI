@@ -645,7 +645,13 @@ public final class StableLiveMovementController {
                 double forward = Math.cos(errorRad) * 0.65D;
                 double strafe = -Math.sin(errorRad) * 0.65D;
                 boolean jump = shouldSpeedJump(state, allowJump);
-                boolean sprint = forward > 0.05;
+                /*
+                 * Sprint is an independent held input in the source client.
+                 * Preserve it through corner A/D steering so turning does not
+                 * silently discard the sprint acceleration that a strong player
+                 * keeps while carving a one-cell corridor corner.
+                 */
+                boolean sprint = Math.hypot(forward, strafe) > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
@@ -1811,7 +1817,8 @@ public final class StableLiveMovementController {
         strafe = blendedWorldX * strafeWorldX + blendedWorldZ * strafeWorldZ;
         double correctionForward = forward * magnitude;
         double correctionStrafe = strafe * magnitude;
-        boolean correctionSprint = correctionForward > 0.05;
+        boolean correctionSprint = Math.hypot(
+                correctionForward, correctionStrafe) > 0.05;
         Action correction = new Action(
                 correctionForward,
                 correctionStrafe,

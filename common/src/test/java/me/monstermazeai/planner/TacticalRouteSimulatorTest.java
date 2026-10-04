@@ -22,31 +22,7 @@ class TacticalRouteSimulatorTest {
     }
 
     @Test
-    void routeFollowerUsesConservativeCornerVectorNearCardinalTurn() {
-        GameState state = new GameState();
-        state.maze = openMaze();
-        state.kit = Kit.MAVERICK;
-        state.player.x = 0.5D;
-        state.player.z = 0.5D;
-        state.player.yaw = 90.0F;
-        state.player.grounded = true;
-
-        PlayerRoute route = new PlayerRoute(java.util.List.of(
-                new Cell(0, 0),
-                new Cell(0, 4)));
-
-        Action action = new TacticalRouteSimulator().nextAction(
-                state, route, new Cell(0, 4), false, 0);
-
-        assertEquals(0.0D, action.forward(), 1.0e-6D);
-        assertEquals(0.65D, action.strafe(), 1.0e-6D);
-        assertFalse(action.sprint(),
-                "pure 90-degree corner steering must retain the validated conservative edge policy");
-        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
-    }
-
-    @Test
-    void routeFollowerCarriesForwardThroughRecoverableLargeHeadingError() {
+    void routeFollowerStopsForLargeHeadingErrorToProtectOneCellCorridor() {
         GameState state = new GameState();
         state.maze = openMaze();
         state.kit = Kit.MAVERICK;
@@ -60,13 +36,36 @@ class TacticalRouteSimulatorTest {
                 new Cell(0, 8)));
 
         Action action = new TacticalRouteSimulator().nextAction(
-                state, route, new Cell(0, 4), false, 0);
+                state, route, new Cell(0, 8), false, 0);
 
-        assertTrue(action.forward() > 0.0D,
-                "tactical route evaluation must not introduce a synthetic turn-in-place stop");
-        assertTrue(action.sprint(),
-                "recoverable heading correction should retain sprint momentum");
+        assertEquals(0.0D, action.forward(), 1.0e-6D,
+                "tactical route evaluation should retain the validated conservative large-turn policy");
+        assertEquals(0.0D, action.strafe(), 1.0e-6D);
+        assertFalse(action.sprint());
         assertTrue(action.yawDelta() < 0.0F,
                 "heading correction should turn toward the route");
+    }
+
+    @Test
+    void routeFollowerDrivesStraightWhenAlreadyAligned() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.kit = Kit.MAVERICK;
+        state.player.x = 0.5D;
+        state.player.z = 0.5D;
+        state.player.yaw = 0.0F;
+        state.player.grounded = true;
+
+        PlayerRoute route = new PlayerRoute(java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 8)));
+
+        Action action = new TacticalRouteSimulator().nextAction(
+                state, route, new Cell(0, 8), false, 0);
+
+        assertEquals(1.0D, action.forward(), 1.0e-6D);
+        assertEquals(0.0D, action.strafe(), 1.0e-6D);
+        assertTrue(action.sprint());
+        assertEquals(0.0F, action.yawDelta(), 1.0e-6F);
     }
 }

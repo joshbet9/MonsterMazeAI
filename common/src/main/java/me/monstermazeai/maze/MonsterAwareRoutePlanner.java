@@ -209,6 +209,42 @@ public final class MonsterAwareRoutePlanner {
         return simulator.nextAction(state, route, goal, regionRadius > 0, regionRadius);
     }
 
+    /**
+     * Cheap receding-horizon strategic replan for the live control tick.
+     *
+     * This intentionally skips the expensive exact tactical beam. It uses the
+     * same candidate set and the time-aware monster forecast, so a changed
+     * threat can alter the route immediately while the asynchronous exact
+     * planner continues refining the decision in the background.
+     */
+    public PlayerRoute routeReactive(GameState state, Cell start, Cell goal) {
+        validate(state, start, goal);
+        if (start.equals(goal)) return new PlayerRoute(List.of(start));
+
+        List<PlayerRoute> candidates = cachedCandidatesFor(
+                state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
+        return choosePredictive(state, restrictJumperGapBudget(state, candidates));
+    }
+
+    /**
+     * Region equivalent of routeReactive for the five-by-five SafePad surface.
+     */
+    public PlayerRoute routeToRegionReactive(GameState state, Cell start,
+                                              Cell regionCenter, int radius) {
+        validate(state, start, regionCenter);
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+
+        if (me.monstermazeai.game.PadModel.isOn(state.player,
+                regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
+                regionCenter.column() + 0.5)) {
+            return new PlayerRoute(List.of(start));
+        }
+
+        List<PlayerRoute> candidates = cachedCandidatesFor(
+                state, start, regionCenter, radius, MAX_REGION_CANDIDATES, true);
+        return choosePredictive(state, restrictJumperGapBudget(state, candidates));
+    }
+
     public boolean shouldUseTacticalAction(GameState state) {
         return simulator.shouldUseTacticalAction(state);
     }
@@ -232,14 +268,7 @@ public final class MonsterAwareRoutePlanner {
          * candidates. This both improves foresight and prevents stale brute
          * force from dominating the planner.
          */
-        if (!hasRelevantMonster) {
-            return predictive.stream()
-                    .min(Comparator.comparingDouble(score ->
-                            score.compositeCost()
-                                    + gapJumpPolicy.riskCostPerGap() * gapCount(score.route())))
-                    .orElseThrow()
-                    .route();
-        }
+        if (!hasRelevantMonster) return choosePredictive(state, candidates, predictive);
 
         List<PlayerRoute> tacticalCandidates = predictive.stream()
                 .limit(Math.min(MAX_EXACT_TACTICAL_CANDIDATES, predictive.size()))
@@ -264,6 +293,30 @@ public final class MonsterAwareRoutePlanner {
             }
         }
         return best;
+    }
+
+    private PlayerRoute choosePredictive(
+            GameState state, List<PlayerRoute> candidates) {
+        List<PredictiveMonsterThreatScorer.Score> predictive =
+                PredictiveMonsterThreatScorer.rank(state, candidates);
+        return choosePredictive(state, candidates, predictive);
+    }
+
+    private PlayerRoute choosePredictive(
+            GameState state,
+            List<PlayerRoute> candidates,
+            List<PredictiveMonsterThreatScorer.Score> predictive) {
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException("No route candidates");
+        }
+        if (predictive == null || predictive.isEmpty()) return shortest(candidates);
+
+        return predictive.stream()
+                .min(Comparator.comparingDouble(score ->
+                        score.compositeCost()
+                                + gapJumpPolicy.riskCostPerGap() * gapCount(score.route())))
+                .orElseThrow()
+                .route();
     }
 
     private static boolean hasRelevantMonster(GameState state) {

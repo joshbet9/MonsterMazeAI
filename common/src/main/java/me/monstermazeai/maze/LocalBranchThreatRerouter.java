@@ -341,6 +341,14 @@ public final class LocalBranchThreatRerouter {
         return baseline != null && baseline.route.cells().equals(branch.cells());
     }
 
+    private static void addIfDistinct(List<PlayerRoute> routes, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() < 2) return;
+        for (PlayerRoute existing : routes) {
+            if (existing.cells().equals(candidate.cells())) return;
+        }
+        routes.add(candidate);
+    }
+
     private static List<Cell> reconstruct(Map<Cell, Cell> previous, Cell goal) {
         ArrayList<Cell> path = new ArrayList<>();
         for (Cell at = goal; at != null; at = previous.get(at)) path.add(at);

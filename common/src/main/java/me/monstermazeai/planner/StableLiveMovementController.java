@@ -148,6 +148,15 @@ public final class StableLiveMovementController {
     private long mobHitRecoveryUntilTick = Long.MIN_VALUE;
     /** Keep a non-Jumper grounded long enough to enter a source gap cleanly. */
     private static final double GAP_PRE_JUMP_RESERVE_DISTANCE = 1.80D;
+    /*
+     * A background strategic route is only useful while its topology/objective
+     * remain valid. Monster state is intentionally re-evaluated live by the
+     * tactical motor, so a modestly older route can still be useful instead of
+     * being discarded merely because the planner took several decision ticks
+     * to finish.
+     */
+    private static final long ASYNC_ROUTE_MAX_AGE_TICKS =
+            Long.getLong("monstermaze.asyncRouteMaxAgeTicks", 20L);
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
@@ -857,7 +866,7 @@ public final class StableLiveMovementController {
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > ASYNC_ROUTE_MAX_AGE_TICKS) {
             fullRouteEvaluationPending = true;
             return;
         }

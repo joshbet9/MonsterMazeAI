@@ -73,6 +73,32 @@ class AuthenticStage10SimulationTest {
     }
 
     @Test
+    void fullNaturalTerminationMatrix() {
+        List<String> rows = new ArrayList<>();
+        int total = 0;
+
+        for (Mode mode : List.of(Mode.SPEED, Mode.MODERN)) {
+            for (int pattern = 0; pattern < 3; pattern++) {
+                for (Kit kit : Kit.values()) {
+                    RunResult result = run(
+                            pattern, kit, AiProfile.HIGH_SKILL, mode, 0);
+                    total += result.maxStage;
+                    String row = String.format(
+                            java.util.Locale.ROOT,
+                            "FULL_MATRIX mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%.2f",
+                            mode, pattern + 1, kit, result.maxStage,
+                            result.ticks, result.health);
+                    System.out.println(row);
+                    rows.add(row);
+                }
+            }
+        }
+
+        System.out.println("FULL_MATRIX_TOTAL stages=" + total + " cases=" + rows.size());
+        assertTrue(rows.size() == 30, "expected 30 natural-termination cases");
+    }
+
+    @Test
     void allSpeedSourcePatternsAndKitsReachStageTen() {
         List<String> failures = new ArrayList<>();
 
@@ -103,6 +129,14 @@ class AuthenticStage10SimulationTest {
     }
 
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, REQUIRED_STAGE);
+    }
+
+    /**
+     * stopStage <= 0 means run until the simulator naturally terminates or the
+     * safety tick ceiling is reached.
+     */
+    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int stopStage) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -231,7 +265,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (stopStage > 0 && maxStage >= stopStage) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,

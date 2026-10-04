@@ -851,13 +851,27 @@ public final class StableLiveMovementController {
          */
         if (planned.route == null
                 || planned.route.cells().isEmpty()
-                || planned.startRow != startRow
-                || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
                 || planned.goalColumn != goal.column()
                 || planned.regionRadius != regionRadius
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 20L) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * The planner may finish several ticks after the player requested it.
+         * Requiring the exact original start cell made otherwise-valid plans
+         * unusable as soon as the player crossed the next cell while the async
+         * simulation was running. Re-anchor the completed route at the current
+         * supported cell instead. The cell must already belong to the planned
+         * physical corridor; we never invent a bridge or splice unrelated
+         * topology into the result.
+         */
+        Cell currentCell = new Cell(startRow, startColumn);
+        PlayerRoute usableRoute = suffixFromCurrentCell(planned.route, currentCell);
+        if (usableRoute == null) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -869,13 +883,13 @@ public final class StableLiveMovementController {
          * producing alternating first headings and left/right oscillation.
          */
         if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)
+                state, usableRoute, startRow, startColumn)
                 && !currentRouteThreatenedByMonster(state)) {
             fullRouteEvaluationPending = true;
             return;
         }
 
-        route = planned.route;
+        route = usableRoute;
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
@@ -914,6 +928,14 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    static PlayerRoute suffixFromCurrentCell(PlayerRoute plannedRoute, Cell currentCell) {
+        if (plannedRoute == null || currentCell == null) return null;
+        List<Cell> cells = plannedRoute.cells();
+        int index = cells.indexOf(currentCell);
+        if (index < 0) return null;
+        return new PlayerRoute(cells.subList(index, cells.size()));
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

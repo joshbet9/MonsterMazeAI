@@ -215,20 +215,38 @@ public final class StableLiveMovementController {
             mobHitRecoveryUntilTick = Math.max(
                     mobHitRecoveryUntilTick,
                     state.tick + MOB_HIT_RECOVERY_TICKS);
-            clearRoute();
+
+            /*
+             * A bump changes velocity and position, but it does not change the
+             * player's intended corridor. Human recordings keep forward input
+             * through the hit rather than rebuilding navigation from scratch.
+             *
+             * Preserve the current route when one exists, invalidate only the
+             * lane/gap/terminal commitments that depend on the pre-hit position,
+             * and let the normal supported-cell validation below decide whether
+             * the player stayed on the corridor. If the bump actually ejects the
+             * player from the route, the existing FAST_RECOVERY_ROUTE path still
+             * rebuilds from the real post-hit cell.
+             */
+            boolean hadUsableRoute = route != null && route.size() > 1;
             clearPadEntryCommitment();
             clearGapCommitment();
-            fullRouteEvaluationPending = true;
+            anchoredSegmentIndex = -1;
+            if (!hadUsableRoute) {
+                fullRouteEvaluationPending = true;
+            }
             lastThreatSignature = Long.MIN_VALUE;
             lastTacticalSignature = Long.MIN_VALUE;
             lastDecisionDetail = "MOB_HIT_RECOVERY"
                     + " health=" + format(state.player.health)
                     + " recoveryUntil=" + mobHitRecoveryUntilTick
+                    + " routePreserved=" + hadUsableRoute
                     + " grounded=" + state.player.grounded;
             /*
              * While airborne, the server's bump velocity is authoritative.
              * Do not inject a jump, strafe, or stale route turn into it.
-             * Once grounded, route construction below uses the new position.
+             * Once grounded, route validation resumes against the actual
+             * supported cell while retaining the existing corridor where possible.
              */
             if (!state.player.grounded) {
                 return airborneMobRecoveryAction(state, goal);

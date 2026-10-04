@@ -528,4 +528,37 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void fineLaneCorrectionPreservesForwardDrive() {
+        GameState s = state(0.72, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("LANE_FINE_DRIVE"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.20,
+                "small lane drift should keep meaningful forward route progress");
+        assertTrue(Math.abs(action.strafe()) > 0.10,
+                "fine lane correction should still recenter laterally");
+    }
+
+    @Test
+    void largeHeadingErrorFarFromCornerCanDriveWhileReacquiringBearing() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int c = 0; c < 12; c++) raw[0][c] = 1;
+        GameState s = state(0.5, 0.5, 50.0F);
+        s.maze = new MazeModel(raw);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() >= 0.0);
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertTrue(controller.lastDecisionDetail().contains("FAR_TURN_DRIVE")
+                        || controller.lastDecisionDetail().contains("TURN_IN_PLACE"),
+                controller.lastDecisionDetail());
+    }
+
+
 }

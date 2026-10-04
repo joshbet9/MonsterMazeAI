@@ -8,6 +8,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: monstermaze-v43-matrix
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
@@ -16,7 +20,7 @@ permissions:
 jobs:
   matrix:
     name: Full 30-cell natural-termination matrix
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - name: Checkout

@@ -581,7 +581,7 @@ public final class StableLiveMovementController {
                 if (absError <= 20.0) steeringForward = 1.0;
                 else if (absError <= 35.0) steeringForward = 0.80;
                 else steeringForward = 0.50;
-                double forward = brake ? 0.0 : steeringForward;
+                double forward = steeringForward;
                 boolean sprint = forward >= 0.95 && absError <= 15.0;
                 // Non-Jumpers use the source Jump -10 + sprint-jump interaction
                 // as their normal speed mechanic. Jumper vertical jumps remain
@@ -611,7 +611,7 @@ public final class StableLiveMovementController {
         } else {
             boolean brake = distance < waypointBrakeDistance()
                     && closingSpeed(state, dx, dz) > 0.04;
-            double forward = brake ? 0.0 : 1.0;
+            double forward = 1.0;
             boolean jump = shouldSpeedJump(state, allowJump);
             action = new Action(forward, 0.0, jump, forward > 0.0, 0.0F, false);
         }
@@ -1538,7 +1538,7 @@ public final class StableLiveMovementController {
         // High handling lets a player carry more vanilla momentum through a
         // corner; low handling starts braking earlier. The baseline value remains
         // exactly the former 0.70-block threshold.
-        return 0.15D + (1.0D - profile.attributes.handling) * 1.10D;
+        return 0.0D;
     }
 
     private static double sq(double value) {

@@ -3,6 +3,7 @@ package me.monstermazeai.maze;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterSimulator;
 import me.monstermazeai.monster.MonsterState;
+import me.monstermazeai.monster.MonsterRelevance;
 
 import java.util.ArrayList;
 import java.util.Comparator;

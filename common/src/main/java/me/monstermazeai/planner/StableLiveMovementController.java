@@ -54,7 +54,12 @@ public final class StableLiveMovementController {
         return profile;
     }
     private static final double WAYPOINT_ARRIVAL = 0.18;
-    private static final double WAYPOINT_BRAKE = 0.70;
+    /**
+     * Keep momentum through aligned waypoints. Corner acquisition already
+     * controls topology before the turn, so a long 0.70-block brake window
+     * adds avoidable zero-input ticks on otherwise safe straight runs.
+     */
+    private static final double WAYPOINT_BRAKE = 0.35;
     private static final double ROUTE_DEVIATION = 0.55;
     private static final double PHYSICS_SLIPPERINESS = 0.6D;
     private static final double PHYSICS_GROUND_FRICTION = 0.91D;

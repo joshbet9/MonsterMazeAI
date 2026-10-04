@@ -510,4 +510,22 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
     }
 
+    @Test
+    void executesValidatedTacticalMovementWhenAThreatBlocksTheCurrentLane() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        MonsterState monster = new MonsterState(77, 0.5, 0.0, 2.0);
+        s.monsters.add(monster);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() != 0.0 || action.strafe() != 0.0
+                        || action.yawDelta() != 0.0F,
+                "a locally blocked lane must produce an actionable one-tick tactical response");
+        assertTrue(controller.lastDecisionDetail().contains("TACTICAL_MOVE")
+                        || controller.lastDecisionDetail().contains("TACTICAL="),
+                controller.lastDecisionDetail());
+    }
+
 }

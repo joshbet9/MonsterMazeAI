@@ -11,7 +11,7 @@ import me.monstermazeai.game.PadModel;
  * ordinary travel time and the resulting source bump points toward the pad.
  */
 public final class MobInteractionDecision {
-    private static final double MIN_SAFE_HEALTH = 4.0; // 2 hearts: never intentionally contact.
+    private static final double MIN_SAFE_HEALTH = 8.0; // 2 hearts: never intentionally contact.
     private static final double CONTACT_RANGE = 2.75;
     private static final double CONTACT_RANGE_SQ = CONTACT_RANGE * CONTACT_RANGE;
     private static final double PAD_RADIUS = 2.5;
@@ -21,6 +21,15 @@ public final class MobInteractionDecision {
     private MobInteractionDecision() {}
 
     public static MonsterState chooseIntentionalBump(GameState state) {
+        return chooseIntentionalBump(state, 0.25);
+    }
+
+    public static MonsterState chooseIntentionalBump(
+            GameState state, double positiveMobKnockback) {
+        if (!Double.isFinite(positiveMobKnockback)
+                || positiveMobKnockback < 0.0 || positiveMobKnockback > 1.0) {
+            throw new IllegalArgumentException("positiveMobKnockback must be in [0,1]");
+        }
         if (state == null || !state.alive || state.completed
                 || state.player.health <= MIN_SAFE_HEALTH
                 || state.activePadRow < 0 || state.activePadColumn < 0
@@ -32,6 +41,42 @@ public final class MobInteractionDecision {
         double padDz = state.activePadColumn + 0.5 - state.player.z;
         double padDistance = Math.max(0.0, Math.hypot(padDx, padDz) - PAD_RADIUS);
         double ordinaryTicks = padDistance * ESTIMATED_TICKS_PER_BLOCK;
+
+        /*
+         * Maverick's source mechanic is an intentional propulsion option. Its
+         * decision cannot be gated by the ordinary walking-time test first:
+         * that would make the positive-knockback branch unreachable exactly when
+         * the pad is comfortably reachable by normal movement.
+         */
+        boolean maverickBoost = state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                && state.mode != me.monstermazeai.game.Mode.ORIGINAL;
+
+        if (maverickBoost
+                && state.player.recentMobHitUntilTick <= state.tick
+                && padDistance >= 4.0D + (2.0D * (1.0D - positiveMobKnockback))) {
+            MonsterState bestMaverick = null;
+            double bestMaverickScore = Double.POSITIVE_INFINITY;
+            for (MonsterState monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+                double mx = monster.x - state.player.x;
+                double mz = monster.z - state.player.z;
+                double horizontal = Math.hypot(mx, mz);
+                if (horizontal > CONTACT_RANGE || horizontal < 0.15D) continue;
+
+                double closing = 0.0D;
+                double speedSq = monster.vx * monster.vx + monster.vz * monster.vz;
+                if (speedSq > 1.0E-9D) {
+                    closing = -(monster.vx * mx + monster.vz * mz) / horizontal;
+                }
+                double score = horizontal - Math.max(0.0D, closing) * 0.30D;
+                if (score < bestMaverickScore) {
+                    bestMaverickScore = score;
+                    bestMaverick = monster;
+                }
+            }
+            if (bestMaverick != null) return bestMaverick;
+        }
 
         if (ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
             return null;
@@ -62,7 +107,8 @@ public final class MobInteractionDecision {
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
             double towardPad = bumpUx * padUx + bumpUz * padUz;
-            if (towardPad < 0.70) continue;
+            double minimumTowardPad = 0.70 - 0.30 * positiveMobKnockback;
+            if (towardPad < minimumTowardPad) continue;
 
             double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
             if (score < bestScore) {

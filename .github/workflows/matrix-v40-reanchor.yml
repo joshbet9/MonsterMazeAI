@@ -1,4 +1,4 @@
-name: Matrix v40 — Route Re-anchor
+name: Matrix v43 — Async Route Reuse
 
 on:
   push:
@@ -6,15 +6,24 @@ on:
       - autonomous/local-threat-reanchor-v43
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
-  matrix:
-    name: Full natural-termination matrix
+  matrix-case:
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [SPEED, MODERN]
+        pattern: [1, 2, 3]
+        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,16 +38,46 @@ jobs:
       - name: Install common-api
         run: mvn -B -ntp -pl common-api -am -DskipTests install
 
-      - name: Run full 30-cell natural-termination matrix
-        continue-on-error: true
+      - name: Run one natural-termination matrix cell
         run: |
           set -o pipefail
           mvn -B -ntp -pl common -am \
-            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
+            -DmatrixMode=${{ matrix.mode }} \
+            -DmatrixPattern=${{ matrix.pattern }} \
+            -DmatrixKit=${{ matrix.kit }} \
+            -Dsurefire.failIfNoSpecifiedTests=false \
             -Dsurefire.useFile=false \
             -Dsurefire.redirectTestOutputToFile=false \
-            -Dsurefire.failIfNoSpecifiedTests=false \
-            test 2>&1 | tee matrix-v43.log
+            test 2>&1 | tee matrix-cell.log
+
+      - name: Extract matrix row
+        run: |
+          grep 'FULL_MATRIX ' matrix-cell.log | tail -1 > matrix-row.txt
+          test -s matrix-row.txt
+          cat matrix-row.txt
+
+      - name: Upload cell evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-row-${{ matrix.mode }}-${{ matrix.pattern }}-${{ matrix.kit }}
+          path: |
+            matrix-row.txt
+            matrix-cell.log
+
+  aggregate:
+    name: Aggregate full 30-cell matrix
+    needs: matrix-case
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all matrix cell artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: matrix-row-*
+          path: matrix-results
+          merge-multiple: false
 
       - name: Summarize matrix
         run: |
@@ -47,52 +86,117 @@ jobs:
           import re
           from pathlib import Path
 
-          text = Path("matrix-v40.log").read_text(encoding="utf-8", errors="replace")
-          rx = re.compile(
-              r"(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
-              r"maxStage=(\d+)\s+ticks=(\d+)\s+health=([-\d.]+)"
-          )
           rows = []
-          for m in rx.finditer(text):
-              rows.append({
-                  "mode": m.group(1).replace("_FULL_RUN", ""),
-                  "pattern": int(m.group(2)),
-                  "kit": m.group(3),
-                  "maxStage": int(m.group(4)),
-                  "ticks": int(m.group(5)),
-                  "health": float(m.group(6)),
-              })
+          rx = re.compile(
+              r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
+              r"stage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
+          )
+
+          for path in Path('matrix-results').glob('**/matrix-row.txt'):
+              text = path.read_text(encoding='utf-8', errors='replace')
+              m = rx.search(text)
+              if m:
+                  rows.append({
+                      'mode': m.group(1),
+                      'pattern': int(m.group(2)),
+                      'kit': m.group(3),
+                      'maxStage': int(m.group(4)),
+                      'ticks': int(m.group(5)),
+                      'health': float(m.group(6)),
+                  })
+
+          rows.sort(key=lambda r: (r['mode'], r['pattern'], r['kit']))
 
           if len(rows) != 30:
-              raise SystemExit(f"expected 30 rows, found {len(rows)}")
+              raise SystemExit(f'expected 30 matrix rows, found {len(rows)}')
 
-          by_mode = {}
-          for mode in ("SPEED", "MODERN"):
-              values = [r["maxStage"] for r in rows if r["mode"] == mode]
-              by_mode[mode] = {
-                  "meanStage": sum(values) / len(values),
-                  "minStage": min(values),
-                  "maxStage": max(values),
-              }
+          stage_sum = sum(r['maxStage'] for r in rows)
+          speed_mean = sum(r['maxStage'] for r in rows if r['mode'] == 'SPEED') / 15
+          modern_mean = sum(r['maxStage'] for r in rows if r['mode'] == 'MODERN') / 15
+          speed_peak = max(r['maxStage'] for r in rows if r['mode'] == 'SPEED')
+          modern_peak = max(r['maxStage'] for r in rows if r['mode'] == 'MODERN')
 
           summary = {
-              "cases": len(rows),
-              "stageSum": sum(r["maxStage"] for r in rows),
-              "speedMeanStage": by_mode["SPEED"]["meanStage"],
-              "modernMeanStage": by_mode["MODERN"]["meanStage"],
-              "speedPeak": by_mode["SPEED"]["maxStage"],
-              "modernPeak": by_mode["MODERN"]["maxStage"],
-              "rows": rows,
+              'cases': len(rows),
+              'stageSum': stage_sum,
+              'speedMeanStage': speed_mean,
+              'modernMeanStage': modern_mean,
+              'speedPeak': speed_peak,
+              'modernPeak': modern_peak,
+              'baselineStageSum': 458,
+              'baselineSpeedMeanStage': 21.67,
+              'baselineModernMeanStage': 8.87,
+              'deltaStageSum': stage_sum - 458,
+              'deltaSpeedMeanStage': speed_mean - 21.67,
+              'deltaModernMeanStage': modern_mean - 8.87,
+              'targetSpeedPeak': 70,
+              'targetModernPeak': 40,
+              'rows': rows,
           }
-          Path("matrix-v43.json").write_text(json.dumps(summary, indent=2) + "\\n", encoding="utf-8")
-          print(json.dumps({k: v for k, v in summary.items() if k != "rows"}, indent=2))
+
+          Path('matrix-v43.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({k: v for k, v in summary.items() if k != 'rows'}, indent=2))
+          print('\n'.join(
+              f'{r["mode"]} P{r["pattern"]} {r["kit"]}: stage={r["maxStage"]} ticks={r["ticks"]} health={r["health"]:.2f}'
+              for r in rows
+          ))
           PY
 
-      - name: Upload matrix evidence
+      - name: Upload aggregate matrix
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: matrix-v43-${{ github.sha }}
-          path: |
-            matrix-v40.log
-            matrix-v40.json
+          name: matrix-v43-summary
+          path: matrix-v43.json
+
+      - name: Publish matrix to PR
+        if: github.event_name == 'pull_request' && hashFiles('matrix-v43.json') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('matrix-v43.json', 'utf8'));
+            const marker = '<!-- monstermaze-v42-matrix -->';
+            const rows = summary.rows.map(r =>
+              '| ' + r.mode + ' | P' + r.pattern + ' | ' + r.kit +
+              ' | ' + r.maxStage + ' | ' + r.ticks + ' | ' + r.health.toFixed(2) + ' |'
+            ).join('\n');
+
+            const body = [
+              marker,
+              '## v43 async route reuse natural-termination matrix',
+              '',
+              '**Stage sum:** ' + summary.stageSum + ' (baseline 458; delta ' +
+                (summary.deltaStageSum >= 0 ? '+' : '') + summary.deltaStageSum + ')',
+              '',
+              '**Speed:** mean ' + summary.speedMeanStage.toFixed(2) +
+                ' / peak ' + summary.speedPeak +
+                ' (baseline mean 21.67)',
+              '',
+              '**Modern:** mean ' + summary.modernMeanStage.toFixed(2) +
+                ' / peak ' + summary.modernPeak +
+                ' (baseline mean 8.87)',
+              '',
+              '| Mode | Pattern | Kit | Stage | Ticks | Health |',
+              '|---|---|---|---:|---:|---:|',
+              rows
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue = context.issue.number;
+            const existing = await github.rest.issues.listComments({
+              owner, repo, issue_number: issue, per_page: 100
+            });
+            const previous = existing.data.find(c =>
+              c.user?.type === 'Bot' && c.body?.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue, body
+              });
+            }

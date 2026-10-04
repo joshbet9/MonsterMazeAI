@@ -260,6 +260,16 @@ class StableLiveMovementControllerTest {
 
     
     @Test
+    void tacticalLayerCannotOverrideNonJumperMovementWithJump() {
+        Action tacticalJump = new Action(1.0, 0.0, true, true, 0.0F, false);
+
+        assertFalse(StableLiveMovementController.isDiscreteTacticalAction(
+                tacticalJump, true, me.monstermazeai.kit.Kit.MAVERICK));
+        assertTrue(StableLiveMovementController.isDiscreteTacticalAction(
+                tacticalJump, true, me.monstermazeai.kit.Kit.JUMPER));
+    }
+
+    @Test
     void refreshesTacticalObservationEvenWhenQuantisedThreatSignatureIsUnchanged() {
         GameState s = state(0.5, 0.5, 0.0F);
         s.kit = me.monstermazeai.kit.Kit.SLOWBALLER;

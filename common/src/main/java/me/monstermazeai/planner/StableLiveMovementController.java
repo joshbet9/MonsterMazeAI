@@ -651,7 +651,7 @@ public final class StableLiveMovementController {
                  * silently discard the sprint acceleration that a strong player
                  * keeps while carving a one-cell corridor corner.
                  */
-                boolean sprint = Math.hypot(forward, strafe) > 0.05;
+                boolean sprint = forward > 0.05;
                 action = new Action(forward, strafe, jump, sprint, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {

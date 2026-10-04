@@ -384,17 +384,9 @@ public final class StableLiveMovementController {
              */
             double segmentDeviation = currentSegmentDeviation(
                     state, route, waypointIndex);
-            /*
-             * The player's 0.6-wide AABB can be supported by a neighbouring
-             * physical cell while its centre is still inside the active route
-             * corridor. Treating that logical cell mismatch as an immediate
-             * route failure caused repeated FAST_RECOVERY_ROUTE churn in dense
-             * Modern runs. Require both a meaningful segment escape and the
-             * gap motor not owning the edge before rebuilding the route.
-             */
             boolean routeInvalid = !gapExecutionActive
-                    && !supportedCellOnRoute
-                    && segmentDeviation > 1.10D;
+                    && (!supportedCellOnRoute
+                        || segmentDeviation > 1.10D);
 
             if (routeInvalid) {
                 /*

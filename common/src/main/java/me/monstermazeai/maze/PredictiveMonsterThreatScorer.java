@@ -37,6 +37,8 @@ public final class PredictiveMonsterThreatScorer {
     private static final int STRAIGHT_MOVE_TICKS = 3;
     private static final int GAP_MOVE_TICKS = 5;
     private static final int TURN_EXTRA_TICKS = 2;
+    private static final int WAIT_TICKS = 1;
+    private static final double WAIT_COST = 1.15D;
 
     /*
      * Exact source-derived steady-state estimate for a sprinting player:
@@ -119,6 +121,42 @@ public final class PredictiveMonsterThreatScorer {
             }
 
             if (node.tick >= HORIZON_TICKS) continue;
+
+            /*
+             * Waiting is a legitimate source action. When the current cell is
+             * supported, give the time-expanded search the option to let an
+             * approaching monster pass instead of forcing an expensive spatial
+             * detour. Deadline cost above prevents indefinite waiting.
+             */
+            int waitArrival = node.tick + WAIT_TICKS;
+            if (waitArrival <= HORIZON_TICKS
+                    && floorAvailableAtArrival(state, node.cell, node.tick)) {
+                double waitRisk = cellRisk(field, waitArrival,
+                        node.cell.row(), node.cell.column());
+                double waitCost = WAIT_COST + waitRisk * 6.0D;
+                if (state.phaseTicksRemaining > 0
+                        && waitArrival > state.phaseTicksRemaining) {
+                    waitCost += 2_500.0D
+                            + (waitArrival - state.phaseTicksRemaining) * 100.0D;
+                }
+
+                SearchKey waitKey = new SearchKey(
+                        node.cell.row(), node.cell.column(), waitArrival,
+                        node.dirRow, node.dirColumn, node.gapsUsed);
+                double oldWait = best.getOrDefault(
+                        waitKey, Double.POSITIVE_INFINITY);
+                double nextWaitG = node.g + waitCost;
+                if (nextWaitG + 1.0E-9D < oldWait) {
+                    best.put(waitKey, nextWaitG);
+                    cells.put(waitKey, node.cell);
+                    previous.put(waitKey, nodeKey);
+                    open.add(new SearchNode(
+                            node.cell, nextWaitG, waitArrival,
+                            node.dirRow, node.dirColumn, node.gapsUsed,
+                            nextWaitG + heuristic(node.cell, goal, regionRadius),
+                            node.directionSet));
+                }
+            }
 
             for (Cell next : state.maze.physicalMovementNeighbours(node.cell)) {
                 if (!floorAvailableAtArrival(state, next, node.tick)) continue;

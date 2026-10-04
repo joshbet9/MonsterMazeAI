@@ -72,6 +72,11 @@ class StableLiveMovementControllerTest {
         setField(controller, "fullRouteEvaluationPending", true);
 
         long topology = s.maze.dynamicSignature();
+        var threatSignatureMethod = StableLiveMovementController.class.getDeclaredMethod(
+                "threatSignature", GameState.class);
+        threatSignatureMethod.setAccessible(true);
+        long threatSignature = (long) threatSignatureMethod.invoke(null, s);
+
         Class<?> plannedClass = Class.forName(
                 "me.monstermazeai.planner.StableLiveMovementController$PlannedRoute");
         java.lang.reflect.Constructor<?> ctor = plannedClass.getDeclaredConstructor(
@@ -85,7 +90,7 @@ class StableLiveMovementControllerTest {
         Object planned = ctor.newInstance(
                 new me.monstermazeai.maze.PlayerRoute(plannedCells),
                 0, 0, 4, 0, 0,
-                1L, topology, topology, 0L);
+                1L, topology, topology, threatSignature);
         setField(controller, "completedRoutePlan", planned);
 
         var apply = StableLiveMovementController.class.getDeclaredMethod(

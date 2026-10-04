@@ -115,6 +115,7 @@ public final class PredictiveMonsterThreatScorer {
             if (node.tick >= HORIZON_TICKS) continue;
 
             for (Cell next : state.maze.physicalMovementNeighbours(node.cell)) {
+                if (!floorAvailableAtArrival(state, next, node.tick)) continue;
                 int dr = next.row() - node.cell.row();
                 int dc = next.column() - node.cell.column();
                 int dirRow = Integer.signum(dr);
@@ -186,6 +187,29 @@ public final class PredictiveMonsterThreatScorer {
         return new PlayerRoute(path);
     }
 
+    /**
+     * Old SafePad surfaces are temporary physical floor. The source keeps each
+     * inactive pad for 11 seconds, then restores the underlying maze. A route
+     * that reaches such a cell after its decay deadline is not executable.
+     */
+    private static boolean floorAvailableAtArrival(GameState state, Cell cell, int departureTick) {
+        if (!state.maze.hasPadSurface(cell.row(), cell.column())) return true;
+
+        /*
+         * Active/preview pads remain available. Only inactive pads in the live
+         * decay map have a finite lifetime.
+         */
+        for (var entry : state.oldPadDecaySeconds.entrySet()) {
+            Cell pad = entry.getKey();
+            if (Math.abs(cell.row() - pad.row()) <= 2
+                    && Math.abs(cell.column() - pad.column()) <= 2) {
+                long expiryTick = Math.max(0L, (long) entry.getValue() * 20L);
+                return departureTick + 4L < expiryTick;
+            }
+        }
+        return true;
+    }
+
     private static double heuristic(Cell cell, Cell goal, int radius) {
         int dr = Math.max(0, Math.abs(cell.row() - goal.row()) - radius);
         int dc = Math.max(0, Math.abs(cell.column() - goal.column()) - radius);
@@ -228,6 +252,7 @@ public final class PredictiveMonsterThreatScorer {
                 break;
             }
             for (Cell next : state.maze.physicalMovementNeighbours(current)) {
+                if (!floorAvailableAtArrival(state, next, 0)) continue;
                 int used = gaps.get(current)
                         + (Math.abs(next.row() - current.row())
                         + Math.abs(next.column() - current.column()) == 2 ? 1 : 0);

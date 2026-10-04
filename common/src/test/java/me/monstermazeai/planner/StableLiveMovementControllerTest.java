@@ -391,6 +391,16 @@ class StableLiveMovementControllerTest {
         assertTrue(committed.jump(), "the committed gap must pulse jump at the takeoff boundary");
         assertTrue(controller.lastDecisionDetail().contains("GAP_"), controller.lastDecisionDetail());
 
+        // A second grounded tick before the destination is overlaid must retain
+        // the source -10 jump-spam acceleration instead of going quiet after
+        // gapTakeoffStarted becomes true.
+        s.player.z = 11.20;
+        s.tick++;
+        Action secondPulse = controller.nextAction(s, new Cell(10, 30), true);
+        assertTrue(secondPulse.forward() > 0.0);
+        assertTrue(secondPulse.jump(),
+                "non-Jumper gap execution must retain speed pulses while still grounded before the destination cell");
+
         // The committed edge is now owned by the gap motor; the live
         // controller must issue the edge-timed jump before the source block
         // boundary rather than relying on ordinary jump-spam cadence.

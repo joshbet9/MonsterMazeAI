@@ -17,13 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BottleneckSmokeSimulationTest {
     @Test
     void representativeBottlenecksReachStageFive() {
-        run("SPEED_P3_MAVERICK", 2, Kit.MAVERICK, Mode.SPEED, 5);
-        run("MODERN_P1_REPULSOR", 0, Kit.REPULSOR, Mode.MODERN, 5);
-        run("MODERN_P2_REPULSOR", 1, Kit.REPULSOR, Mode.MODERN, 10);
-        run("MODERN_P3_SLOWBALLER", 2, Kit.SLOWBALLER, Mode.MODERN, 10);
+        run("SPEED_P3_MAVERICK", 2, Kit.MAVERICK, Mode.SPEED, 5, 5);
+        run("MODERN_P1_REPULSOR", 0, Kit.REPULSOR, Mode.MODERN, 5, 5);
+        run("MODERN_P2_REPULSOR", 1, Kit.REPULSOR, Mode.MODERN, 10, 10);
+        run("MODERN_P3_SLOWBALLER", 2, Kit.SLOWBALLER, Mode.MODERN, 10, 9);
     }
 
-    private static void run(String name, int pattern, Kit kit, Mode mode, int targetStage) {
+    private static void run(String name, int pattern, Kit kit, Mode mode, int targetStage,
+                            int requiredStage) {
         AuthenticStage10SimulationTest.RunResult result =
                 AuthenticStage10SimulationTest.runDiagnostic(
                         pattern, kit, AiProfile.HIGH_SKILL, mode, targetStage);
@@ -41,8 +42,9 @@ class BottleneckSmokeSimulationTest {
                 result.fastRecoveryRouteTicks(), result.firstFallTick(),
                 result.terminalTick(), result.firstFallVx(), result.firstFallVz());
 
-        assertTrue(result.maxStage() >= 5,
+        assertTrue(result.maxStage() >= requiredStage,
                 "Smoke regression: " + name + " reached only stage "
-                        + result.maxStage() + " before the stage-5 check");
+                        + result.maxStage() + " before required stage "
+                        + requiredStage);
     }
 }

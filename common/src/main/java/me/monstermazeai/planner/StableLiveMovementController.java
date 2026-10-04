@@ -132,6 +132,7 @@ public final class StableLiveMovementController {
     /** Local threat state for which the expensive tactical branch was last evaluated. */
     private long lastTacticalSignature = Long.MIN_VALUE;
     private long routePlanCount;
+    private long lastAsyncRouteApplyTick = Long.MIN_VALUE;
     private double laneAnchorX;
     private double laneAnchorZ;
 
@@ -868,9 +869,35 @@ public final class StableLiveMovementController {
          * segment is still physically valid. Monster updates were otherwise
          * producing alternating first headings and left/right oscillation.
          */
+        boolean currentThreatened = currentRouteThreatenedByMonster(state);
         if (route != null && !strategicRoutePreservesCurrentHeading(
                 state, planned.route, startRow, startColumn)
-                && !currentRouteThreatenedByMonster(state)) {
+                && !currentThreatened) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * Do not repeatedly install essentially the same route. Installing an
+         * identical/near-identical plan resets waypoint and lane-anchor state,
+         * which turns a useful dynamic replan into controller thrashing.
+         */
+        if (route != null
+                && routeSharesPrefixFromCurrentCell(
+                route, planned.route, startRow, startColumn, 4)) {
+            fullRouteEvaluationPending = true;
+            return;
+        }
+
+        /*
+         * Dynamic monster response remains live, but route replacement is
+         * rate-limited to a few decision ticks. An actually threatened route
+         * can bypass the cooldown; ordinary threat-signature churn cannot.
+         */
+        if (route != null
+                && lastAsyncRouteApplyTick != Long.MIN_VALUE
+                && state.tick - lastAsyncRouteApplyTick < 6L
+                && !currentThreatened) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -879,6 +906,7 @@ public final class StableLiveMovementController {
         waypointIndex = firstTurnWaypoint(route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
+        lastAsyncRouteApplyTick = state.tick;
         routePlanCount++;
         lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
                 + " size=" + route.size()
@@ -914,6 +942,24 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    private static boolean routeSharesPrefixFromCurrentCell(
+            PlayerRoute current, PlayerRoute planned,
+            int currentRow, int currentColumn, int prefixCells) {
+        Cell currentCell = new Cell(currentRow, currentColumn);
+        int currentIndex = current.cells().indexOf(currentCell);
+        if (currentIndex < 0 || planned == null || planned.size() == 0) return false;
+        int count = Math.max(1, prefixCells);
+        for (int offset = 0; offset < count; offset++) {
+            int currentPos = currentIndex + offset;
+            int plannedPos = offset;
+            if (currentPos >= current.size() || plannedPos >= planned.size()) break;
+            if (!current.cells().get(currentPos).equals(planned.cells().get(plannedPos))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

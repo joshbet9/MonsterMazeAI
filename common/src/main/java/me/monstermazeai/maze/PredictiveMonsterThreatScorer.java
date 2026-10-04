@@ -83,7 +83,7 @@ public final class PredictiveMonsterThreatScorer {
 
         ThreatField field = buildThreatField(state, List.of());
         SearchNode initial = new SearchNode(
-                start, 0, 0, 0, 0, 0, heuristic(start, goal, regionRadius), null);
+                start, 0, 0, 0, 0, 0, heuristic(start, goal, regionRadius), false);
 
         java.util.PriorityQueue<SearchNode> open =
                 new java.util.PriorityQueue<>(Comparator.comparingDouble(n -> n.f));

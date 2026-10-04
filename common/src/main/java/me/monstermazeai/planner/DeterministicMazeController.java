@@ -171,9 +171,6 @@ public final class DeterministicMazeController {
         Cell from = route.cells().get(Math.max(0, waypointIndex - 1));
         Cell to = route.cells().get(waypointIndex);
 
-        Action mobJump = jumpOverImmediateMonster(state, from, to, allowJump);
-        if (mobJump != null) return mobJump;
-
         if (isGapEdge(state.maze, from, to)) {
             Action gap = gapAction(state, from, to, allowJump);
             if (gap != null) return gap;
@@ -397,64 +394,6 @@ public final class DeterministicMazeController {
         }
 
         return new Target(toX, toZ);
-    }
-
-    /**
-     * Jumper's vertical jump is a real defensive tool. The source bump check
-     * uses three-dimensional distance, so jumping can clear an unavoidable
-     * snowman without taking the normal four-damage bump.
-     */
-    private Action jumpOverImmediateMonster(
-            GameState state, Cell from, Cell to, boolean allowJump) {
-        if (!allowJump
-                || state.kit != Kit.JUMPER
-                || state.ability.charges <= 0
-                || !state.player.grounded
-                || isGapEdge(state.maze, from, to)) {
-            return null;
-        }
-
-        double dirX = to.row() - from.row();
-        double dirZ = to.column() - from.column();
-        double length = Math.hypot(dirX, dirZ);
-        if (length < 1.0E-9) return null;
-        dirX /= length;
-        dirZ /= length;
-
-        MonsterState best = null;
-        double bestForward = Double.POSITIVE_INFINITY;
-        for (MonsterState monster : state.monsters) {
-            if (monster == null || monster.removed
-                    || monster.launched(state.tick)
-                    || monster.frozen(state.tick)) continue;
-
-            double mx = monster.x - state.player.x;
-            double mz = monster.z - state.player.z;
-            double distance = Math.hypot(mx, mz);
-            if (distance > 1.90D) continue;
-
-            double forward = mx * dirX + mz * dirZ;
-            double lateral = Math.abs(mx * dirZ - mz * dirX);
-            if (forward < 0.25D || forward > 1.90D || lateral > 0.62D) continue;
-
-            if (forward < bestForward) {
-                bestForward = forward;
-                best = monster;
-            }
-        }
-
-        if (best == null) return null;
-
-        float desiredYaw = yawTo(
-                state.player.x, state.player.z,
-                state.player.x + dirX, state.player.z + dirZ);
-        float error = normalise(desiredYaw - state.player.yaw);
-        lastDecisionDetail = "JUMPER_MOB_JUMP monster=" + best.id
-                + " forward=" + format(bestForward);
-        return new Action(
-                1.0D, 0.0D, true, true,
-                clamp(error, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
-                false);
     }
 
     private Action gapAction(GameState state, Cell from, Cell to, boolean allowJump) {

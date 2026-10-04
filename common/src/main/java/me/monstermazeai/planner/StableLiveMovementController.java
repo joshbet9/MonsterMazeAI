@@ -461,14 +461,17 @@ public final class StableLiveMovementController {
         // control to the same tactical simulator used during route selection.
         // This is what makes deliberate contact and ability use real live actions,
         // rather than merely simulated route preferences.
+        Action tacticalMovement = null;
         long currentThreatSignature = threatSignature(state);
         if (routePlanner.shouldUseTacticalAction(state)
                 && currentThreatSignature != lastTacticalSignature) {
             /*
              * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
+             * Ability/jump pulses remain immediately authoritative. Movement
+             * results are now retained as a one-tick override and validated
+             * against the current physical corridor below; previously they were
+             * silently discarded, which meant the tactical simulator could find
+             * a better dodge without the live motor ever executing it.
              */
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
@@ -476,6 +479,9 @@ public final class StableLiveMovementController {
             if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
+            }
+            if (tactical != null && isTacticalMovement(tactical)) {
+                tacticalMovement = tactical;
             }
         }
 
@@ -504,6 +510,17 @@ public final class StableLiveMovementController {
                     + startCellRow + "," + startCellColumn + "->"
                     + targetCellRow + "," + targetCellColumn;
             return Action.IDLE;
+        }
+
+        if (tacticalMovement != null && !gapEdge) {
+            Action guarded = guardProjectedSupport(
+                    state, tacticalMovement, dirRow, dirColumn);
+            if (sameActionValues(guarded, tacticalMovement)
+                    || hasUsableTacticalProgress(state, guarded, dirRow, dirColumn)) {
+                lastDecisionDetail += " TACTICAL_MOVE=" + tacticalMovement
+                        + (sameActionValues(guarded, tacticalMovement) ? "" : " GUARDED=" + guarded);
+                return guarded;
+            }
         }
 
         float desiredYaw = cardinalYaw(dirRow, dirColumn);
@@ -1430,6 +1447,34 @@ public final class StableLiveMovementController {
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
         return action.useAbility() || (allowJump && action.jump());
+    }
+
+    private static boolean isTacticalMovement(Action action) {
+        return action != null
+                && !action.useAbility()
+                && (Math.abs(action.forward()) > 1.0E-9
+                || Math.abs(action.strafe()) > 1.0E-9
+                || Math.abs(action.yawDelta()) > 1.0E-9);
+    }
+
+    private static boolean sameActionValues(Action a, Action b) {
+        return a != null && b != null
+                && Math.abs(a.forward() - b.forward()) < 1.0E-9
+                && Math.abs(a.strafe() - b.strafe()) < 1.0E-9
+                && a.jump() == b.jump()
+                && a.sprint() == b.sprint()
+                && Math.abs(a.yawDelta() - b.yawDelta()) < 1.0E-6
+                && a.useAbility() == b.useAbility();
+    }
+
+    private static boolean hasUsableTacticalProgress(
+            GameState state, Action action, int dirRow, int dirColumn) {
+        if (action == null) return false;
+        if (Math.abs(action.forward()) < 1.0E-9
+                && Math.abs(action.strafe()) < 1.0E-9) {
+            return Math.abs(action.yawDelta()) > 0.0F;
+        }
+        return projectedRouteProgress(state, action, dirRow, dirColumn) >= -0.15D;
     }
 
     private boolean detectLiveMobHit(GameState state) {

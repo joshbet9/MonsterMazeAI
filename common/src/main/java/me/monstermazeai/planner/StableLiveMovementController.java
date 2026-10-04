@@ -932,7 +932,7 @@ public final class StableLiveMovementController {
         }
     }
 
-    private static double firstHeadingTurnMagnitude(PlayerRoute current, PlayerRoute planned) {
+    static double firstHeadingTurnMagnitude(PlayerRoute current, PlayerRoute planned) {
         if (current == null || planned == null || current.size() < 2 || planned.size() < 2) {
             return 0.0D;
         }

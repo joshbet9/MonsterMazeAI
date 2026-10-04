@@ -329,6 +329,23 @@ public final class StableLiveMovementController {
             applyCompletedRoutePlan(state, startRow, startColumn, goal, regionRadius);
         }
 
+        /*
+         * Preserve the source-faithful intentional-bump bootstrap used by the
+         * original controller at stage transitions. Some Speed/Maverick routes
+         * deliberately use the real knockback to preserve forward momentum before
+         * the next strategic route has finished evaluating. This is only exposed
+         * while no route is installed; committed gap/ability actions already own
+         * all active-route transitions above.
+         */
+        if (route == null && !padEntryCommitment && !gapExecutionActive) {
+            MonsterState bootstrapBump = MobInteractionDecision.chooseIntentionalBump(
+                    state, profile.tendencies.positiveMobKnockback);
+            if (bootstrapBump != null) {
+                Action bumpAction = steerIntoMonster(state, bootstrapBump);
+                if (bumpAction != null) return bumpAction;
+            }
+        }
+
         if (route == null) {
             /*
              * The first physical route must be available synchronously, but it

@@ -252,20 +252,6 @@ public final class MonsterAwareRoutePlanner {
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
         boolean hasRelevantMonster = hasRelevantMonster(state);
-
-        /*
-         * With no immediate contact threat, use the direct time-expanded
-         * predictive search instead of asking a bounded K-shortest generator to
-         * guess which detour matters. This is the strategic routing authority.
-         */
-        if (!hasRelevantMonster) {
-            return PredictiveMonsterThreatScorer.bestRoute(
-                    state,
-                    routeStart(candidates),
-                    goal,
-                    regionGoal ? regi    private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
-                               Cell goal, boolean regionGoal, int regionRadius) {
-        boolean hasRelevantMonster = hasRelevantMonster(state);
         if (!hasRelevantMonster) return shortest(candidates);
 
         TacticalRouteSimulator.Result[] results =
@@ -288,7 +274,51 @@ public final class MonsterAwareRoutePlanner {
         return best;
     }
 
- timeCompare < 0;
+    private PlayerRoute choosePredictive(
+            GameState state, List<PlayerRoute> candidates) {
+        List<PredictiveMonsterThreatScorer.Score> predictive =
+                PredictiveMonsterThreatScorer.rank(state, candidates);
+        return choosePredictive(state, candidates, predictive);
+    }
+
+    private PlayerRoute choosePredictive(
+            GameState state,
+            List<PlayerRoute> candidates,
+            List<PredictiveMonsterThreatScorer.Score> predictive) {
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException("No route candidates");
+        }
+        if (predictive == null || predictive.isEmpty()) return shortest(candidates);
+
+        return predictive.stream()
+                .min(Comparator.comparingDouble(score ->
+                        score.compositeCost()
+                                + gapJumpPolicy.riskCostPerGap() * gapCount(score.route())))
+                .orElseThrow()
+                .route();
+    }
+
+    private static boolean hasRelevantMonster(GameState state) {
+        for (var monster : state.monsters) {
+            if (MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,
+                           TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute) {
+        if (candidate.reached() != incumbent.reached()) return candidate.reached();
+
+        if (candidate.reached()) {
+            double candidateTime = candidate.arrivalTicks()
+                    + gapJumpPolicy.riskCostPerGap() * gapCount(candidateRoute);
+            double incumbentTime = incumbent.arrivalTicks()
+                    + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
+            int timeCompare = Double.compare(candidateTime, incumbentTime);
+            if (timeCompare != 0) return timeCompare < 0;
         }
 
         if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {

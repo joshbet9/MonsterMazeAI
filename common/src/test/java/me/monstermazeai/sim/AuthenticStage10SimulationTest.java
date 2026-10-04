@@ -227,15 +227,7 @@ class AuthenticStage10SimulationTest {
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
             boolean allowJump = state.kit != Kit.JUMPER || state.ability.charges > 0;
-            GameState policyBefore = me.monstermazeai.ml.PolicyLearningRecorder.enabled()
-                    ? state.copyForSimulation() : null;
-            GameState counterfactualBefore = me.monstermazeai.ml.CounterfactualPolicyLearningRecorder.enabled()
-                    ? state.copyForSimulation() : null;
             ActionInput action = decide(agent, state);
-            if (counterfactualBefore != null) {
-                me.monstermazeai.ml.CounterfactualPolicyLearningRecorder.record(
-                        counterfactualBefore, action.action, allowJump, simulator);
-            }
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
 
@@ -268,10 +260,6 @@ class AuthenticStage10SimulationTest {
 
             simulator.tick(state, action.action);
             actualHorizontalDistance += Math.hypot(state.player.x - preX, state.player.z - preZ);
-            if (policyBefore != null) {
-                me.monstermazeai.ml.PolicyLearningRecorder.record(
-                        policyBefore, action.action, state);
-            }
 
             if (!state.alive && terminalTick < 0L) {
                 terminalTick = state.tick;

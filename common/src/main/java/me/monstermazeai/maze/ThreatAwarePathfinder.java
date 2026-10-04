@@ -129,7 +129,7 @@ public final class ThreatAwarePathfinder {
 
         best.put(to, nextCost);
         previous.put(to, from);
-        open.add(new Node(to, nextCost));
+        open.add(new Node(to, nextCost, travelTicks));
     }
 
     private double dangerPenalty(GameState state, Cell cell, double travelTicks) {

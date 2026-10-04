@@ -17,16 +17,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BottleneckSmokeSimulationTest {
     @Test
     void representativeBottlenecksReachStageFive() {
-        run("SPEED_P3_MAVERICK", 2, Kit.MAVERICK, Mode.SPEED);
-        run("SPEED_P1_BODY_BUILDER", 0, Kit.BODY_BUILDER, Mode.SPEED);
-        run("MODERN_P1_REPULSOR", 0, Kit.REPULSOR, Mode.MODERN);
-        run("MODERN_P3_SLOWBALLER", 2, Kit.SLOWBALLER, Mode.MODERN);
+        run("SPEED_P3_MAVERICK", 2, Kit.MAVERICK, Mode.SPEED, 5);
+        run("MODERN_P1_REPULSOR", 0, Kit.REPULSOR, Mode.MODERN, 5);
+        run("MODERN_P2_REPULSOR", 1, Kit.REPULSOR, Mode.MODERN, 10);
+        run("MODERN_P3_SLOWBALLER", 2, Kit.SLOWBALLER, Mode.MODERN, 10);
     }
 
-    private static void run(String name, int pattern, Kit kit, Mode mode) {
+    private static void run(String name, int pattern, Kit kit, Mode mode, int targetStage) {
         AuthenticStage10SimulationTest.RunResult result =
                 AuthenticStage10SimulationTest.runDiagnostic(
-                        pattern, kit, AiProfile.HIGH_SKILL, mode, 5);
+                        pattern, kit, AiProfile.HIGH_SKILL, mode, targetStage);
 
         System.out.printf(
                 "BOTTLENECK_SMOKE case=%s mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%s avgSpeed=%.3f%n",

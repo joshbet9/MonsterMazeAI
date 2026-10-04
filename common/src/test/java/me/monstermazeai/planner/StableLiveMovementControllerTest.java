@@ -163,6 +163,8 @@ class StableLiveMovementControllerTest {
 
         assertTrue(action.forward() > 0.0,
                 "large heading correction far from a corner should retain controlled forward drive");
+        assertTrue(action.sprint(),
+                "controlled forward drive during a far turn should preserve sprint momentum");
         assertTrue(Math.abs(action.yawDelta()) > 0.0F);
         assertEquals(0.0, action.strafe(), 1.0e-6);
     }

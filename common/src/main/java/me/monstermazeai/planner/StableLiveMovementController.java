@@ -118,6 +118,16 @@ public final class StableLiveMovementController {
     });
     private Future<?> pendingRoutePlan;
     private volatile PlannedRoute completedRoutePlan;
+    /*
+     * Latest-wins queue for asynchronous strategic planning. A live threat can
+     * change again while the source-faithful planner is simulating an older
+     * snapshot. Do not throw the newer observation away just because the worker
+     * is busy; replace the queued request and submit it immediately after the
+     * current evaluation finishes.
+     */
+    private final Object routePlanLock = new Object();
+    private StrategicRouteRequest queuedRouteRequest;
+    private long routePlanGeneration;
 
     private PlayerRoute route;
     /** Index of the next turn/goal cell, not merely the next adjacent cell. */
@@ -657,7 +667,7 @@ public final class StableLiveMovementController {
                             forward,
                             0.0,
                             jump,
-                            false,
+                            true,
                             yawCommand,
                             false);
                     action = hasPredictedPhysicalSupport(
@@ -744,10 +754,14 @@ public final class StableLiveMovementController {
         clearGapCommitment();
         clearPadTransitionFacing();
         lastSpeedJumpInputTick = Long.MIN_VALUE;
-        Future<?> pending = pendingRoutePlan;
-        if (pending != null) pending.cancel(false);
-        pendingRoutePlan = null;
-        completedRoutePlan = null;
+        synchronized (routePlanLock) {
+            routePlanGeneration++;
+            queuedRouteRequest = null;
+            Future<?> pending = pendingRoutePlan;
+            if (pending != null) pending.cancel(false);
+            pendingRoutePlan = null;
+            completedRoutePlan = null;
+        }
         lastDecisionDetail = "RESET";
     }
 
@@ -828,28 +842,86 @@ public final class StableLiveMovementController {
 
     private void scheduleStrategicRoute(GameState liveState, GameState planningState,
                                            Cell start, Cell goal, int regionRadius) {
-        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
+        StrategicRouteRequest request = new StrategicRouteRequest(
+                planningState.copyForSimulation(),
+                start,
+                goal,
+                regionRadius,
+                liveState.tick,
+                liveState.maze.dynamicSignature());
+        synchronized (routePlanLock) {
+            if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) {
+                // Keep only the freshest observation. Intermediate requests are
+                // not useful once the player/threat state has moved on.
+                queuedRouteRequest = request;
+                return;
+            }
+            submitStrategicRouteLocked(request, ++routePlanGeneration);
+        }
+    }
 
-        GameState snapshot = planningState.copyForSimulation();
-        long requestedTick = liveState.tick;
-        long liveTopology = liveState.maze.dynamicSignature();
+    private void submitStrategicRouteLocked(StrategicRouteRequest request, long generation) {
+        GameState snapshot = request.planningState;
         long planningTopology = snapshot.maze.dynamicSignature();
         pendingRoutePlan = routePlanningExecutor.submit(() -> {
             try {
-                PlayerRoute planned = regionRadius > 0
-                        ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
-                        : backgroundRoutePlanner.route(snapshot, start, goal);
+                PlayerRoute planned = request.regionRadius > 0
+                        ? backgroundRoutePlanner.routeToRegion(
+                                snapshot, request.start, request.goal, request.regionRadius)
+                        : backgroundRoutePlanner.route(snapshot, request.start, request.goal);
                 if (planned == null || planned.cells().isEmpty()) {
                     throw new IllegalStateException("Strategic planner returned no route");
                 }
-                completedRoutePlan = new PlannedRoute(
-                        planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
-                        requestedTick, liveTopology, planningTopology, threatSignature(snapshot));
+                synchronized (routePlanLock) {
+                    if (generation == routePlanGeneration) {
+                        completedRoutePlan = new PlannedRoute(
+                                planned,
+                                request.start.row(), request.start.column(),
+                                request.goal.row(), request.goal.column(),
+                                request.regionRadius,
+                                request.requestedTick,
+                                request.liveTopologySignature,
+                                planningTopology,
+                                threatSignature(snapshot));
+                    }
+                }
             } catch (RuntimeException failure) {
                 System.err.println("[MonsterMazeAI] background strategic route failed: "
                         + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            } finally {
+                synchronized (routePlanLock) {
+                    if (generation != routePlanGeneration) {
+                        return;
+                    }
+                    pendingRoutePlan = null;
+                    StrategicRouteRequest next = queuedRouteRequest;
+                    queuedRouteRequest = null;
+                    if (next != null) {
+                        submitStrategicRouteLocked(next, ++routePlanGeneration);
+                    }
+                }
             }
         });
+    }
+
+    private static final class StrategicRouteRequest {
+        final GameState planningState;
+        final Cell start;
+        final Cell goal;
+        final int regionRadius;
+        final long requestedTick;
+        final long liveTopologySignature;
+
+        StrategicRouteRequest(GameState planningState, Cell start, Cell goal,
+                              int regionRadius, long requestedTick,
+                              long liveTopologySignature) {
+            this.planningState = planningState;
+            this.start = start;
+            this.goal = goal;
+            this.regionRadius = regionRadius;
+            this.requestedTick = requestedTick;
+            this.liveTopologySignature = liveTopologySignature;
+        }
     }
 
     private void applyCompletedRoutePlan(GameState state, int startRow, int startColumn,

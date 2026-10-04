@@ -4,6 +4,7 @@ import me.monstermazeai.ability.AbilityDecision;
 import me.monstermazeai.ability.AbilityUseGate;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.ml.PolicyActionSelector;
 
 /**
  * Stateful safety wrapper around the one-tick objective controller.
@@ -57,8 +58,24 @@ public final class RobustLiveController {
         lastZ = state.player.z;
 
         Action action = objective.nextAction(state, allowJump);
-        boolean useAbility = AbilityDecision.shouldUse(
+        String policyDetail = "";
+        boolean policyExplore = Boolean.parseBoolean(
+                System.getProperty("monstermaze.ml.policy.explore", "false"));
+        boolean policyMode = "policy".equalsIgnoreCase(
+                System.getProperty("monstermaze.ml.mode", ""));
+        if (policyExplore || (policyMode && PolicyActionSelector.loaded())) {
+            Action baseline = action;
+            action = PolicyActionSelector.select(state, baseline, allowJump);
+            if (policyMode) {
+                policyDetail = "POLICY_SELECT baseline=" + describe(baseline)
+                        + " selected=" + describe(action)
+                        + " changed=" + (!action.equals(baseline));
+            }
+        }
+
+        boolean deterministicAbility = AbilityDecision.shouldUse(
                 state, objective.lastDecisionReason(), objective.lastDecisionDetail());
+        boolean useAbility = deterministicAbility || action.useAbility();
 
         /*
          * An ability is allowed to rescue a failed movement objective. In
@@ -68,18 +85,20 @@ public final class RobustLiveController {
          * execute.
          */
         if (action == Action.IDLE) {
-            if (useAbility && abilityGate.allow(state, useAbility)) {
+            if (useAbility && abilityGate.allow(state, true)) {
                 abilityGate.record(state);
                 Action ability = new Action(0.0, 0.0, false, false, 0.0F, true);
-                lastDecisionDetail = "ABILITY_EMERGENCY objective=" + objective.lastDecisionReason()
+                lastDecisionDetail = joinDetail(policyDetail,
+                    "ABILITY_EMERGENCY objective=" + objective.lastDecisionReason()
                         + " detail=" + objective.lastDecisionDetail()
-                        + " output=" + describe(ability);
+                        + " output=" + describe(ability));
                 stuckTicks = 0;
                 return ability;
             }
-            lastDecisionDetail = "OBJECTIVE_IDLE reason=" + objective.lastDecisionReason()
+            lastDecisionDetail = joinDetail(policyDetail,
+                    "OBJECTIVE_IDLE reason=" + objective.lastDecisionReason()
                     + " detail=" + objective.lastDecisionDetail()
-                    + " stuckTicks=" + stuckTicks;
+                    + " stuckTicks=" + stuckTicks);
             stuckTicks = 0;
             return Action.IDLE;
         }
@@ -88,19 +107,21 @@ public final class RobustLiveController {
             stuckTicks = 0;
             Action jump = new Action(action.forward(), action.strafe(), true,
                     action.sprint(), action.yawDelta(), action.useAbility());
-            lastDecisionDetail = "FORCED_JUMP objective=" + objective.lastDecisionReason()
+            lastDecisionDetail = joinDetail(policyDetail,
+                    "FORCED_JUMP objective=" + objective.lastDecisionReason()
                     + " stuckTicks=" + STUCK_TICKS
                     + " base=" + describe(action)
-                    + " output=" + describe(jump);
+                    + " output=" + describe(jump));
             return jump;
         }
 
-        if (useAbility && abilityGate.allow(state)) {
+        if (useAbility && abilityGate.allow(state, true)) {
             abilityGate.record(state);
             Action ability = new Action(action.forward(), action.strafe(), action.jump(),
                     action.sprint(), action.yawDelta(), true);
-            lastDecisionDetail = "ABILITY_ADD objective=" + objective.lastDecisionReason()
-                    + " base=" + describe(action) + " output=" + describe(ability);
+            lastDecisionDetail = joinDetail(policyDetail,
+                    "ABILITY_ADD objective=" + objective.lastDecisionReason()
+                    + " base=" + describe(action) + " output=" + describe(ability));
             return ability;
         }
 
@@ -125,6 +146,11 @@ public final class RobustLiveController {
         return s != null && s.inMonsterMaze && s.alive && !s.completed
                 && s.maze != null
                 && s.activePadRow >= 0 && s.activePadColumn >= 0;
+    }
+
+    private static String joinDetail(String policyDetail, String detail) {
+        if (policyDetail == null || policyDetail.isEmpty()) return detail;
+        return policyDetail + " " + detail;
     }
 
     private static String describe(Action action) {

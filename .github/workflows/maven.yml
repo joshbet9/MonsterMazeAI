@@ -29,6 +29,102 @@ jobs:
       - name: Build and test common
         run: mvn -B -ntp verify
 
+      - name: Results matrix — 15 Speed + 15 Modern natural-termination runs
+        if: always()
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee common/target/full-results-matrix.log
+
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          text = Path("common/target/full-results-matrix.log").read_text(encoding="utf-8", errors="replace")
+          rows = []
+          pattern = re.compile(
+              r"(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
+              r"maxStage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
+          )
+          for match in pattern.finditer(text):
+              rows.append({
+                  "mode": match.group(1).replace("_FULL_RUN", ""),
+                  "pattern": int(match.group(2)),
+                  "kit": match.group(3),
+                  "maxStage": int(match.group(4)),
+                  "ticks": int(match.group(5)),
+                  "health": float(match.group(6)),
+              })
+
+          summary = {"cases": len(rows), "expected": 30, "byMode": {}, "rows": rows}
+          for mode in ("SPEED", "MODERN"):
+              values = [r["maxStage"] for r in rows if r["mode"] == mode]
+              summary["byMode"][mode] = {
+                  "cases": len(values),
+                  "meanMaxStage": (sum(values) / len(values)) if values else None,
+                  "minMaxStage": min(values) if values else None,
+                  "maxMaxStage": max(values) if values else None,
+                  "stage10OrBetter": sum(v >= 10 for v in values),
+              }
+
+          Path("common/target/full-results-matrix.json").write_text(
+              json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+
+          baseline_path = Path("docs/calibration/results-matrix-v12.json")
+          baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+          base = {
+              (r["mode"], r["pattern"], r["kit"]): r["maxStage"]
+              for r in baseline["rows"]
+          }
+          comparisons = []
+          for row in rows:
+              key = (row["mode"], row["pattern"], row["kit"])
+              if key in base:
+                  comparisons.append({
+                      **row,
+                      "baselineMaxStage": base[key],
+                      "deltaMaxStage": row["maxStage"] - base[key],
+                  })
+
+          comparison = {
+              "baseline": "v12",
+              "cases": len(comparisons),
+              "improvedCells": sum(x["deltaMaxStage"] > 0 for x in comparisons),
+              "worsenedCells": sum(x["deltaMaxStage"] < 0 for x in comparisons),
+              "unchangedCells": sum(x["deltaMaxStage"] == 0 for x in comparisons),
+              "stageSumBaseline": sum(base[(x["mode"], x["pattern"], x["kit"])] for x in comparisons),
+              "stageSumCurrent": sum(x["maxStage"] for x in comparisons),
+              "rows": sorted(comparisons, key=lambda x: (x["mode"], x["pattern"], x["kit"])),
+          }
+          Path("common/target/full-results-matrix-v12-comparison.json").write_text(
+              json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps({
+              "improvedCells": comparison["improvedCells"],
+              "worsenedCells": comparison["worsenedCells"],
+              "unchangedCells": comparison["unchangedCells"],
+              "stageSumBaseline": comparison["stageSumBaseline"],
+              "stageSumCurrent": comparison["stageSumCurrent"],
+          }, indent=2))
+          assert len(rows) == 30, f"expected 30 matrix rows, found {len(rows)}"
+          assert len(comparisons) == 30, f"expected 30 baseline matches, found {len(comparisons)}"
+          PY
+
+      - name: Upload full matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monstermaze-results-matrix-${{ github.sha }}
+          path: |
+            common/target/full-results-matrix.log
+            common/target/full-results-matrix.json
+            common/target/full-results-matrix-v12-comparison.json
+          if-no-files-found: warn
+
       - name: First-pad deterministic physics simulation
         run: mvn -B -ntp -pl common -am -Dtest=FirstPadMovementControllerTest,FirstPadMovementPhysicsSimulationTest -Dsurefire.failIfNoSpecifiedTests=false test
 

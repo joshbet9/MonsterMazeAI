@@ -1,0 +1,98 @@
+name: Matrix v17 — Predictive Future Threat
+
+on:
+  push:
+    branches:
+      - autonomous/matrix-predictive-threat-v17
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Threat lookahead ${{ matrix.lookahead }} cells
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        lookahead: [8, 12, 16, 20]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+
+      - name: Run full 30-cell natural-termination matrix
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=SpeedFullRunDiagnosticTest,ModernFullRunDiagnosticTest \
+            -Dmonstermaze.routeThreatLookaheadSegments=${{ matrix.lookahead }} \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            test 2>&1 | tee matrix-${{ matrix.lookahead }}.log
+
+      - name: Summarize candidate
+        run: |
+          LOOKAHEAD=${{ matrix.lookahead }} python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          lookahead = int(os.environ['LOOKAHEAD'])
+          text = Path(f'matrix-{lookahead}.log').read_text(encoding='utf-8', errors='replace')
+          rx = re.compile(
+              r'(SPEED_FULL_RUN|MODERN_FULL_RUN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+'
+              r'maxStage=(\d+)\s+ticks=(\d+)\s+health=([-\d.]+)'
+          )
+          rows = []
+          for m in rx.finditer(text):
+              rows.append({
+                  'mode': m.group(1).split('_')[0],
+                  'pattern': int(m.group(2)),
+                  'kit': m.group(3),
+                  'maxStage': int(m.group(4)),
+                  'ticks': int(m.group(5)),
+                  'health': float(m.group(6)),
+              })
+
+          summary = {
+              'lookaheadSegments': lookahead,
+              'cases': len(rows),
+              'stageSum': sum(r['maxStage'] for r in rows),
+              'minStage': min((r['maxStage'] for r in rows), default=None),
+              'maxStage': max((r['maxStage'] for r in rows), default=None),
+              'modernMeanStage': sum(r['maxStage'] for r in rows if r['mode'] == 'MODERN') / 15 if len(rows) == 30 else None,
+              'speedMeanStage': sum(r['maxStage'] for r in rows if r['mode'] == 'SPEED') / 15 if len(rows) == 30 else None,
+              'rows': rows,
+          }
+
+          Path(f'matrix-{lookahead}.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({k: v for k, v in summary.items() if k != 'rows'}, indent=2))
+          if len(rows) != 30:
+              raise SystemExit(f'expected 30 rows, found {len(rows)}')
+          PY
+
+      - name: Upload candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-v17-predictive-threat-${{ matrix.lookahead }}-${{ github.sha }}
+          path: |
+            matrix-${{ matrix.lookahead }}.log
+            matrix-${{ matrix.lookahead }}.json
+          if-no-files-found: warn

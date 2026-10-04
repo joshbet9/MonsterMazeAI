@@ -307,7 +307,15 @@ public final class MonsterAwareRoutePlanner {
     }
 
     public Action tacticalAction(GameState state, PlayerRoute route, Cell goal, int regionRadius) {
-        return simulator.nextAction(state, route, goal, regionRadius > 0, regionRadius);
+        int waypoint = route.nextWaypoint(
+                state.player.x, state.player.z, 0, 0.30D);
+        return tacticalAction(state, route, goal, regionRadius, waypoint);
+    }
+
+    public Action tacticalAction(GameState state, PlayerRoute route, Cell goal,
+                                  int regionRadius, int waypoint) {
+        return simulator.nextAction(
+                state, route, waypoint, goal, regionRadius > 0, regionRadius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

@@ -838,6 +838,7 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
+                || state.tick - planned.requestedTick > 48L
                 || distanceFromRouteCorridor(state, planned.route, 0) > 1.25D) {
             fullRouteEvaluationPending = true;
             return;
@@ -857,7 +858,7 @@ public final class StableLiveMovementController {
          * still schedules a replacement whenever the quantised threat state has
          * changed materially.
          */
-        if (route != null && !strategicRoutePreservesCurrentHeading(state, planned.route)) {
+        if (route != null && !strategicRouteIsSafeToInstall(state, planned.route)) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -1062,11 +1063,14 @@ public final class StableLiveMovementController {
         padTransitionPreviousColumn = -1;
     }
 
-    private boolean strategicRoutePreservesCurrentHeading(
+    private boolean strategicRouteIsSafeToInstall(
             GameState state, PlayerRoute planned) {
         if (planned == null || planned.size() < 2 || route == null || route.size() < 2) {
             return true;
         }
+
+        int plannedWaypoint = reanchorWaypointIndex(state, planned);
+        if (plannedWaypoint >= planned.size()) return true;
 
         int currentTargetIndex = Math.max(1, Math.min(waypointIndex, route.size() - 1));
         Cell currentFrom = route.cells().get(currentTargetIndex - 1);
@@ -1074,16 +1078,37 @@ public final class StableLiveMovementController {
         int currentRowDirection = Integer.signum(currentTo.row() - currentFrom.row());
         int currentColumnDirection = Integer.signum(currentTo.column() - currentFrom.column());
 
-        int plannedWaypoint = reanchorWaypointIndex(state, planned);
         int plannedTargetIndex = Math.max(1, Math.min(plannedWaypoint, planned.size() - 1));
         Cell plannedFrom = planned.cells().get(plannedTargetIndex - 1);
         Cell plannedTo = planned.cells().get(plannedTargetIndex);
-
         int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
         int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());
 
-        return currentRowDirection == plannedRowDirection
-                && currentColumnDirection == plannedColumnDirection;
+        if (currentRowDirection == plannedRowDirection
+                && currentColumnDirection == plannedColumnDirection) {
+            return true;
+        }
+
+        /*
+         * A human can take a different turn at a junction without stopping.
+         * Only forbid replacements that require the current momentum to travel
+         * materially backwards. When the player is slow, any supported cardinal
+         * turn can be acquired; near an existing waypoint, the turn itself is
+         * the intended behavior.
+         */
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        if (speed <= MAX_TURNING_SPEED) return true;
+
+        double velocityLength = Math.max(speed, 1.0E-9);
+        double velocityRow = state.player.vx / velocityLength;
+        double velocityColumn = state.player.vz / velocityLength;
+        double momentum = velocityRow * plannedRowDirection
+                + velocityColumn * plannedColumnDirection;
+
+        double distanceToCurrentWaypoint = distanceToWaypoint(state, currentTargetIndex);
+        if (distanceToCurrentWaypoint <= 1.0D && momentum >= -0.20D) return true;
+
+        return momentum >= -0.05D;
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {

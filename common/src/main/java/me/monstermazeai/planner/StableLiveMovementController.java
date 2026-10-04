@@ -567,42 +567,17 @@ public final class StableLiveMovementController {
         Action action;
 
         if (Math.abs(crossTrack) > MAX_SAFE_LANE_ERROR) {
-            /*
-             * A player can remain physically supported while the block
-             * containing floor(x,z) is air. Stopping forever at a 0.3-0.5
-             * lateral error is therefore not source-like: A/D correction is a
-             * normal Minecraft input and is the safest way to recover the lane
-             * without cutting the cardinal corridor.
-             */
-            int crossSign = crossTrack > 0.0 ? 1 : -1;
-            double strafe = dirRow == 0
-                    ? -crossSign * Math.signum(dirColumn)
-                    : crossSign * Math.signum(dirRow);
-            float correctionYaw = cardinalYaw(dirRow, dirColumn);
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-            float yawDelta = speed <= MAX_TURNING_SPEED
-                    ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                    : 0.0F;
-            action = new Action(0.0, strafe, false, false, yawDelta, false);
-            lastDecisionDetail += " LANE_RECOVERY crossTrack=" + format(crossTrack)
-                    + " strafe=" + format(strafe);
+            action = laneCorrectionAction(state, dirRow, dirColumn, 0.90D);
+            if (action == null) action = Action.IDLE;
+            lastDecisionDetail += " LANE_RECOVERY_WORLD crossTrack=" + format(crossTrack)
+                    + " output=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe());
         } else if (Math.abs(crossTrack) > 0.18) {
-            double laneTargetX = dirRow == 0 ? laneAnchorX : state.player.x;
-            double laneTargetZ = dirColumn == 0 ? laneAnchorZ : state.player.z;
-            float correctionYaw = (float) Math.toDegrees(
-                    Math.atan2(-(laneTargetX - state.player.x), laneTargetZ - state.player.z));
-            float correctionError = normalise(correctionYaw - state.player.yaw);
-
-            if (speed > MAX_TURNING_SPEED || Math.abs(correctionError) > HEADING_TOLERANCE) {
-                action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED
-                                ? clamp(correctionError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK)
-                                : 0.0F,
-                        false);
-            } else {
-                action = new Action(1.0, 0.0, false, true, 0.0F, false);
-            }
+            action = laneFineDriveAction(state, dirRow, dirColumn, crossTrack);
+            if (action == null) action = Action.IDLE;
+            lastDecisionDetail += " LANE_FINE_DRIVE crossTrack=" + format(crossTrack)
+                    + " output=f=" + format(action.forward())
+                    + ",s=" + format(action.strafe());
         } else if (Math.abs(yawError) > HEADING_TOLERANCE) {
             /*
              * Normal steering is concurrent with forward movement. This is
@@ -617,7 +592,9 @@ public final class StableLiveMovementController {
              * A large error is different: a 90-degree corner cannot safely
              * be cut across a one-cell corridor, so acquire the heading first.
              */
-            float turn = clamp(yawError * 0.5F, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            double turnGain = turnResponseGain();
+            float turn = clamp((float) (yawError * turnGain),
+                    -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             if (Math.abs(yawError) > HEADING_TOLERANCE && Math.abs(turn) < 1.0F) turn = yawError > 0 ? 1.0F : -1.0F;
             if (Math.abs(yawError) <= MAX_DRIVE_STEER_ERROR) {
                 boolean brake = distance < waypointBrakeDistance()
@@ -656,10 +633,26 @@ public final class StableLiveMovementController {
                 action = new Action(forward, strafe, jump, false, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";
             } else {
-                action = new Action(
-                        0.0, 0.0, false, false,
-                        speed <= MAX_TURNING_SPEED ? turn : 0.0F,
-                        false);
+                float yawCommand = turn;
+                if (distance > 4.50D) {
+                    Action farTurn = new Action(
+                            0.35D,
+                            0.0,
+                            shouldSpeedJump(state, allowJump),
+                            false,
+                            yawCommand,
+                            false);
+                    action = hasPredictedPhysicalSupport(
+                            state, farTurn, supportLookaheadTicks(state))
+                            ? farTurn
+                            : new Action(0.0, 0.0, false, false, yawCommand, false);
+                    lastDecisionDetail += action == farTurn
+                            ? " FAR_TURN_DRIVE"
+                            : " FAR_TURN_SUPPORT_HOLD";
+                } else {
+                    action = new Action(0.0, 0.0, false, false, yawCommand, false);
+                    lastDecisionDetail += " TURN_IN_PLACE";
+                }
             }
         } else {
             boolean brake = distance < waypointBrakeDistance()

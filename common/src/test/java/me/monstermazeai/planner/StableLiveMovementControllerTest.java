@@ -246,6 +246,33 @@ class StableLiveMovementControllerTest {
         // boundary rather than relying on ordinary jump-spam cadence.
     }
 
+    
+    @Test
+    void refreshesTacticalObservationEvenWhenQuantisedThreatSignatureIsUnchanged() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.kit = me.monstermazeai.kit.Kit.MAVERICK;
+        s.player.health = 20.0;
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(
+                77, 0.5, 0.0, 1.5));
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+        long first = controller.lastTacticalDecisionTickForTest();
+        assertEquals(1L, first);
+
+        s.tick = 2;
+        controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(first, controller.lastTacticalDecisionTickForTest(),
+                "tactical action should remain valid for at most two observations");
+
+        s.tick = 3;
+        controller.nextAction(s, new Cell(0, 8), false);
+        assertEquals(3L, controller.lastTacticalDecisionTickForTest(),
+                "a receding-horizon tactical action must refresh even when the coarse threat signature is unchanged");
+    }
+
     @Test
     void bootstrapsImmediatelyThenDoesNotReplanEveryObservation() {
         GameState s = state(0.5, 0.5, -45.0F);

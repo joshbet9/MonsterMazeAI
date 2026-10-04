@@ -440,6 +440,16 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
+        /*
+         * Local route detours own the decision while committed. When no
+         * detour is necessary or possible, retain v40's proven immediate
+         * source-valid dodge/yield as the emergency fallback.
+         */
+        if (!localDetourCommitment) {
+            Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+            if (mobAvoidance != null) return mobAvoidance;
+        }
+
         Action padEntry = maybeBeginPadEntryCommitment(state, goal, allowJump);
         if (padEntry != null) return padEntry;
 

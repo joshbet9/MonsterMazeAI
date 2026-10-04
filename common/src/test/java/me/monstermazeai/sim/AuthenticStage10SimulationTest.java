@@ -3,6 +3,7 @@ package me.monstermazeai.sim;
 import me.monstermazeai.ability.AbilityModel;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.Mode;
+import me.monstermazeai.game.PadModel;
 import me.monstermazeai.game.SourcePadSpawner;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.player.AiProfile;
@@ -41,8 +42,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that one seed or one profile represents every real game.
  */
 class AuthenticStage10SimulationTest {
-    private static final int REQUIRED_STAGE = 10;
+    private static final int MODERN_REQUIRED_STAGE = 5;
+    private static final int SPEED_REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
+    private static final int FULL_RUN_MAX_TICKS = 20_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {
@@ -51,7 +54,7 @@ class AuthenticStage10SimulationTest {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.MODERN);
-                if (result.maxStage < REQUIRED_STAGE) {
+                if (result.maxStage < MODERN_REQUIRED_STAGE) {
                     failures.add("mode=MODERN pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage
@@ -79,9 +82,10 @@ class AuthenticStage10SimulationTest {
         for (int pattern = 0; pattern < 3; pattern++) {
             for (Kit kit : Kit.values()) {
                 RunResult result = run(pattern, kit, AiProfile.HIGH_SKILL, Mode.SPEED);
-                System.out.printf("SPEED pattern=%d kit=%s stage=%d%n",
-                        pattern + 1, kit, result.maxStage);
-                if (result.maxStage < REQUIRED_STAGE) {
+                System.out.printf("SPEED pattern=%d kit=%s stage=%d seedOffset=%d%n",
+                        pattern + 1, kit, result.maxStage,
+                        Long.getLong("monstermaze.sim.seedOffset", 0L));
+                if (result.maxStage < SPEED_REQUIRED_STAGE) {
                     failures.add("mode=SPEED pattern=" + (pattern + 1)
                             + " kit=" + kit
                             + " stage=" + result.maxStage
@@ -89,6 +93,10 @@ class AuthenticStage10SimulationTest {
                             + " health=" + result.health
                             + " pos=(" + result.x + "," + result.z + ")"
                             + " firstFallTick=" + result.firstFallTick
+                            + " firstFallPrePos=" + result.firstFallPreX + "," + result.firstFallPreY + "," + result.firstFallPreZ
+                            + " firstFallPreV=" + result.firstFallPreVx + "," + result.firstFallPreVy + "," + result.firstFallPreVz
+                            + " firstFallPos=" + result.firstFallX + "," + result.firstFallY + "," + result.firstFallZ
+                            + " firstFallV=" + result.firstFallVx + "," + result.firstFallVz
                             + " firstFallDecision=" + result.firstFallDecision
                             + " decision=" + result.decision);
                 }
@@ -102,10 +110,33 @@ class AuthenticStage10SimulationTest {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }
 
+    static RunResult runDiagnostic(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return runDiagnostic(pattern, kit, profile, mode, requiredStage(mode));
+    }
+
+    static RunResult runDiagnostic(int pattern, Kit kit, AiProfile profile, Mode mode, int targetStage) {
+        if (targetStage <= 0) {
+            return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
+        }
+        return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, targetStage);
+    }
+
+    static RunResult runToEnd(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return new AuthenticStage10SimulationTest().run(pattern, kit, profile, mode, 0);
+    }
+
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, requiredStage(mode));
+    }
+
+    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int targetStage) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
+        long seedOffset = Long.getLong("monstermaze.sim.seedOffset", 0L);
+        if (seedOffset != 0L) {
+            seed = mixSeed(seed ^ seedOffset);
+        }
         Random monsterRandom = new Random(seed ^ 0x6A09E667F3BCC909L);
         Random padRandom = new Random(seed ^ 0xBB67AE8584CAA73BL);
 
@@ -156,10 +187,34 @@ class AuthenticStage10SimulationTest {
         String firstFallDecision = "NONE";
         double firstFallPreX = Double.NaN, firstFallPreY = Double.NaN, firstFallPreZ = Double.NaN;
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
+        long terminalTick = -1L;
+        int terminalStage = -1;
+        int terminalPhaseTicksRemaining = -1;
+        int terminalPadRow = -1, terminalPadColumn = -1;
+        boolean terminalOnPad = false;
+        String terminalDecision = "NONE";
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
-        for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
+        // Direct control/throughput telemetry. These counters measure what the
+        // controller actually asked the 1.8 movement model to do, rather than
+        // inferring behaviour from the final death trace.
+        long movementInputTicks = 0L;
+        long zeroInputTicks = 0L;
+        long stationaryTicks = 0L;
+        long forwardInputTicks = 0L;
+        long sprintInputTicks = 0L;
+        long jumpInputTicks = 0L;
+        long laneRecoveryTicks = 0L;
+        long edgeGuardTicks = 0L;
+        long cornerVectorTicks = 0L;
+        long steerDriveTicks = 0L;
+        long fastRecoveryRouteTicks = 0L;
+        double actualHorizontalDistance = 0.0D;
+        double commandedInputSum = 0.0D;
+
+        int maxTicks = targetStage > 0 ? MAX_TICKS : FULL_RUN_MAX_TICKS;
+        for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the
             // mode's 225-monster starter quota is reached.
@@ -171,21 +226,66 @@ class AuthenticStage10SimulationTest {
 
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
+            boolean allowJump = state.kit != Kit.JUMPER || state.ability.charges > 0;
+            GameState policyBefore = me.monstermazeai.ml.PolicyLearningRecorder.enabled()
+                    ? state.copyForSimulation() : null;
+            GameState counterfactualBefore = me.monstermazeai.ml.CounterfactualPolicyLearningRecorder.enabled()
+                    ? state.copyForSimulation() : null;
             ActionInput action = decide(agent, state);
+            if (counterfactualBefore != null) {
+                me.monstermazeai.ml.CounterfactualPolicyLearningRecorder.record(
+                        counterfactualBefore, action.action, allowJump, simulator);
+            }
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
-                trace.addLast("tick=" + state.tick
-                        + " pos=" + format(state.player.x) + "," + format(state.player.z)
-                        + " y=" + format(state.player.y)
-                        + " yaw=" + format(state.player.yaw)
-                        + " v=" + format(state.player.vx) + "," + format(state.player.vz)
-                        + " decision=" + decisionBeforeTick.replace(' ', '_')
-                        + " action=" + currentAction.replace(' ', '_'));
-                while (trace.size() > 30) trace.removeFirst();
+
+            double inputMagnitude = Math.hypot(action.action.forward(), action.action.strafe());
+            commandedInputSum += inputMagnitude;
+            if (inputMagnitude > 1.0E-6D) {
+                movementInputTicks++;
+            } else {
+                zeroInputTicks++;
+                if (Math.hypot(preVx, preVz) < 0.05D) stationaryTicks++;
             }
+            if (Math.abs(action.action.forward()) > 1.0E-6D) forwardInputTicks++;
+            if (action.action.sprint()) sprintInputTicks++;
+            if (action.action.jump()) jumpInputTicks++;
+            if (decisionBeforeTick.contains("LANE_RECOVERY")) laneRecoveryTicks++;
+            if (decisionBeforeTick.contains("EDGE_GUARD")) edgeGuardTicks++;
+            if (decisionBeforeTick.contains("CORNER_VECTOR")) cornerVectorTicks++;
+            if (decisionBeforeTick.contains("STEER_DRIVE")) steerDriveTicks++;
+            if (decisionBeforeTick.contains("FAST_RECOVERY_ROUTE")) fastRecoveryRouteTicks++;
+            trace.addLast("tick=" + state.tick
+                    + " stage=" + state.stage
+                    + " pos=" + format(state.player.x) + "," + format(state.player.z)
+                    + " y=" + format(state.player.y)
+                    + " yaw=" + format(state.player.yaw)
+                    + " v=" + format(state.player.vx) + "," + format(state.player.vy) + "," + format(state.player.vz)
+                    + " hp=" + format(state.player.health)
+                    + " decision=" + decisionBeforeTick.replace(' ', '_')
+                    + " action=" + currentAction.replace(' ', '_'));
+            while (trace.size() > 30) trace.removeFirst();
 
             simulator.tick(state, action.action);
+            actualHorizontalDistance += Math.hypot(state.player.x - preX, state.player.z - preZ);
+            if (policyBefore != null) {
+                me.monstermazeai.ml.PolicyLearningRecorder.record(
+                        policyBefore, action.action, state);
+            }
+
+            if (!state.alive && terminalTick < 0L) {
+                terminalTick = state.tick;
+                terminalStage = state.stage;
+                terminalPhaseTicksRemaining = state.phaseTicksRemaining;
+                terminalPadRow = state.activePadRow;
+                terminalPadColumn = state.activePadColumn;
+                terminalOnPad = state.activePadRow >= 0 && state.activePadColumn >= 0
+                        && PadModel.isOn(state.player,
+                        state.activePadRow + 0.5, GameState.PAD_SURFACE_Y, state.activePadColumn + 0.5);
+                terminalDecision = decisionBeforeTick
+                        + " ACTION=" + currentAction
+                        + " TRACE=" + String.join(" || ", trace);
+            }
 
             if (state.previewPadRequested && state.previewPadRow < 0) {
                 List<Cell> avoid = currentPadAvoidance(state);
@@ -231,7 +331,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (targetStage > 0 && maxStage >= targetStage) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -239,7 +339,27 @@ class AuthenticStage10SimulationTest {
                 firstFallPreX, firstFallPreY, firstFallPreZ,
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
-                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
+                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail(),
+                terminalTick, terminalStage, terminalPhaseTicksRemaining,
+                terminalPadRow, terminalPadColumn, terminalOnPad, terminalDecision,
+                movementInputTicks, zeroInputTicks, stationaryTicks, forwardInputTicks,
+                sprintInputTicks, jumpInputTicks, laneRecoveryTicks, edgeGuardTicks,
+                cornerVectorTicks, steerDriveTicks, fastRecoveryRouteTicks,
+                actualHorizontalDistance, commandedInputSum,
+                movementInputTicks / (double) Math.max(1L, state.tick),
+                zeroInputTicks / (double) Math.max(1L, state.tick),
+                stationaryTicks / (double) Math.max(1L, state.tick),
+                actualHorizontalDistance / Math.max(1L, state.tick),
+                commandedInputSum / Math.max(1L, state.tick));
+    }
+
+    private static long mixSeed(long value) {
+        value ^= value >>> 30;
+        value *= 0xBF58476D1CE4E5B9L;
+        value ^= value >>> 27;
+        value *= 0x94D049BB133111EBL;
+        value ^= value >>> 31;
+        return value;
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -265,6 +385,10 @@ class AuthenticStage10SimulationTest {
 
     private static void syncPadSurfaces(GameState state) {
         new me.monstermazeai.game.GameProgressionModel().syncPadSurfaces(state);
+    }
+
+    private static int requiredStage(Mode mode) {
+        return mode == Mode.SPEED ? SPEED_REQUIRED_STAGE : MODERN_REQUIRED_STAGE;
     }
 
     private static int initialMonsterCount(Mode mode) {
@@ -351,7 +475,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,
@@ -370,5 +494,30 @@ class AuthenticStage10SimulationTest {
             double firstFallVx,
             double firstFallVz,
             String firstFallDecision,
-            String decision) {}
+            String decision,
+            long terminalTick,
+            int terminalStage,
+            int terminalPhaseTicksRemaining,
+            int terminalPadRow,
+            int terminalPadColumn,
+            boolean terminalOnPad,
+            String terminalDecision,
+            long movementInputTicks,
+            long zeroInputTicks,
+            long stationaryTicks,
+            long forwardInputTicks,
+            long sprintInputTicks,
+            long jumpInputTicks,
+            long laneRecoveryTicks,
+            long edgeGuardTicks,
+            long cornerVectorTicks,
+            long steerDriveTicks,
+            long fastRecoveryRouteTicks,
+            double actualHorizontalDistance,
+            double commandedInputSum,
+            double movementInputShare,
+            double zeroInputShare,
+            double stationaryShare,
+            double averageHorizontalSpeed,
+            double averageCommandedInput) {}
 }

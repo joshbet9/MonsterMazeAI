@@ -61,24 +61,21 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
+        /*
+         * The global threat-weighted search is intentionally not used for live
+         * bootstrap routing. Monsters are stochastic moving obstacles; treating
+         * every occupied route cell as a static penalty causes the planner to
+         * leave the shortest corridor for threats that may have moved away before
+         * the player arrives. Keep topology planning deterministic and let the
+         * closed-loop motor handle only actual imminent contact locally.
+         */
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        PlayerRoute chosen;
-        if (hasRelevantMonster(state)) {
-            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
-            chosen = chooseByGapRisk(
-                    state,
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, regionCenter, radius, false)),
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, regionCenter, radius, true)));
-        } else {
-            chosen = chooseByGapRisk(
-                    state,
-                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
-                            state.maze, start, regionCenter, radius)),
-                    toRoute(pathfinder.shortestPathToRegion(
-                            state.maze, start, regionCenter, radius)));
-        }
+        PlayerRoute chosen = chooseByGapRisk(
+                state,
+                toRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                        state.maze, start, regionCenter, radius)),
+                toRoute(pathfinder.shortestPathToRegion(
+                        state.maze, start, regionCenter, radius)));
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
     }

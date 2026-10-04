@@ -383,9 +383,11 @@ public final class StableLiveMovementController {
                         && state.tick - lastReactiveRouteTick >= REACTIVE_ROUTE_COOLDOWN_TICKS
                         && routeHasReactiveThreat(state)) {
                     try {
-                        PlayerRoute reactive = routePlanner.routeToRegionFast(
-                                state, new Cell(startRow, startColumn), goal,
-                                regionRadius > 0 ? regionRadius : 0);
+                        PlayerRoute reactive = regionRadius > 0
+                                ? routePlanner.routeToRegionReactive(
+                                        state, new Cell(startRow, startColumn), goal, regionRadius)
+                                : routePlanner.routeReactive(
+                                        state, new Cell(startRow, startColumn), goal);
 
                         lastReactiveRouteTick = state.tick;
                         boolean changed = !sameRoute(route, reactive);

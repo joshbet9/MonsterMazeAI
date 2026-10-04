@@ -3,13 +3,13 @@ name: Matrix v45 — Local commitment
 on:
   push:
     branches:
-      - autonomous/routing-v43-local-detour
+      - autonomous/routing-v45-local-commitment
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 concurrency:
-  group: monstermaze-v43-matrix
+  group: monstermaze-v45-matrix
   cancel-in-progress: true
 
 permissions:
@@ -38,9 +38,9 @@ jobs:
 
       - name: Run full natural-termination matrix
         run: |
-          cmd /c "mvn -B -ntp -pl common -am -Dtest=NaturalTerminationMatrixIT#allNaturalTerminationCases -Dsurefire.failIfNoSpecifiedTests=false -Dsurefire.useFile=false -Dsurefire.redirectTestOutputToFile=false test > matrix-v43.log 2>&1"
+          cmd /c "mvn -B -ntp -pl common -am -Dtest=NaturalTerminationMatrixIT#allNaturalTerminationCases -Dsurefire.failIfNoSpecifiedTests=false -Dsurefire.useFile=false -Dsurefire.redirectTestOutputToFile=false test > matrix-v45.log 2>&1"
           $code = $LASTEXITCODE
-          Get-Content matrix-v43.log
+          Get-Content matrix-v45.log
           if ($code -ne 0) { exit $code }
 
       - name: Summarize matrix
@@ -54,7 +54,7 @@ jobs:
               r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+"
               r"stage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
           )
-          for line in Path('matrix-v43.log').read_text(encoding='utf-8', errors='replace').splitlines():
+          for line in Path('matrix-v45.log').read_text(encoding='utf-8', errors='replace').splitlines():
               m = rx.search(line)
               if m:
                   rows.append({
@@ -105,7 +105,7 @@ jobs:
           name: matrix-v45-full-summary
           path: |
             matrix-v45.json
-            matrix-v43.log
+            matrix-v45.log
 
       - name: Publish matrix to PR
         if: github.event_name == 'pull_request' && hashFiles('matrix-v45.json') != ''
@@ -114,14 +114,14 @@ jobs:
           script: |
             const fs = require('fs');
             const summary = JSON.parse(fs.readFileSync('matrix-v45.json', 'utf8'));
-            const marker = '<!-- monstermaze-v43-matrix -->';
+            const marker = '<!-- monstermaze-v45-matrix -->';
             const rows = summary.rows.map(r =>
               '| ' + r.mode + ' | P' + r.pattern + ' | ' + r.kit +
               ' | ' + r.maxStage + ' | ' + r.ticks + ' | ' + r.health.toFixed(2) + ' |'
             ).join('\n');
             const body = [
               marker,
-              '## v43 natural-termination matrix',
+              '## v45 natural-termination matrix',
               '',
               '**Stage sum:** ' + summary.stageSum + ' (baseline 458; delta ' +
                 (summary.deltaStageSum >= 0 ? '+' : '') + summary.deltaStageSum + ')',

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NaturalTerminationMatrixIT {
     @Test
@@ -37,7 +38,7 @@ class NaturalTerminationMatrixIT {
 
         System.out.println(row);
         System.setProperty("matrixRow", row);
-        assertEquals(true, result.maxStage() >= 1);
+        assertTrue(result.maxStage() >= 1);
     }
 
     private void runAll() {

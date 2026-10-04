@@ -99,12 +99,6 @@ public final class MonsterAwareRoutePlanner {
         validate(state, start, goal);
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
-        if (!hasRelevantMonster(state)) {
-            return PredictiveMonsterThreatScorer.bestRoute(
-                    state, start, goal, 0, gapJumpPolicy.riskCostPerGap(),
-                    jumperGapBudget(state));
-        }
-
         List<PlayerRoute> candidates = cachedCandidatesFor(
                 state, start, goal, 0, MAX_ROUTE_CANDIDATES, false);
         return choose(state, restrictJumperGapBudget(state, candidates), goal, false, 0);
@@ -118,12 +112,6 @@ public final class MonsterAwareRoutePlanner {
                 regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
                 regionCenter.column() + 0.5)) {
             return new PlayerRoute(List.of(start));
-        }
-
-        if (!hasRelevantMonster(state)) {
-            return PredictiveMonsterThreatScorer.bestRoute(
-                    state, start, regionCenter, radius,
-                    gapJumpPolicy.riskCostPerGap(), jumperGapBudget(state));
         }
 
         List<PlayerRoute> candidates = cachedCandidatesFor(
@@ -237,9 +225,7 @@ public final class MonsterAwareRoutePlanner {
      */
     public PlayerRoute routeReactive(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
-        return PredictiveMonsterThreatScorer.bestRoute(
-                state, start, goal, 0, gapJumpPolicy.riskCostPerGap(),
-                jumperGapBudget(state));
+        return routeFast(state, start, goal);
     }
 
     /**
@@ -256,16 +242,12 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
-        return PredictiveMonsterThreatScorer.bestRoute(
-                state, start, regionCenter, radius, gapJumpPolicy.riskCostPerGap(),
-                jumperGapBudget(state));
+        return routeToRegionFast(state, start, regionCenter, radius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {
         return simulator.shouldUseTacticalAction(state);
     }
-
-    private static final int MAX_EXACT_TACTICAL_CANDIDATES = 4;
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
@@ -281,55 +263,22 @@ public final class MonsterAwareRoutePlanner {
                     state,
                     routeStart(candidates),
                     goal,
-                    regionGoal ? regionRadius : 0,
-                    gapJumpPolicy.riskCostPerGap(),
-                    jumperGapBudget(state));
-        }
-
-        List<PredictiveMonsterThreatScorer.Score> predictive =
-                PredictiveMonsterThreatScorer.rank(state, candidates);
-
-        if (predictive.isEmpty()) return shortest(candidates);
-
-        /*
-         * When a monster is already locally relevant, keep the exact tactical
-         * simulator, but always inject the directly discovered predictive route
-         * into the tactical set. This removes the old failure mode where a
-         * genuinely safer corridor existed but was absent from the bounded
-         * K-shortest candidate set.
-         */
-        ArrayList<PlayerRoute> tacticalCandidates = new ArrayList<>();
-        try {
-            PlayerRoute predictiveBest = PredictiveMonsterThreatScorer.bestRoute(
-                    state,
-                    routeStart(candidates),
-                    goal,
-                    regionGoal ? regionRadius : 0,
-                    gapJumpPolicy.riskCostPerGap(),
-                    jumperGapBudget(state));
-            tacticalCandidates.add(predictiveBest);
-        } catch (RuntimeException ignored) {
-            // Candidate-based exact routing remains the safety fallback.
-        }
-
-        for (PredictiveMonsterThreatScorer.Score score : predictive) {
-            if (tacticalCandidates.size() >= MAX_EXACT_TACTICAL_CANDIDATES) break;
-            if (!tacticalCandidates.contains(score.route())) {
-                tacticalCandidates.add(score.route());
-            }
-        }
+                    regionGoal ? regi    private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
+                               Cell goal, boolean regionGoal, int regionRadius) {
+        boolean hasRelevantMonster = hasRelevantMonster(state);
+        if (!hasRelevantMonster) return shortest(candidates);
 
         TacticalRouteSimulator.Result[] results =
-                new TacticalRouteSimulator.Result[tacticalCandidates.size()];
-        IntStream.range(0, tacticalCandidates.size()).parallel().forEach(i -> {
+                new TacticalRouteSimulator.Result[candidates.size()];
+        IntStream.range(0, candidates.size()).parallel().forEach(i -> {
             results[i] = simulator.simulate(
-                    state, tacticalCandidates.get(i), goal, regionGoal, regionRadius);
+                    state, candidates.get(i), goal, regionGoal, regionRadius);
         });
 
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
-        for (int i = 0; i < tacticalCandidates.size(); i++) {
-            PlayerRoute candidate = tacticalCandidates.get(i);
+        for (int i = 0; i < candidates.size(); i++) {
+            PlayerRoute candidate = candidates.get(i);
             TacticalRouteSimulator.Result result = results[i];
             if (bestResult == null || better(result, candidate, bestResult, best)) {
                 best = candidate;
@@ -339,51 +288,7 @@ public final class MonsterAwareRoutePlanner {
         return best;
     }
 
-    private PlayerRoute choosePredictive(
-            GameState state, List<PlayerRoute> candidates) {
-        List<PredictiveMonsterThreatScorer.Score> predictive =
-                PredictiveMonsterThreatScorer.rank(state, candidates);
-        return choosePredictive(state, candidates, predictive);
-    }
-
-    private PlayerRoute choosePredictive(
-            GameState state,
-            List<PlayerRoute> candidates,
-            List<PredictiveMonsterThreatScorer.Score> predictive) {
-        if (candidates == null || candidates.isEmpty()) {
-            throw new IllegalArgumentException("No route candidates");
-        }
-        if (predictive == null || predictive.isEmpty()) return shortest(candidates);
-
-        return predictive.stream()
-                .min(Comparator.comparingDouble(score ->
-                        score.compositeCost()
-                                + gapJumpPolicy.riskCostPerGap() * gapCount(score.route())))
-                .orElseThrow()
-                .route();
-    }
-
-    private static boolean hasRelevantMonster(GameState state) {
-        for (var monster : state.monsters) {
-            if (MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,
-                           TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute) {
-        if (candidate.reached() != incumbent.reached()) return candidate.reached();
-
-        if (candidate.reached()) {
-            double candidateTime = candidate.arrivalTicks()
-                    + gapJumpPolicy.riskCostPerGap() * gapCount(candidateRoute);
-            double incumbentTime = incumbent.arrivalTicks()
-                    + gapJumpPolicy.riskCostPerGap() * gapCount(incumbentRoute);
-            int timeCompare = Double.compare(candidateTime, incumbentTime);
-            if (timeCompare != 0) return timeCompare < 0;
+ timeCompare < 0;
         }
 
         if (Double.compare(candidate.remainingHealth(), incumbent.remainingHealth()) != 0) {

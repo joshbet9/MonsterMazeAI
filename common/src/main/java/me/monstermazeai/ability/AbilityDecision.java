@@ -129,10 +129,26 @@ public final class AbilityDecision {
         double padDistance = Math.hypot(toPadX, toPadZ);
         if (padDistance < 1.0E-6) return false;
 
-        double ux = toPadX / padDistance;
-        double uz = toPadZ / padDistance;
-        int corridorThreats = 0;
+        /*
+         * Human Repulsor use is not limited to monsters lying on the direct
+         * geometric line to the SafePad. In a winding maze, the useful corridor
+         * is the direction the player is actually traversing. Prefer the live
+         * horizontal velocity when it is meaningful; only fall back to the
+         * pad vector while stationary. This remains an observation-only policy
+         * decision and does not alter source movement or ability physics.
+         */
+        double travelSpeed = Math.hypot(state.player.vx, state.player.vz);
+        double ux;
+        double uz;
+        if (travelSpeed > 0.06D) {
+            ux = state.player.vx / travelSpeed;
+            uz = state.player.vz / travelSpeed;
+        } else {
+            ux = toPadX / padDistance;
+            uz = toPadZ / padDistance;
+        }
 
+        int corridorThreats = 0;
         for (MonsterState monster : state.monsters) {
             if (!activeMonster(state, monster)) continue;
             double dx = monster.x - state.player.x;
@@ -142,10 +158,10 @@ public final class AbilityDecision {
 
             double along = dx * ux + dz * uz;
             double lateral = Math.abs(dx * uz - dz * ux);
-            if (along < -0.5 || along > padDistance + 1.0 || lateral > 1.75) continue;
+            if (along < -0.5D || along > 6.0D || lateral > 1.75D) continue;
 
             corridorThreats++;
-            if (distance <= 4.0 && imminentClosingContact(state, monster)) {
+            if (distance <= 4.0D && imminentClosingContact(state, monster)) {
                 return true;
             }
         }

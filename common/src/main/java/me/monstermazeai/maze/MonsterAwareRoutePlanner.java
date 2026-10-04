@@ -57,6 +57,7 @@ public final class MonsterAwareRoutePlanner {
     private int cachedRegionRadius = Integer.MIN_VALUE;
     private boolean cachedRegionGoal;
     private long cachedThreatSignature = Long.MIN_VALUE;
+    private boolean cachedProjectedThreat;
 
     public PlayerRoute routeFast(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
@@ -307,6 +308,7 @@ public final class MonsterAwareRoutePlanner {
             List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
             boolean projectedThreat = projectedMonsterThreatOnRoute(state, normal)
                     || projectedMonsterThreatOnRoute(state, gap);
+            cachedProjectedThreat = projectedThreat;
             if (hasRelevantMonster(state) || projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
@@ -336,6 +338,7 @@ public final class MonsterAwareRoutePlanner {
                     state.maze, start, goal, regionRadius);
             boolean projectedThreat = projectedMonsterThreatOnRoute(state, normalRegion)
                     || projectedMonsterThreatOnRoute(state, gapRegion);
+            cachedProjectedThreat = projectedThreat;
             if (hasRelevantMonster(state) || projectedThreat) {
                 ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
                 List<Cell> threatNormal = threatAware.shortestPathToRegion(
@@ -409,10 +412,7 @@ public final class MonsterAwareRoutePlanner {
                 break;
             }
         }
-        boolean projectedCandidateThreat = candidates.stream()
-                .anyMatch(candidate -> projectedMonsterThreatOnRoute(
-                        state, candidate.cells()));
-        if (!hasRelevantMonster && !projectedCandidateThreat) return shortest(candidates);
+        if (!hasRelevantMonster && !cachedProjectedThreat) return shortest(candidates);
 
         int[] evaluationIndices = simulationCandidateIndices(state, candidates, goal);
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];

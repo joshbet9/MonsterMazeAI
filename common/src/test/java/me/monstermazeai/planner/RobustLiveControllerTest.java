@@ -93,4 +93,21 @@ class RobustLiveControllerTest {
         s.activePadRow = -1;
         assertEquals(Action.IDLE, c.nextAction(s, true));
     }
+    @Test
+    void doesNotForceJumpWhileMovementControllerIsDeliberatelyTurning() {
+        RobustLiveController c = controller();
+        GameState s = live();
+        s.player.yaw = 0.0F;
+
+        for (int i = 0; i < 12; i++) {
+            s.tick = i + 1;
+            s.player.x = 50.5;
+            s.player.z = 50.5;
+            Action action = c.nextAction(s, true);
+            assertFalse(action.jump(),
+                    "deliberate in-place corner turning must not be mistaken for a movement stall");
+        }
+    }
+
+
 }

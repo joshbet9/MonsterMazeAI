@@ -3,6 +3,8 @@ package me.monstermazeai.maze;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.monster.MonsterRelevance;
 import me.monstermazeai.planner.TacticalRouteSimulator;
+import me.monstermazeai.ml.RouteLearningRecorder;
+import me.monstermazeai.ml.RouteValueModel;
 import me.monstermazeai.player.Action;
 
 import java.util.*;
@@ -12,9 +14,26 @@ public final class MonsterAwareRoutePlanner {
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 
+    /*
+     * The learned model is a guarded candidate prefilter, not a replacement for
+     * source-faithful tactical evaluation. Four learned candidates are retained
+     * plus deterministic physical-route hedges. When the model cannot clearly
+     * separate the candidates, the planner evaluates the complete candidate set.
+     */
+    private static final int ML_PREFILTER_TOP_K = 4;
+    private static final double ML_PREFILTER_AMBIGUITY_RATIO = 0.08;
+
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
     private final GapJumpPolicy gapJumpPolicy;
+    private final RouteValueModel routeValueModel = RouteValueModel.loadFromProperty();
+    private long mlShadowComparisons;
+    private long mlShadowAgreements;
+    private long mlPrefilterCalls;
+    private long mlPrefilterFallbacks;
+    private long mlPrefilterCandidatesSeen;
+    private long mlPrefilterCandidatesSimulated;
+    private boolean mlPrefilterLogged;
 
     public MonsterAwareRoutePlanner() {
         this(GapJumpPolicy.BASELINE);
@@ -37,12 +56,25 @@ public final class MonsterAwareRoutePlanner {
     private int cachedGoalColumn = Integer.MIN_VALUE;
     private int cachedRegionRadius = Integer.MIN_VALUE;
     private boolean cachedRegionGoal;
+    private long cachedThreatSignature = Long.MIN_VALUE;
 
     public PlayerRoute routeFast(GameState state, Cell start, Cell goal) {
         validate(state, start, goal);
         if (start.equals(goal)) return new PlayerRoute(List.of(start));
 
         PlayerPathfinder pathfinder = new PlayerPathfinder();
+        if (hasRelevantMonster(state)) {
+            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+            PlayerRoute chosen = chooseByGapRisk(
+                    state,
+                    toRoute(threatAware.shortestPathToRegion(
+                            state, start, goal, 0, false)),
+                    toRoute(threatAware.shortestPathToRegion(
+                            state, start, goal, 0, true)));
+            if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
+            return chosen;
+        }
+
         PlayerRoute chosen = chooseByGapRisk(
                 state,
                 toRoute(pathfinder.shortestPathWithoutGaps(state.maze, start, goal)),
@@ -89,6 +121,31 @@ public final class MonsterAwareRoutePlanner {
                     monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) return true;
         }
         return false;
+    }
+
+    private static long threatSignature(GameState state) {
+        long h = 1469598103934665603L;
+        boolean relevant = false;
+        for (var monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || !MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) continue;
+            relevant = true;
+            h = mix(h, monster.id);
+            h = mix(h, Math.round(monster.x / 0.5D));
+            h = mix(h, Math.round(monster.y / 0.5D));
+            h = mix(h, Math.round(monster.z / 0.5D));
+            h = mix(h, Math.round(monster.vx / 0.05D));
+            h = mix(h, Math.round(monster.vz / 0.05D));
+            h = mix(h, monster.launched(state.tick) ? 1L : 0L);
+            h = mix(h, monster.frozen(state.tick) ? 1L : 0L);
+        }
+        return relevant ? h : 0L;
+    }
+
+    private static long mix(long h, long value) {
+        h ^= value;
+        return h * 1099511628211L;
     }
 
     private static List<Cell> toRoute(List<Cell> cells) {
@@ -140,18 +197,27 @@ public final class MonsterAwareRoutePlanner {
     }
 
     private static int jumperGapBudget(GameState state) {
-        if (state == null || state.kit != me.monstermazeai.kit.Kit.JUMPER) return -1;
-        return Math.max(0, state.ability.charges);
+        if (state == null || state.kit == null) return -1;
+        if (state.kit == me.monstermazeai.kit.Kit.JUMPER) {
+            return Math.max(0, state.ability.charges);
+        }
+
+        // Non-Jumper speeding is part of the enhanced non-Original gameplay
+        // mechanics in both Speed and Modern. Treat the source two-cell gap edge
+        // as executable in either environment.
+        return -1;
     }
 
     private List<PlayerRoute> cachedCandidatesFor(GameState state, Cell start, Cell goal,
                                                     int regionRadius, int limit, boolean regionGoal) {
         long topology = state.maze.dynamicSignature();
+        long threatSignature = threatSignature(state);
         if (topology == cachedTopologySignature
                 && start.row() == cachedStartRow && start.column() == cachedStartColumn
                 && goal.row() == cachedGoalRow && goal.column() == cachedGoalColumn
                 && regionRadius == cachedRegionRadius
                 && regionGoal == cachedRegionGoal
+                && threatSignature == cachedThreatSignature
                 && !cachedCandidates.isEmpty()) {
             return cachedCandidates;
         }
@@ -159,14 +225,52 @@ public final class MonsterAwareRoutePlanner {
         List<PlayerRoute> candidates;
         if (!regionGoal) {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
-            List<Cell> normal = new PlayerPathfinder().shortestPathWithoutGaps(state.maze, start, goal);
+            PlayerPathfinder pathfinder = new PlayerPathfinder();
+
+            /*
+             * When monsters are live, put a fresh threat-aware physical route
+             * into the candidate set before static alternatives. The tactical
+             * simulator can then decide whether the safer detour is actually
+             * worth its extra distance; the live motor is never forced to keep
+             * following yesterday's threat-free geometry.
+             */
+            if (hasRelevantMonster(state)) {
+                ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+                List<Cell> threatNormal = threatAware.shortestPathToRegion(
+                        state, start, goal, 0, false);
+                List<Cell> threatGap = threatAware.shortestPathToRegion(
+                        state, start, goal, 0, true);
+                if (!threatNormal.isEmpty()) generated.add(new PlayerRoute(threatNormal));
+                if (!threatGap.isEmpty()) generated.add(new PlayerRoute(threatGap));
+            }
+
+            List<Cell> normal = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
             if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
+            List<Cell> gap = pathfinder.shortestPath(state.maze, start, goal);
+            if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
             candidates = distinct(generated, limit * 3);
         } else {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
             Set<String> seen = new HashSet<>();
             PlayerPathfinder pathfinder = new PlayerPathfinder();
+
+            /*
+             * The region route is also dynamic. Static shortest candidates remain
+             * available for throughput, but a fresh threat-aware route is included
+             * whenever a monster can materially affect the approach.
+             */
+            if (hasRelevantMonster(state)) {
+                ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+                List<Cell> threatNormal = threatAware.shortestPathToRegion(
+                        state, start, goal, regionRadius, false);
+                List<Cell> threatGap = threatAware.shortestPathToRegion(
+                        state, start, goal, regionRadius, true);
+                if (!threatNormal.isEmpty()) addCandidate(
+                        generated, seen, new PlayerRoute(threatNormal));
+                if (!threatGap.isEmpty()) addCandidate(
+                        generated, seen, new PlayerRoute(threatGap));
+            }
 
             for (int r = goal.row() - regionRadius; r <= goal.row() + regionRadius; r++) {
                 for (int c = goal.column() - regionRadius; c <= goal.column() + regionRadius; c++) {
@@ -187,11 +291,7 @@ public final class MonsterAwareRoutePlanner {
             }
 
             if (generated.isEmpty()) throw new IllegalArgumentException("No physical route to Safe Pad region");
-            generated.sort(this::compareByGapRisk);
-            if (generated.size() > limit) {
-                generated = new ArrayList<>(generated.subList(0, limit));
-            }
-            candidates = generated;
+            candidates = selectDiverseRegionCandidates(state, generated, limit);
         }
 
         cachedTopologySignature = topology;
@@ -201,6 +301,7 @@ public final class MonsterAwareRoutePlanner {
         cachedGoalColumn = goal.column();
         cachedRegionRadius = regionRadius;
         cachedRegionGoal = regionGoal;
+        cachedThreatSignature = threatSignature;
         cachedCandidates = List.copyOf(candidates);
         return cachedCandidates;
     }
@@ -215,6 +316,11 @@ public final class MonsterAwareRoutePlanner {
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException(
+                    regionGoal ? "No route candidates to Safe Pad region" : "No route candidates from start to goal");
+        }
+
         boolean hasRelevantMonster = false;
         for (var monster : state.monsters) {
             if (MonsterRelevance.withinPlayerRadius(
@@ -225,23 +331,171 @@ public final class MonsterAwareRoutePlanner {
         }
         if (!hasRelevantMonster) return shortest(candidates);
 
+        int[] evaluationIndices = simulationCandidateIndices(state, candidates, goal);
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
-        IntStream.range(0, candidates.size()).parallel().forEach(i -> {
+
+        IntStream.of(evaluationIndices).parallel().forEach(i -> {
             results[i] = simulator.simulate(
                     state, candidates.get(i), goal, regionGoal, regionRadius);
         });
 
+        // Full shadow mode records every candidate. Prefilter mode deliberately
+        // records only the candidates it actually sends through the simulator.
+        for (int i : evaluationIndices) {
+            RouteLearningRecorder.record(state, candidates.get(i), goal, results[i]);
+        }
+
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
-        for (int i = 0; i < candidates.size(); i++) {
+        int simulatorBestIndex = -1;
+        for (int i : evaluationIndices) {
             PlayerRoute candidate = candidates.get(i);
             TacticalRouteSimulator.Result result = results[i];
             if (bestResult == null || better(result, candidate, bestResult, best)) {
                 best = candidate;
                 bestResult = result;
+                simulatorBestIndex = i;
+            }
+        }
+
+        if (routeValueModel != null && !candidates.isEmpty()) {
+            int predictedBestIndex = predictedBestCandidate(state, candidates, goal);
+            if (evaluationIndices.length == candidates.size()) {
+                mlShadowComparisons++;
+                if (predictedBestIndex == simulatorBestIndex) mlShadowAgreements++;
+
+                if (mlShadowComparisons == 1 || mlShadowComparisons % 1000 == 0) {
+                    double agreement = mlShadowAgreements / (double) mlShadowComparisons;
+                    System.out.println("[MonsterMazeAI] ML_SHADOW"
+                            + " comparisons=" + mlShadowComparisons
+                            + " agreement=" + String.format(Locale.ROOT, "%.3f", agreement)
+                            + " predictedIndex=" + predictedBestIndex
+                            + " simulatorIndex=" + simulatorBestIndex
+                            + " predictedCost=" + String.format(
+                                    Locale.ROOT, "%.3f",
+                                    routeValueModel.predict(state, candidates.get(predictedBestIndex), goal)));
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private int[] simulationCandidateIndices(GameState state,
+                                              List<PlayerRoute> candidates,
+                                              Cell goal) {
+        if (routeValueModel == null || !"prefilter".equalsIgnoreCase(
+                System.getProperty("monstermaze.ml.mode", "shadow"))) {
+            return IntStream.range(0, candidates.size()).toArray();
+        }
+
+        int candidateCount = candidates.size();
+        if (candidateCount <= ML_PREFILTER_TOP_K) {
+            return IntStream.range(0, candidateCount).toArray();
+        }
+
+        double[] predictions = new double[candidateCount];
+        Integer[] order = new Integer[candidateCount];
+        for (int i = 0; i < candidateCount; i++) {
+            predictions[i] = routeValueModel.predict(state, candidates.get(i), goal);
+            order[i] = i;
+        }
+        Arrays.sort(order, Comparator.comparingDouble(i -> predictions[i]));
+
+        double bestPrediction = predictions[order[0]];
+        double kthPrediction = predictions[order[Math.min(
+                ML_PREFILTER_TOP_K - 1, candidateCount - 1)]];
+        double separation = kthPrediction - bestPrediction;
+        double scale = Math.max(1.0D, Math.abs(bestPrediction));
+        boolean ambiguous = separation / scale < ML_PREFILTER_AMBIGUITY_RATIO;
+
+        int shortestIndex = 0;
+        for (int i = 1; i < candidateCount; i++) {
+            if (compareByGapRisk(candidates.get(i), candidates.get(shortestIndex)) < 0) {
+                shortestIndex = i;
+            }
+        }
+
+        LinkedHashSet<Integer> selected = new LinkedHashSet<>();
+        if (ambiguous) {
+            for (int i = 0; i < candidateCount; i++) selected.add(i);
+            mlPrefilterFallbacks++;
+        } else {
+            for (int i = 0; i < Math.min(ML_PREFILTER_TOP_K, candidateCount); i++) {
+                selected.add(order[i]);
+            }
+
+            /*
+             * Deterministic hedges keep a learned prefilter from eliminating the
+             * first physical candidate or the shortest gap-risk route entirely.
+             * They also make prefilter behaviour robust during early training.
+             */
+            selected.add(0);
+            selected.add(shortestIndex);
+        }
+
+        mlPrefilterCalls++;
+        mlPrefilterCandidatesSeen += candidateCount;
+        mlPrefilterCandidatesSimulated += selected.size();
+
+        if (!mlPrefilterLogged) {
+            mlPrefilterLogged = true;
+            System.out.println("[MonsterMazeAI] ML_PREFILTER"
+                    + " candidates=" + candidateCount
+                    + " selected=" + selected.size()
+                    + " topK=" + Math.min(ML_PREFILTER_TOP_K, candidateCount)
+                    + " ambiguous=" + ambiguous
+                    + " bestPrediction=" + String.format(
+                            Locale.ROOT, "%.3f", bestPrediction)
+                    + " kthPrediction=" + String.format(
+                            Locale.ROOT, "%.3f", kthPrediction));
+        }
+
+        return selected.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    private int predictedBestCandidate(GameState state,
+                                        List<PlayerRoute> candidates, Cell goal) {
+        int best = 0;
+        double bestPrediction = routeValueModel.predict(state, candidates.get(0), goal);
+        for (int i = 1; i < candidates.size(); i++) {
+            double prediction = routeValueModel.predict(state, candidates.get(i), goal);
+            if (prediction < bestPrediction) {
+                bestPrediction = prediction;
+                best = i;
             }
         }
         return best;
+    }
+
+    public long mlShadowComparisons() {
+        return mlShadowComparisons;
+    }
+
+    public long mlShadowAgreements() {
+        return mlShadowAgreements;
+    }
+
+    public double mlShadowAgreementRate() {
+        return mlShadowComparisons == 0
+                ? Double.NaN
+                : mlShadowAgreements / (double) mlShadowComparisons;
+    }
+
+    public long mlPrefilterCalls() {
+        return mlPrefilterCalls;
+    }
+
+    public long mlPrefilterFallbacks() {
+        return mlPrefilterFallbacks;
+    }
+
+    public long mlPrefilterCandidatesSeen() {
+        return mlPrefilterCandidatesSeen;
+    }
+
+    public long mlPrefilterCandidatesSimulated() {
+        return mlPrefilterCandidatesSimulated;
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,
@@ -315,6 +569,84 @@ public final class MonsterAwareRoutePlanner {
             if ((dr == 2 && dc == 0) || (dc == 2 && dr == 0)) count++;
         }
         return count;
+    }
+
+    /** Preserve diverse region routes before tactical evaluation. */
+    private List<PlayerRoute> selectDiverseRegionCandidates(GameState state,
+                                                              List<PlayerRoute> generated,
+                                                              int limit) {
+        if (generated.size() <= limit) return List.copyOf(generated);
+
+        ArrayList<PlayerRoute> byCost = new ArrayList<>(generated);
+        byCost.sort(this::compareByGapRisk);
+        LinkedHashMap<String, PlayerRoute> selected = new LinkedHashMap<>();
+
+        if (hasRelevantMonster(state)) {
+            addSelected(selected, generated, 0);
+            addSelected(selected, generated, 1);
+        }
+        addSelected(selected, byCost, 0);
+
+        PlayerRoute fewestTurns = byCost.stream().min((a, b) -> {
+            int turns = Integer.compare(routeTurnCount(a), routeTurnCount(b));
+            return turns != 0 ? turns : compareByGapRisk(a, b);
+        }).orElse(null);
+        if (fewestTurns != null) selected.put(routeKey(fewestTurns), fewestTurns);
+
+        PlayerRoute fewestGaps = byCost.stream().min((a, b) -> {
+            int gaps = Integer.compare(gapCount(a), gapCount(b));
+            return gaps != 0 ? gaps : compareByGapRisk(a, b);
+        }).orElse(null);
+        if (fewestGaps != null) selected.put(routeKey(fewestGaps), fewestGaps);
+
+        int remainingSlots = Math.max(0, limit - selected.size());
+        for (int i = 0; i < remainingSlots && selected.size() < limit; i++) {
+            int index = remainingSlots <= 1
+                    ? 0
+                    : (int)Math.round(i * (byCost.size() - 1.0) / (remainingSlots - 1.0));
+            PlayerRoute route = byCost.get(Math.max(0,
+                    Math.min(byCost.size() - 1, index)));
+            selected.put(routeKey(route), route);
+        }
+        for (PlayerRoute route : byCost) {
+            if (selected.size() >= limit) break;
+            selected.put(routeKey(route), route);
+        }
+        return List.copyOf(selected.values());
+    }
+
+    private static void addSelected(Map<String, PlayerRoute> selected,
+                                     List<PlayerRoute> routes, int index) {
+        if (index < 0 || index >= routes.size()) return;
+        PlayerRoute route = routes.get(index);
+        selected.putIfAbsent(routeKey(route), route);
+    }
+
+    private static String routeKey(PlayerRoute route) {
+        StringBuilder key = new StringBuilder(route.size() * 8);
+        for (Cell cell : route.cells()) {
+            key.append(cell.row()).append(':').append(cell.column()).append(';');
+        }
+        return key.toString();
+    }
+
+    private static int routeTurnCount(PlayerRoute route) {
+        if (route == null || route.size() < 3) return 0;
+        int previousRow = Integer.signum(
+                route.cells().get(1).row() - route.cells().get(0).row());
+        int previousColumn = Integer.signum(
+                route.cells().get(1).column() - route.cells().get(0).column());
+        int turns = 0;
+        for (int i = 2; i < route.size(); i++) {
+            int row = Integer.signum(
+                    route.cells().get(i).row() - route.cells().get(i - 1).row());
+            int column = Integer.signum(
+                    route.cells().get(i).column() - route.cells().get(i - 1).column());
+            if (row != previousRow || column != previousColumn) turns++;
+            previousRow = row;
+            previousColumn = column;
+        }
+        return turns;
     }
 
     private List<PlayerRoute> distinct(List<PlayerRoute> routes, int limit) {

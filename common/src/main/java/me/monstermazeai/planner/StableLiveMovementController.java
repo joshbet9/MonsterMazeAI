@@ -422,9 +422,6 @@ public final class StableLiveMovementController {
             return Action.IDLE;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
-        if (mobAvoidance != null) return mobAvoidance;
-
         /*
          * The next pad has now spawned and a route exists. While the player is
          * still on the old pad, spend the transition ticks rotating in place
@@ -504,22 +501,15 @@ public final class StableLiveMovementController {
                 return tactical;
             }
 
-            /*
-             * For non-Jumpers, the tactical beam may still find a substantially
-             * better W/A/D steering vector around moving mobs. Do not let it own
-             * discrete jump or ability mechanics; merge only its continuous
-             * movement/yaw recommendation into the normal motor.
-             */
-            if (tactical != null
-                    && !tactical.useAbility()
-                    && state.kit != me.monstermazeai.kit.Kit.JUMPER) {
-                Action merged = mergeTacticalMovement(state, tactical, allowJump);
-                if (merged != null) {
-                    lastDecisionDetail += " TACTICAL_MOVE=" + merged;
-                    return merged;
-                }
-            }
+
         }
+
+        // Ordinary forward/lateral monster avoidance remains a motor-layer
+        // fallback. Tactical source actions get first refusal; non-discrete
+        // tactical steering is intentionally not allowed to replace the live motor.
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+        if (mobAvoidance != null) return mobAvoidance;
+
         double targetX = route.targetX(waypointIndex);
         double targetZ = route.targetZ(waypointIndex);
         double dx = targetX - state.player.x;

@@ -231,7 +231,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (stopStage > 0 && maxStage >= stopStage) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -351,7 +351,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    record RunResult(
             int maxStage,
             long ticks,
             double health,

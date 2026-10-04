@@ -2105,20 +2105,27 @@ public final class StableLiveMovementController {
 
             /*
              * Approximate the point where the player reaches this segment by its
-             * midpoint. Midpoint prediction is deliberately conservative: a mob
-             * anywhere on the segment can make the route unsafe, while using the
-             * exact nearest point would make a corner threat dependent on the
-             * player's current lateral position.
+             * midpoint, but measure the arrival time along the actual route rather
+             * than mixing route distance with a straight-line player distance.
+             * This keeps future-threat timing stable around corners and while the
+             * player is already partway through the current segment.
              */
             double segmentMidX = (ax + bx) * 0.5D;
             double segmentMidZ = (az + bz) * 0.5D;
-            double distanceToMidpoint = Math.hypot(
-                    segmentMidX - state.player.x,
-                    segmentMidZ - state.player.z);
-            double timeToSegment = Math.max(
-                    0.0D,
-                    (routeDistance + Math.max(0.0D, distanceToMidpoint - 0.5D))
-                            / playerSpeed);
+            double timeDistance;
+            if (i == firstSegment) {
+                double unitX = sx / length;
+                double unitZ = sz / length;
+                double alongFromStart = (state.player.x - ax) * unitX
+                        + (state.player.z - az) * unitZ;
+                alongFromStart = Math.max(0.0D, Math.min(length, alongFromStart));
+                timeDistance = Math.max(0.0D, (length * 0.5D) - alongFromStart);
+                routeDistance = Math.max(0.0D, length - alongFromStart);
+            } else {
+                timeDistance = routeDistance + (length * 0.5D);
+                routeDistance += length;
+            }
+            double timeToSegment = timeDistance / playerSpeed;
 
             for (MonsterState monster : state.monsters) {
                 if (monster == null || monster.removed
@@ -2174,7 +2181,10 @@ public final class StableLiveMovementController {
                 if (projectedContact && movingIntoRoute) return true;
             }
 
-            routeDistance += length;
+            if (i == firstSegment) {
+                // routeDistance already contains only the remaining portion of
+                // the current segment; subsequent iterations add full segments.
+            }
         }
         return false;
     }

@@ -282,14 +282,31 @@ public final class MonsterAwareRoutePlanner {
 
         /*
          * When a monster is already locally relevant, keep the exact tactical
-         * simulator, but only spend that expensive beam on the best predictive
-         * candidates. This preserves detailed collision/ability evaluation while
-         * still using future occupancy to order the candidates.
+         * simulator, but always inject the directly discovered predictive route
+         * into the tactical set. This removes the old failure mode where a
+         * genuinely safer corridor existed but was absent from the bounded
+         * K-shortest candidate set.
          */
-        List<PlayerRoute> tacticalCandidates = predictive.stream()
-                .limit(Math.min(MAX_EXACT_TACTICAL_CANDIDATES, predictive.size()))
-                .map(PredictiveMonsterThreatScorer.Score::route)
-                .toList();
+        ArrayList<PlayerRoute> tacticalCandidates = new ArrayList<>();
+        try {
+            PlayerRoute predictiveBest = PredictiveMonsterThreatScorer.bestRoute(
+                    state,
+                    routeStart(candidates),
+                    goal,
+                    regionGoal ? regionRadius : 0,
+                    gapJumpPolicy.riskCostPerGap(),
+                    jumperGapBudget(state));
+            tacticalCandidates.add(predictiveBest);
+        } catch (RuntimeException ignored) {
+            // Candidate-based exact routing remains the safety fallback.
+        }
+
+        for (PredictiveMonsterThreatScorer.Score score : predictive) {
+            if (tacticalCandidates.size() >= MAX_EXACT_TACTICAL_CANDIDATES) break;
+            if (!tacticalCandidates.contains(score.route())) {
+                tacticalCandidates.add(score.route());
+            }
+        }
 
         TacticalRouteSimulator.Result[] results =
                 new TacticalRouteSimulator.Result[tacticalCandidates.size()];

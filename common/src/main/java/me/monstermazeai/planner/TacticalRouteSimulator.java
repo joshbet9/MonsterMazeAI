@@ -194,10 +194,28 @@ public final class TacticalRouteSimulator {
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
+
         long remaining = Math.max(0, route.size() - 1L - waypoint);
-        long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
-        long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        long distance = Math.min(
+                999_999L,
+                Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
+        long damage = Math.min(
+                999_999L,
+                Math.round(state.player.damageTaken * 1000));
+
+        /*
+         * Tactical movement is the survival layer. The previous rank made route
+         * progress dominate damage by roughly three orders of magnitude, so a
+         * branch that advanced one waypoint while taking a real four-health mob
+         * hit could outrank a safe dodge. Humans do the opposite: avoid a lethal
+         * or knockback-producing contact first, then recover route progress.
+         */
+        long deathPenalty = state.alive ? 0L : 1_000_000_000_000_000L;
+        long damagePenalty = damage * 1_000_000L;
+        long progressPenalty = remaining * 10_000L;
+        long distancePenalty = distance;
+
+        return deathPenalty + damagePenalty + progressPenalty + distancePenalty;
     }
 
     private boolean needsTacticalSearch(GameState state) {

@@ -188,4 +188,29 @@ class MonsterAwareRoutePlannerTest {
                 "strategic routing should leave the future monster crossing before it becomes locally relevant");
     }
 
+    @Test
+    void directPredictiveSearchCanDiscoverDetourNotPresentInSmallCandidateSet() {
+        GameState state = new GameState();
+        state.maze = openMaze();
+        state.tick = 0;
+        state.player.x = 0.5;
+        state.player.z = 0.5;
+        state.player.grounded = true;
+
+        // The future threat occupies the straight corridor. The direct search
+        // is expected to route around it rather than depend on pre-generated
+        // K-shortest alternatives.
+        MonsterState futureThreat = new MonsterState(100, 0.5, 0.0, 10.5);
+        futureThreat.frozenUntilTick = 500L;
+        state.monsters.add(futureThreat);
+
+        PlayerRoute route = PredictiveMonsterThreatScorer.bestRoute(
+                state, new Cell(0, 0), new Cell(0, 20), 0, 1.0, -1);
+
+        assertEquals(new Cell(0, 0), route.cells().get(0));
+        assertEquals(new Cell(0, 20), route.cells().get(route.size() - 1));
+        assertTrue(route.cells().stream().anyMatch(c -> c.row() != 0),
+                "direct predictive search should discover a spatial detour around a future contact");
+    }
+
 }

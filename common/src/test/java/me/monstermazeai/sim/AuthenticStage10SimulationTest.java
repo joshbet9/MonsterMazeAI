@@ -6,6 +6,7 @@ import me.monstermazeai.game.Mode;
 import me.monstermazeai.game.SourcePadSpawner;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.player.AiProfile;
+import me.monstermazeai.player.Action;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.monster.MonsterSimulator;

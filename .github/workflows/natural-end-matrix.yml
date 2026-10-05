@@ -3,7 +3,7 @@ name: Natural End Matrix
 on:
   workflow_dispatch:
   push:
-    branches: [ baseline-main-natural-end ]
+    branches: [ brake-050-experiment ]
     paths:
       - 'common/src/main/java/me/monstermazeai/planner/StableLiveMovementController.java'
       - 'common/src/main/java/me/monstermazeai/planner/TacticalRouteSimulator.java'

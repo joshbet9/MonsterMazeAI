@@ -589,12 +589,19 @@ public final class StableLiveMovementController {
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
-            } else if (distance <= 4.50 && Math.abs(yawError) < 135.0F) {
+            } else if (Math.abs(yawError) < 135.0F) {
                 /*
-                 * Near a cardinal corner, keep a bounded W+A/D vector active while
-                 * the camera turns. The vector is derived from the actual
-                 * heading error, so it rotates smoothly toward the next
-                 * cardinal segment instead of waiting in place or strafing blindly.
+                 * The waypoint index has already advanced onto the new cardinal
+                 * segment. Continue steering/moving toward that segment immediately;
+                 * do not gate this on the distance to the *next* turn. The old
+                 * 4.5-block gate caused long straight corridors to become
+                 * stop-turn-go: after a 90-degree corner the controller would
+                 * coast without input until vanilla friction reduced speed enough
+                 * to permit an in-place turn.
+                 *
+                 * The local W/A/D vector is transformed into the post-turn camera
+                 * frame below, so the world-space movement remains exactly aligned
+                 * with the new corridor rather than cutting diagonally through air.
                  */
                 /*
                  * yawDelta is applied before Minecraft transforms W/A/D into

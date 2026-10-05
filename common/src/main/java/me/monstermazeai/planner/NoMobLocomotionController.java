@@ -10,6 +10,7 @@ import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
+import me.monstermazeai.physics.LegacyMazePhysics;
 
 import java.util.List;
 
@@ -348,7 +349,60 @@ final class NoMobLocomotionController {
                 + " yawError=" + format(yawError)
                 + " jump=" + jump;
 
-        return driveVector(state, worldX, worldZ, 1.0, true, jump);
+        Action proposed = driveVector(state, worldX, worldZ, 1.0, true, jump);
+        return guardProjectedFloor(state, proposed, edge);
+    }
+
+    /**
+     * Source-faithful one-tick safety oracle for the no-gap baseline. We are
+     * not asking the predictor to choose the route; we only reject a WASD/yaw
+     * command when the exact movement model says that command would leave the
+     * physical floor. This turns edge safety into a hard invariant rather than
+     * another heuristic threshold.
+     */
+    private Action guardProjectedFloor(GameState state, Action proposed, Edge edge) {
+        if (state.player == null || !state.player.grounded) return proposed;
+
+        if (projectedFloorSafe(state, proposed)) return proposed;
+
+        Action brake = brakeVelocity(state);
+        if (projectedFloorSafe(state, brake)) {
+            lastDecision = "EDGE_SAFE_BRAKE edge=" + edge.index;
+            return brake;
+        }
+
+        float yawError = headingError(state, edge);
+        Action turn = new Action(
+                0.0, 0.0, false, false,
+                clamp(yawError, -15.0F, 15.0F),
+                false);
+        if (projectedFloorSafe(state, turn)) {
+            lastDecision = "EDGE_SAFE_TURN edge=" + edge.index
+                    + " yawError=" + format(yawError);
+            return turn;
+        }
+
+        /*
+         * The current one-tick state is already at an awkward boundary and no
+         * candidate keeps the AABB supported. Prefer zero input over knowingly
+         * issuing a command whose source physics predicts an immediate fall.
+         */
+        lastDecision = "EDGE_SAFE_IDLE edge=" + edge.index;
+        return Action.IDLE;
+    }
+
+    private boolean projectedFloorSafe(GameState state, Action action) {
+        me.monstermazeai.player.PlayerState projected = state.player.copy();
+        int jumpAmplifier =
+                state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
+        new LegacyMazePhysics().tick(
+                projected, action, state.maze, jumpAmplifier);
+
+        /*
+         * A positive-Y jump is safe even though it is not grounded after the
+         * tick. Any genuinely negative-height prediction is a floor loss.
+         */
+        return projected.y >= -0.01D;
     }
 
     private Action brakeVelocity(GameState state) {

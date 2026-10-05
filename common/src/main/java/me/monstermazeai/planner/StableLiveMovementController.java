@@ -2095,6 +2095,28 @@ public final class StableLiveMovementController {
         boolean jumpThisTick = false;
 
         /*
+         * If a charged jump carried the player onto the destination and the
+         * player is already grounded there, finish the edge before considering
+         * another jump. Otherwise the same committed gap state can immediately
+         * spend a second charge while standing safely on the destination.
+         */
+        if (gapTakeoffStarted && state.player.grounded && !jumpThisTick && progress > 0.90D
+                && playerAabbOverlapsCell(state, toRow, toColumn)) {
+            gapLandingConfirmTicks++;
+            if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
+                int completedIndex = waypointIndex;
+                clearGapCommitment();
+                waypointIndex = nextTurnWaypoint(route, completedIndex);
+                anchoredSegmentIndex = -1;
+                lastDecisionDetail = "GAP_LANDING_CONFIRMED edge=" + fromRow + "," + fromColumn + "->"
+                        + toRow + "," + toColumn + " progress=" + format(progress);
+                // Landing confirmation is not another jump opportunity.
+                return new Action(1.0, 0.0, false, true, 0.0F, false);
+            }
+        } else {
+            gapLandingConfirmTicks = 0;
+        }
+        /*
          * Non-Jumper speeding is a deliberate repeated jump input while
          * remaining grounded. The source Jump -10 removes the vertical impulse,
          * but the sprint-jump routine still writes the horizontal 0.2 impulse.
@@ -2128,22 +2150,7 @@ public final class StableLiveMovementController {
                         + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
             }
         }
-        if (gapTakeoffStarted && state.player.grounded && !jumpThisTick && progress > 0.90D
-                && playerAabbOverlapsCell(state, toRow, toColumn)) {
-            gapLandingConfirmTicks++;
-            if (gapLandingConfirmTicks >= GAP_LANDING_CONFIRM_TICKS) {
-                int completedIndex = waypointIndex;
-                clearGapCommitment();
-                waypointIndex = nextTurnWaypoint(route, completedIndex);
-                anchoredSegmentIndex = -1;
-                lastDecisionDetail = "GAP_LANDING_CONFIRMED edge=" + fromRow + "," + fromColumn + "->"
-                        + toRow + "," + toColumn + " progress=" + format(progress);
-                // Landing confirmation is not another jump opportunity.
-                return new Action(1.0, 0.0, false, true, 0.0F, false);
-            }
-        } else {
-            gapLandingConfirmTicks = 0;
-        }
+
         // Never fail a committed jump solely because its centre passed the
         // endpoint: the player's 0.6-wide AABB can still overlap the destination
         // block while vanilla gravity is bringing the feet down onto it.

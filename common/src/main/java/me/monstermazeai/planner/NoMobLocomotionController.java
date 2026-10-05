@@ -118,15 +118,8 @@ final class NoMobLocomotionController {
                     ? pathfinder.fastestPathToRegion(
                             planningMaze, start, goal, regionRadius)
                     : pathfinder.fastestPath(planningMaze, start, goal);
-            List<Cell> withGaps = regionRadius > 0
-                    ? pathfinder.fastestPathToRegionWithGaps(
-                            planningMaze, start, goal, regionRadius)
-                    : pathfinder.fastestPathWithGaps(planningMaze, start, goal);
-
-            List<Cell> selected = chooseExecutableFastRoute(
-                    state, noGap, withGaps);
-            if (!selected.isEmpty()) {
-                route = new PlayerRoute(selected);
+            if (!noGap.isEmpty()) {
+                route = new PlayerRoute(noGap);
             } else {
                 route = regionRadius > 0
                         ? planner.routeToRegionFast(
@@ -300,23 +293,7 @@ final class NoMobLocomotionController {
                 route.cells().get(edge.index + 1),
                 route.cells().get(edge.index + 2));
 
-        double horizontalSpeed = Math.hypot(
-                state.player.vx, state.player.vz);
-
-        /*
-         * Minecraft keeps horizontal velocity across a yaw change. Simply
-         * stopping W before a corner therefore does not actually stop the
-         * player: the old velocity continues into the new corridor. Actively
-         * counter-steer the measured velocity first, then acquire the new
-         * heading once the residual motion is small.
-         */
-        if (nextTurn && remaining <= CORNER_BRAKE_DISTANCE
-                && horizontalSpeed > CORNER_SPEED) {
-            lastDecision = "CORNER_BRAKE edge=" + edge.index
-                    + " remaining=" + format(remaining)
-                    + " speed=" + format(horizontalSpeed);
-            return brakeVelocity(state);
-        }
+        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
 
         /*
          * Never enter a yaw-only deadlock. The client can translate in any
@@ -613,7 +590,8 @@ final class NoMobLocomotionController {
          * rotate-stop-rotate loop seen in the diagnostic trace; the resulting
          * input is still equivalent to WASD steering in the 1.8 client.
          */
-        float yawDelta = 0.0F;
+        float yawDelta = clamp(
+                yawError * 0.20F, -10.0F, 10.0F);
         double yaw = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
@@ -665,32 +643,6 @@ final class NoMobLocomotionController {
         return state.centerSafeZoneDecay <= 3
                 && (state.maze.raw(cell.row(), cell.column()) == 3
                 || state.maze.raw(cell.row(), cell.column()) == 4);
-    }
-
-    private static List<Cell> chooseExecutableFastRoute(
-            GameState state, List<Cell> noGap, List<Cell> withGaps) {
-        if (noGap == null || noGap.isEmpty()) {
-            return withGaps == null ? List.of() : withGaps;
-        }
-        if (withGaps == null || withGaps.isEmpty()) {
-            return noGap;
-        }
-
-        int gaps = gapCount(withGaps);
-        if (state.kit == Kit.JUMPER
-                && gaps > Math.max(0, state.ability.charges)) {
-            return noGap;
-        }
-
-        double normalCost = estimatedRouteCost(noGap);
-        double gapCost = estimatedRouteCost(withGaps);
-
-        /*
-         * Gaps are a deliberate shortcut, not the default movement primitive.
-         * Require a real travel-time win before taking them. A 5% margin also
-         * prevents route oscillation when two candidates are effectively tied.
-         */
-        return gapCost < normalCost * 0.95D ? withGaps : noGap;
     }
 
     private static double estimatedRouteCost(List<Cell> cells) {

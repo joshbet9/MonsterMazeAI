@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,39 @@ class StableLiveMovementControllerTest {
         s.player.yaw = yaw;
         s.player.grounded = true;
         return s;
+    }
+
+    @Test
+    void doesNotDodgeAThreatThatSourcePredictionShowsMovingAway() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int r = 0; r < MazeModel.SIZE; r++)
+            for (int c = 0; c < MazeModel.SIZE; c++) raw[r][c] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 0;
+        s.activePadColumn = 8;
+        s.player.x = 0.5;
+        s.player.z = 0.5;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.monsters.add(new MonsterState(77L, 0.5, GameState.PATH_Y, 2.1));
+        s.monsters.get(0).vz = 0.60D;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        s.tick = 2;
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.forward() >= 0.0);
+        assertFalse(controller.lastDecisionDetail().contains("MOB_DODGE"),
+                controller.lastDecisionDetail());
+        assertTrue(controller.lastDecisionDetail().contains("MOB_PREDICT_CLEAR"),
+                controller.lastDecisionDetail());
     }
 
     @Test

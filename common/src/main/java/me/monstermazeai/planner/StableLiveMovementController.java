@@ -1451,25 +1451,30 @@ public final class StableLiveMovementController {
         if (route != null
                 && currentRouteHasUsableWaypoint()
                 && threatSignatureNow != lastTacticalSignature) {
-            Action tacticalEscape = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            lastTacticalSignature = threatSignatureNow;
-            if (tacticalEscape != null
-                    && !tacticalEscape.jump()
-                    && !tacticalEscape.useAbility()
-                    && Math.abs(tacticalEscape.strafe()) >= 0.50D) {
-                Action guardedEscape = guardProjectedSupport(
-                        state, tacticalEscape, routeDirRow, routeDirColumn);
-                if (guardedEscape != null
-                        && (Math.abs(guardedEscape.forward()) >= 0.05D
-                        || Math.abs(guardedEscape.strafe()) >= 0.05D)) {
-                    lastDecisionDetail = "MOB_TACTICAL_ESCAPE"
-                            + " monster=" + threat.id
-                            + " distance=" + format(bestDistance)
-                            + " action=" + guardedEscape;
-                    return guardedEscape;
+            if (goalRow < 0 || goalColumn < 0) {
+                lastTacticalSignature = threatSignatureNow;
+            } else {
+                Action tacticalEscape = routePlanner.tacticalAction(
+                        state, route, new Cell(goalRow, goalColumn), goalRadius);
+                lastTacticalSignature = threatSignatureNow;
+                if (tacticalEscape != null
+                        && !tacticalEscape.jump()
+                        && !tacticalEscape.useAbility()
+                        && Math.abs(tacticalEscape.strafe()) >= 0.50D) {
+                    Action guardedEscape = guardProjectedSupport(
+                            state, tacticalEscape, routeDirRow, routeDirColumn);
+                    if (guardedEscape != null
+                            && (Math.abs(guardedEscape.forward()) >= 0.05D
+                            || Math.abs(guardedEscape.strafe()) >= 0.05D)) {
+                        lastDecisionDetail = "MOB_TACTICAL_ESCAPE"
+                                + " monster=" + threat.id
+                                + " distance=" + format(bestDistance)
+                                + " action=" + guardedEscape;
+                        return guardedEscape;
+                    }
                 }
             }
+
         }
 
         int sideRow = routeDirColumn;

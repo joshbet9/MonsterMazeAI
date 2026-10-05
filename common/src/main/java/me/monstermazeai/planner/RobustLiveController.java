@@ -93,7 +93,18 @@ public final class RobustLiveController {
             return Action.IDLE;
         }
 
-        if (!noMob && stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
+        /*
+         * Jumper's three charged jumps are a route resource, not a generic
+         * stuck-recovery button. Reserve them for the source gap executor.
+         * Non-Jumpers may still use Jump -10 for the existing recovery impulse.
+         */
+        boolean chargedJumper = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0;
+        boolean gapOwned = objective.lastDecisionDetail() != null
+                && objective.lastDecisionDetail().contains("GAP_");
+
+        if (!noMob && stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded
+                && (!chargedJumper || gapOwned)) {
             stuckTicks = 0;
             Action jump = new Action(action.forward(), action.strafe(), true,
                     action.sprint(), action.yawDelta(), action.useAbility());

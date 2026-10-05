@@ -122,10 +122,15 @@ final class NoMobLocomotionController {
             if (!noGap.isEmpty()) {
                 route = new PlayerRoute(noGap);
             } else {
-                route = regionRadius > 0
-                        ? pathfinder.fastestPathToRegion(
-                                planningMaze, start, goal, Math.max(0, regionRadius))
-                        : pathfinder.fastestPath(planningMaze, start, goal);
+                /*
+                 * Phase 1 must not reintroduce strategic routing. An empty
+                 * static floor route is a topology failure, not a reason to
+                 * invoke the monster-aware planner.
+                 */
+                lastDecision = "NO_STATIC_FLOOR_ROUTE start="
+                        + start.row() + "," + start.column()
+                        + " goal=" + goal.row() + "," + goal.column();
+                return Action.IDLE;
             }
             routeEdgeIndex = 0;
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()

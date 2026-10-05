@@ -1465,10 +1465,8 @@ public final class StableLiveMovementController {
     }
 
     private double waypointBrakeDistance() {
-        // High handling lets a player carry more vanilla momentum through a
-        // corner; low handling starts braking earlier. The baseline value remains
-        // exactly the former 0.70-block threshold.
-        return 0.15D + (1.0D - profile.attributes.handling) * 1.10D;
+        // Controlled experiment against current main: intermediate braking.
+        return 0.50D;
     }
 
     private static double sq(double value) {

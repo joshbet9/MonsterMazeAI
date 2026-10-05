@@ -12,6 +12,15 @@ public final class MonsterAwareRoutePlanner {
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 
+    /*
+     * Keep candidate selection consistent with PlayerPathfinder.fastestPath:
+     * long straight corridors are preferable to short zig-zag routes when the
+     * latter require repeated 90-degree turns.
+     */
+    private static final double ROUTE_TURN_COST = 1.75D;
+    private static final double ROUTE_U_TURN_COST = 4.0D;
+    private static final double ROUTE_GAP_COST = 1.45D;
+
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
     private final GapJumpPolicy gapJumpPolicy;
@@ -294,7 +303,7 @@ public final class MonsterAwareRoutePlanner {
 
         if (normal == null) return gapAware;
         if (gapAware == null) return normal;
-        return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
+        return compareByTravelTime(normal, gapAware) <= 0 ? normal : gapAware;
     }
 
     private int compareByGapRisk(PlayerRoute a, PlayerRoute b) {

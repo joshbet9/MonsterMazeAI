@@ -469,6 +469,25 @@ public final class StableLiveMovementController {
         }
 
         /*
+         * Keep the tactical overlay for Speed, where its short-horizon commands
+         * were net-positive, but avoid injecting it into the denser Modern mob
+         * field where the verified motor is more stable.
+         */
+        if (state.mode == me.monstermazeai.game.Mode.SPEED) {
+            long currentThreatSignature = threatSignature(state);
+            if (routePlanner.shouldUseTacticalAction(state)
+                    && currentThreatSignature != lastTacticalSignature) {
+                Action tactical = routePlanner.tacticalAction(
+                        state, route, goal, regionRadius);
+                lastTacticalSignature = currentThreatSignature;
+                if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+                    lastDecisionDetail += " TACTICAL=" + tactical;
+                    return tactical;
+                }
+            }
+        }
+
+        /*
          * The no-mob motor is the proven source-faithful movement executor.
          * Reuse it here after mob-specific decisions have had their chance to
          * preempt the tick, so route choice and route execution no longer use

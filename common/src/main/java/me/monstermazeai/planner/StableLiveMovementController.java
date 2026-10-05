@@ -163,8 +163,11 @@ public final class StableLiveMovementController {
     private double mobDodgeLastX = Double.NaN;
     private double mobDodgeLastZ = Double.NaN;
     private int mobDodgeStallTicks;
-    private static final int MOB_DODGE_STALL_TICKS = 4;
-    private static final double MOB_DODGE_STALL_DISTANCE = 0.16D;
+    private static final int MOB_DODGE_STALL_TICKS = 8;
+    private static final double MOB_DODGE_WINDOW_DISTANCE = 0.28D;
+    private long mobDodgeWindowStartTick = Long.MIN_VALUE;
+    private double mobDodgeWindowStartX = Double.NaN;
+    private double mobDodgeWindowStartZ = Double.NaN;
 
     /**
      * Terminal SafePad transition commitment. The live observer exposes the
@@ -742,6 +745,7 @@ public final class StableLiveMovementController {
         clearGapCommitment();
         clearPadTransitionFacing();
         lastSpeedJumpInputTick = Long.MIN_VALUE;
+        resetMobDodgeStall();
         noMobController.reset();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
@@ -1678,17 +1682,26 @@ public final class StableLiveMovementController {
                              state.player.z - mobDodgeLastZ)
                 : Double.POSITIVE_INFINITY;
 
-        if (sameThreat && displacementSinceDodge < MOB_DODGE_STALL_DISTANCE) {
-            mobDodgeStallTicks++;
-        } else {
+        if (!sameThreat || mobDodgeWindowStartTick == Long.MIN_VALUE) {
+            mobDodgeWindowStartTick = state.tick;
+            mobDodgeWindowStartX = state.player.x;
+            mobDodgeWindowStartZ = state.player.z;
             mobDodgeStallTicks = 0;
+        } else {
+            mobDodgeStallTicks++;
         }
         mobDodgeMonsterId = threat.id;
         mobDodgeLastTick = state.tick;
         mobDodgeLastX = state.player.x;
         mobDodgeLastZ = state.player.z;
 
-        if (mobDodgeStallTicks >= MOB_DODGE_STALL_TICKS) {
+        double windowDisplacement = Double.isFinite(mobDodgeWindowStartX)
+                ? Math.hypot(state.player.x - mobDodgeWindowStartX,
+                             state.player.z - mobDodgeWindowStartZ)
+                : Double.POSITIVE_INFINITY;
+
+        if (mobDodgeStallTicks >= MOB_DODGE_STALL_TICKS
+                && windowDisplacement < MOB_DODGE_WINDOW_DISTANCE) {
             /*
              * We have demonstrated that the current lane-level maneuver is not
              * progressing. Ask the full source-faithful planner to choose among
@@ -1715,12 +1728,22 @@ public final class StableLiveMovementController {
             fullRouteEvaluationPending = false;
             lastThreatSignature = threatSignature(state);
             lastTacticalSignature = Long.MIN_VALUE;
+            int escapeRow = route.cells().get(Math.max(0, waypointIndex - 1)).row();
+            int escapeColumn = route.cells().get(Math.max(0, waypointIndex - 1)).column();
+            Cell support = resolveSupportedStartCell(state);
+            Action escape = new Action(-0.65, 0.0, false, false, 0.0F, false);
+            if (support != null && route.size() > 1) {
+                escape = guardProjectedSupport(
+                        state, escape, -routeDirRow, -routeDirColumn);
+            }
             resetMobDodgeStall();
             lastDecisionDetail = "MOB_DODGE_DEADLOCK_REPLAN"
                     + " monster=" + threat.id
                     + " routeSize=" + replanned.size()
-                    + " waypoint=" + waypointIndex;
-            return null;
+                    + " waypoint=" + waypointIndex
+                    + " windowDisplacement=" + format(windowDisplacement)
+                    + " escape=" + format(escape.forward());
+            return escape;
         }
 
         int sideRow = routeDirColumn;

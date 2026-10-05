@@ -1,4 +1,4 @@
-name: Benchmark — no live tactical full matrix
+name: Benchmark — no live tactical full matrix v2
 on:
   push:
     branches:

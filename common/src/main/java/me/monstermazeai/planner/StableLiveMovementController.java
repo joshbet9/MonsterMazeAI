@@ -1436,7 +1436,17 @@ public final class StableLiveMovementController {
     }
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+        if (action == null) return false;
+        if (action.useAbility() || (allowJump && action.jump())) return true;
+
+        /*
+         * The tactical simulator uses the same LegacyMovementModel as the live
+         * controller. Its lateral/strafe actions are therefore physically
+         * executable, unlike an abstract planner command. Permit a lateral
+         * tactical correction on ordinary floor; gap crossings still return
+         * before this branch and retain their dedicated motor timing.
+         */
+        return !action.jump() && Math.abs(action.strafe()) >= 0.5D;
     }
 
     private boolean detectLiveMobHit(GameState state) {

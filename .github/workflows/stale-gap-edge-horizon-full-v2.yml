@@ -32,19 +32,18 @@ jobs:
           from pathlib import Path
           t=Path("matrix.log").read_text(encoding="utf-8",errors="replace")
           rows=[(m.group(1),int(m.group(2)),m.group(3),int(m.group(4)),int(m.group(5)))
-                for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(d+) kit=([A-Z_]+) stage=(d+) ticks=(d+)",t)]
-          if len(rows)!=30: raise SystemExit(f"expected 30 rows, got {len(rows)}")
-          sp=[x[3] for x in rows if x[0]=="SPEED"]; mo=[x[3] for x in rows if x[0]=="MODERN"]
+                for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]
+          if len(rows)!=30:
+              raise SystemExit(f"expected 30 rows, got {len(rows)}")
+          sp=[x[3] for x in rows if x[0]=="SPEED"]
+          mo=[x[3] for x in rows if x[0]=="MODERN"]
           lines=[
             f"Speed mean={sum(sp)/len(sp):.4f} min={min(sp)} max={max(sp)} >=70={sum(x>=70 for x in sp)}/15",
             f"Modern mean={sum(mo)/len(mo):.4f} min={min(mo)} max={max(mo)} >=40={sum(x>=40 for x in mo)}/15",
           ]
           lines += [f"{r[0]} P{r[1]} {r[2]} stage={r[3]} ticks={r[4]}" for r in rows]
-          Path("matrix-report.txt").write_text("
-".join(lines)+"
-",encoding="utf-8")
-          print("
-".join(lines))
+          Path("matrix-report.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
+          print("\n".join(lines))
           PY
       - uses: actions/upload-artifact@v4
         if: always()

@@ -468,6 +468,18 @@ public final class StableLiveMovementController {
             }
         }
 
+        /*
+         * The no-mob motor is the proven source-faithful movement executor.
+         * Reuse it here after mob-specific decisions have had their chance to
+         * preempt the tick, so route choice and route execution no longer use
+         * two different steering implementations.
+         */
+        Action mobRouteMotor = noMobController.nextActionUsingRoute(
+                state, goal, allowJump, regionRadius, route);
+        lastDecisionDetail = "MOB_ROUTE_MOTOR "
+                + noMobController.lastDecisionDetail();
+        return mobRouteMotor;
+
         double targetX = route.targetX(waypointIndex);
         double targetZ = route.targetZ(waypointIndex);
         double dx = targetX - state.player.x;

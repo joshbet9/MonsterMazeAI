@@ -1,4 +1,4 @@
-name: Experiment — stale gap commitment cancellation
+name: Experiment — stale gap commitment cancellation v2
 on:
   push:
     branches:

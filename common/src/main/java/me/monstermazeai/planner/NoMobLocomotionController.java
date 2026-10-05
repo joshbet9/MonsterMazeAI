@@ -288,27 +288,16 @@ final class NoMobLocomotionController {
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
         Cell target = edge.to;
-        double targetX = target.row() + 0.5D;
-        double targetZ = target.column() + 0.5D;
-        double worldX = targetX - state.player.x;
-        double worldZ = targetZ - state.player.z;
-        double remaining = Math.hypot(worldX, worldZ);
-
-        if (remaining < 1.0E-9D) {
-            worldX = edge.dirX;
-            worldZ = edge.dirZ;
-            remaining = 1.0D;
-        } else {
-            worldX /= remaining;
-            worldZ /= remaining;
-        }
-
         /*
-         * No-gap baseline invariant: drive toward the next cell centre, not a
-         * diagonally corrected lane. This preserves the actual one-cell-wide
-         * path geometry and prevents the controller from cutting across a void
-         * corner merely because its geometric cross-track error is large.
+         * Phase-1 survival invariant: the route edge is the only legal movement
+         * direction. Never aim directly at the next cell centre, because that
+         * creates a diagonal chord across a 90-degree corner and can put the
+         * player's AABB over a void cell before the next observation.
          */
+        double worldX = edge.dirX;
+        double worldZ = edge.dirZ;
+        double remaining = Math.max(0.0D, edge.length - edge.progress);
+
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 

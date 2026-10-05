@@ -838,7 +838,13 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        long currentThreat = threatSignature(state);
+        /*
+         * Monster positions are expected to move between the background planning
+         * snapshot and application. Requiring a bit-for-bit identical threat
+         * signature made asynchronous plans almost impossible to apply in dense
+         * Modern runs. Keep topology, objective, and age strict; the current
+         * live tactical layer handles the newest monster positions.
+         */
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
@@ -846,8 +852,7 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 6L) {
             fullRouteEvaluationPending = true;
             return;
         }

@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   common:
-    if: github.head_ref != 'autonomous/locomotion-026-v1'
+    if: github.ref_name != 'autonomous/locomotion-026-v1'
     name: Common Maven tests
     runs-on: ubuntu-latest
 

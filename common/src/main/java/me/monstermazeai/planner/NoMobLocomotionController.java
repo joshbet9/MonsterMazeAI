@@ -670,7 +670,7 @@ final class NoMobLocomotionController {
         // During a phase transition the player may still be standing on the
         // previous pad. Preserve only that local surface so the player can
         // leave it; never expose remote historical pads as shortcuts.
-        if (start != null && !planningMaze(state).isPhysicalFloor(
+        if (start != null && !copy.isPhysicalFloor(
                 start.row(), start.column())) {
             for (int row = Math.max(0, start.row() - 2);
                  row <= Math.min(MazeModel.SIZE - 1, start.row() + 2); row++) {

@@ -1,0 +1,53 @@
+name: Natural End Matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ baseline-main-natural-end ]
+    paths:
+      - 'common/src/main/java/me/monstermazeai/planner/StableLiveMovementController.java'
+      - 'common/src/main/java/me/monstermazeai/planner/TacticalRouteSimulator.java'
+      - 'common/src/test/java/me/monstermazeai/sim/AuthenticStage10SimulationTest.java'
+      - 'common/src/test/java/me/monstermazeai/sim/NaturalEndMatrixRunner.java'
+      - '.github/workflows/natural-end-matrix.yml'
+
+concurrency:
+  group: natural-end-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        mode: [SPEED, MODERN]
+        pattern: [1, 2, 3]
+        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Compile common tests
+        run: mvn -B -ntp -pl common -am install -DskipTests
+
+      - name: Run natural-end cell
+        run: >
+          mvn -B -ntp -pl common
+          -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner
+          -Dexec.classpathScope=test
+          -Dexec.args="${{ matrix.mode }} ${{ matrix.pattern }} ${{ matrix.kit }}"
+          org.codehaus.mojo:exec-maven-plugin:3.5.0:java

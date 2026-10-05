@@ -100,17 +100,6 @@ public final class DirectOracleMovementController {
             return Action.IDLE;
         }
 
-        if (!isGapEdge(state, from, to) && localMonsterBlocksNextSegment(state, from, to)) {
-            float yaw = cardinalYaw(dr, dc);
-            float error = normalise(yaw - state.player.yaw);
-            float turn = clamp(error, -MAX_TURN, MAX_TURN);
-            lastDecisionDetail = "LOCAL_MONSTER_BRAKE segment="
-                    + from.row() + "," + from.column() + "->"
-                    + to.row() + "," + to.column()
-                    + " yawError=" + format(error);
-            return new Action(0.0, 0.0, false, false, turn, false);
-        }
-
         float desiredYaw = cardinalYaw(dr, dc);
         float yawError = normalise(desiredYaw - state.player.yaw);
         float turn = clamp(yawError, -MAX_TURN, MAX_TURN);

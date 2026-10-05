@@ -171,6 +171,9 @@ class AuthenticStage10SimulationTest {
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
+        boolean diagnostic = Boolean.parseBoolean(
+                System.getProperty("matrixDiagnostic", "false"));
+        Deque<String> diagnosticTrace = new ArrayDeque<>();
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
@@ -246,7 +249,36 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
+            if (diagnostic && (tick % 25 == 0 || state.stage != lastStage)) {
+                diagnosticTrace.addLast(
+                        "t=" + state.tick
+                                + " stage=" + state.stage
+                                + " timer=" + state.phaseTicksRemaining
+                                + " pos=" + format(state.player.x) + "," + format(state.player.y) + "," + format(state.player.z)
+                                + " vel=" + format(state.player.vx) + "," + format(state.player.vy) + "," + format(state.player.vz)
+                                + " grounded=" + state.player.grounded
+                                + " action=" + currentAction.replace(' ', '_')
+                                + " decision=" + decisionBeforeTick.replace(' ', '_'));
+                while (diagnosticTrace.size() > 80) diagnosticTrace.removeFirst();
+            }
+
             if (stopStage > 0 && maxStage >= stopStage) break;
+        }
+
+        if (diagnostic) {
+            System.out.println(
+                    "DIAGNOSTIC mode=" + mode
+                            + " pattern=" + (pattern + 1)
+                            + " kit=" + kit
+                            + " stage=" + maxStage
+                            + " ticks=" + state.tick
+                            + " alive=" + state.alive
+                            + " timer=" + state.phaseTicksRemaining
+                            + " health=" + format(state.player.health)
+                            + " pos=" + format(state.player.x) + "," + format(state.player.y) + "," + format(state.player.z)
+                            + " firstFallTick=" + firstFallTick
+                            + " decision=" + agent.lastDecisionDetail().replace(' ', '_')
+                            + " TRACE=" + String.join(" || ", diagnosticTrace));
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,

@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
@@ -57,11 +57,22 @@ jobs:
                 for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]
           if len(rows)!=24:
               raise SystemExit(f"expected 24 rows, found {len(rows)}")
-          for r in rows: print(r)
+          report=Path("gap-pulse-report.txt")
+          lines=["Phase 2 non-Jumper gap pulse regression",""]
+          for r in rows:
+              line=f"{r[0]} P{r[1]} {r[2]} stage={r[3]} ticks={r[4]}"
+              print(line)
+              lines.append(line)
           speed=[r[3] for r in rows if r[0]=="SPEED"]
           modern=[r[3] for r in rows if r[0]=="MODERN"]
-          print("speedMean",sum(speed)/len(speed))
-          print("modernMean",sum(modern)/len(modern))
+          speed_mean=sum(speed)/len(speed)
+          modern_mean=sum(modern)/len(modern)
+          lines += ["",f"speedMean {speed_mean}",f"modernMean {modern_mean}",
+                    f"modern>=10 {sum(x>=10 for x in modern)}",
+                    f"speed>=10 {sum(x>=10 for x in speed)}"]
+          report.write_text("\n".join(lines)+"\n",encoding="utf-8")
+          print("speedMean",speed_mean)
+          print("modernMean",modern_mean)
           print("modern>=10",sum(x>=10 for x in modern))
           print("speed>=10",sum(x>=10 for x in speed))
           PY

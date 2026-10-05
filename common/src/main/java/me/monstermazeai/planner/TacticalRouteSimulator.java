@@ -178,7 +178,20 @@ public final class TacticalRouteSimulator {
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+
+        /*
+         * Use route progress while the player is healthy, but make survival
+         * sharply more important once the remaining health is genuinely at
+         * risk. This preserves the speed-oriented behaviour on clean stretches
+         * while preventing the beam from trading away the last few hearts for a
+         * tiny positional gain.
+         */
+        long survivalWeight = state.player.health <= 8.0
+                ? 300_000_000_000L
+                : 1_000_000L;
+        return remaining * 1_000_000_000_000L
+                + distance * 1_000_000L
+                + damage * survivalWeight;
     }
 
     private boolean needsTacticalSearch(GameState state) {

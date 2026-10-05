@@ -759,7 +759,7 @@ final class NoMobLocomotionController {
          * not movement physics.
          */
         float yawDelta = clamp(
-                yawError * 0.35F, -20.0F, 20.0F);
+                yawError * 0.50F, -30.0F, 30.0F);
         double yaw = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);

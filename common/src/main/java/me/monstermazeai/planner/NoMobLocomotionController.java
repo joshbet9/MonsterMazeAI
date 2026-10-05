@@ -118,8 +118,15 @@ final class NoMobLocomotionController {
                     ? pathfinder.fastestPathToRegion(
                             planningMaze, start, goal, regionRadius)
                     : pathfinder.fastestPath(planningMaze, start, goal);
-            if (!noGap.isEmpty()) {
-                route = new PlayerRoute(noGap);
+            List<Cell> withGaps = regionRadius > 0
+                    ? pathfinder.fastestPathToRegionWithGaps(
+                            planningMaze, start, goal, regionRadius)
+                    : pathfinder.fastestPathWithGaps(planningMaze, start, goal);
+
+            List<Cell> selected = chooseExecutableFastRoute(
+                    state, noGap, withGaps);
+            if (!selected.isEmpty()) {
+                route = new PlayerRoute(selected);
             } else {
                 route = regionRadius > 0
                         ? planner.routeToRegionFast(
@@ -646,6 +653,62 @@ final class NoMobLocomotionController {
         return state.centerSafeZoneDecay <= 3
                 && (state.maze.raw(cell.row(), cell.column()) == 3
                 || state.maze.raw(cell.row(), cell.column()) == 4);
+    }
+
+    private static List<Cell> chooseExecutableFastRoute(
+            GameState state, List<Cell> noGap, List<Cell> withGaps) {
+        if (noGap == null || noGap.isEmpty()) {
+            return withGaps == null ? List.of() : withGaps;
+        }
+        if (withGaps == null || withGaps.isEmpty()) {
+            return noGap;
+        }
+
+        int gaps = gapCount(withGaps);
+        if (state.kit == Kit.JUMPER
+                && gaps > Math.max(0, state.ability.charges)) {
+            return noGap;
+        }
+
+        double normalCost = estimatedRouteCost(noGap);
+        double gapCost = estimatedRouteCost(withGaps);
+
+        /*
+         * Gaps are a deliberate shortcut, not the default movement primitive.
+         * Require a real travel-time win before taking them. A 5% margin also
+         * prevents route oscillation when two candidates are effectively tied.
+         */
+        return gapCost < normalCost * 0.95D ? withGaps : noGap;
+    }
+
+    private static double estimatedRouteCost(List<Cell> cells) {
+        if (cells == null || cells.size() <= 1) return 0.0D;
+
+        double cost = 0.0D;
+        int previousDirection = -1;
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+            int direction;
+            int dr = Integer.signum(to.row() - from.row());
+            int dc = Integer.signum(to.column() - from.column());
+            if (dr < 0) direction = 0;
+            else if (dr > 0) direction = 1;
+            else if (dc < 0) direction = 2;
+            else direction = 3;
+
+            boolean gap = Math.abs(to.row() - from.row())
+                    + Math.abs(to.column() - from.column()) == 2;
+            cost += gap ? 1.45D : 1.0D;
+
+            if (previousDirection >= 0 && previousDirection != direction) {
+                int delta = Math.abs(previousDirection - direction);
+                delta = Math.min(delta, 4 - delta);
+                cost += delta == 2 ? 4.0D : 1.75D;
+            }
+            previousDirection = direction;
+        }
+        return cost;
     }
 
     private static int gapCount(PlayerRoute route) {

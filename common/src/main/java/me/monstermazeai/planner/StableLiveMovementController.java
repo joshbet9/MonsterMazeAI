@@ -462,9 +462,31 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
+
+            Action acceptedTactical = tactical;
+            if (acceptedTactical != null
+                    && !isDiscreteTacticalAction(acceptedTactical, allowJump)
+                    && Math.abs(acceptedTactical.strafe()) >= 0.5D
+                    && route != null
+                    && waypointIndex > 0
+                    && waypointIndex < route.size()) {
+                Cell from = route.cells().get(waypointIndex - 1);
+                Cell to = route.cells().get(waypointIndex);
+                int dr = Integer.signum(to.row() - from.row());
+                int dc = Integer.signum(to.column() - from.column());
+                if (Math.abs(dr) + Math.abs(dc) == 1) {
+                    acceptedTactical = guardProjectedSupport(
+                            state, acceptedTactical, dr, dc);
+                } else {
+                    acceptedTactical = null;
+                }
+            }
+
+            if (acceptedTactical != null
+                    && (isDiscreteTacticalAction(acceptedTactical, allowJump)
+                    || Math.abs(acceptedTactical.strafe()) >= 0.5D)) {
+                lastDecisionDetail += " TACTICAL=" + acceptedTactical;
+                return acceptedTactical;
             }
         }
 

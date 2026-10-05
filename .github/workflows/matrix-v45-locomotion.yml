@@ -1,0 +1,83 @@
+name: Matrix v45 — Locomotion mechanics
+
+on:
+  push:
+    branches:
+      - autonomous/locomotion-026-v1
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  matrix-case:
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [SPEED, MODERN]
+        pattern: [1, 2, 3]
+        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run natural termination cell
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase             -DmatrixMode=${{ matrix.mode }}             -DmatrixPattern=${{ matrix.pattern }}             -DmatrixKit=${{ matrix.kit }}             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee matrix-cell.log
+      - name: Extract row
+        run: grep 'FULL_MATRIX ' matrix-cell.log | tail -1 | tee matrix-row.txt
+      - name: Upload row
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-v45-row-${{ matrix.mode }}-${{ matrix.pattern }}-${{ matrix.kit }}
+          path: matrix-row.txt
+
+  aggregate:
+    name: Aggregate 30-cell locomotion matrix
+    needs: matrix-case
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: matrix-v45-row-*
+          path: matrix-results
+          merge-multiple: false
+      - name: Summarize
+        run: |
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          rx=re.compile(r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+stage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)")
+          rows=[]
+          for p in Path("matrix-results").glob("**/matrix-row.txt"):
+              m=rx.search(p.read_text(errors="replace"))
+              if m: rows.append({"mode":m.group(1),"pattern":int(m.group(2)),"kit":m.group(3),"maxStage":int(m.group(4)),"ticks":int(m.group(5)),"health":float(m.group(6))})
+          if len(rows)!=30: raise SystemExit(f"expected 30 rows, found {len(rows)}")
+          rows.sort(key=lambda r:(r["mode"],r["pattern"],r["kit"]))
+          s=[r["maxStage"] for r in rows if r["mode"]=="SPEED"]; m=[r["maxStage"] for r in rows if r["mode"]=="MODERN"]
+          out={"stageSum":sum(r["maxStage"] for r in rows),"speedMean":sum(s)/15,"modernMean":sum(m)/15,"speedPeak":max(s),"modernPeak":max(m),"baselineStageSum":458,"baselineSpeedMean":21.67,"baselineModernMean":8.87,"rows":rows}
+          out["deltaStageSum"]=out["stageSum"]-458
+          out["deltaSpeedMean"]=out["speedMean"]-21.67
+          out["deltaModernMean"]=out["modernMean"]-8.87
+          Path("matrix-v45.json").write_text(json.dumps(out,indent=2)+"\n")
+          print(json.dumps({k:v for k,v in out.items() if k!="rows"},indent=2))
+          for r in rows: print(f'{r["mode"]} P{r["pattern"]} {r["kit"]}: stage={r["maxStage"]} ticks={r["ticks"]} health={r["health"]:.2f}')
+          PY
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-v45-summary
+          path: matrix-v45.json

@@ -345,7 +345,7 @@ final class NoMobLocomotionController {
         if (state.kit == Kit.JUMPER
                 && (Math.abs(crossTrack) > 0.30D
                     || Math.abs(yawError) > 25.0F
-                    || hasTurnWithinCells(4))) {
+                    || hasTurnWithinCells(8))) {
             jump = false;
         }
 

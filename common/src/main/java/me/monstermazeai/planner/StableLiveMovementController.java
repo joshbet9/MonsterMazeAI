@@ -1728,8 +1728,6 @@ public final class StableLiveMovementController {
             fullRouteEvaluationPending = false;
             lastThreatSignature = threatSignature(state);
             lastTacticalSignature = Long.MIN_VALUE;
-            int escapeRow = route.cells().get(Math.max(0, waypointIndex - 1)).row();
-            int escapeColumn = route.cells().get(Math.max(0, waypointIndex - 1)).column();
             Cell support = resolveSupportedStartCell(state);
             Action escape = new Action(-0.65, 0.0, false, false, 0.0F, false);
             if (support != null && route.size() > 1) {
@@ -1901,6 +1899,9 @@ public final class StableLiveMovementController {
         mobDodgeLastX = Double.NaN;
         mobDodgeLastZ = Double.NaN;
         mobDodgeStallTicks = 0;
+        mobDodgeWindowStartTick = Long.MIN_VALUE;
+        mobDodgeWindowStartX = Double.NaN;
+        mobDodgeWindowStartZ = Double.NaN;
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

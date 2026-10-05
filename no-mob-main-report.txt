@@ -1,0 +1,32 @@
+NO_MOB_MATRIX mode=SPEED pattern=1 kit=JUMPER stage=10 ticks=5500 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=1 kit=SLOWBALLER stage=17 ticks=6760 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=1 kit=BODY_BUILDER stage=18 ticks=6840 health=22.00
+NO_MOB_MATRIX mode=SPEED pattern=1 kit=REPULSOR stage=19 ticks=6080 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=1 kit=MAVERICK stage=20 ticks=7640 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=2 kit=JUMPER stage=14 ticks=5980 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=2 kit=SLOWBALLER stage=10 ticks=3080 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=2 kit=BODY_BUILDER stage=4 ticks=2280 health=22.00
+NO_MOB_MATRIX mode=SPEED pattern=2 kit=REPULSOR stage=13 ticks=5240 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=2 kit=MAVERICK stage=9 ticks=4000 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=3 kit=JUMPER stage=15 ticks=5660 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=3 kit=SLOWBALLER stage=13 ticks=5280 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=3 kit=BODY_BUILDER stage=17 ticks=6460 health=22.00
+NO_MOB_MATRIX mode=SPEED pattern=3 kit=REPULSOR stage=16 ticks=7280 health=20.00
+NO_MOB_MATRIX mode=SPEED pattern=3 kit=MAVERICK stage=18 ticks=8120 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=1 kit=JUMPER stage=4 ticks=2260 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=1 kit=SLOWBALLER stage=8 ticks=2640 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=1 kit=BODY_BUILDER stage=8 ticks=2620 health=22.00
+NO_MOB_MATRIX mode=MODERN pattern=1 kit=REPULSOR stage=16 ticks=4440 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=1 kit=MAVERICK stage=6 ticks=2680 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=2 kit=JUMPER stage=5 ticks=2500 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=2 kit=SLOWBALLER stage=10 ticks=2540 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=2 kit=BODY_BUILDER stage=4 ticks=1780 health=22.00
+NO_MOB_MATRIX mode=MODERN pattern=2 kit=REPULSOR stage=9 ticks=2780 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=2 kit=MAVERICK stage=6 ticks=2840 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=3 kit=JUMPER stage=6 ticks=2440 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=3 kit=SLOWBALLER stage=6 ticks=2120 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=3 kit=BODY_BUILDER stage=9 ticks=2800 health=22.00
+NO_MOB_MATRIX mode=MODERN pattern=3 kit=REPULSOR stage=7 ticks=2880 health=20.00
+NO_MOB_MATRIX mode=MODERN pattern=3 kit=MAVERICK stage=9 ticks=3600 health=20.00
+NO_MOB_SPEED_MEAN=14.2000
+NO_MOB_MODERN_MEAN=7.5333

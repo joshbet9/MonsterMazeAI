@@ -131,6 +131,7 @@ public final class StableLiveMovementController {
     /** Local threat state for which the expensive tactical branch was last evaluated. */
     private long lastTacticalSignature = Long.MIN_VALUE;
     private long routePlanCount;
+    private long lastReactiveRouteTick = Long.MIN_VALUE;
     private double laneAnchorX;
     private double laneAnchorZ;
 
@@ -158,6 +159,8 @@ public final class StableLiveMovementController {
      * direction, commit the crossing, and do not let a concurrent strategic
      * replan replace the motor command mid-transition.
      */
+    private static final long REACTIVE_ROUTE_COOLDOWN_TICKS = 6L;
+    private static final double REACTIVE_THREAT_ROUTE_RADIUS = 8.0D;
     private static final double PAD_ENTRY_COMMIT_DISTANCE = 1.25;
     private static final double PAD_ENTRY_RELEASE_DISTANCE = 2.75;
     private static final long PAD_ENTRY_MAX_TICKS = 18L;
@@ -323,7 +326,7 @@ public final class StableLiveMovementController {
             route = regionRadius > 0
                     ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
                     : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
-            waypointIndex = firstTurnWaypoint(route);
+            waypointIndex = reanchorWaypointIndex(state, route);
             lastRouteTick = state.tick;
             routePlanCount++;
             lastThreatSignature = threatSignature(state);
@@ -350,7 +353,7 @@ public final class StableLiveMovementController {
                 route = regionRadius > 0
                         ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
                         : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
-                waypointIndex = firstTurnWaypoint(route);
+                waypointIndex = reanchorWaypointIndex(state, route);
                 anchoredSegmentIndex = -1;
                 lastRouteTick = state.tick;
                 routePlanCount++;
@@ -364,8 +367,51 @@ public final class StableLiveMovementController {
                 lastThreatSignature = threat;
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
             } else if (fullRouteEvaluationPending || threat != lastThreatSignature) {
+                boolean threatChanged = threat != lastThreatSignature;
                 lastThreatSignature = threat;
                 fullRouteEvaluationPending = false;
+
+                /*
+                 * Give the motor an immediate, bounded response to a real
+                 * current threat. This uses the existing source-derived
+                 * ThreatAwarePathfinder through routeToRegionFast(..., radius=0);
+                 * it does not guess future monster RNG. The asynchronous exact
+                 * planner still runs afterwards and can replace the route when
+                 * a longer-horizon evaluation is ready.
+                 */
+                if (threatChanged
+                        && state.tick - lastReactiveRouteTick >= REACTIVE_ROUTE_COOLDOWN_TICKS
+                        && routeHasReactiveThreat(state)) {
+                    try {
+                        PlayerRoute reactive = regionRadius > 0
+                                ? routePlanner.routeToRegionReactive(
+                                        state, new Cell(startRow, startColumn), goal, regionRadius)
+                                : routePlanner.routeReactive(
+                                        state, new Cell(startRow, startColumn), goal);
+
+                        lastReactiveRouteTick = state.tick;
+                        boolean changed = !sameRoute(route, reactive);
+                        if (changed && strategicRoutePreservesCurrentHeading(
+                                state, reactive, startRow, startColumn)) {
+                            route = reactive;
+                            waypointIndex = reanchorWaypointIndex(state, route);
+                            anchoredSegmentIndex = -1;
+                            lastRouteTick = state.tick;
+                            routePlanCount++;
+                            lastTacticalSignature = Long.MIN_VALUE;
+                            lastDecisionDetail = "REACTIVE_THREAT_ROUTE"
+                                    + " size=" + route.size()
+                                    + " regionRadius=" + regionRadius
+                                    + " start=" + startRow + "," + startColumn
+                                    + " goal=" + goal.row() + "," + goal.column();
+                        }
+                    } catch (RuntimeException failure) {
+                        lastReactiveRouteTick = state.tick;
+                        lastDecisionDetail += " REACTIVE_ROUTE_FAILED="
+                                + failure.getClass().getSimpleName();
+                    }
+                }
+
                 scheduleStrategicRoute(state, new Cell(startRow, startColumn), goal, regionRadius);
             }
         }
@@ -659,6 +705,7 @@ public final class StableLiveMovementController {
         goalColumn = -1;
         goalRadius = 0;
         lastRouteTick = Long.MIN_VALUE;
+        lastReactiveRouteTick = Long.MIN_VALUE;
         anchoredSegmentIndex = -1;
         lastThreatSignature = Long.MIN_VALUE;
         bootstrapRoutePending = true;
@@ -808,7 +855,7 @@ public final class StableLiveMovementController {
         }
 
         route = planned.route;
-        waypointIndex = firstTurnWaypoint(route);
+        waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
         routePlanCount++;
@@ -846,6 +893,76 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    /**
+     * Re-anchor a newly installed route to the player's actual position.
+     *
+     * A recovery/replan route normally starts at the player's supported cell,
+     * but the player may already be part-way through that cell corridor when the
+     * new route is installed. Resetting to the route's first turn can therefore
+     * command the motor to travel backwards through a turn it has already passed.
+     *
+     * Select the physical route segment nearest to the player. When two segments
+     * meet at a corner, prefer the segment matching current momentum; if momentum
+     * is neutral, prefer the later segment so an overshot corner is never treated
+     * as an unfinished waypoint. The result is then advanced to the next actual
+     * turn/goal waypoint for the existing motor.
+     */
+    static int reanchorWaypointIndex(GameState state, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() <= 1) {
+            return candidate == null ? 0 : candidate.size();
+        }
+
+        List<Cell> cells = candidate.cells();
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        double velocityX = speed > 1.0E-6 ? state.player.vx / speed : 0.0;
+        double velocityZ = speed > 1.0E-6 ? state.player.vz / speed : 0.0;
+
+        int bestSegment = 0;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        double bestMomentum = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < cells.size() - 1; i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+            double startX = from.row() + 0.5D;
+            double startZ = from.column() + 0.5D;
+            double endX = to.row() + 0.5D;
+            double endZ = to.column() + 0.5D;
+            double segmentX = endX - startX;
+            double segmentZ = endZ - startZ;
+            double lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double playerX = state.player.x - startX;
+            double playerZ = state.player.z - startZ;
+            double progress = (playerX * segmentX + playerZ * segmentZ) / lengthSquared;
+            progress = Math.max(0.0D, Math.min(1.0D, progress));
+
+            double nearestX = startX + progress * segmentX;
+            double nearestZ = startZ + progress * segmentZ;
+            double distance = Math.hypot(state.player.x - nearestX, state.player.z - nearestZ);
+
+            double segmentLength = Math.sqrt(lengthSquared);
+            double directionX = segmentX / segmentLength;
+            double directionZ = segmentZ / segmentLength;
+            double momentum = speed > 1.0E-6
+                    ? velocityX * directionX + velocityZ * directionZ
+                    : 0.0D;
+
+            boolean closer = distance < bestDistance - 0.12D;
+            boolean comparable = Math.abs(distance - bestDistance) <= 0.12D;
+            if (closer
+                    || (comparable && momentum > bestMomentum + 0.05D)
+                    || (comparable && Math.abs(momentum - bestMomentum) <= 0.05D && i > bestSegment)) {
+                bestSegment = i;
+                bestDistance = distance;
+                bestMomentum = momentum;
+            }
+        }
+
+        return nextTurnWaypoint(candidate, bestSegment);
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {
@@ -956,8 +1073,32 @@ public final class StableLiveMovementController {
         int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
         int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());
 
-        return currentRowDirection == plannedRowDirection
-                && currentColumnDirection == plannedColumnDirection;
+        if (currentRowDirection == plannedRowDirection
+                && currentColumnDirection == plannedColumnDirection) {
+            return true;
+        }
+
+        /*
+         * A defensive detour may need to turn at the player's current cell.
+         * Exact-heading equality was safe but over-constrained: it allowed the
+         * monster to occupy the current corridor while the safer alternative
+         * began perpendicular to it. Permit a perpendicular/non-opposing turn
+         * only while a live threat is actually present. At low speed, turning
+         * in place is safe; otherwise reject a true reversal so momentum can
+         * never drive the player back through already-traversed geometry.
+         */
+        if (!routeHasReactiveThreat(state)) return false;
+
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        if (speed < 0.08D) return true;
+
+        double currentX = currentRowDirection;
+        double currentZ = currentColumnDirection;
+        double plannedX = plannedRowDirection;
+        double plannedZ = plannedColumnDirection;
+        double momentumAlongPlanned = state.player.vx * plannedX
+                + state.player.vz * plannedZ;
+        return momentumAlongPlanned >= -0.01D;
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {
@@ -1128,6 +1269,54 @@ public final class StableLiveMovementController {
                     state.player.z - nearestZ));
         }
         return best == Double.POSITIVE_INFINITY ? 0.0 : best;
+    }
+
+    private boolean routeHasReactiveThreat(GameState state) {
+        if (route == null || route.size() < 2) return true;
+
+        for (MonsterState monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+
+            double distanceToPlayer = Math.hypot(
+                    monster.x - state.player.x,
+                    monster.z - state.player.z);
+            if (distanceToPlayer > me.monstermazeai.monster.MonsterRelevance.INTERACTION_RADIUS) continue;
+
+            if (distanceToRoute(monster.x, monster.z, route)
+                    <= REACTIVE_THREAT_ROUTE_RADIUS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean sameRoute(PlayerRoute a, PlayerRoute b) {
+        return a != null && b != null && a.cells().equals(b.cells());
+    }
+
+    private static double distanceToRoute(double x, double z, PlayerRoute route) {
+        double best = Double.POSITIVE_INFINITY;
+        List<Cell> cells = route.cells();
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell a = cells.get(i);
+            Cell b = cells.get(i + 1);
+            double ax = a.row() + 0.5D;
+            double az = a.column() + 0.5D;
+            double bx = b.row() + 0.5D;
+            double bz = b.column() + 0.5D;
+            double dx = bx - ax;
+            double dz = bz - az;
+            double lengthSquared = dx * dx + dz * dz;
+            double projection = lengthSquared <= 1.0E-9D
+                    ? 0.0D
+                    : ((x - ax) * dx + (z - az) * dz) / lengthSquared;
+            projection = Math.max(0.0D, Math.min(1.0D, projection));
+            double nearestX = ax + projection * dx;
+            double nearestZ = az + projection * dz;
+            best = Math.min(best, Math.hypot(x - nearestX, z - nearestZ));
+        }
+        return best == Double.POSITIVE_INFINITY ? 0.0D : best;
     }
 
     private static boolean insideRegion(int row, int column, Cell center, int radius) {

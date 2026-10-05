@@ -121,6 +121,54 @@ public final class MonsterAwareRoutePlanner {
     }
 
     /**
+     * Cheap live replanning over the already-generated physical alternatives.
+     * It uses no future monster RNG; only the current observed state and the
+     * bounded arrival-time threat scorer are consulted.
+     */
+    public PlayerRoute routeReactive(GameState state, Cell start, Cell goal) {
+        validate(state, start, goal);
+        if (start.equals(goal)) return new PlayerRoute(List.of(start));
+
+        List<PlayerRoute> candidates = restrictJumperGapBudget(
+                state, cachedCandidatesFor(
+                        state, start, goal, 0, MAX_ROUTE_CANDIDATES, false));
+        return reactiveChoice(state, candidates);
+    }
+
+    public PlayerRoute routeToRegionReactive(GameState state, Cell start,
+                                              Cell regionCenter, int radius) {
+        validate(state, start, regionCenter);
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+
+        if (me.monstermazeai.game.PadModel.isOn(state.player,
+                regionCenter.row() + 0.5, GameState.PAD_SURFACE_Y,
+                regionCenter.column() + 0.5)) {
+            return new PlayerRoute(List.of(start));
+        }
+
+        List<PlayerRoute> candidates = restrictJumperGapBudget(
+                state, cachedCandidatesFor(
+                        state, start, regionCenter, radius,
+                        MAX_REGION_CANDIDATES, true));
+        return reactiveChoice(state, candidates);
+    }
+
+    private PlayerRoute reactiveChoice(GameState state, List<PlayerRoute> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException("No route candidates");
+        }
+        if (!hasRelevantMonster(state)) return shortest(candidates);
+
+        ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
+        return candidates.stream()
+                .min(Comparator.comparingDouble(route ->
+                        route.size()
+                                + gapJumpPolicy.riskCostPerGap() * gapCount(route)
+                                + threatAware.routeThreatCost(state, route)))
+                .orElseThrow();
+    }
+
+    /**
      * Jumper's remaining charged jumps are a real finite resource. A route with
      * more gap edges than remaining charges cannot be executed under the source
      * jump lock. This filter is intentionally applied after candidate caching so

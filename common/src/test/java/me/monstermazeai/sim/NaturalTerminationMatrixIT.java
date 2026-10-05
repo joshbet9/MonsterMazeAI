@@ -62,7 +62,6 @@ class NaturalTerminationMatrixIT {
                     rows.add(row);
                 }
             }
-        }
         assertEquals(30, rows.size());
     }
 }

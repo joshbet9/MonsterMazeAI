@@ -189,7 +189,7 @@ final class NoMobLocomotionController {
         double progress = edge.progress;
         double remaining = edge.length - progress;
 
-        float yawError = headingError(edge);
+        float yawError = headingError(state, edge);
         if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
             lastDecision = "TURN_EDGE edge=" + edge.index
                     + " yawError=" + format(yawError);
@@ -412,12 +412,9 @@ final class NoMobLocomotionController {
         return state.player.z - (from.column() + 0.5D);
     }
 
-    private float headingError(Edge edge) {
-        return headingErrorForDirection(
-                edgeState, edge.dirX, edge.dirZ);
+    private float headingError(GameState state, Edge edge) {
+        return headingErrorForDirection(state, edge.dirX, edge.dirZ);
     }
-
-    private GameState edgeState;
 
     private float headingErrorForDirection(
             GameState state, double worldX, double worldZ) {
@@ -437,8 +434,11 @@ final class NoMobLocomotionController {
                 yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
         if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
+            // Never combine a speed/jump pulse with a large camera correction:
+            // the resulting horizontal impulse would use the pre-alignment
+            // heading and can throw the player sideways at a corner.
             return new Action(
-                    0.0, 0.0, jump, false, yawDelta, false);
+                    0.0, 0.0, false, false, yawDelta, false);
         }
 
         double yaw = Math.toRadians(state.player.yaw + yawDelta);

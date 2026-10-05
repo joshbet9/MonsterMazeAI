@@ -102,7 +102,20 @@ class AuthenticStage10SimulationTest {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }
 
-    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, REQUIRED_STAGE, true);
+    }
+
+    /**
+     * stopStage <= 0 means run until natural simulator termination or MAX_TICKS.
+     * spawnMonsters=false creates a deterministic locomotion-only control run.
+     */
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int stopStage) {
+        return run(pattern, kit, profile, mode, stopStage, true);
+    }
+
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode,
+                         int stopStage, boolean spawnMonsters) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -141,7 +154,7 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = initialMonsterCount(mode);
+        state.pendingMonsterSpawns = spawnMonsters ? initialMonsterCount(mode) : 0;
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -150,6 +163,9 @@ class AuthenticStage10SimulationTest {
 
         int maxStage = 1;
         int lastStage = 1;
+        final int[] checkpointTicks = {5_000, 10_000, 15_000, 20_000};
+        int[] stageAtCheckpoint = {1, 1, 1, 1};
+        int checkpointIndex = 0;
         long firstFallTick = -1L;
         double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
         double firstFallVx = Double.NaN, firstFallVz = Double.NaN;
@@ -158,12 +174,15 @@ class AuthenticStage10SimulationTest {
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
+        boolean diagnostic = Boolean.parseBoolean(
+                System.getProperty("matrixDiagnostic", "false"));
+        Deque<String> diagnosticTrace = new ArrayDeque<>();
 
         for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the
             // mode's 225-monster starter quota is reached.
-            if (state.pendingMonsterSpawns > 0) {
+            if (spawnMonsters && state.pendingMonsterSpawns > 0) {
                 int batch = Math.min(25, state.pendingMonsterSpawns);
                 int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
                 state.pendingMonsterSpawns -= spawned;
@@ -174,7 +193,7 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
+            if (kit == Kit.JUMPER && (pattern == 0 || pattern == 2)) {
                 trace.addLast("tick=" + state.tick
                         + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " y=" + format(state.player.y)
@@ -198,9 +217,11 @@ class AuthenticStage10SimulationTest {
             }
 
             if (state.stage != lastStage) {
-                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
-                state.pendingMonsterSpawns -= spawned;
-                if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
+                if (spawnMonsters) {
+                    int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
+                    state.pendingMonsterSpawns -= spawned;
+                    if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
+                }
 
                 // Source removes monsters from the newly promoted active pad.
                 if (state.activePadRow >= 0 && state.activePadColumn >= 0) {
@@ -213,6 +234,12 @@ class AuthenticStage10SimulationTest {
             }
 
             maxStage = Math.max(maxStage, state.stage);
+
+            while (checkpointIndex < checkpointTicks.length
+                    && state.tick >= checkpointTicks[checkpointIndex]) {
+                stageAtCheckpoint[checkpointIndex] = maxStage;
+                checkpointIndex++;
+            }
 
             if (firstFallTick < 0L && state.player.y < GameState.PATH_Y - 0.05D) {
                 firstFallTick = state.tick;
@@ -231,7 +258,53 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (diagnostic && (tick % 25 == 0 || state.stage != lastStage)) {
+                diagnosticTrace.addLast(
+                        "t=" + state.tick
+                                + " stage=" + state.stage
+                                + " timer=" + state.phaseTicksRemaining
+                                + " pos=" + format(state.player.x) + "," + format(state.player.y) + "," + format(state.player.z)
+                                + " vel=" + format(state.player.vx) + "," + format(state.player.vy) + "," + format(state.player.vz)
+                                + " grounded=" + state.player.grounded
+                                + " action=" + currentAction.replace(' ', '_')
+                                + " decision=" + decisionBeforeTick.replace(' ', '_'));
+                while (diagnosticTrace.size() > 80) diagnosticTrace.removeFirst();
+            }
+
+            if (stopStage > 0 && maxStage >= stopStage) break;
+        }
+
+        while (checkpointIndex < checkpointTicks.length) {
+            stageAtCheckpoint[checkpointIndex] = maxStage;
+            checkpointIndex++;
+        }
+
+        if (diagnostic) {
+            if (firstFallTick >= 0L) {
+                System.out.println(
+                        "FIRST_FALL mode=" + mode
+                                + " pattern=" + (pattern + 1)
+                                + " kit=" + kit
+                                + " tick=" + firstFallTick
+                                + " pre=" + format(firstFallPreX) + "," + format(firstFallPreY) + "," + format(firstFallPreZ)
+                                + " preV=" + format(firstFallPreVx) + "," + format(firstFallPreVy) + "," + format(firstFallPreVz)
+                                + " post=" + format(firstFallX) + "," + format(firstFallY) + "," + format(firstFallZ)
+                                + " postV=" + format(firstFallVx) + "," + format(firstFallVz)
+                                + " decision=" + firstFallDecision);
+            }
+            System.out.println(
+                    "DIAGNOSTIC mode=" + mode
+                            + " pattern=" + (pattern + 1)
+                            + " kit=" + kit
+                            + " stage=" + maxStage
+                            + " ticks=" + state.tick
+                            + " alive=" + state.alive
+                            + " timer=" + state.phaseTicksRemaining
+                            + " health=" + format(state.player.health)
+                            + " pos=" + format(state.player.x) + "," + format(state.player.y) + "," + format(state.player.z)
+                            + " firstFallTick=" + firstFallTick
+                            + " decision=" + agent.lastDecisionDetail().replace(' ', '_')
+                            + " TRACE=" + String.join(" || ", diagnosticTrace));
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -239,7 +312,12 @@ class AuthenticStage10SimulationTest {
                 firstFallPreX, firstFallPreY, firstFallPreZ,
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
-                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
+                firstFallVx, firstFallVz, firstFallDecision,
+                agent.lastDecisionDetail(),
+                stageAtCheckpoint[0],
+                stageAtCheckpoint[1],
+                stageAtCheckpoint[2],
+                stageAtCheckpoint[3]);
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -351,7 +429,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,
@@ -370,5 +448,9 @@ class AuthenticStage10SimulationTest {
             double firstFallVx,
             double firstFallVz,
             String firstFallDecision,
-            String decision) {}
+            String decision,
+            int stageAt5k,
+            int stageAt10k,
+            int stageAt15k,
+            int stageAt20k) {}
 }

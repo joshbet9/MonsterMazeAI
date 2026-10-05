@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
  */
 public final class StableLiveMovementController {
     private final AiProfile profile;
+    private final NoMobLocomotionController noMobController;
 
     public StableLiveMovementController() {
         this(AiProfile.BASELINE);
@@ -48,6 +49,7 @@ public final class StableLiveMovementController {
     public StableLiveMovementController(AiProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        this.noMobController = new NoMobLocomotionController(profile);
     }
 
     public AiProfile profile() {
@@ -207,6 +209,19 @@ public final class StableLiveMovementController {
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
 
+        /*
+         * Zero-monster runs are a pure locomotion control problem. Use the
+         * deterministic corridor motor so its behaviour can be evaluated
+         * independently of threat detection, tactical search, and recovery
+         * heuristics. The normal controller remains authoritative as soon as
+         * a real monster is present.
+         */
+        if (state.monsters != null && state.monsters.isEmpty()) {
+            Action noMob = noMobController.nextAction(state, goal, allowJump, regionRadius);
+            lastDecisionDetail = "NO_MOB_MOTOR " + noMobController.lastDecisionDetail();
+            return noMob;
+        }
+
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
             mobHitRecoveryUntilTick = Math.max(
@@ -323,7 +338,7 @@ public final class StableLiveMovementController {
             route = regionRadius > 0
                     ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
                     : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
-            waypointIndex = firstTurnWaypoint(route);
+            waypointIndex = reanchorWaypointIndex(state, route);
             lastRouteTick = state.tick;
             routePlanCount++;
             lastThreatSignature = threatSignature(state);
@@ -350,7 +365,7 @@ public final class StableLiveMovementController {
                 route = regionRadius > 0
                         ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
                         : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
-                waypointIndex = firstTurnWaypoint(route);
+                waypointIndex = reanchorWaypointIndex(state, route);
                 anchoredSegmentIndex = -1;
                 lastRouteTick = state.tick;
                 routePlanCount++;
@@ -589,19 +604,51 @@ public final class StableLiveMovementController {
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, 0.0, jump, sprint, turn, false);
                 lastDecisionDetail += " STEER_DRIVE";
-            } else if (distance <= 4.50 && Math.abs(yawError) < 135.0F) {
+            } else if (Math.abs(yawError) < 135.0F) {
                 /*
-                 * Near a cardinal corner, keep a bounded W+A/D vector active while
-                 * the camera turns. The vector is derived from the actual
-                 * heading error, so it rotates smoothly toward the next
-                 * cardinal segment instead of waiting in place or strafing blindly.
+                 * The waypoint index has already advanced onto the new cardinal
+                 * segment. Continue steering/moving toward that segment immediately;
+                 * do not gate this on the distance to the *next* turn. The old
+                 * 4.5-block gate caused long straight corridors to become
+                 * stop-turn-go: after a 90-degree corner the controller would
+                 * coast without input until vanilla friction reduced speed enough
+                 * to permit an in-place turn.
+                 *
+                 * The local W/A/D vector is transformed into the post-turn camera
+                 * frame below, so the world-space movement remains exactly aligned
+                 * with the new corridor rather than cutting diagonally through air.
                  */
-                double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.65D;
-                double strafe = -Math.sin(errorRad) * 0.65D;
+                /*
+                 * yawDelta is applied before Minecraft transforms W/A/D into
+                 * world movement. The old implementation calculated this vector
+                 * from the pre-turn yaw, so a 90-degree corner could issue a
+                 * strafe vector that pointed away from the next corridor.
+                 *
+                 * Convert the desired world direction using the post-turn
+                 * camera frame instead. This preserves the intended cornering
+                 * direction while keeping the bounded 30-degree/tick camera
+                 * movement source-compatible.
+                 */
+                double postYawRad = Math.toRadians(state.player.yaw + turn);
+                double desiredYawRad = Math.toRadians(desiredYaw);
+                double desiredWorldX = -Math.sin(desiredYawRad);
+                double desiredWorldZ = Math.cos(desiredYawRad);
+                double forwardAxisX = -Math.sin(postYawRad);
+                double forwardAxisZ = Math.cos(postYawRad);
+                double strafeAxisX = Math.cos(postYawRad);
+                double strafeAxisZ = Math.sin(postYawRad);
+                double forward = desiredWorldX * forwardAxisX
+                        + desiredWorldZ * forwardAxisZ;
+                double strafe = desiredWorldX * strafeAxisX
+                        + desiredWorldZ * strafeAxisZ;
+                double magnitude = Math.hypot(forward, strafe);
+                if (magnitude > 1.0E-9D) {
+                    forward = forward / magnitude * 0.65D;
+                    strafe = strafe / magnitude * 0.65D;
+                }
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, strafe, jump, false, turn, false);
-                lastDecisionDetail += " CORNER_VECTOR";
+                lastDecisionDetail += " CORNER_VECTOR_POST_TURN";
             } else {
                 action = new Action(
                         0.0, 0.0, false, false,
@@ -672,6 +719,7 @@ public final class StableLiveMovementController {
         clearGapCommitment();
         clearPadTransitionFacing();
         lastSpeedJumpInputTick = Long.MIN_VALUE;
+        noMobController.reset();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;
@@ -808,7 +856,7 @@ public final class StableLiveMovementController {
         }
 
         route = planned.route;
-        waypointIndex = firstTurnWaypoint(route);
+        waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
         routePlanCount++;
@@ -846,6 +894,76 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    /**
+     * Re-anchor a newly installed route to the segment the player physically
+     * occupies. A route replacement is allowed to happen after the player has
+     * already crossed an old corner; resetting to the first turn then commands
+     * an immediate reversal through stale geometry.
+     *
+     * When the player is near a corner shared by two route segments, current
+     * horizontal momentum breaks the tie in favour of the segment being entered.
+     */
+    static int reanchorWaypointIndex(GameState state, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() <= 1) {
+            return candidate == null ? 0 : candidate.size();
+        }
+
+        List<Cell> cells = candidate.cells();
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        double velocityX = speed > 1.0E-6 ? state.player.vx / speed : 0.0;
+        double velocityZ = speed > 1.0E-6 ? state.player.vz / speed : 0.0;
+
+        int bestSegment = 0;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        double bestMomentum = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < cells.size() - 1; i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+
+            double startX = from.row() + 0.5D;
+            double startZ = from.column() + 0.5D;
+            double endX = to.row() + 0.5D;
+            double endZ = to.column() + 0.5D;
+            double segmentX = endX - startX;
+            double segmentZ = endZ - startZ;
+            double lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double playerX = state.player.x - startX;
+            double playerZ = state.player.z - startZ;
+            double progress = (playerX * segmentX + playerZ * segmentZ) / lengthSquared;
+            progress = Math.max(0.0D, Math.min(1.0D, progress));
+
+            double nearestX = startX + progress * segmentX;
+            double nearestZ = startZ + progress * segmentZ;
+            double distance = Math.hypot(
+                    state.player.x - nearestX,
+                    state.player.z - nearestZ);
+
+            double segmentLength = Math.sqrt(lengthSquared);
+            double directionX = segmentX / segmentLength;
+            double directionZ = segmentZ / segmentLength;
+            double momentum = speed > 1.0E-6
+                    ? velocityX * directionX + velocityZ * directionZ
+                    : 0.0D;
+
+            boolean closer = distance < bestDistance - 0.12D;
+            boolean comparable = Math.abs(distance - bestDistance) <= 0.12D;
+            if (closer
+                    || (comparable && momentum > bestMomentum + 0.05D)
+                    || (comparable
+                    && Math.abs(momentum - bestMomentum) <= 0.05D
+                    && i > bestSegment)) {
+                bestSegment = i;
+                bestDistance = distance;
+                bestMomentum = momentum;
+            }
+        }
+
+        return nextTurnWaypoint(candidate, bestSegment);
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

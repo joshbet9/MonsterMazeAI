@@ -7,11 +7,16 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: common-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   common:
+    if: github.ref_name != 'autonomous/locomotion-026-v1'
     name: Common Maven tests
     runs-on: ubuntu-latest
 

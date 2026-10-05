@@ -1,0 +1,93 @@
+name: Matrix v46 — Locomotion-only no-mob control
+
+on:
+  push:
+    branches:
+      - autonomous/locomotion-026-v1
+
+concurrency:
+  group: monstermaze-v46-no-mobs
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Full 30-cell no-mob natural termination matrix
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run all 30 no-mob cells
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
+            -DmatrixSpawnMonsters=false \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            test 2>&1 | tee matrix-v46-no-mobs.log
+      - name: Summarize matrix
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          text = Path("matrix-v46-no-mobs.log").read_text(encoding="utf-8", errors="replace")
+          rx = re.compile(
+              r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+"
+              r"kit=([A-Z_]+)\s+stage=(\d+)\s+ticks=(\d+)\s+health=([\-\d.]+)"
+          )
+          rows = []
+          for m in rx.finditer(text):
+              rows.append({
+                  "mode": m.group(1),
+                  "pattern": int(m.group(2)),
+                  "kit": m.group(3),
+                  "maxStage": int(m.group(4)),
+                  "ticks": int(m.group(5)),
+                  "health": float(m.group(6)),
+              })
+          if len(rows) != 30:
+              raise SystemExit(f"expected 30 rows, found {len(rows)}")
+          short = [r for r in rows if r["ticks"] < 20000]
+          if short:
+              details = ", ".join(
+                  f'{r["mode"]} P{r["pattern"]} {r["kit"]}: stage={r["maxStage"]} ticks={r["ticks"]}'
+                  for r in short
+              )
+              raise SystemExit("no-mob max-run requirement failed: " + details)
+          rows.sort(key=lambda r: (r["mode"], r["pattern"], r["kit"]))
+          speed = [r["maxStage"] for r in rows if r["mode"] == "SPEED"]
+          modern = [r["maxStage"] for r in rows if r["mode"] == "MODERN"]
+          out = {
+              "cases": 30,
+              "stageSum": sum(r["maxStage"] for r in rows),
+              "speedMean": sum(speed) / 15,
+              "modernMean": sum(modern) / 15,
+              "speedPeak": max(speed),
+              "modernPeak": max(modern),
+              "rows": rows,
+          }
+          Path("matrix-v46-no-mobs.json").write_text(json.dumps(out, indent=2) + "\n")
+          print(json.dumps({k:v for k,v in out.items() if k != "rows"}, indent=2))
+          for r in rows:
+              print(f'{r["mode"]} P{r["pattern"]} {r["kit"]}: '
+                    f'stage={r["maxStage"]} ticks={r["ticks"]} health={r["health"]:.2f}')
+          PY
+      - name: Upload matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-v46-no-mobs-${{ github.sha }}
+          path: |
+            matrix-v46-no-mobs.log
+            matrix-v46-no-mobs.json

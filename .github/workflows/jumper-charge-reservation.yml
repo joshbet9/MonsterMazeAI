@@ -1,0 +1,40 @@
+name: Fix — reserve Jumper charges for gaps
+
+on:
+  push:
+    branches:
+      - fix/jumper-charge-reservation-v1
+
+permissions:
+  contents: read
+
+jobs:
+  jumper:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run three Modern Jumper cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > jumper-reserve.log
+          for pattern in 1 2 3; do
+            echo "===== MODERN P$pattern JUMPER =====" | tee -a jumper-reserve.log
+            mvn -B -ntp -pl common -am               -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase               -DmatrixMode=MODERN               -DmatrixPattern="$pattern"               -DmatrixKit=JUMPER               -DmatrixSpawnMonsters=true               -DmatrixDiagnostic=true               -Dsurefire.failIfNoSpecifiedTests=false               -Dsurefire.useFile=false               -Dsurefire.redirectTestOutputToFile=false               test 2>&1 | tee -a jumper-reserve.log
+          done
+      - name: Extract compact result
+        shell: bash
+        run: |
+          grep -E '^(FULL_MATRIX|FIRST_FALL|DIAGNOSTIC)' jumper-reserve.log > jumper-reserve-report.txt || true
+          cat jumper-reserve-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jumper-charge-reservation
+          path: jumper-reserve.log

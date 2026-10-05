@@ -446,28 +446,12 @@ public final class StableLiveMovementController {
             }
         }
 
-        // When a source interaction is close enough to matter this tick, hand
-        // control to the same tactical simulator used during route selection.
-        // This is what makes deliberate contact and ability use real live actions,
-        // rather than merely simulated route preferences.
-        long currentThreatSignature = threatSignature(state);
-        if (routePlanner.shouldUseTacticalAction(state)
-                && currentThreatSignature != lastTacticalSignature) {
-            /*
-             * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
-             */
-            Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
-            }
-        }
-
+        /*
+         * The route planner already evaluated nearby-mob futures. Do not let a
+         * second, short-horizon tactical command replace the verified movement
+         * motor on the live tick; this avoids injecting a stale jump/turn after
+         * the route has been selected.
+         */
         /*
          * The no-mob motor is the proven source-faithful movement executor.
          * Reuse it here after mob-specific decisions have had their chance to

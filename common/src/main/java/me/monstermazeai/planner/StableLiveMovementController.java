@@ -323,7 +323,7 @@ public final class StableLiveMovementController {
             route = regionRadius > 0
                     ? routePlanner.routeToRegionFast(routingState, new Cell(startRow, startColumn), goal, regionRadius)
                     : routePlanner.routeFast(routingState, new Cell(startRow, startColumn), goal);
-            waypointIndex = firstTurnWaypoint(route);
+            waypointIndex = reanchorWaypointIndex(state, route);
             lastRouteTick = state.tick;
             routePlanCount++;
             lastThreatSignature = threatSignature(state);
@@ -350,7 +350,7 @@ public final class StableLiveMovementController {
                 route = regionRadius > 0
                         ? routePlanner.routeToRegionFast(state, new Cell(startRow, startColumn), goal, regionRadius)
                         : routePlanner.routeFast(state, new Cell(startRow, startColumn), goal);
-                waypointIndex = firstTurnWaypoint(route);
+                waypointIndex = reanchorWaypointIndex(state, route);
                 anchoredSegmentIndex = -1;
                 lastRouteTick = state.tick;
                 routePlanCount++;
@@ -840,7 +840,7 @@ public final class StableLiveMovementController {
         }
 
         route = planned.route;
-        waypointIndex = firstTurnWaypoint(route);
+        waypointIndex = reanchorWaypointIndex(state, route);
         anchoredSegmentIndex = -1;
         lastRouteTick = planned.requestedTick;
         routePlanCount++;
@@ -878,6 +878,76 @@ public final class StableLiveMovementController {
             this.topologySignature = topologySignature;
             this.threatSignature = threatSignature;
         }
+    }
+
+    /**
+     * Re-anchor a newly installed route to the segment the player physically
+     * occupies. A route replacement is allowed to happen after the player has
+     * already crossed an old corner; resetting to the first turn then commands
+     * an immediate reversal through stale geometry.
+     *
+     * When the player is near a corner shared by two route segments, current
+     * horizontal momentum breaks the tie in favour of the segment being entered.
+     */
+    static int reanchorWaypointIndex(GameState state, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() <= 1) {
+            return candidate == null ? 0 : candidate.size();
+        }
+
+        List<Cell> cells = candidate.cells();
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        double velocityX = speed > 1.0E-6 ? state.player.vx / speed : 0.0;
+        double velocityZ = speed > 1.0E-6 ? state.player.vz / speed : 0.0;
+
+        int bestSegment = 0;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        double bestMomentum = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < cells.size() - 1; i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+
+            double startX = from.row() + 0.5D;
+            double startZ = from.column() + 0.5D;
+            double endX = to.row() + 0.5D;
+            double endZ = to.column() + 0.5D;
+            double segmentX = endX - startX;
+            double segmentZ = endZ - startZ;
+            double lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+            if (lengthSquared <= 1.0E-9D) continue;
+
+            double playerX = state.player.x - startX;
+            double playerZ = state.player.z - startZ;
+            double progress = (playerX * segmentX + playerZ * segmentZ) / lengthSquared;
+            progress = Math.max(0.0D, Math.min(1.0D, progress));
+
+            double nearestX = startX + progress * segmentX;
+            double nearestZ = startZ + progress * segmentZ;
+            double distance = Math.hypot(
+                    state.player.x - nearestX,
+                    state.player.z - nearestZ);
+
+            double segmentLength = Math.sqrt(lengthSquared);
+            double directionX = segmentX / segmentLength;
+            double directionZ = segmentZ / segmentLength;
+            double momentum = speed > 1.0E-6
+                    ? velocityX * directionX + velocityZ * directionZ
+                    : 0.0D;
+
+            boolean closer = distance < bestDistance - 0.12D;
+            boolean comparable = Math.abs(distance - bestDistance) <= 0.12D;
+            if (closer
+                    || (comparable && momentum > bestMomentum + 0.05D)
+                    || (comparable
+                    && Math.abs(momentum - bestMomentum) <= 0.05D
+                    && i > bestSegment)) {
+                bestSegment = i;
+                bestDistance = distance;
+                bestMomentum = momentum;
+            }
+        }
+
+        return nextTurnWaypoint(candidate, bestSegment);
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

@@ -1,0 +1,67 @@
+name: Phase 2 — Gap pulse result capture v2
+
+on:
+  push:
+    branches:
+      - phase2-pulse-report-v2
+
+permissions:
+  contents: write
+
+jobs:
+  matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run 24 cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > gap-v2.log
+          for mode in SPEED MODERN; do
+            for kit in SLOWBALLER BODY_BUILDER REPULSOR MAVERICK; do
+              for pattern in 1 2 3; do
+                echo "===== $mode P$pattern $kit =====" | tee -a gap-v2.log
+                mvn -B -ntp -pl common -am                   -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase                   -DmatrixMode="$mode"                   -DmatrixPattern="$pattern"                   -DmatrixKit="$kit"                   -DmatrixSpawnMonsters=true                   -Dsurefire.failIfNoSpecifiedTests=false                   -Dsurefire.useFile=false                   -Dsurefire.redirectTestOutputToFile=false                   test 2>&1 | tee -a gap-v2.log
+              done
+            done
+          done
+      - name: Capture compact result
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          t=Path("gap-v2.log").read_text(encoding="utf-8",errors="replace")
+          rows=[(m.group(1),int(m.group(2)),m.group(3),int(m.group(4)),int(m.group(5)))
+                for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]
+          if len(rows)!=24: raise SystemExit(f"expected 24 rows, got {len(rows)}")
+          lines=[f"{a} P{b} {c} stage={d} ticks={e}" for a,b,c,d,e in rows]
+          speed=[r[3] for r in rows if r[0]=="SPEED"]; modern=[r[3] for r in rows if r[0]=="MODERN"]
+          lines += ["",f"Speed mean={sum(speed)/len(speed):.4f}",
+                    f"Modern mean={sum(modern)/len(modern):.4f}",
+                    f"Speed >=10={sum(x>=10 for x in speed)}/12",
+                    f"Modern >=10={sum(x>=10 for x in modern)}/12"]
+          Path("gap-v2-report.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
+          print("\n".join(lines))
+          PY
+      - name: Persist result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gap-v2-report.txt
+          git commit -m "Capture gap pulse v2 result [skip ci]"
+          git push
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gap-v2-report
+          path: gap-v2.log

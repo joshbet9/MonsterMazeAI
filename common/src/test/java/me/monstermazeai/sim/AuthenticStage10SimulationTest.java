@@ -103,6 +103,11 @@ class AuthenticStage10SimulationTest {
     }
 
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, false, true);
+    }
+
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode,
+                         boolean naturalEnd, boolean spawnMonsters) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -141,7 +146,7 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = initialMonsterCount(mode);
+        state.pendingMonsterSpawns = spawnMonsters ? initialMonsterCount(mode) : 0;
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -163,7 +168,7 @@ class AuthenticStage10SimulationTest {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the
             // mode's 225-monster starter quota is reached.
-            if (state.pendingMonsterSpawns > 0) {
+            if (spawnMonsters && state.pendingMonsterSpawns > 0) {
                 int batch = Math.min(25, state.pendingMonsterSpawns);
                 int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
                 state.pendingMonsterSpawns -= spawned;
@@ -198,12 +203,14 @@ class AuthenticStage10SimulationTest {
             }
 
             if (state.stage != lastStage) {
-                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
-                state.pendingMonsterSpawns -= spawned;
-                if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
+                if (spawnMonsters) {
+                    int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
+                    state.pendingMonsterSpawns -= spawned;
+                    if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
+                }
 
                 // Source removes monsters from the newly promoted active pad.
-                if (state.activePadRow >= 0 && state.activePadColumn >= 0) {
+                if (spawnMonsters && state.activePadRow >= 0 && state.activePadColumn >= 0) {
                     removeMonstersOnPad(state,
                             new Cell(state.activePadRow, state.activePadColumn));
                     activatePadSurface(state,
@@ -351,7 +358,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,

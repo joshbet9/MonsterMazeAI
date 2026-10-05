@@ -672,8 +672,14 @@ final class NoMobLocomotionController {
          * rotate-stop-rotate loop seen in the diagnostic trace; the resulting
          * input is still equivalent to WASD steering in the 1.8 client.
          */
+        /*
+         * Human-like camera convergence: large route-heading errors should be
+         * closed quickly while translation continues. The source client accepts
+         * continuous mouse-look; this only changes the controller's yaw input,
+         * not movement physics.
+         */
         float yawDelta = clamp(
-                yawError * 0.20F, -10.0F, 10.0F);
+                yawError * 0.35F, -20.0F, 20.0F);
         double yaw = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);

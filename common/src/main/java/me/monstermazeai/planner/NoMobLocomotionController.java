@@ -288,16 +288,26 @@ final class NoMobLocomotionController {
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
         Cell target = edge.to;
-        /*
-         * Phase-1 survival invariant: the route edge is the only legal movement
-         * direction. Never aim directly at the next cell centre, because that
-         * creates a diagonal chord across a 90-degree corner and can put the
-         * player's AABB over a void cell before the next observation.
-         */
-        double worldX = edge.dirX;
-        double worldZ = edge.dirZ;
-        double remaining = Math.max(0.0D, edge.length - edge.progress);
+        double targetX = target.row() + 0.5D;
+        double targetZ = target.column() + 0.5D;
+        double worldX = targetX - state.player.x;
+        double worldZ = targetZ - state.player.z;
+        double remaining = Math.hypot(worldX, worldZ);
 
+        if (remaining < 1.0E-9D) {
+            worldX = edge.dirX;
+            worldZ = edge.dirZ;
+            remaining = 1.0D;
+        } else {
+            worldX /= remaining;
+            worldZ /= remaining;
+        }
+
+        /*
+         * Fast baseline: aim at the next floor-cell centre. This maximizes
+         * travel speed through ordinary corridors; the safety layer below only
+         * intervenes when the exact one-tick source model predicts a floor loss.
+         */
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
@@ -306,26 +316,20 @@ final class NoMobLocomotionController {
                 false);
 
         /*
-         * Charged Jumper jumps are ordinary vertical jumps, but the vanilla
-         * sprint-jump horizontal impulse still follows the player's current
-         * facing. Never spend one while the player is materially outside the
-         * committed corridor or badly misaligned with it. Those are exactly the
-         * states where a jump turns a recoverable lane error into an edge fall.
+         * Charged Jumper jumps are safe only while the player is well aligned
+         * with the committed floor corridor. After the three charges are gone,
+         * the same Jump input is the source horizontal speed impulse and should
+         * be available on every grounded tick.
          */
         double crossTrack = edgeLateral(
                 state, edge.from, directionRow(edge), directionColumn(edge));
         if (state.kit == Kit.JUMPER
-                && (Math.abs(crossTrack) > 0.30D
-                    || Math.abs(yawError) > 25.0F
+                && (Math.abs(crossTrack) > p3JumperCrossTrackLimit()
+                    || Math.abs(yawError) > p3JumperYawLimit()
                     || hasTurnWithinCells(p3JumperTurnLookahead()))) {
             jump = false;
         }
 
-        /*
-         * The Jump -10 horizontal impulse follows the player's facing. When the
-         * requested cell is behind that facing, suppress the pulse until the
-         * camera has converged; translation itself remains fully active.
-         */
         if (Math.abs(yawError) > 75.0F) {
             jump = false;
         }
@@ -337,7 +341,87 @@ final class NoMobLocomotionController {
                 + " yawError=" + format(yawError)
                 + " jump=" + jump;
 
-        return driveVector(state, worldX, worldZ, 1.0, true, jump);
+        Action proposed = driveVector(state, worldX, worldZ, 1.0, true, jump);
+        if (projectedFloorSafe(state, proposed)) {
+            return proposed;
+        }
+
+        /*
+         * Corner safety fallback. Do not replace the normal fast controller
+         * every tick; only search alternatives when the chosen target-centre
+         * vector would leave the physical floor on the very next source tick.
+         */
+        Action edgeAligned = driveVector(
+                state, edge.dirX, edge.dirZ, 1.0, true, false);
+        if (projectedFloorSafe(state, edgeAligned)) {
+            lastDecision += "_FALLBACK_EDGE";
+            return edgeAligned;
+        }
+
+        if (Math.abs(crossTrack) > 0.02D) {
+            double correction = Math.max(
+                    -0.35D, Math.min(0.35D, -crossTrack * 1.5D));
+            double correctedX = edge.dirX;
+            double correctedZ = edge.dirZ;
+            if (edge.dirX != 0.0D) correctedZ += correction;
+            else correctedX += correction;
+
+            double len = Math.hypot(correctedX, correctedZ);
+            if (len > 1.0E-9D) {
+                correctedX /= len;
+                correctedZ /= len;
+                Action lane = driveVector(
+                        state, correctedX, correctedZ, 1.0, true, false);
+                if (projectedFloorSafe(state, lane)) {
+                    lastDecision += "_FALLBACK_LANE";
+                    return lane;
+                }
+            }
+        }
+
+        Action brake = brakeVelocity(state);
+        if (projectedFloorSafe(state, brake)) {
+            lastDecision += "_FALLBACK_BRAKE";
+            return brake;
+        }
+
+        lastDecision += "_FALLBACK_IDLE";
+        return Action.IDLE;
+    }
+
+    private boolean projectedFloorSafe(GameState state, Action action) {
+        me.monstermazeai.player.PlayerState projected = state.player.copy();
+        int jumpAmplifier =
+                state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
+
+        new LegacyMazePhysics().tick(
+                projected, action, state.maze, jumpAmplifier);
+
+        if (projected.y < -0.01D) return false;
+
+        boolean airborneJump =
+                action.jump()
+                        && state.kit == Kit.JUMPER
+                        && state.ability.charges > 0
+                        && projected.y > 0.01D;
+        return airborneJump
+                || physicalFloorUnderAabb(state, projected.x, projected.z);
+    }
+
+    private static boolean physicalFloorUnderAabb(
+            GameState state, double x, double z) {
+        final double halfWidth = 0.30D;
+        int minRow = (int) Math.floor(x - halfWidth);
+        int maxRow = (int) Math.floor(Math.nextDown(x + halfWidth));
+        int minColumn = (int) Math.floor(z - halfWidth);
+        int maxColumn = (int) Math.floor(Math.nextDown(z + halfWidth));
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (state.maze.isPhysicalFloor(row, column)) return true;
+            }
+        }
+        return false;
     }
 
     private Action brakeVelocity(GameState state) {

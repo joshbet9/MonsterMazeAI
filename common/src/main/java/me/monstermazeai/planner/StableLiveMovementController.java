@@ -174,6 +174,10 @@ public final class StableLiveMovementController {
     private static final float GAP_HEADING_TOLERANCE = 5.0F;
     private static final double GAP_LATERAL_SPEED_LIMIT = 0.12D;
     private static final int GAP_LANDING_CONFIRM_TICKS = 2;
+    /** A committed gap cannot survive a large mob knockback backwards. */
+    private static final double GAP_STALE_PROGRESS = -3.0D;
+    /** A committed gap is invalid once the player is well outside its lane. */
+    private static final double GAP_STALE_LATERAL = 1.25D;
     private boolean padEntryCommitment;
     private int padEntryRow = -1;
     private int padEntryColumn = -1;
@@ -1873,6 +1877,27 @@ public final class StableLiveMovementController {
             return null;
         }
         double progress = currentGapProgress(state, gapExecutionRouteIndex);
+        double lateralFromGap = Math.abs(edgeLateral(
+                state,
+                fromRow,
+                Integer.signum(toRow - fromRow),
+                Integer.signum(toColumn - fromColumn)));
+
+        /*
+         * A mob bump can move the player several blocks off the committed
+         * source edge. Continuing to emit GAP_EXECUTE against that old edge
+         * turns a recoverable knockback into a guaranteed fall/deadline loss.
+         * Cancel only when the displacement is clearly beyond the normal
+         * pre-takeoff window, then let ordinary route recovery choose again.
+         */
+        if (progress < GAP_STALE_PROGRESS || lateralFromGap > GAP_STALE_LATERAL) {
+            lastDecisionDetail = "GAP_STALE_CANCEL edge=" + gapEdgeText()
+                    + " progress=" + format(progress)
+                    + " lateral=" + format(lateralFromGap);
+            clearGapCommitment();
+            return null;
+        }
+
         boolean jumpThisTick = false;
 
         /*

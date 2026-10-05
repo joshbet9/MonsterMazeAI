@@ -266,6 +266,18 @@ class AuthenticStage10SimulationTest {
         }
 
         if (diagnostic) {
+            if (firstFallTick >= 0L) {
+                System.out.println(
+                        "FIRST_FALL mode=" + mode
+                                + " pattern=" + (pattern + 1)
+                                + " kit=" + kit
+                                + " tick=" + firstFallTick
+                                + " pre=" + format(firstFallPreX) + "," + format(firstFallPreY) + "," + format(firstFallPreZ)
+                                + " preV=" + format(firstFallPreVx) + "," + format(firstFallPreVy) + "," + format(firstFallPreVz)
+                                + " post=" + format(firstFallX) + "," + format(firstFallY) + "," + format(firstFallZ)
+                                + " postV=" + format(firstFallVx) + "," + format(firstFallVz)
+                                + " decision=" + firstFallDecision);
+            }
             System.out.println(
                     "DIAGNOSTIC mode=" + mode
                             + " pattern=" + (pattern + 1)

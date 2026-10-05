@@ -1361,6 +1361,46 @@ public final class StableLiveMovementController {
                  * cells does not unnecessarily reverse the route.
                  */
                 double score = landingDistance + 0.025D * goalDistance;
+
+                /*
+                 * After a real mob bump the ballistic landing point can be
+                 * several blocks away from the currently executing corridor.
+                 * Prefer a nearby future route cell when one is physically
+                 * reachable; this lets the normal route motor resume forward
+                 * instead of rebuilding from an arbitrary floor pocket.
+                 */
+                if (route != null && route.size() > 1) {
+                    int fromIndex = Math.max(0, waypointIndex - 1);
+                    int toIndex = Math.min(
+                            route.size() - 1, waypointIndex + 16);
+                    for (int routeIndex = fromIndex;
+                         routeIndex <= toIndex;
+                         routeIndex++) {
+                        Cell routeCell = route.cells().get(routeIndex);
+                        if (!state.maze.isPhysicalFloor(
+                                routeCell.row(), routeCell.column())) continue;
+
+                        double routeX = routeCell.row() + 0.5D;
+                        double routeZ = routeCell.column() + 0.5D;
+                        double routeDistance = sq(routeX - predictedX)
+                                + sq(routeZ - predictedZ);
+                        if (routeDistance > 16.0D) continue;
+
+                        double continuityPenalty =
+                                0.12D * Math.abs(routeIndex - waypointIndex);
+                        double routeGoalDistance =
+                                sq(routeX - goalX) + sq(routeZ - goalZ);
+                        double routeScore = routeDistance
+                                + 0.018D * routeGoalDistance
+                                + continuityPenalty;
+                        if (routeScore < bestScore) {
+                            bestScore = routeScore;
+                            bestX = routeX;
+                            bestZ = routeZ;
+                        }
+                    }
+                }
+
                 if (score < bestScore) {
                     bestScore = score;
                     bestX = x;

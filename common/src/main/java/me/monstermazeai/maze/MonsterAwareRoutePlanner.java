@@ -19,7 +19,7 @@ public final class MonsterAwareRoutePlanner {
      */
     private static final double ROUTE_TURN_COST = 1.75D;
     private static final double ROUTE_U_TURN_COST = 4.0D;
-    private static final double ROUTE_GAP_COST = 1.45D;
+    private static final double ROUTE_GAP_COST = 4.0D;
 
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();

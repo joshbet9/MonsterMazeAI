@@ -500,28 +500,13 @@ public final class StableLiveMovementController {
             }
         }
 
-        // When a source interaction is close enough to matter this tick, hand
-        // control to the same tactical simulator used during route selection.
-        // This is what makes deliberate contact and ability use real live actions,
-        // rather than merely simulated route preferences.
-        long currentThreatSignature = threatSignature(state);
-        if (routePlanner.shouldUseTacticalAction(state)
-                && currentThreatSignature != lastTacticalSignature) {
-            /*
-             * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
-             */
-            Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
-            }
-        }
-
+        /*
+         * Live movement remains a deterministic route motor here. Tactical
+         * simulation is already used by LocalBranchThreatRerouter when a real
+         * corridor threat is detected; injecting a second tactical action layer
+         * every threat-signature change caused competing controllers to fight
+         * over the same movement tick.
+         */
         double targetX = route.targetX(waypointIndex);
         double targetZ = route.targetZ(waypointIndex);
         double dx = targetX - state.player.x;

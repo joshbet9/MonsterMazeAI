@@ -1220,6 +1220,11 @@ public final class StableLiveMovementController {
         return action.useAbility() || (allowJump && action.jump());
     }
 
+    private boolean currentRouteHasUsableWaypoint() {
+        return route != null && route.size() > 1
+                && waypointIndex > 0 && waypointIndex < route.size();
+    }
+
     private boolean detectLiveMobHit(GameState state) {
         boolean hit = !Double.isNaN(previousHealth)
                 && state.player.health < previousHealth - 0.5D;
@@ -1434,6 +1439,38 @@ public final class StableLiveMovementController {
         }
 
         if (threat == null) return null;
+
+        /*
+         * Give the source-faithful tactical simulator one chance to solve an
+         * actual mob corridor before the hard-coded nearest-mob dodge fires.
+         * Only lateral movement is admitted here: jumps/abilities remain under
+         * their dedicated rules, and guardProjectedSupport remains authoritative
+         * for physical safety.
+         */
+        long threatSignatureNow = threatSignature(state);
+        if (route != null
+                && currentRouteHasUsableWaypoint()
+                && threatSignatureNow != lastTacticalSignature) {
+            Action tacticalEscape = routePlanner.tacticalAction(
+                    state, route, goal, regionRadius);
+            lastTacticalSignature = threatSignatureNow;
+            if (tacticalEscape != null
+                    && !tacticalEscape.jump()
+                    && !tacticalEscape.useAbility()
+                    && Math.abs(tacticalEscape.strafe()) >= 0.50D) {
+                Action guardedEscape = guardProjectedSupport(
+                        state, tacticalEscape, routeDirRow, routeDirColumn);
+                if (guardedEscape != null
+                        && (Math.abs(guardedEscape.forward()) >= 0.05D
+                        || Math.abs(guardedEscape.strafe()) >= 0.05D)) {
+                    lastDecisionDetail = "MOB_TACTICAL_ESCAPE"
+                            + " monster=" + threat.id
+                            + " distance=" + format(bestDistance)
+                            + " action=" + guardedEscape;
+                    return guardedEscape;
+                }
+            }
+        }
 
         int sideRow = routeDirColumn;
         int sideColumn = -routeDirRow;

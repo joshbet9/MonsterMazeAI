@@ -1,0 +1,1 @@
+Trigger current-waypoint tactical benchmark.

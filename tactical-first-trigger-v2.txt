@@ -1,0 +1,1 @@
+Trigger tactical-first benchmark after current-waypoint API fix.

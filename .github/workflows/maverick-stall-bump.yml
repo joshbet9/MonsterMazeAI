@@ -1,0 +1,32 @@
+name: Experiment — Maverick stalled pocket bump
+
+on:
+  push:
+    branches:
+      - experiment/maverick-stall-bump-v1
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run six Maverick cells
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=MaverickStallBumpIT#allMaverickCells             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee stall-bump.log
+          grep -E '^(STALL_BUMP)' stall-bump.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stall-bump
+          path: stall-bump.log

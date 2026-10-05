@@ -13,9 +13,6 @@ import me.monstermazeai.player.AiProfile;
 import me.monstermazeai.physics.LegacyMovementModel;
 
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 /**
  * Stable, corridor-safe closed-loop movement controller for the flat Monster
@@ -107,14 +104,6 @@ public final class StableLiveMovementController {
      * The motor must never wait for source-faithful multi-candidate simulation:
      * a stale movement command can carry the player off a one-block platform.
      */
-    private final MonsterAwareRoutePlanner backgroundRoutePlanner = new MonsterAwareRoutePlanner();
-    private final ExecutorService routePlanningExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "MonsterMaze-strategic-planner");
-        thread.setDaemon(true);
-        return thread;
-    });
-    private Future<?> pendingRoutePlan;
-    private volatile PlannedRoute completedRoutePlan;
 
     private PlayerRoute route;
     /** Index of the next turn/goal cell, not merely the next adjacent cell. */
@@ -779,10 +768,6 @@ public final class StableLiveMovementController {
         clearGapCommitment();
         clearPadTransitionFacing();
         lastSpeedJumpInputTick = Long.MIN_VALUE;
-        Future<?> pending = pendingRoutePlan;
-        if (pending != null) pending.cancel(false);
-        pendingRoutePlan = null;
-        completedRoutePlan = null;
         lastDecisionDetail = "RESET";
     }
 
@@ -861,109 +846,23 @@ public final class StableLiveMovementController {
         return routingState;
     }
 
+    /*
+     * Strategic routing is intentionally deterministic. The maze topology is
+     * static; moving monsters are handled by the local branch rerouter and the
+     * live tactical layer. There is no background route result that can arrive
+     * a different number of ticks later and change the controller's trajectory.
+     */
     private void scheduleStrategicRoute(GameState liveState, Cell start, Cell goal, int regionRadius) {
-        if (pendingRoutePlan != null && !pendingRoutePlan.isDone()) return;
-
-        GameState snapshot = liveState.copyForSimulation();
-        long requestedTick = liveState.tick;
-        long topology = snapshot.maze.dynamicSignature();
-        pendingRoutePlan = routePlanningExecutor.submit(() -> {
-            try {
-                PlayerRoute planned = regionRadius > 0
-                        ? backgroundRoutePlanner.routeToRegion(snapshot, start, goal, regionRadius)
-                        : backgroundRoutePlanner.route(snapshot, start, goal);
-                if (planned == null || planned.cells().isEmpty()) {
-                    throw new IllegalStateException("Strategic planner returned no route");
-                }
-                completedRoutePlan = new PlannedRoute(
-                        planned, start.row(), start.column(), goal.row(), goal.column(), regionRadius,
-                        requestedTick, topology, threatSignature(snapshot));
-            } catch (RuntimeException failure) {
-                System.err.println("[MonsterMazeAI] background strategic route failed: "
-                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
-            }
-        });
+        // Deliberately no-op. Keep the call sites simple while making live control
+        // independent of executor scheduling and machine load.
+        fullRouteEvaluationPending = false;
     }
 
     private void applyCompletedRoutePlan(GameState state, int startRow, int startColumn,
                                          Cell goal, int regionRadius) {
-        PlannedRoute planned = completedRoutePlan;
-        if (planned == null) return;
-
-        completedRoutePlan = null;
-        /*
-         * Monster positions are intentionally dynamic. Requiring the exact
-         * quantised threat signature from the planning snapshot made otherwise
-         * useful routes expire before they could be applied, especially in dense
-         * encounters where velocity changes every few ticks. The route's physical
-         * topology, objective, and current first heading remain authoritative;
-         * live tactical control handles whatever the monsters are doing now.
-         */
-        if (planned.route == null
-                || planned.route.cells().isEmpty()
-                || planned.startRow != startRow
-                || planned.startColumn != startColumn
-                || planned.goalRow != goal.row()
-                || planned.goalColumn != goal.column()
-                || planned.regionRadius != regionRadius
-                || state.maze.dynamicSignature() != planned.topologySignature
-                || state.tick - planned.requestedTick > 10L) {
-            fullRouteEvaluationPending = true;
-            return;
-        }
-
-        /*
-         * A background tactical route may improve the long-term path, but it
-         * must not reverse the motor's immediate cardinal segment while that
-         * segment is still physically valid. Monster updates were otherwise
-         * producing alternating first headings and left/right oscillation.
-         */
-        if (route != null && !strategicRoutePreservesCurrentHeading(
-                state, planned.route, startRow, startColumn)
-                && !currentRouteThreatenedByMonster(state)) {
-            fullRouteEvaluationPending = true;
-            return;
-        }
-
-        route = planned.route;
-        waypointIndex = firstTurnWaypoint(route);
-        anchoredSegmentIndex = -1;
-        lastRouteTick = planned.requestedTick;
-        routePlanCount++;
-        lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
-                + " size=" + route.size()
-                + " regionRadius=" + regionRadius
-                + " start=" + startRow + "," + startColumn
-                + " goal=" + goal.row() + "," + goal.column()
-                + " plannedTick=" + planned.requestedTick;
-        fullRouteEvaluationPending = false;
-        lastTacticalSignature = Long.MIN_VALUE;
-    }
-
-    private static final class PlannedRoute {
-        final PlayerRoute route;
-        final int startRow;
-        final int startColumn;
-        final int goalRow;
-        final int goalColumn;
-        final int regionRadius;
-        final long requestedTick;
-        final long topologySignature;
-        final long threatSignature;
-
-        PlannedRoute(PlayerRoute route, int startRow, int startColumn,
-                     int goalRow, int goalColumn, int regionRadius,
-                     long requestedTick, long topologySignature, long threatSignature) {
-            this.route = route;
-            this.startRow = startRow;
-            this.startColumn = startColumn;
-            this.goalRow = goalRow;
-            this.goalColumn = goalColumn;
-            this.regionRadius = regionRadius;
-            this.requestedTick = requestedTick;
-            this.topologySignature = topologySignature;
-            this.threatSignature = threatSignature;
-        }
+        // Deliberately no-op. The current physical route is committed until the
+        // local collision branch or a real topology/objective change requires a
+        // synchronous route rebuild from the player's actual support cell.
     }
 
     private static int firstTurnWaypoint(PlayerRoute route) {

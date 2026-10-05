@@ -418,11 +418,20 @@ final class NoMobLocomotionController {
 
     private boolean shouldSpeedJump(
             GameState state,
-            boolean allowJump,
+            boolean ignoredAllowJump,
             double speedAlong,
             double remaining,
             boolean nextTurn) {
-        if (!allowJump || !state.player.grounded) {
+        /*
+         * In Monster Maze, Jump is always a valid client input. Whether it is
+         * a vertical jump is decided by the source Jump effect: Jumper charges
+         * temporarily remove the -10 lock; once charges are gone, -10 returns
+         * and the same Jump input becomes the horizontal speeding mechanic.
+         *
+         * Therefore the no-mob motor must never disable Jump merely because
+         * the observation layer says a Jumper has no vertical charge left.
+         */
+        if (!state.player.grounded) {
             return false;
         }
         if (nextTurn && remaining <= 1.20D) return false;

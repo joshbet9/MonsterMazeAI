@@ -334,6 +334,21 @@ final class NoMobLocomotionController {
                 false);
 
         /*
+         * Charged Jumper jumps are ordinary vertical jumps, but the vanilla
+         * sprint-jump horizontal impulse still follows the player's current
+         * facing. Never spend one while the player is materially outside the
+         * committed corridor or badly misaligned with it. Those are exactly the
+         * states where a jump turns a recoverable lane error into an edge fall.
+         */
+        double crossTrack = edgeLateral(
+                state, edge.from, directionRow(edge), directionColumn(edge));
+        if (state.kit == Kit.JUMPER
+                && (Math.abs(crossTrack) > 0.30D
+                    || Math.abs(yawError) > 25.0F)) {
+            jump = false;
+        }
+
+        /*
          * The Jump -10 horizontal impulse follows the player's facing. When the
          * requested cell is behind that facing, suppress the pulse until the
          * camera has converged; translation itself remains fully active.

@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
  */
 public final class StableLiveMovementController {
     private final AiProfile profile;
+    private final NoMobLocomotionController noMobController;
 
     public StableLiveMovementController() {
         this(AiProfile.BASELINE);
@@ -48,6 +49,7 @@ public final class StableLiveMovementController {
     public StableLiveMovementController(AiProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
         this.profile = profile;
+        this.noMobController = new NoMobLocomotionController(profile);
     }
 
     public AiProfile profile() {
@@ -206,6 +208,19 @@ public final class StableLiveMovementController {
         }
 
         if (regionRadius < 0) throw new IllegalArgumentException("regionRadius must be non-negative");
+
+        /*
+         * Zero-monster runs are a pure locomotion control problem. Use the
+         * deterministic corridor motor so its behaviour can be evaluated
+         * independently of threat detection, tactical search, and recovery
+         * heuristics. The normal controller remains authoritative as soon as
+         * a real monster is present.
+         */
+        if (state.monsters != null && state.monsters.isEmpty()) {
+            Action noMob = noMobController.nextAction(state, goal, allowJump, regionRadius);
+            lastDecisionDetail = "NO_MOB_MOTOR " + noMobController.lastDecisionDetail();
+            return noMob;
+        }
 
         boolean mobHit = detectLiveMobHit(state);
         if (mobHit) {
@@ -704,6 +719,7 @@ public final class StableLiveMovementController {
         clearGapCommitment();
         clearPadTransitionFacing();
         lastSpeedJumpInputTick = Long.MIN_VALUE;
+        noMobController.reset();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
         pendingRoutePlan = null;

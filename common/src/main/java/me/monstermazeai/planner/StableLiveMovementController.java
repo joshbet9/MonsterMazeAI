@@ -596,12 +596,37 @@ public final class StableLiveMovementController {
                  * heading error, so it rotates smoothly toward the next
                  * cardinal segment instead of waiting in place or strafing blindly.
                  */
-                double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.65D;
-                double strafe = -Math.sin(errorRad) * 0.65D;
+                /*
+                 * yawDelta is applied before Minecraft transforms W/A/D into
+                 * world movement. The old implementation calculated this vector
+                 * from the pre-turn yaw, so a 90-degree corner could issue a
+                 * strafe vector that pointed away from the next corridor.
+                 *
+                 * Convert the desired world direction using the post-turn
+                 * camera frame instead. This preserves the intended cornering
+                 * direction while keeping the bounded 30-degree/tick camera
+                 * movement source-compatible.
+                 */
+                double postYawRad = Math.toRadians(state.player.yaw + turn);
+                double desiredYawRad = Math.toRadians(desiredYaw);
+                double desiredWorldX = -Math.sin(desiredYawRad);
+                double desiredWorldZ = Math.cos(desiredYawRad);
+                double forwardAxisX = -Math.sin(postYawRad);
+                double forwardAxisZ = Math.cos(postYawRad);
+                double strafeAxisX = Math.cos(postYawRad);
+                double strafeAxisZ = Math.sin(postYawRad);
+                double forward = desiredWorldX * forwardAxisX
+                        + desiredWorldZ * forwardAxisZ;
+                double strafe = desiredWorldX * strafeAxisX
+                        + desiredWorldZ * strafeAxisZ;
+                double magnitude = Math.hypot(forward, strafe);
+                if (magnitude > 1.0E-9D) {
+                    forward = forward / magnitude * 0.65D;
+                    strafe = strafe / magnitude * 0.65D;
+                }
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, strafe, jump, false, turn, false);
-                lastDecisionDetail += " CORNER_VECTOR";
+                lastDecisionDetail += " CORNER_VECTOR_POST_TURN";
             } else {
                 action = new Action(
                         0.0, 0.0, false, false,

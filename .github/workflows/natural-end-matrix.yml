@@ -31,7 +31,7 @@ jobs:
           cache: maven
 
       - name: Compile common tests
-        run: mvn -B -ntp -pl common -am test-compile -DskipTests
+        run: mvn -B -ntp -pl common -am install -DskipTests
 
       - name: Run natural-end matrix
         run: >

@@ -1,0 +1,55 @@
+name: Benchmark — stale-gap edge-safe + horizon full matrix v2
+
+on:
+  push:
+    branches:
+      - benchmark/stale-gap-edge-horizon-full-v2
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run full 30-cell natural-end matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase             -DmatrixSpawnMonsters=true             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee matrix.log
+      - name: Summarize
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          t=Path("matrix.log").read_text(encoding="utf-8",errors="replace")
+          rows=[(m.group(1),int(m.group(2)),m.group(3),int(m.group(4)),int(m.group(5)))
+                for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(d+) kit=([A-Z_]+) stage=(d+) ticks=(d+)",t)]
+          if len(rows)!=30: raise SystemExit(f"expected 30 rows, got {len(rows)}")
+          sp=[x[3] for x in rows if x[0]=="SPEED"]; mo=[x[3] for x in rows if x[0]=="MODERN"]
+          lines=[
+            f"Speed mean={sum(sp)/len(sp):.4f} min={min(sp)} max={max(sp)} >=70={sum(x>=70 for x in sp)}/15",
+            f"Modern mean={sum(mo)/len(mo):.4f} min={min(mo)} max={max(mo)} >=40={sum(x>=40 for x in mo)}/15",
+          ]
+          lines += [f"{r[0]} P{r[1]} {r[2]} stage={r[3]} ticks={r[4]}" for r in rows]
+          Path("matrix-report.txt").write_text("
+".join(lines)+"
+",encoding="utf-8")
+          print("
+".join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stale-gap-edge-horizon-full-v2
+          path: |
+            matrix.log
+            matrix-report.txt

@@ -1,4 +1,4 @@
-name: Benchmark — mode-aware tactical full matrix
+name: Benchmark — mode-aware tactical full matrix v2
 on:
   push:
     branches:

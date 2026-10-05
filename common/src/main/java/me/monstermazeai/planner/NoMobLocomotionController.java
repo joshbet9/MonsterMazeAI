@@ -190,6 +190,10 @@ final class NoMobLocomotionController {
                         : new PlayerRoute(staticWithGaps);
             }
             routeEdgeIndex = 0;
+            if (route == null) {
+                lastDecision = "NO_ROUTE start=" + start.row() + "," + start.column();
+                return Action.IDLE;
+            }
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()
                     + " route=" + route.size()
                     + " gaps=" + gapCount(route);

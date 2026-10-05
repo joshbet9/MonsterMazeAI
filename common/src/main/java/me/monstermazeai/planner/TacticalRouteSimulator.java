@@ -26,10 +26,10 @@ import java.util.Random;
  * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
-    private static final int SPEED_TACTICAL_HORIZON = 6;
-    private static final int SPEED_TACTICAL_BEAM = 10;
-    private static final int MODERN_TACTICAL_HORIZON = 12;
-    private static final int MODERN_TACTICAL_BEAM = 16;
+    private static final int MIN_TACTICAL_HORIZON = 6;
+    private static final int MAX_TACTICAL_HORIZON = 12;
+    private static final int MIN_TACTICAL_BEAM = 10;
+    private static final int MAX_TACTICAL_BEAM = 16;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;
@@ -207,16 +207,54 @@ public final class TacticalRouteSimulator {
         return false;
     }
 
+    /**
+     * Shared threat-complexity controller. Depth is driven by the observed
+     * local monster field rather than game mode, so Speed and Modern use the
+     * same decision rule. One simple threat gets the cheap horizon; multiple
+     * simultaneous/closing threats earn deeper search automatically.
+     */
     private static int tacticalHorizon(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
-                ? MODERN_TACTICAL_HORIZON
-                : SPEED_TACTICAL_HORIZON;
+        if (state == null || state.monsters == null) return MIN_TACTICAL_HORIZON;
+
+        int relevant = 0;
+        double nearest = Double.POSITIVE_INFINITY;
+        double strongestClosing = 0.0D;
+
+        for (var m : state.monsters) {
+            if (m == null || m.removed || m.launched(state.tick) || m.frozen(state.tick)
+                    || !MonsterRelevance.withinPlayerRadius(
+                    m, state.player, TACTICAL_RELEVANCE_RADIUS)) {
+                continue;
+            }
+            relevant++;
+            double dx = m.x - state.player.x;
+            double dz = m.z - state.player.z;
+            double distance = Math.hypot(dx, dz);
+            nearest = Math.min(nearest, distance);
+
+            if (distance > 1.0E-6D) {
+                double closing = -(m.vx * dx + m.vz * dz) / distance;
+                strongestClosing = Math.max(strongestClosing, closing);
+            }
+        }
+
+        if (relevant <= 1 && nearest > 2.5D && strongestClosing < 0.05D) {
+            return MIN_TACTICAL_HORIZON;
+        }
+
+        int horizon = MIN_TACTICAL_HORIZON + Math.min(6, Math.max(0, (relevant - 1) * 2));
+        if (nearest <= 1.5D) horizon += 2;
+        if (strongestClosing >= 0.05D) horizon += 2;
+        return Math.min(MAX_TACTICAL_HORIZON, horizon);
     }
 
     private static int tacticalBeam(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
-                ? MODERN_TACTICAL_BEAM
-                : SPEED_TACTICAL_BEAM;
+        int horizon = tacticalHorizon(state);
+        int span = MAX_TACTICAL_HORIZON - MIN_TACTICAL_HORIZON;
+        int beamSpan = MAX_TACTICAL_BEAM - MIN_TACTICAL_BEAM;
+        int extra = span <= 0 ? 0
+                : (int) Math.round((horizon - MIN_TACTICAL_HORIZON) * beamSpan / (double) span);
+        return MIN_TACTICAL_BEAM + Math.max(0, Math.min(beamSpan, extra));
     }
 
     private List<Action> tacticalActions(GameState state, PlayerRoute route, int waypoint) {

@@ -321,7 +321,7 @@ final class NoMobLocomotionController {
          */
         if (state.kit == Kit.JUMPER
                 && state.player.grounded
-                && Math.abs(yawError) > 60.0F) {
+                && Math.abs(yawError) > 100.0F) {
             float turn = clamp(yawError, -15.0F, 15.0F);
             lastDecision = "JUMPER_TURN_SAFE edge=" + edge.index
                     + " yawError=" + format(yawError)

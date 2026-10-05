@@ -1362,12 +1362,25 @@ public final class StableLiveMovementController {
         };
 
         Action best = null;
-        double bestProgress = Double.NEGATIVE_INFINITY;
+        double bestScore = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
             if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
-            if (progress > bestProgress) {
-                bestProgress = progress;
+            double movementMatch = projectedMovementSimilarity(
+                    state, action, candidate);
+
+            /*
+             * This guard is only entered because the requested action would
+             * leave support. Safety therefore dominates forward progress. Keep
+             * the candidate closest to the requested escape vector so a
+             * backwards yield remains a backwards yield instead of collapsing
+             * into an in-place turn whenever every safe option has negative
+             * route progress.
+             */
+            double score = movementMatch * 2.0D + progress * 0.10D;
+            if (score > bestScore) {
+                bestScore = score;
                 best = candidate;
             }
         }
@@ -1398,6 +1411,28 @@ public final class StableLiveMovementController {
         return true;
     }
 
+
+    private double projectedMovementSimilarity(
+            GameState state, Action requested, Action candidate) {
+        double[] a = worldMovement(state, requested);
+        double[] b = worldMovement(state, candidate);
+        double aLen = Math.hypot(a[0], a[1]);
+        double bLen = Math.hypot(b[0], b[1]);
+        if (aLen < 1.0E-9D || bLen < 1.0E-9D) return 0.0D;
+        return (a[0] * b[0] + a[1] * b[1]) / (aLen * bLen);
+    }
+
+    private static double[] worldMovement(GameState state, Action action) {
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        return new double[]{
+                forwardX * action.forward() + strafeX * action.strafe(),
+                forwardZ * action.forward() + strafeZ * action.strafe()
+        };
+    }
 
     private double projectedRouteProgress(GameState state, Action action,
                                           int dirRow, int dirColumn) {

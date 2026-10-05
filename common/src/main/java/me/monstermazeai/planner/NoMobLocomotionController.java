@@ -122,10 +122,20 @@ final class NoMobLocomotionController {
             if (!noGap.isEmpty()) {
                 route = new PlayerRoute(noGap);
             } else {
-                route = regionRadius > 0
-                        ? planner.routeToRegionFast(
-                                state, start, goal, Math.max(0, regionRadius))
-                        : planner.routeFast(state, start, goal);
+                /*
+                 * Phase 1 never calls the monster-aware planner. If the stable
+                 * floor graph is disconnected, use only the source gap edges
+                 * from PlayerPathfinder; gap selection is still static and
+                 * deterministic, with no monster prediction or tactical scoring.
+                 */
+                List<Cell> staticWithGaps = regionRadius > 0
+                        ? pathfinder.fastestPathToRegionWithGaps(
+                                planningMaze, start, goal, regionRadius)
+                        : pathfinder.fastestPathWithGaps(
+                                planningMaze, start, goal);
+                route = staticWithGaps.isEmpty()
+                        ? null
+                        : new PlayerRoute(staticWithGaps);
             }
             routeEdgeIndex = 0;
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()

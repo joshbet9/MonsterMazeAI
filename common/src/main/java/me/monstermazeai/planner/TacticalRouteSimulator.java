@@ -53,6 +53,8 @@ public final class TacticalRouteSimulator {
         initialiseMissingAbilityState(state);
         int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, WAYPOINT_TOLERANCE);
         MonsterSimulator monsters = monsterSimulator(state, source.tick);
+        NoMobLocomotionController verifiedMotor =
+                new NoMobLocomotionController(me.monstermazeai.player.AiProfile.HIGH_SKILL);
         int simulationLimit = simulationLimit(route);
 
         for (int elapsed = 1; elapsed <= simulationLimit; elapsed++) {
@@ -65,7 +67,12 @@ public final class TacticalRouteSimulator {
 
             Action action = needsTacticalSearch(state)
                     ? chooseTacticalAction(state, route, waypoint, goal, regionGoal, regionRadius)
-                    : routeFollowerAction(state, route, waypoint);
+                    : verifiedMotor.nextActionUsingRoute(
+                            state, goal,
+                            state.kit != me.monstermazeai.kit.Kit.JUMPER
+                                    || state.ability.charges > 0,
+                            regionRadius,
+                            route);
 
             step(state, action, monsters);
 

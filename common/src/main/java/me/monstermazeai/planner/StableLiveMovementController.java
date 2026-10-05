@@ -1138,8 +1138,20 @@ public final class StableLiveMovementController {
         Action[] alternatives = {
                 new Action(0.0, 0.0, false, false, action.yawDelta(), false),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                /*
+                 * Test pure lateral escape explicitly. The normal mob dodge
+                 * combines forward + strafe; that vector can fail the support
+                 * projection near a corner even when the adjacent lane itself
+                 * remains safe. A source player can keep the strafe component
+                 * and let the existing route motor recover the forward component
+                 * on the following observation.
+                 */
                 new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                new Action(0.0, -counter, false, false, action.yawDelta(), false),
+                new Action(0.25, counter, false, false, action.yawDelta(), false),
+                new Action(0.25, -counter, false, false, action.yawDelta(), false),
+                new Action(-0.35, counter, false, false, action.yawDelta(), false),
+                new Action(-0.35, -counter, false, false, action.yawDelta(), false)
         };
 
         Action best = null;

@@ -36,7 +36,7 @@ jobs:
           print(f"Modern mean={sum(mo)/len(mo):.4f} min={min(mo)} max={max(mo)} >=40={sum(x>=40 for x in mo)}/15")
           for r in rows: print(f"{r[0]} P{r[1]} {r[2]} stage={r[3]} ticks={r[4]}")
       - uses: actions/upload-artifact@v4
-        if: always:
+        if: always()
         with:
           name: no-live-tactical-full
           path: matrix.log

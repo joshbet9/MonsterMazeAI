@@ -295,21 +295,12 @@ final class NoMobLocomotionController {
             return brakeVelocity(state);
         }
 
-        if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
-            if (horizontalSpeed > CORNER_SPEED) {
-                lastDecision = "TURN_BRAKE edge=" + edge.index
-                        + " yawError=" + format(yawError)
-                        + " speed=" + format(horizontalSpeed);
-                return brakeVelocity(state);
-            }
-            lastDecision = "TURN_EDGE edge=" + edge.index
-                    + " yawError=" + format(yawError);
-            return new Action(
-                    0.0, 0.0, false, false,
-                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
-                    false);
-        }
-
+        /*
+         * Never enter a yaw-only deadlock. The client can translate in any
+         * world direction through the forward/strafe basis, so even a 90-degree
+         * camera mismatch is actionable. The motor gradually corrects yaw while
+         * continuing to make physical progress.
+         */
         double crossTrack = edgeLateral(
                 state, edge.from, directionRow(edge), directionColumn(edge));
 
@@ -428,15 +419,6 @@ final class NoMobLocomotionController {
 
     private Action gapAction(GameState state, Edge edge, boolean allowJump) {
         float yawError = headingError(state, edge);
-        if (Math.abs(yawError) > HEADING_TOLERANCE) {
-            lastDecision = "GAP_ALIGN edge=" + edge.index
-                    + " yawError=" + format(yawError);
-            return new Action(
-                    0.0, 0.0, false, false,
-                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
-                    false);
-        }
-
         double lateral = edgeLateral(
                 state, edge.from, directionRow(edge), directionColumn(edge));
         if (Math.abs(lateral) > GAP_LATERAL_TOLERANCE) {
@@ -562,18 +544,15 @@ final class NoMobLocomotionController {
             boolean sprint,
             boolean jump) {
         float yawError = headingErrorForDirection(state, worldX, worldZ);
-        float yawDelta = clamp(
-                yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
-        if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
-            // Never combine a speed/jump pulse with a large camera correction:
-            // the resulting horizontal impulse would use the pre-alignment
-            // heading and can throw the player sideways at a corner.
-            return new Action(
-                    0.0, 0.0, false, false, yawDelta, false);
-        }
-
-        double yaw = Math.toRadians(state.player.yaw + yawDelta);
+        /*
+         * Translation is expressed directly in the player's current
+         * forward/strafe basis. Keeping yawDelta at zero removes the unstable
+         * rotate-stop-rotate loop seen in the diagnostic trace; the resulting
+         * input is still equivalent to WASD steering in the 1.8 client.
+         */
+        float yawDelta = 0.0F;
+        double yaw = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
         double strafeX = Math.cos(yaw);

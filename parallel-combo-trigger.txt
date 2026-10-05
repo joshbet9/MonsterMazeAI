@@ -1,0 +1,1 @@
+Trigger parallel full matrix for stale-gap edge-safe + horizon.

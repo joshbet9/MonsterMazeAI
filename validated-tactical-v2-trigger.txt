@@ -1,0 +1,1 @@
+Trigger validated tactical movement regression after compile fix.

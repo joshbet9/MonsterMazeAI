@@ -3,7 +3,7 @@ name: Phase 2 — Non-Jumper gap pulse regression
 on:
   push:
     branches:
-      - autonomous/phase2-nonjump-gap-pulse-v1
+      - phase2-gap-report-v1
 
 concurrency:
   group: monstermaze-phase2-nonjumper-gap-pulse

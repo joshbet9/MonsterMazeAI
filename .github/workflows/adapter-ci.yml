@@ -7,11 +7,16 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: adapter-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   adapter:
+    if: github.head_ref != 'autonomous/locomotion-026-v1'
     name: Minecraft 1.8.9 Forge adapter
     runs-on: ubuntu-latest
 

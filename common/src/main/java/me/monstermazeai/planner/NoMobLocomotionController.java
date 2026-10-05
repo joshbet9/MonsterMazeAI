@@ -422,9 +422,7 @@ final class NoMobLocomotionController {
             double speedAlong,
             double remaining,
             boolean nextTurn) {
-        if (!allowJump
-                || state.kit == Kit.JUMPER
-                || !state.player.grounded) {
+        if (!allowJump || !state.player.grounded) {
             return false;
         }
         if (nextTurn && remaining <= 1.20D) return false;

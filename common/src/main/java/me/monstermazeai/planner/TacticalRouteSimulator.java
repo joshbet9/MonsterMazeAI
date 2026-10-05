@@ -26,8 +26,8 @@ import java.util.Random;
  * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
-    private static final int TACTICAL_HORIZON = 6;
-    private static final int TACTICAL_BEAM = 10;
+    private static final int TACTICAL_HORIZON = 10;
+    private static final int TACTICAL_BEAM = 12;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;

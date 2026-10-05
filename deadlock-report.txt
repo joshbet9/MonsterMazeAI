@@ -1,10 +1,10 @@
-Modern P1 SLOWBALLER stage=3 ticks=1940
+Modern P1 SLOWBALLER stage=1 ticks=700
 Modern P2 SLOWBALLER stage=2 ticks=1200
-Modern P3 SLOWBALLER stage=3 ticks=1920
-Modern P1 MAVERICK stage=3 ticks=1460
+Modern P3 SLOWBALLER stage=1 ticks=700
+Modern P1 MAVERICK stage=1 ticks=700
 Modern P2 MAVERICK stage=4 ticks=1720
-Modern P3 MAVERICK stage=4 ticks=2260
+Modern P3 MAVERICK stage=4 ticks=2040
 
-Modern representative mean=3.1667
+Modern representative mean=2.1667
 Modern >=10=0/6
 DEADLOCK_REPLAN count=0

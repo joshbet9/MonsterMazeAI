@@ -1135,24 +1135,29 @@ public final class StableLiveMovementController {
         double lateralVelocity = routeLateralVelocity(state, dirRow, dirColumn);
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
-        Action[] alternatives = {
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
-                new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
-                /*
-                 * Test pure lateral escape explicitly. The normal mob dodge
-                 * combines forward + strafe; that vector can fail the support
-                 * projection near a corner even when the adjacent lane itself
-                 * remains safe. A source player can keep the strafe component
-                 * and let the existing route motor recover the forward component
-                 * on the following observation.
-                 */
-                new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false),
-                new Action(0.25, counter, false, false, action.yawDelta(), false),
-                new Action(0.25, -counter, false, false, action.yawDelta(), false),
-                new Action(-0.35, counter, false, false, action.yawDelta(), false),
-                new Action(-0.35, -counter, false, false, action.yawDelta(), false)
-        };
+        boolean mobDodgeShape = action.forward() > 0.25D
+                && Math.abs(action.strafe()) > 0.25D;
+        Action[] alternatives = mobDodgeShape
+                ? new Action[]{
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    /*
+                     * Expanded candidates are reserved for actual forward +
+                     * strafe mob dodges, not ordinary retreat/yield recovery.
+                     */
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false),
+                    new Action(0.25, counter, false, false, action.yawDelta(), false),
+                    new Action(0.25, -counter, false, false, action.yawDelta(), false),
+                    new Action(-0.35, counter, false, false, action.yawDelta(), false),
+                    new Action(-0.35, -counter, false, false, action.yawDelta(), false)
+                }
+                : new Action[]{
+                    new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                    new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
+                    new Action(0.0, counter, false, false, action.yawDelta(), false),
+                    new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                };
 
         Action best = null;
         double bestProgress = Double.NEGATIVE_INFINITY;

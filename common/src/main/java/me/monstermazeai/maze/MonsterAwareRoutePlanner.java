@@ -314,6 +314,51 @@ public final class MonsterAwareRoutePlanner {
         return Integer.compare(a.size(), b.size());
     }
 
+    private int compareByTravelTime(PlayerRoute a, PlayerRoute b) {
+        int cost = Double.compare(estimatedTravelCost(a), estimatedTravelCost(b));
+        if (cost != 0) return cost;
+        return compareByGapRisk(a, b);
+    }
+
+    private double estimatedTravelCost(PlayerRoute route) {
+        List<Cell> cells = route.cells();
+        if (cells.size() <= 1) return 0.0D;
+
+        double cost = 0.0D;
+        int previousDirection = -1;
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+            int direction = direction(from, to);
+            int dr = to.row() - from.row();
+            int dc = to.column() - from.column();
+            boolean gap = Math.abs(dr) == 2 || Math.abs(dc) == 2;
+
+            cost += gap ? ROUTE_GAP_COST : 1.0D;
+            if (previousDirection >= 0 && previousDirection != direction) {
+                cost += turnCost(previousDirection, direction);
+            }
+            previousDirection = direction;
+        }
+        return cost;
+    }
+
+    private static int direction(Cell from, Cell to) {
+        int dr = Integer.signum(to.row() - from.row());
+        int dc = Integer.signum(to.column() - from.column());
+        if (dr < 0) return 0;
+        if (dr > 0) return 1;
+        if (dc < 0) return 2;
+        if (dc > 0) return 3;
+        throw new IllegalArgumentException("duplicate route cell");
+    }
+
+    private static double turnCost(int from, int to) {
+        int delta = Math.abs(from - to);
+        delta = Math.min(delta, 4 - delta);
+        return delta == 2 ? ROUTE_U_TURN_COST : ROUTE_TURN_COST;
+    }
+
     private double routeCost(PlayerRoute route) {
         return gapJumpPolicy.routeCost(route.size(), gapCount(route));
     }

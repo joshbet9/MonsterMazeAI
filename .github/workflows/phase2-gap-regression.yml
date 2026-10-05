@@ -1,0 +1,68 @@
+name: Phase 2 — Gap-bias targeted regression
+
+on:
+  push:
+    branches:
+      - autonomous/phase2-gap-bias-v1
+
+concurrency:
+  group: monstermaze-phase2-gap-bias
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Body Builder gap regression
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run historical gap-failure cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > gap-regression.log
+          for mode in SPEED MODERN; do
+            for pattern in 1 2 3; do
+              echo "===== $mode P$pattern BODY_BUILDER =====" | tee -a gap-regression.log
+              mvn -B -ntp -pl common -am \
+                -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
+                -DmatrixMode="$mode" \
+                -DmatrixPattern="$pattern" \
+                -DmatrixKit=BODY_BUILDER \
+                -DmatrixSpawnMonsters=true \
+                -Dsurefire.failIfNoSpecifiedTests=false \
+                -Dsurefire.useFile=false \
+                -Dsurefire.redirectTestOutputToFile=false \
+                test 2>&1 | tee -a gap-regression.log
+            done
+          done
+      - name: Assert all regressions clear stage 10
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          text=Path("gap-regression.log").read_text(encoding="utf-8",errors="replace")
+          rows=[(m.group(1),int(m.group(2)),int(m.group(3)),int(m.group(4)))
+                for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(\d+) kit=BODY_BUILDER stage=(\d+) ticks=(\d+)",text)]
+          print(rows)
+          if len(rows)!=6:
+              raise SystemExit(f"expected 6 rows, found {len(rows)}")
+          bad=[r for r in rows if r[2] < 10]
+          if bad:
+              raise SystemExit(f"stage-10 regression remains: {bad}")
+          print("All six historical Body Builder gap-failure cells clear stage 10.")
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase2-gap-regression-${{ github.sha }}
+          path: gap-regression.log

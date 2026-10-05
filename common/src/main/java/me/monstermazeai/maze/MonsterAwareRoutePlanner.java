@@ -217,8 +217,10 @@ public final class MonsterAwareRoutePlanner {
         return cachedCandidates;
     }
 
-    public Action tacticalAction(GameState state, PlayerRoute route, Cell goal, int regionRadius) {
-        return simulator.nextAction(state, route, goal, regionRadius > 0, regionRadius);
+    public Action tacticalAction(GameState state, PlayerRoute route, int waypoint,
+                                  Cell goal, int regionRadius) {
+        return simulator.nextAction(
+                state, route, waypoint, goal, regionRadius > 0, regionRadius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

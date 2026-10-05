@@ -41,8 +41,22 @@ public final class TacticalRouteSimulator {
 
     public Action nextAction(GameState source, PlayerRoute route, Cell goal,
                               boolean regionGoal, int regionRadius) {
-        if (!needsTacticalSearch(source)) return routeFollowerAction(source, route, 0);
-        return chooseTacticalAction(source, route, 0, goal, regionGoal, regionRadius);
+        return nextAction(source, route, 0, goal, regionGoal, regionRadius);
+    }
+
+    /**
+     * Live receding-horizon entry point. The current route waypoint is supplied
+     * by the controller so tactical search starts from the player's actual
+     * progress rather than replaying the route prefix from index zero.
+     */
+    public Action nextAction(GameState source, PlayerRoute route, int waypoint,
+                             Cell goal, boolean regionGoal, int regionRadius) {
+        int safeWaypoint = Math.max(0, Math.min(waypoint, route.size() - 1));
+        if (!needsTacticalSearch(source)) {
+            return routeFollowerAction(source, route, safeWaypoint);
+        }
+        return chooseTacticalAction(
+                source, route, safeWaypoint, goal, regionGoal, regionRadius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

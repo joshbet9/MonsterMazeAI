@@ -1,0 +1,44 @@
+name: Benchmark — current-main no-mob natural-end matrix
+
+on:
+  push:
+    branches:
+      - benchmark/main-no-mob-natural-v1
+
+permissions:
+  contents: write
+
+jobs:
+  matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run full no-mob natural-end matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          : > no-mob-main.log
+          mvn -B -ntp -pl common -am             -Dtest=NoMobNaturalMatrixMainIT#fullNoMobNaturalEndMatrix             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee no-mob-main.log
+      - name: Capture result
+        run: |
+          grep -E '^(NO_MOB_MATRIX|NO_MOB_SPEED_MEAN|NO_MOB_MODERN_MEAN)' no-mob-main.log > no-mob-main-report.txt
+          cat no-mob-main-report.txt
+      - name: Persist result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add no-mob-main-report.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "Record current-main no-mob matrix [skip ci]"
+          git push
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: current-main-no-mob
+          path: no-mob-main.log

@@ -1352,7 +1352,15 @@ public final class StableLiveMovementController {
         if (magnitude < 1.0E-6) return false;
 
         double routeComponent = (worldX * dirRow + worldZ * dirColumn) / magnitude;
-        if (routeComponent < -0.20D) return false;
+        /*
+         * A pure perpendicular vector is not a route decision. Ordinary mob
+         * avoidance owns supported lateral dodges, while predictive routing
+         * should choose actions that still make forward progress through the
+         * active corridor. Without this boundary the six-tick tactical beam can
+         * repeatedly select strafe-only states and hand control to the lane
+         * recovery code instead of actually passing the threat.
+         */
+        if (routeComponent < 0.35D) return false;
 
         Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
         return guarded != null && guarded != Action.IDLE;

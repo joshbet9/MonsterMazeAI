@@ -204,28 +204,33 @@ final class NoMobLocomotionController {
     }
 
     private void reanchorFromSupportedCell(GameState state) {
-        Cell supported = resolveSupportedStart(state);
-        if (supported == null || route == null) return;
+        if (route == null) return;
 
         List<Cell> cells = route.cells();
         int current = Math.max(0, Math.min(routeEdgeIndex, cells.size() - 1));
-        for (int i = current + 1; i < cells.size(); i++) {
-            if (!cells.get(i).equals(supported)) continue;
-
-            /*
-             * Do not skip an in-flight gap. A supported destination means the
-             * jump has physically landed; a future normal cell is likewise safe
-             * to adopt because the player is actually standing on it.
-             */
-            routeEdgeIndex = i;
-            return;
-        }
+        int bestIndex = -1;
+        double bestOverlap = 0.0D;
 
         /*
-         * If the player is still in the current source cell, keep the existing
-         * edge. When the current edge is already the final edge, the caller will
-         * handle completion normally.
+         * Use the same 0.6-wide player AABB support semantics as the physics
+         * model. At a 90-degree corner the AABB can overlap both cells, so
+         * nearest-centre selection is ambiguous and can choose the wrong branch.
+         * Only move the route index forward, and prefer the later cell with the
+         * greatest actual support overlap.
          */
+        for (int i = current + 1; i < cells.size(); i++) {
+            Cell cell = cells.get(i);
+            double overlap = horizontalAabbOverlap(
+                    state.player.x, state.player.z, cell);
+            if (overlap > bestOverlap + 1.0E-6D) {
+                bestOverlap = overlap;
+                bestIndex = i;
+            }
+        }
+
+        if (bestIndex >= 0) {
+            routeEdgeIndex = bestIndex;
+        }
     }
 
     private void advanceCompletedEdges(GameState state) {
@@ -622,21 +627,42 @@ final class NoMobLocomotionController {
         int baseRow = (int) Math.floor(state.player.x);
         int baseColumn = (int) Math.floor(state.player.z);
         Cell best = null;
+        double bestOverlap = 0.0D;
         double bestDistance = Double.POSITIVE_INFINITY;
 
         for (int row = baseRow - 1; row <= baseRow + 1; row++) {
             for (int column = baseColumn - 1; column <= baseColumn + 1; column++) {
                 if (!state.maze.isPhysicalFloor(row, column)) continue;
+
+                Cell cell = new Cell(row, column);
+                double overlap = horizontalAabbOverlap(
+                        state.player.x, state.player.z, cell);
+                if (overlap <= 0.0D) continue;
+
                 double dx = state.player.x - (row + 0.5D);
                 double dz = state.player.z - (column + 0.5D);
                 double distance = Math.hypot(dx, dz);
-                if (distance < bestDistance) {
+
+                if (overlap > bestOverlap + 1.0E-6D
+                        || (Math.abs(overlap - bestOverlap) <= 1.0E-6D
+                        && distance < bestDistance)) {
+                    bestOverlap = overlap;
                     bestDistance = distance;
-                    best = new Cell(row, column);
+                    best = cell;
                 }
             }
         }
         return best;
+    }
+
+    private static double horizontalAabbOverlap(double x, double z, Cell cell) {
+        final double halfWidth = 0.30D;
+        double overlapX = Math.min(x + halfWidth, cell.row() + 1.0D)
+                - Math.max(x - halfWidth, cell.row());
+        double overlapZ = Math.min(z + halfWidth, cell.column() + 1.0D)
+                - Math.max(z - halfWidth, cell.column());
+        if (overlapX <= 0.0D || overlapZ <= 0.0D) return 0.0D;
+        return overlapX * overlapZ;
     }
 
     private static String format(double value) {

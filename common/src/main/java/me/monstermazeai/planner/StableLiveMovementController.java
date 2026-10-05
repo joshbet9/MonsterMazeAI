@@ -846,8 +846,9 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 10L
+                || (currentThreat != planned.threatSignature
+                    && !nearFutureRouteIsThreatSafe(state, planned.route, startRow, startColumn))) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -877,6 +878,62 @@ public final class StableLiveMovementController {
                 + " plannedTick=" + planned.requestedTick;
         fullRouteEvaluationPending = false;
         lastTacticalSignature = Long.MIN_VALUE;
+    }
+
+    private static final int THREAT_SAFE_ROUTE_CELLS = 5;
+    private static final int THREAT_SAFE_HORIZON_TICKS = 24;
+    private static final double THREAT_SAFE_DISTANCE = 1.75D;
+    private static final double THREAT_TICKS_PER_CELL = 5.0D;
+
+    /**
+     * A threat-aware route remains useful after the world changes unless the
+     * changed mob field actually threatens the route's near future. This
+     * prevents asynchronous planning from self-invalidating on every 0.5-block
+     * monster movement while still rejecting plans that are now visibly unsafe.
+     *
+     * The check is deliberately conservative: each of the first few route
+     * cells is sampled at the player's nominal arrival time and the current
+     * monster velocity is extrapolated over the short horizon. The authoritative
+     * MonsterSimulator remains the final model during tactical simulation.
+     */
+    private boolean nearFutureRouteIsThreatSafe(
+            GameState state, PlayerRoute planned, int startRow, int startColumn) {
+        if (state == null || planned == null || planned.cells().isEmpty()) return false;
+
+        int startIndex = 0;
+        for (int i = 0; i < planned.size(); i++) {
+            Cell cell = planned.cells().get(i);
+            if (cell.row() == startRow && cell.column() == startColumn) {
+                startIndex = i;
+                break;
+            }
+        }
+
+        int end = Math.min(
+                planned.size() - 1,
+                startIndex + THREAT_SAFE_ROUTE_CELLS);
+        for (var monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) {
+                continue;
+            }
+
+            for (int i = startIndex; i <= end; i++) {
+                Cell cell = planned.cells().get(i);
+                double px = cell.row() + 0.5D;
+                double pz = cell.column() + 0.5D;
+                double arrival = Math.min(
+                        THREAT_SAFE_HORIZON_TICKS,
+                        Math.max(0.0D, (i - startIndex) * THREAT_TICKS_PER_CELL));
+
+                double mx = monster.x + monster.vx * arrival;
+                double mz = monster.z + monster.vz * arrival;
+                if (Math.hypot(px - mx, pz - mz) < THREAT_SAFE_DISTANCE) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private static final class PlannedRoute {

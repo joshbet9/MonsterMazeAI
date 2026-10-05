@@ -489,28 +489,33 @@ final class NoMobLocomotionController {
             double speedAlong,
             double remaining,
             boolean nextTurn) {
-        /*
-         * In Monster Maze, Jump is always a valid client input. Whether it is
-         * a vertical jump is decided by the source Jump effect: Jumper charges
-         * temporarily remove the -10 lock; once charges are gone, -10 returns
-         * and the same Jump input becomes the horizontal speeding mechanic.
-         *
-         * Therefore the no-mob motor must never disable Jump merely because
-         * the observation layer says a Jumper has no vertical charge left.
-         */
         if (!state.player.grounded) {
             return false;
         }
-
-        // Phase-1 survival rule: ordinary floor traversal never needs a charged
-        // Jumper jump because gap edges are disabled in the static route. Keep
-        // the charges intact until the movement-efficiency phase.
-        if (state.kit == Kit.JUMPER && state.ability.charges > 0) {
+        if (nextTurn && remaining <= 1.20D) {
             return false;
         }
 
-        if (nextTurn && remaining <= 1.20D) return false;
-        if (speedAlong >= TARGET_SPEED) return false;
+        /*
+         * Jumper is special in the source game: after its three temporary
+         * vertical charges are consumed, the same client Jump input becomes the
+         * horizontal speed interaction. There is no source-side reason to
+         * throttle those inputs to the generic non-Jumper cadence.
+         *
+         * Phase-1 survival therefore uses:
+         *   - charged Jumper: request Jump whenever safe; the source AbilityModel
+         *     enforces the 15-tick charge recharge;
+         *   - uncharged Jumper: request Jump every grounded tick so the real
+         *     horizontal impulse is fully available.
+         *   - other kits: retain the profile's normal cadence.
+         */
+        if (state.kit == Kit.JUMPER) {
+            return true;
+        }
+
+        if (speedAlong >= TARGET_SPEED) {
+            return false;
+        }
 
         long cadence = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpTick != Long.MIN_VALUE

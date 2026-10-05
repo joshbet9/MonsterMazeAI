@@ -9,11 +9,16 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: monstermaze-v45-locomotion
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   matrix-case:
+    if: github.head_ref != 'autonomous/locomotion-026-v1'
     name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -46,6 +51,7 @@ jobs:
           path: matrix-row.txt
 
   aggregate:
+    if: github.head_ref != 'autonomous/locomotion-026-v1'
     name: Aggregate 30-cell locomotion matrix
     needs: matrix-case
     if: always()

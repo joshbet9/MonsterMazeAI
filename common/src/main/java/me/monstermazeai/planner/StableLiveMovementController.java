@@ -9,6 +9,7 @@ import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
+import me.monstermazeai.player.PlayerState;
 import me.monstermazeai.physics.LegacyMovementModel;
 
 import java.util.List;

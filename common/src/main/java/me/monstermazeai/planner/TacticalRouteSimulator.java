@@ -207,9 +207,9 @@ public final class TacticalRouteSimulator {
         return false;
     }
 
-    private static int tacticalHorizon(GameState state) {
+    private static ThreatProfile threatProfile(GameState state) {
         if (state == null || state.monsters == null) {
-            return SPEED_TACTICAL_HORIZON;
+            return new ThreatProfile(0, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
         }
 
         int relevant = 0;
@@ -241,31 +241,44 @@ public final class TacticalRouteSimulator {
             }
         }
 
-        /*
-         * Shared policy for all modes:
-         *  - 6 ticks while the local field is simple and no collision is close.
-         *  - 10 ticks for a genuinely developing interaction.
-         *  - 12 ticks when the collision window is immediate or several mobs
-         *    constrain the same local decision.
-         *
-         * This keeps one controller/mechanics path while adapting compute to
-         * the actual threat geometry rather than the game mode.
-         */
-        if (relevant == 0) return SPEED_TACTICAL_HORIZON;
-        if (earliestContact <= 5.0D || relevant >= 3 || nearest <= 1.35D) {
+        return new ThreatProfile(relevant, nearest, earliestContact);
+    }
+
+    private static int tacticalHorizon(GameState state) {
+        ThreatProfile threat = threatProfile(state);
+        if (threat.relevant() == 0) return SPEED_TACTICAL_HORIZON;
+        if (threat.earliestContact() <= 5.0D
+                || threat.relevant() >= 3
+                || threat.nearest() <= 1.35D) {
             return MODERN_TACTICAL_HORIZON;
         }
-        if (earliestContact <= 11.0D || relevant >= 2 || nearest <= 2.75D) {
+        if (threat.earliestContact() <= 11.0D
+                || threat.relevant() >= 2
+                || threat.nearest() <= 2.75D) {
             return SPEED_TACTICAL_HORIZON + 4;
         }
         return SPEED_TACTICAL_HORIZON;
     }
 
     private static int tacticalBeam(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
-                ? MODERN_TACTICAL_BEAM
-                : SPEED_TACTICAL_BEAM;
+        ThreatProfile threat = threatProfile(state);
+        if (threat.relevant() == 0) return SPEED_TACTICAL_BEAM;
+        if (threat.earliestContact() <= 5.0D
+                || threat.relevant() >= 3
+                || threat.nearest() <= 1.35D) {
+            return MODERN_TACTICAL_BEAM;
+        }
+        if (threat.earliestContact() <= 11.0D
+                || threat.relevant() >= 2
+                || threat.nearest() <= 2.75D) {
+            return Math.min(MODERN_TACTICAL_BEAM,
+                    SPEED_TACTICAL_BEAM + 4);
+        }
+        return SPEED_TACTICAL_BEAM;
     }
+
+    private record ThreatProfile(
+            int relevant, double nearest, double earliestContact) {}
 
     private List<Action> tacticalActions(GameState state, PlayerRoute route, int waypoint) {
         /*

@@ -116,17 +116,16 @@ final class NoMobLocomotionController {
              */
             MazeModel planningMaze = planningMaze(state);
             List<Cell> noGap = regionRadius > 0
-                    ? pathfinder.shortestPathToRegionWithoutGaps(
+                    ? pathfinder.fastestPathToRegion(
                             planningMaze, start, goal, regionRadius)
-                    : pathfinder.shortestPathWithoutGaps(planningMaze, start, goal);
+                    : pathfinder.fastestPath(planningMaze, start, goal);
             if (!noGap.isEmpty()) {
                 route = new PlayerRoute(noGap);
             } else {
                 route = regionRadius > 0
-                        ? new PlayerRoute(pathfinder.shortestPathToRegionWithoutGaps(
-                                planningMaze, start, goal, Math.max(0, regionRadius)))
-                        : new PlayerRoute(pathfinder.shortestPathWithoutGaps(
-                                planningMaze, start, goal));
+                        ? pathfinder.fastestPathToRegion(
+                                planningMaze, start, goal, Math.max(0, regionRadius))
+                        : pathfinder.fastestPath(planningMaze, start, goal);
             }
             routeEdgeIndex = 0;
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()
@@ -391,28 +390,24 @@ final class NoMobLocomotionController {
         me.monstermazeai.player.PlayerState projected = state.player.copy();
         int jumpAmplifier =
                 state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
-        LegacyMazePhysics physics = new LegacyMazePhysics();
 
         /*
-         * A one-tick Y check is insufficient at an edge: the first tick can
-         * still end at y=0 and only fall on the following gravity step. Require
-         * three consecutive source-physics ticks to remain over real floor.
+         * One-tick source-physics support is the correct safety horizon for the
+         * observe -> decide -> simulate cadence. Longer horizons falsely reject
+         * valid movement when a corner is reached on the next observation.
          */
-        for (int i = 0; i < 3; i++) {
-            physics.tick(projected, action, state.maze, jumpAmplifier);
-            if (projected.y < -0.01D) return false;
+        new LegacyMazePhysics().tick(
+                projected, action, state.maze, jumpAmplifier);
 
-            boolean airborneJump =
-                    action.jump()
-                            && state.kit == Kit.JUMPER
-                            && state.ability.charges > 0
-                            && projected.y > 0.01D;
-            if (!airborneJump
-                    && !physicalFloorUnderAabb(state, projected.x, projected.z)) {
-                return false;
-            }
-        }
-        return true;
+        if (projected.y < -0.01D) return false;
+
+        boolean airborneVerticalJump =
+                action.jump()
+                        && state.kit == Kit.JUMPER
+                        && state.ability.charges > 0
+                        && projected.y > 0.01D;
+        return airborneVerticalJump
+                || physicalFloorUnderAabb(state, projected.x, projected.z);
     }
 
     private static boolean physicalFloorUnderAabb(

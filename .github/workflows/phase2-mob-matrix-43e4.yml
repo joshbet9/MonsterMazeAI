@@ -1,0 +1,121 @@
+name: Benchmark — 43e4 full 30-cell authentic mob matrix
+
+on:
+  push:
+    branches:
+      - benchmark/phase2-43e4-full-mob-matrix-v1
+
+concurrency:
+  group: monstermaze-phase2-mob-matrix
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Full 30-cell mob natural termination benchmark
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run all 30 authentic mob cells
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am \
+            -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
+            -DmatrixSpawnMonsters=true \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            test 2>&1 | tee phase2-mob-matrix.log
+      - name: Summarize benchmark
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          text = Path("phase2-mob-matrix.log").read_text(encoding="utf-8", errors="replace")
+          rx = re.compile(
+              r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+"
+              r"kit=([A-Z_]+)\s+stage=(\d+)\s+ticks=(\d+)\s+health=([-\d.]+)"
+          )
+          erx = re.compile(
+              r"EFFICIENCY\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+"
+              r"kit=([A-Z_]+)\s+s5k=(\d+)\s+s10k=(\d+)\s+s15k=(\d+)\s+s20k=(\d+)"
+          )
+
+          rows = [{
+              "mode": m.group(1),
+              "pattern": int(m.group(2)),
+              "kit": m.group(3),
+              "maxStage": int(m.group(4)),
+              "ticks": int(m.group(5)),
+              "health": float(m.group(6)),
+          } for m in rx.finditer(text)]
+
+          efficiency = [{
+              "mode": m.group(1),
+              "pattern": int(m.group(2)),
+              "kit": m.group(3),
+              "s5k": int(m.group(4)),
+              "s10k": int(m.group(5)),
+              "s15k": int(m.group(6)),
+              "s20k": int(m.group(7)),
+          } for m in erx.finditer(text)]
+
+          if len(rows) != 30:
+              raise SystemExit(f"expected 30 FULL_MATRIX rows, found {len(rows)}")
+          if len(efficiency) != 30:
+              raise SystemExit(f"expected 30 EFFICIENCY rows, found {len(efficiency)}")
+
+          rows.sort(key=lambda r: (r["mode"], r["pattern"], r["kit"]))
+          efficiency.sort(key=lambda r: (r["mode"], r["pattern"], r["kit"]))
+
+          speed = [r["maxStage"] for r in rows if r["mode"] == "SPEED"]
+          modern = [r["maxStage"] for r in rows if r["mode"] == "MODERN"]
+
+          speed_target = [r for r in rows if r["mode"] == "SPEED" and r["maxStage"] >= 70]
+          modern_target = [r for r in rows if r["mode"] == "MODERN" and r["maxStage"] >= 40]
+
+          out = {
+              "cases": 30,
+              "speedMean": sum(speed) / len(speed),
+              "modernMean": sum(modern) / len(modern),
+              "speedMin": min(speed),
+              "modernMin": min(modern),
+              "speedPeak": max(speed),
+              "modernPeak": max(modern),
+              "speedAtLeast70": len(speed_target),
+              "modernAtLeast40": len(modern_target),
+              "allReached20kCap": all(r["ticks"] >= 20000 for r in rows),
+              "rows": rows,
+              "efficiency": efficiency,
+          }
+          Path("phase2-mob-matrix.json").write_text(json.dumps(out, indent=2) + "\n")
+
+          summary = {k: v for k, v in out.items() if k not in {"rows", "efficiency"}}
+          print(json.dumps(summary, indent=2))
+          for r in rows:
+              print(f'{r["mode"]} P{r["pattern"]} {r["kit"]}: '
+                    f'stage={r["maxStage"]} ticks={r["ticks"]} health={r["health"]:.2f}')
+          print("CHECKPOINT CURVES")
+          for r in efficiency:
+              print(f'{r["mode"]} P{r["pattern"]} {r["kit"]}: '
+                    f'5k={r["s5k"]} 10k={r["s10k"]} 15k={r["s15k"]} 20k={r["s20k"]}')
+          PY
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-mob-matrix-${{ github.sha }}
+          path: |
+            phase2-mob-matrix.log
+            phase2-mob-matrix.json

@@ -310,7 +310,14 @@ final class NoMobLocomotionController {
         }
 
         boolean jump = shouldSpeedJump(state, allowJump, speedAlong, remaining, nextTurn);
-        boolean sprint = speedAlong < TARGET_SPEED + 0.08D && Math.abs(yawError) <= HEADING_TOLERANCE;
+
+        /*
+         * Sprint is a movement-state choice, not a camera-alignment reward.
+         * With Jump -10 the source's sprint-jump interaction is the mechanism
+         * that builds horizontal momentum. The previous yaw threshold silently
+         * disabled sprint at ordinary 24-36 degree route bends.
+         */
+        boolean sprint = true;
 
         lastDecision = "DRIVE_EDGE edge=" + edge.index
                 + " progress=" + format(progress)

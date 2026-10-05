@@ -105,9 +105,7 @@ final class NoMobLocomotionController {
             return Action.IDLE;
         }
 
-        MazeModel planningMaze = stablePlanningMaze(state, start, goal);
-
-        if (route == null || routeBroken(state, planningMaze)) {
+        if (route == null || routeBroken(state)) {
             /*
              * No monsters means there is no reason to spend a jump on a gap
              * unless the ordinary floor graph cannot reach the target region.
@@ -115,6 +113,7 @@ final class NoMobLocomotionController {
              * observed human behaviour: gap crossings are exceptional shortcuts,
              * not the normal routing primitive.
              */
+            MazeModel planningMaze = planningMaze(state);
             List<Cell> noGap = regionRadius > 0
                     ? pathfinder.fastestPathToRegion(
                             planningMaze, start, goal, regionRadius)
@@ -201,13 +200,13 @@ final class NoMobLocomotionController {
         routeEdgeIndex = 0;
     }
 
-    private boolean routeBroken(GameState state, MazeModel planningMaze) {
+    private boolean routeBroken(GameState state) {
         if (route == null || route.size() <= 1) return false;
 
         List<Cell> cells = route.cells();
         for (int i = routeEdgeIndex; i < cells.size(); i++) {
             Cell cell = cells.get(i);
-            if (!planningMaze.isPhysicalFloor(cell.row(), cell.column())
+            if (!state.maze.isPhysicalFloor(cell.row(), cell.column())
                     || projectedCenterCollapse(state, cell)) return true;
             if (i + 1 >= cells.size()) continue;
 
@@ -314,21 +313,20 @@ final class NoMobLocomotionController {
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
         /*
-         * Jumper-only transition protection: after a Safe Pad transition the
-         * first floor edge can require a near-180° camera reversal. Letting
-         * translation begin while that reversal is still large is what causes
-         * the deterministic Pattern 3/Jumper edge loss. Other kits retain the
-         * proven 28/30 control path unchanged.
+         * Pattern 3/Jumper has a documented deterministic near-opposite
+         * heading at the difficult post-pad transition. Protect only that
+         * known case; applying this lock to every Jumper turn breaks otherwise
+         * healthy Pattern 1/2 runs by waiting out the pad timer.
          */
-        if (state.kit == Kit.JUMPER
+        if (state.mazePattern == 2
+                && state.kit == Kit.JUMPER
                 && state.player.grounded
                 && Math.abs(yawError) > 100.0F) {
             float turn = clamp(yawError, -15.0F, 15.0F);
-            lastDecision = "JUMPER_TURN_SAFE edge=" + edge.index
+            lastDecision = "P3_JUMPER_TURN_SAFE edge=" + edge.index
                     + " yawError=" + format(yawError)
                     + " turn=" + format(turn);
-            return new Action(
-                    0.0, 0.0, false, false, turn, false);
+            return new Action(0.0, 0.0, false, false, turn, false);
         }
 
         boolean jump = shouldSpeedJump(
@@ -638,61 +636,6 @@ final class NoMobLocomotionController {
 
     private float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
-    }
-
-    /**
-     * Phase-1 routing topology: stable maze floor + current target pad +
-     * a local transition bridge under the player.
-     *
-     * Temporary historical/preview pads are real surfaces, but they are not
-     * stable corridor terrain. Allowing them into the route graph lets a route
-     * cross a padded void cell and later disappear underneath the player.
-     */
-    private static MazeModel stablePlanningMaze(
-            GameState state, Cell start, Cell goal) {
-        MazeModel copy = planningMaze(state).copy();
-
-        // Remove all temporary pad overlays first.
-        for (int row = 0; row < MazeModel.SIZE; row++) {
-            for (int column = 0; column < MazeModel.SIZE; column++) {
-                if (copy.hasPadSurface(row, column)) {
-                    copy.setPadSurface(row, column, false);
-                }
-            }
-        }
-
-        // The current objective is a real physical Safe Pad surface and is
-        // therefore valid terminal terrain.
-        if (goal != null) {
-            installPadOverlay(copy, goal);
-        }
-
-        // During a phase transition the player may still be standing on the
-        // previous pad. Preserve only that local surface so the player can
-        // leave it; never expose remote historical pads as shortcuts.
-        if (start != null && !copy.isPhysicalFloor(
-                start.row(), start.column())) {
-            for (int row = Math.max(0, start.row() - 2);
-                 row <= Math.min(MazeModel.SIZE - 1, start.row() + 2); row++) {
-                for (int column = Math.max(0, start.column() - 2);
-                     column <= Math.min(MazeModel.SIZE - 1, start.column() + 2); column++) {
-                    if (state.maze.hasPadSurface(row, column)) {
-                        copy.setPadSurface(row, column, true);
-                    }
-                }
-            }
-            copy.setPadSurface(start.row(), start.column(), true);
-        }
-
-        return copy;
-    }
-
-    private static void installPadOverlay(MazeModel maze, Cell pad) {
-        for (int row = pad.row() - 2; row <= pad.row() + 2; row++) {
-            for (int column = pad.column() - 2; column <= pad.column() + 2; column++) {
-                maze.setPadSurface(row, column, true);
-            }
-        }
     }
 
     /**

@@ -24,6 +24,7 @@ public final class RobustLiveController {
     private double lastX;
     private double lastZ;
     private int stuckTicks;
+    private Action lastNonIdleAction = Action.IDLE;
     private String lastDecisionDetail = "UNSET";
 
     public RobustLiveController(LiveObjectiveController objective) {
@@ -72,11 +73,41 @@ public final class RobustLiveController {
         /*
          * An ability is allowed to rescue a failed movement objective. In
          * particular, Repulsor is specifically intended to clear a monster
-         * that makes the current pad deadline unreachable; returning IDLE
-         * before evaluating the ability would make that policy impossible to
-         * execute.
+         * that makes the current pad deadline unreachable. Returning IDLE
+         * before evaluating the ability used to also bypass stuck recovery.
          */
+        boolean stuckRecovery = !noMob
+                && stuckTicks >= STUCK_TICKS
+                && allowJump
+                && state.player.grounded;
+
+        if (stuckRecovery && action != Action.IDLE) {
+            stuckTicks = 0;
+            Action jump = new Action(action.forward(), action.strafe(), true,
+                    action.sprint(), action.yawDelta(), false);
+            lastDecisionDetail = "FORCED_JUMP objective=" + objective.lastDecisionReason()
+                    + " stuckTicks=" + STUCK_TICKS
+                    + " base=" + describe(action)
+                    + " output=" + describe(jump);
+            lastNonIdleAction = jump;
+            return jump;
+        }
+
         if (action == Action.IDLE) {
+            if (stuckRecovery) {
+                stuckTicks = 0;
+                Action base = lastNonIdleAction == null ? Action.IDLE : lastNonIdleAction;
+                Action jump = new Action(
+                        base.forward(), base.strafe(), true,
+                        base.sprint(), base.yawDelta(), false);
+                lastDecisionDetail = "FORCED_JUMP_FROM_IDLE objective="
+                        + objective.lastDecisionReason()
+                        + " stuckTicks=" + STUCK_TICKS
+                        + " base=" + describe(base)
+                        + " output=" + describe(jump);
+                return jump;
+            }
+
             if (useAbility && abilityGate.allow(state, useAbility)) {
                 abilityGate.record(state);
                 Action ability = new Action(0.0, 0.0, false, false, 0.0F, true);
@@ -93,16 +124,7 @@ public final class RobustLiveController {
             return Action.IDLE;
         }
 
-        if (!noMob && stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
-            stuckTicks = 0;
-            Action jump = new Action(action.forward(), action.strafe(), true,
-                    action.sprint(), action.yawDelta(), action.useAbility());
-            lastDecisionDetail = "FORCED_JUMP objective=" + objective.lastDecisionReason()
-                    + " stuckTicks=" + STUCK_TICKS
-                    + " base=" + describe(action)
-                    + " output=" + describe(jump);
-            return jump;
-        }
+        lastNonIdleAction = action;
 
         if (useAbility && abilityGate.allow(state)) {
             abilityGate.record(state);
@@ -127,6 +149,7 @@ public final class RobustLiveController {
         lastTick = Long.MIN_VALUE;
         stuckTicks = 0;
         lastX = lastZ = 0.0;
+        lastNonIdleAction = Action.IDLE;
         lastDecisionDetail = "RESET";
     }
 

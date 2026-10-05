@@ -1,4 +1,4 @@
-name: Experiment — tactical simulation with verified motor
+name: Experiment — tactical simulation with verified motor v2
 on:
   push:
     branches:

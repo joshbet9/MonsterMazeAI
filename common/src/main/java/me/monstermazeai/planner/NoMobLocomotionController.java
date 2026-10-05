@@ -10,6 +10,7 @@ import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
+import me.monstermazeai.physics.LegacyMazePhysics;
 
 import java.util.List;
 

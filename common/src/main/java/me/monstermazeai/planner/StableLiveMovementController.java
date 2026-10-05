@@ -261,6 +261,22 @@ public final class StableLiveMovementController {
         }
 
         /*
+         * Apply a completed, still-valid background threat-aware route before
+         * local mob avoidance gets first refusal. Previously avoidance returned
+         * early, which could leave a better route sitting in completedRoutePlan
+         * while the controller repeatedly dodged/yielded on the old corridor.
+         * Pad and gap commitments remain authoritative and are never replaced.
+         */
+        if (!padEntryCommitment && !gapExecutionActive && completedRoutePlan != null) {
+            Cell preAvoidanceStart = resolveSupportedStartCell(state);
+            if (preAvoidanceStart != null) {
+                applyCompletedRoutePlan(
+                        state, preAvoidanceStart.row(), preAvoidanceStart.column(),
+                        goal, regionRadius);
+            }
+        }
+
+        /*
          * Emergency contact is deliberately separate from ordinary tactical
          * avoidance. If the deadline is already unattainable by normal travel,
          * a nearby monster can be used as a source-faithful bump toward the

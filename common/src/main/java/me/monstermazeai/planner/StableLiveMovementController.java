@@ -227,9 +227,18 @@ public final class StableLiveMovementController {
             mobHitRecoveryUntilTick = Math.max(
                     mobHitRecoveryUntilTick,
                     state.tick + MOB_HIT_RECOVERY_TICKS);
-            clearRoute();
+            /*
+             * Preserve the current route across a mob bump. The player's
+             * position and momentum have changed, but the route topology has
+             * not. Throwing the route away here forces a fresh bootstrap on
+             * landing and was producing repeated corner/heading churn in
+             * dense Modern runs. The normal route-validity check below will
+             * replace it only when the post-bump position has actually left
+             * the current corridor.
+             */
             clearPadEntryCommitment();
             clearGapCommitment();
+            anchoredSegmentIndex = -1;
             fullRouteEvaluationPending = true;
             lastThreatSignature = Long.MIN_VALUE;
             lastTacticalSignature = Long.MIN_VALUE;

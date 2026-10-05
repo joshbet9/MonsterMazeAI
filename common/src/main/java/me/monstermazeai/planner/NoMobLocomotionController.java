@@ -116,16 +116,17 @@ final class NoMobLocomotionController {
              */
             MazeModel planningMaze = planningMaze(state);
             List<Cell> noGap = regionRadius > 0
-                    ? pathfinder.fastestPathToRegion(
+                    ? pathfinder.shortestPathToRegionWithoutGaps(
                             planningMaze, start, goal, regionRadius)
-                    : pathfinder.fastestPath(planningMaze, start, goal);
+                    : pathfinder.shortestPathWithoutGaps(planningMaze, start, goal);
             if (!noGap.isEmpty()) {
                 route = new PlayerRoute(noGap);
             } else {
                 route = regionRadius > 0
-                        ? planner.routeToRegionFast(
-                                state, start, goal, Math.max(0, regionRadius))
-                        : planner.routeFast(state, start, goal);
+                        ? new PlayerRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                                planningMaze, start, goal, Math.max(0, regionRadius)))
+                        : new PlayerRoute(pathfinder.shortestPathWithoutGaps(
+                                planningMaze, start, goal));
             }
             routeEdgeIndex = 0;
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()
@@ -288,23 +289,14 @@ final class NoMobLocomotionController {
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
         /*
-         * PHASE 1 — NO-MOB SURVIVAL MOTOR
+         * PHASE 1 SURVIVAL MOTOR
          *
-         * The only routing information used here is the already-selected
-         * shortest floor path. There is no dynamic route scoring, tactical
-         * replanning, gap shortcut, strafe correction, or jump optimization.
-         *
-         * Motor invariant:
-         *   1. brake before a corner;
-         *   2. rotate in place until facing the next cardinal edge;
-         *   3. sprint straight ahead with zero strafe and zero vertical jump.
-         *
-         * This intentionally sacrifices movement efficiency for a clean,
-         * deterministic proof that the AI can survive the source maze with no
-         * monsters. Efficiency can be optimized only after every cell reaches
-         * the tick ceiling.
+         * The route is only a static cardinal topology path. Translation is
+         * always requested along the committed edge direction; the camera is
+         * converged separately. This means a 90-degree turn cannot become a
+         * diagonal world-space shortcut through an air corner.
          */
-        float yawError = headingError(state, edge);
+        float yawError = headingErrorForDirection(state, edge.dirX, edge.dirZ);
         double speed = Math.hypot(state.player.vx, state.player.vz);
 
         boolean turningNext = false;
@@ -313,39 +305,62 @@ final class NoMobLocomotionController {
             turningNext = changesDirection(edge.from, edge.to, next);
         }
 
-        // Stop accelerating before a turn so legacy momentum cannot carry the
-        // player past a one-cell corner while the camera rotates.
-        if (turningNext && edge.progress >= edge.length - 0.70D && speed > 0.03D) {
+        /*
+         * Bleed legacy momentum before a turn. This is deliberately an input
+         * pause rather than a new movement vector: ground friction is the
+         * source-faithful decelerator and cannot push the player toward the
+         * outside of a corridor.
+         */
+        if (turningNext && edge.progress >= edge.length - 0.65D && speed > 0.035D) {
             lastDecision = "SURVIVAL_BRAKE edge=" + edge.index
                     + " progress=" + format(edge.progress)
                     + " speed=" + format(speed);
-            return Action.IDLE;
+            return guardProjectedFloor(
+                    state,
+                    Action.IDLE,
+                    edge);
         }
 
-        // Never translate while the camera is more than a few degrees off the
-        // committed cardinal corridor. Rotate at the source-compatible maximum.
-        if (Math.abs(yawError) > 5.0F) {
+        /*
+         * Acquire the new cardinal heading before translating when the camera
+         * is substantially misaligned. Thirty degrees/tick is the source-safe
+         * maximum, so a right-angle turn costs only three camera ticks once
+         * velocity has been bled off.
+         */
+        if (Math.abs(yawError) > 12.0F) {
             float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
             lastDecision = "SURVIVAL_TURN edge=" + edge.index
                     + " yawError=" + format(yawError)
                     + " speed=" + format(speed)
                     + " turn=" + format(turn);
-            return new Action(
+            Action turnOnly = new Action(
                     0.0, 0.0, false, false, turn, false);
+            if (speed <= 0.035D) {
+                return guardProjectedFloor(state, turnOnly, edge);
+            }
+            return guardProjectedFloor(state, Action.IDLE, edge);
         }
 
         /*
-         * No jump input in phase 1. With gaps explicitly disabled, there is no
-         * reason to consume Jumper charges or invoke the -10 jump-spam path yet.
-         * The next phase will measure how much speed is lost by this conservative
-         * choice and optimize it independently.
+         * Preserve the real -10 jump-spam speed mechanic for non-Jumpers.
+         * A charged Jumper never spends a vertical charge in the survival
+         * baseline; once charges are exhausted the same Jump input naturally
+         * becomes the source speeding interaction.
          */
+        boolean jump = shouldSpeedJump(
+                state, allowJump,
+                speedAlong(state, edge),
+                Math.max(0.0D, edge.length - edge.progress),
+                turningNext);
+
+        Action proposed = driveVector(
+                state, edge.dirX, edge.dirZ,
+                1.0, true, jump);
         lastDecision = "SURVIVAL_FORWARD edge=" + edge.index
                 + " progress=" + format(edge.progress)
-                + " speed=" + format(speed);
-
-        Action proposed = new Action(
-                1.0, 0.0, false, true, 0.0F, false);
+                + " yawError=" + format(yawError)
+                + " speed=" + format(speed)
+                + " jump=" + jump;
         return guardProjectedFloor(state, proposed, edge);
     }
 
@@ -391,14 +406,48 @@ final class NoMobLocomotionController {
         me.monstermazeai.player.PlayerState projected = state.player.copy();
         int jumpAmplifier =
                 state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
-        new LegacyMazePhysics().tick(
-                projected, action, state.maze, jumpAmplifier);
+        LegacyMazePhysics physics = new LegacyMazePhysics();
 
         /*
-         * A positive-Y jump is safe even though it is not grounded after the
-         * tick. Any genuinely negative-height prediction is a floor loss.
+         * A one-tick Y check is insufficient at an edge: the first tick can
+         * still end at y=0 and only fall on the following gravity step. Require
+         * three consecutive source-physics ticks to remain over real floor.
          */
-        return projected.y >= -0.01D;
+        for (int i = 0; i < 3; i++) {
+            physics.tick(projected, action, state.maze, jumpAmplifier);
+            if (projected.y < -0.01D) return false;
+
+            boolean airborneJump =
+                    action.jump()
+                            && state.kit == Kit.JUMPER
+                            && state.ability.charges > 0
+                            && projected.y > 0.01D;
+            if (!airborneJump
+                    && !physicalFloorUnderAabb(state, projected.x, projected.z)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean physicalFloorUnderAabb(
+            GameState state, double x, double z) {
+        final double halfWidth = 0.30D;
+        double minX = x - halfWidth;
+        double maxX = x + halfWidth;
+        double minZ = z - halfWidth;
+        double maxZ = z + halfWidth;
+        int minRow = (int) Math.floor(minX);
+        int maxRow = (int) Math.floor(Math.nextDown(maxX));
+        int minColumn = (int) Math.floor(minZ);
+        int maxColumn = (int) Math.floor(Math.nextDown(maxZ));
+
+        for (int row = minRow; row <= maxRow; row++) {
+            for (int column = minColumn; column <= maxColumn; column++) {
+                if (state.maze.isPhysicalFloor(row, column)) return true;
+            }
+        }
+        return false;
     }
 
     private Action brakeVelocity(GameState state) {
@@ -488,20 +537,18 @@ final class NoMobLocomotionController {
             double speedAlong,
             double remaining,
             boolean nextTurn) {
-        /*
-         * In Monster Maze, Jump is always a valid client input. Whether it is
-         * a vertical jump is decided by the source Jump effect: Jumper charges
-         * temporarily remove the -10 lock; once charges are gone, -10 returns
-         * and the same Jump input becomes the horizontal speeding mechanic.
-         *
-         * Therefore the no-mob motor must never disable Jump merely because
-         * the observation layer says a Jumper has no vertical charge left.
-         */
         if (!state.player.grounded) {
             return false;
         }
-        if (nextTurn && remaining <= 1.20D) return false;
-        if (speedAlong >= TARGET_SPEED) return false;
+        if (state.kit == Kit.JUMPER && state.ability.charges > 0) {
+            return false;
+        }
+        if (nextTurn && remaining <= 1.20D) {
+            return false;
+        }
+        if (speedAlong >= TARGET_SPEED) {
+            return false;
+        }
 
         long cadence = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpTick != Long.MIN_VALUE

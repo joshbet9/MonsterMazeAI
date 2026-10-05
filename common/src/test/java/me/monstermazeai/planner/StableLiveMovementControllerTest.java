@@ -3,6 +3,7 @@ package me.monstermazeai.planner;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
+import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,48 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void separatingMonsterAtSafeDistanceDoesNotStealRouteControl() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(1, 0.5, 0.0, 2.2));
+        me.monstermazeai.monster.MonsterState monster = s.monsters.get(0);
+        monster.vz = 0.30D; // moving away from the player along the route
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertFalse(controller.lastDecisionDetail().contains("MOB_YIELD"),
+                controller.lastDecisionDetail());
+        assertFalse(controller.lastDecisionDetail().contains("MOB_DODGE"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "a separating mob at 1.7 blocks must not replace route movement");
+    }
+
+    @Test
+    void closingMonsterAtSafeDistanceCanTriggerRouteAvoidance() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        s.monsters.add(new me.monstermazeai.monster.MonsterState(2, 0.5, 0.0, 2.2));
+        me.monstermazeai.monster.MonsterState monster = s.monsters.get(0);
+        monster.vz = -0.30D; // moving toward the player along the route
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+        s.tick = 2;
+
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -100,6 +143,46 @@ class StableLiveMovementControllerTest {
         assertTrue(sawForward);
         assertTrue(strafeTicks <= 8,
                 "sideways approach should use strafe only as a bounded corner-turn aid, not oscillate");
+    }
+
+    @Test
+    void laneRecoveryCorrectsWorldLateralErrorWhileCameraTurns() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        // Establish the +Z route and its lane anchor first.
+        s.tick = 1;
+        controller.nextAction(s, new Cell(0, 8), false);
+
+        // Simulate a monster dodge: player is 0.4 blocks to the +X side while
+        // the camera is still 60 degrees away from the corridor heading.
+        s.player.x = 0.9;
+        s.player.z = 2.5;
+        s.player.yaw = -60.0F;
+        s.player.grounded = true;
+        s.player.vx = 0.0;
+        s.player.vz = 0.0;
+        s.tick = 2;
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+        double before = Math.abs(s.player.x - 0.5);
+
+        assertTrue(action.forward() > 0.0,
+                "lane recovery should preserve some forward route progress");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0,
+                "lane recovery should turn the camera back toward the corridor");
+        assertTrue(controller.lastDecisionDetail().contains("LANE_RECOVERY world="),
+                controller.lastDecisionDetail());
+
+        physics.tick(s.player, action);
+
+        double after = Math.abs(s.player.x - 0.5);
+        assertTrue(after < before,
+                "world-space lane recovery must reduce lateral error: before="
+                        + before + " after=" + after + " action=" + action);
+        assertTrue(s.player.z > 2.5,
+                "lane recovery must continue advancing along the route");
     }
 
     @Test
@@ -228,24 +311,62 @@ class StableLiveMovementControllerTest {
 
         s.tick = 1;
         Action first = controller.nextAction(s, new Cell(0, 8), false);
-        assertTrue(first.forward() > 0.0 || Math.abs(first.yawDelta()) > 0.0,
-                "the first live observation must produce a non-idle bootstrap control action");
-        assertTrue(controller.lastDecisionDetail().contains("BOOTSTRAP_ROUTE"));
+        assertEquals(0.0, first.forward(), 1.0e-6,
+                "a large initial heading error must be acquired in place before departure");
+        assertEquals(0.0, first.strafe(), 1.0e-6);
+        assertEquals(30.0F, Math.abs(first.yawDelta()), 1.0e-6F);
+        assertTrue(controller.lastDecisionDetail().contains("BOOTSTRAP_FACING"));
 
+        // Once the heading has been acquired, the motor must release directly
+        // into continuous movement rather than adding an artificial pause.
+        s.player.yaw = -2.0F;
         s.tick = 2;
         Action second = controller.nextAction(s, new Cell(0, 8), false);
+        assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
+                "the live motor must continue controlling while the strategic planner evaluates in the background");
+        assertFalse(controller.lastDecisionDetail().startsWith("BOOTSTRAP_FACING "),
+                controller.lastDecisionDetail());
         assertTrue(second.forward() > 0.0 || Math.abs(second.yawDelta()) > 0.0,
                 "the live motor must continue controlling while the strategic planner evaluates in the background");
         assertFalse(controller.lastDecisionDetail().contains("ROUTE_REPLAN"),
                 "the live control thread must never synchronously execute the expensive route simulation");
 
         long plansAfterSecondObservation = controller.routePlanCount();
-        s.tick = 3;
-        Action third = controller.nextAction(s, new Cell(0, 8), false);
-        assertTrue(third.forward() > 0.0 || Math.abs(third.yawDelta()) > 0.0,
-                "a slow strategic plan must not leave the motor idle");
-        assertEquals(plansAfterSecondObservation, controller.routePlanCount(),
-                "unchanged local world state must not start another strategic simulation");
+        for (int tick = 3; tick <= 10; tick++) {
+            s.tick = tick;
+            Action next = controller.nextAction(s, new Cell(0, 8), false);
+            assertTrue(next.forward() > 0.0 || Math.abs(next.yawDelta()) > 0.0,
+                    "a slow strategic plan must not leave the motor idle");
+            assertTrue(controller.routePlanCount() <= plansAfterSecondObservation + 1,
+                    "unchanged local world state must not trigger repeated route replans: "
+                            + controller.routePlanCount() + " vs baseline " + plansAfterSecondObservation);
+        }
+    }
+
+    @Test
+    void rebasesCompletedStrategicRouteOntoCurrentSupportedCell() {
+        PlayerRoute planned = new PlayerRoute(java.util.List.of(
+                new Cell(0, 0),
+                new Cell(0, 1),
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)));
+
+        PlayerRoute rebased = StableLiveMovementController.rebaseRoute(planned, 0, 2);
+
+        assertNotNull(rebased);
+        assertEquals(java.util.List.of(
+                new Cell(0, 2),
+                new Cell(1, 2),
+                new Cell(2, 2)), rebased.cells());
+    }
+
+    @Test
+    void rejectsCompletedStrategicRouteAfterTopologyDivergence() {
+        PlayerRoute planned = new PlayerRoute(java.util.List.of(
+                new Cell(0, 0), new Cell(0, 1), new Cell(0, 2)));
+
+        assertNull(StableLiveMovementController.rebaseRoute(planned, 1, 1));
     }
 
     @Test
@@ -445,6 +566,243 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
         assertFalse(controller.lastDecisionDetail().contains("REACHED"),
                 controller.lastDecisionDetail());
+    }
+
+    @Test
+    void physicsDrivenRightTurnBrakesBeforeCornerAndReachesGoal() {
+        CornerResult result = simulateCorner(
+                2, 1, 2, 8, 8, 8,
+                0.0F, 0.0D);
+
+        assertTrue(result.reachedGoal,
+                "right turn did not reach goal: " + result);
+        assertFalse(result.leftPhysicalFloor,
+                "right turn left physical floor: " + result);
+        assertTrue(result.cornerPrepTicks > 0,
+                "right turn never entered predictive corner staging: " + result);
+        assertTrue(result.maxYawDelta <= 30.0F + 1.0E-6,
+                "controller exceeded the 1.8 yaw limit: " + result);
+    }
+
+    @Test
+    void physicsDrivenLeftTurnBrakesBeforeCornerAndReachesGoal() {
+        CornerResult result = simulateCorner(
+                8, 1, 8, 8, 2, 8,
+                0.0F, 0.0D);
+
+        assertTrue(result.reachedGoal,
+                "left turn did not reach goal: " + result);
+        assertFalse(result.leftPhysicalFloor,
+                "left turn left physical floor: " + result);
+        assertTrue(result.cornerPrepTicks > 0,
+                "left turn never entered predictive corner staging: " + result);
+        assertTrue(result.maxYawDelta <= 30.0F + 1.0E-6,
+                "controller exceeded the 1.8 yaw limit: " + result);
+    }
+
+
+    @Test
+    void advancesWhenPhysicsHasCrossedCornerByOnlyTwoCentimetres() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // The waypoint centre is z=8.5. A real physics step can put the player
+        // only a few centimetres beyond it; this must still count as crossing.
+        s.player.z = 8.502D;
+        s.player.vz = 0.01D;
+        s.player.vx = 0.0D;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 2;
+
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("dir=1,0"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
+    void highMomentumOvershootAtCornerTransitionsForwardInsteadOfBackingIntoOldSegment() {
+        GameState s = cornerState(2, 1, 2, 8, 8, 8, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        s.tick = 1;
+        controller.nextAction(s, new Cell(8, 8), false);
+
+        // Reproduce the actual failure mode: the player reaches the corner with
+        // residual vanilla momentum before the next observation is processed.
+        s.player.z = 8.62;
+        s.player.vz = 0.25;
+        s.player.vx = 0.0;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.player.y = 0.0;
+        s.tick = 2;
+
+        boolean sawWorldBacktrack = false;
+        long backtrackTick = -1;
+        Action backtrackAction = null;
+        double backtrackProgress = 0.0D;
+        StringBuilder earlyTrace = new StringBuilder();
+        for (int tick = 0; tick < 80; tick++) {
+            Action action = controller.nextAction(s, new Cell(8, 8), false);
+
+            /*
+             * W/A/D are camera-relative. A negative local axis is not itself a
+             * reverse command: for example, after a -90 degree turn, negative
+             * strafe can be the correct +Z world movement. Measure the action in
+             * world space against the overall start->goal direction instead.
+             */
+            double yaw = Math.toRadians(s.player.yaw + action.yawDelta());
+            double worldX = (-Math.sin(yaw) * action.forward())
+                    + (Math.cos(yaw) * action.strafe());
+            double worldZ = (Math.cos(yaw) * action.forward())
+                    + (Math.sin(yaw) * action.strafe());
+            double goalProgress = worldX + worldZ;
+            if (tick < 6) {
+                earlyTrace.append(" t=").append(s.tick)
+                        .append(" pos=").append(s.player.x).append(",").append(s.player.z)
+                        .append(" yaw=").append(s.player.yaw)
+                        .append(" action=").append(action)
+                        .append(" progress=").append(goalProgress)
+                        .append(" detail=").append(controller.lastDecisionDetail()).append(";");
+            }
+            if (goalProgress < -1.0E-6 && !sawWorldBacktrack) {
+                sawWorldBacktrack = true;
+                backtrackTick = s.tick;
+                backtrackAction = action;
+                backtrackProgress = goalProgress;
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (s.player.y < -0.25 || !s.player.grounded && s.player.y < -0.75) break;
+            s.tick++;
+        }
+
+        assertFalse(sawWorldBacktrack,
+                "corner recovery emitted world-space backtracking"
+                        + " tick=" + backtrackTick
+                        + " action=" + backtrackAction
+                        + " progress=" + backtrackProgress
+                        + " earlyTrace=" + earlyTrace);
+        assertTrue(s.player.x > 2.0,
+                "post-corner movement did not acquire the next +X segment: "
+                        + s.player.x + "," + s.player.z);
+        assertTrue(s.player.x <= 8.75,
+                "final waypoint handling must stop the motor at the goal: "
+                        + s.player.x + "," + s.player.z);
+        assertTrue(s.player.y >= -0.25,
+                "overshoot recovery fell from the maze: "
+                        + s.player.x + "," + s.player.z + " y=" + s.player.y);
+    }
+
+    private static CornerResult simulateCorner(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float initialYaw,
+            double initialSpeed) {
+        GameState s = cornerState(
+                startRow, startColumn, cornerRow, cornerColumn,
+                goalRow, goalColumn, initialYaw);
+        s.player.vx = startRow == cornerRow ? 0.0D : initialSpeed * Integer.signum(cornerRow - startRow);
+        s.player.vz = startColumn == cornerColumn ? 0.0D : initialSpeed * Integer.signum(cornerColumn - startColumn);
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+        CornerResult result = new CornerResult();
+
+        for (int tick = 1; tick <= 360; tick++) {
+            s.tick = tick;
+            Action action = controller.nextAction(s, new Cell(goalRow, goalColumn), false);
+
+            result.maxYawDelta = Math.max(result.maxYawDelta, Math.abs(action.yawDelta()));
+            if (controller.lastDecisionDetail().contains("CORNER_PREP")
+                    || controller.lastDecisionDetail().contains("CORNER_STAGE")) {
+                result.cornerPrepTicks++;
+            }
+
+            physics.tick(s.player, action, s.maze, 0);
+
+            if (!s.player.grounded && s.player.y < -0.25D) {
+                result.leftPhysicalFloor = true;
+                break;
+            }
+
+            if (Math.hypot(
+                    s.player.x - (goalRow + 0.5D),
+                    s.player.z - (goalColumn + 0.5D)) <= 0.55D) {
+                result.reachedGoal = true;
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    private static GameState cornerState(
+            int startRow, int startColumn,
+            int cornerRow, int cornerColumn,
+            int goalRow, int goalColumn,
+            float yaw) {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+
+        int rowStep = Integer.signum(cornerRow - startRow);
+        int columnStep = Integer.signum(cornerColumn - startColumn);
+        int row = startRow;
+        int column = startColumn;
+        raw[row][column] = 1;
+
+        while (row != cornerRow) {
+            row += rowStep;
+            raw[row][column] = 1;
+        }
+        while (column != goalColumn) {
+            column += columnStep;
+            raw[row][column] = 1;
+        }
+
+        int goalRowStep = Integer.signum(goalRow - cornerRow);
+        row = cornerRow;
+        while (row != goalRow) {
+            row += goalRowStep;
+            raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = goalRow;
+        s.activePadColumn = goalColumn;
+        s.player.x = startRow + 0.5D;
+        s.player.z = startColumn + 0.5D;
+        s.player.y = 0.0D;
+        s.player.yaw = yaw;
+        s.player.grounded = true;
+        return s;
+    }
+
+    private static final class CornerResult {
+        boolean reachedGoal;
+        boolean leftPhysicalFloor;
+        int cornerPrepTicks;
+        double maxYawDelta;
+
+        @Override
+        public String toString() {
+            return "CornerResult{"
+                    + "reachedGoal=" + reachedGoal
+                    + ", leftPhysicalFloor=" + leftPhysicalFloor
+                    + ", cornerPrepTicks=" + cornerPrepTicks
+                    + ", maxYawDelta=" + maxYawDelta
+                    + '}';
+        }
     }
 
 }

@@ -332,6 +332,66 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void reanchorsNewRouteToSegmentAlreadyOccupiedByPlayer() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int row = 0; row <= 2; row++) {
+            for (int column = 0; column <= 2; column++) raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.player.x = 2.8;
+        s.player.z = 2.5;
+        s.player.vx = 0.20;
+        s.player.vz = 0.0;
+
+        me.monstermazeai.maze.PlayerRoute route =
+                new me.monstermazeai.maze.PlayerRoute(java.util.List.of(
+                        new me.monstermazeai.maze.Cell(0, 0),
+                        new me.monstermazeai.maze.Cell(0, 1),
+                        new me.monstermazeai.maze.Cell(0, 2),
+                        new me.monstermazeai.maze.Cell(1, 2),
+                        new me.monstermazeai.maze.Cell(2, 2)));
+
+        int waypoint = StableLiveMovementController.reanchorWaypointIndex(s, route);
+
+        assertEquals(4, waypoint,
+                "replacement route must continue from the segment the player already occupies");
+    }
+
+    @Test
+    void reanchorPrefersForwardSegmentAtExactCornerWhenMomentumExists() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int row = 0; row <= 2; row++) {
+            for (int column = 0; column <= 2; column++) raw[row][column] = 1;
+        }
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.player.x = 0.5;
+        s.player.z = 2.5;
+        s.player.vx = 0.18;
+        s.player.vz = 0.0;
+
+        me.monstermazeai.maze.PlayerRoute route =
+                new me.monstermazeai.maze.PlayerRoute(java.util.List.of(
+                        new me.monstermazeai.maze.Cell(0, 0),
+                        new me.monstermazeai.maze.Cell(0, 1),
+                        new me.monstermazeai.maze.Cell(0, 2),
+                        new me.monstermazeai.maze.Cell(1, 2),
+                        new me.monstermazeai.maze.Cell(2, 2)));
+
+        int waypoint = StableLiveMovementController.reanchorWaypointIndex(s, route);
+
+        assertEquals(4, waypoint,
+                "corner re-anchor should prefer the segment matching current momentum");
+    }
+
+    @Test
     void reducesTurnPulseNearCardinalHeading() {
         GameState s = state(0.5, 0.5, -87.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

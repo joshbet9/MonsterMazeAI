@@ -208,13 +208,44 @@ public final class TacticalRouteSimulator {
     }
 
     private static int tacticalHorizon(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
+        if (state == null || state.monsters == null) return SPEED_TACTICAL_HORIZON;
+
+        double earliestContact = Double.POSITIVE_INFINITY;
+        for (var monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)
+                    || !MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, TACTICAL_RELEVANCE_RADIUS)) {
+                continue;
+            }
+
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            double distance = Math.hypot(dx, dz);
+            double closing = distance <= 1.0E-6D
+                    ? Double.POSITIVE_INFINITY
+                    : -(monster.vx * dx + monster.vz * dz) / distance;
+
+            if (closing <= 0.01D) continue;
+
+            double eta = Math.max(
+                    0.0D,
+                    (distance - MonsterMazeBumpModel.CONTACT_DISTANCE) / closing);
+            earliestContact = Math.min(earliestContact, eta);
+        }
+
+        /*
+         * Shared controller policy: use the cheap horizon until the source
+         * physics says a collision is actually approaching. The harder 12-tick
+         * search is then earned by geometry, not by Mode.
+         */
+        return earliestContact <= 8.0D
                 ? MODERN_TACTICAL_HORIZON
                 : SPEED_TACTICAL_HORIZON;
     }
 
     private static int tacticalBeam(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
+        return tacticalHorizon(state) == MODERN_TACTICAL_HORIZON
                 ? MODERN_TACTICAL_BEAM
                 : SPEED_TACTICAL_BEAM;
     }

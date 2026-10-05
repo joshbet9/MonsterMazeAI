@@ -1700,27 +1700,48 @@ public final class StableLiveMovementController {
 
         if (leftFloor || rightFloor) {
             double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
-            double strafe;
-            if (preferred < 0.0D && leftFloor) {
-                strafe = -1.0D;
-            } else if (preferred > 0.0D && rightFloor) {
-                strafe = 1.0D;
-            } else if (leftFloor) {
-                strafe = -1.0D;
-            } else {
-                strafe = 1.0D;
+            if (preferred < 0.0D && !leftFloor && rightFloor) {
+                preferred = 1.0D;
+            } else if (preferred > 0.0D && !rightFloor && leftFloor) {
+                preferred = -1.0D;
             }
 
-            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            /*
+             * A/D is camera-relative in 1.8.9. Convert the desired world-space
+             * diagonal (forward + selected lateral lane) back into local input
+             * instead of assuming the camera is still aligned after a bump.
+             * This preserves the source movement mechanics while making the
+             * dodge direction invariant to knockback-induced yaw.
+             */
+            double worldRow = 0.65D * routeDirRow + preferred * sideRow;
+            double worldColumn = 0.65D * routeDirColumn + preferred * sideColumn;
+            double worldLength = Math.hypot(worldRow, worldColumn);
+            if (worldLength > 1.0D) {
+                worldRow /= worldLength;
+                worldColumn /= worldLength;
+            }
+
+            float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
+            float yawError = normalise(desiredYaw - state.player.yaw);
+            float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            double postYaw = Math.toRadians(state.player.yaw + yawDelta);
+            double forwardWorldX = -Math.sin(postYaw);
+            double forwardWorldZ = Math.cos(postYaw);
+            double strafeWorldX = Math.cos(postYaw);
+            double strafeWorldZ = Math.sin(postYaw);
+            double forward = worldRow * forwardWorldX + worldColumn * forwardWorldZ;
+            double strafe = worldRow * strafeWorldX + worldColumn * strafeWorldZ;
+
+            Action dodge = new Action(forward, strafe, false, true, yawDelta, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
                     + " strafe=" + format(strafe)
+                    + " yawDelta=" + format(yawDelta)
                     + (guarded == dodge ? "" : " EDGE_GUARD");
             return guarded;
         }
-
         /*
          * No side floor exists, so the only source-valid escape is to retreat
          * along the already-traversed route segment. Backward input is relative

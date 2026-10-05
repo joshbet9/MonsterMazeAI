@@ -45,8 +45,8 @@ public final class MonsterAwareRoutePlanner {
         PlayerPathfinder pathfinder = new PlayerPathfinder();
         PlayerRoute chosen = chooseByGapRisk(
                 state,
-                toRoute(pathfinder.shortestPathWithoutGaps(state.maze, start, goal)),
-                toRoute(pathfinder.shortestPath(state.maze, start, goal)));
+                toRoute(pathfinder.fastestPath(state.maze, start, goal)),
+                toRoute(pathfinder.fastestPathWithGaps(state.maze, start, goal)));
         if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
         return chosen;
     }
@@ -74,9 +74,9 @@ public final class MonsterAwareRoutePlanner {
         } else {
             chosen = chooseByGapRisk(
                     state,
-                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                    toRoute(pathfinder.fastestPathToRegion(
                             state.maze, start, regionCenter, radius)),
-                    toRoute(pathfinder.shortestPathToRegion(
+                    toRoute(pathfinder.fastestPathToRegionWithGaps(
                             state.maze, start, regionCenter, radius)));
         }
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
@@ -159,8 +159,11 @@ public final class MonsterAwareRoutePlanner {
         List<PlayerRoute> candidates;
         if (!regionGoal) {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
-            List<Cell> normal = new PlayerPathfinder().shortestPathWithoutGaps(state.maze, start, goal);
+            PlayerPathfinder pathfinder = new PlayerPathfinder();
+            List<Cell> normal = pathfinder.fastestPath(state.maze, start, goal);
             if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
+            List<Cell> gap = pathfinder.fastestPathWithGaps(state.maze, start, goal);
+            if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
             candidates = distinct(generated, limit * 3);
         } else {
@@ -174,10 +177,10 @@ public final class MonsterAwareRoutePlanner {
                     if (r < 0 || r >= MazeModel.SIZE || c < 0 || c >= MazeModel.SIZE
                             || !state.maze.isPhysicalFloor(r, c)) continue;
 
-                    List<Cell> normalPath = pathfinder.shortestPathWithoutGaps(state.maze, start, target);
+                    List<Cell> normalPath = pathfinder.fastestPath(state.maze, start, target);
                     if (!normalPath.isEmpty()) addCandidate(generated, seen, new PlayerRoute(normalPath));
 
-                    List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
+                    List<Cell> path = pathfinder.fastestPathWithGaps(state.maze, start, target);
                     if (!path.isEmpty()) addCandidate(generated, seen, new PlayerRoute(path));
 
                     for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {

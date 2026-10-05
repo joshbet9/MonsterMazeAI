@@ -1,7 +1,9 @@
 package me.monstermazeai.monster;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.game.PadModel;
+import me.monstermazeai.kit.Kit;
 
 /**
  * Strategic live monster-contact policy.
@@ -33,7 +35,17 @@ public final class MobInteractionDecision {
         double padDistance = Math.max(0.0, Math.hypot(padDx, padDz) - PAD_RADIUS);
         double ordinaryTicks = padDistance * ESTIMATED_TICKS_PER_BLOCK;
 
-        if (ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
+        boolean maverickTargeting = state.kit == Kit.MAVERICK
+                && state.mode != Mode.ORIGINAL;
+        double maverickLead = maverickTargeting ? 120.0D : 0.0D;
+
+        if (!maverickTargeting
+                && ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
+            return null;
+        }
+        if (maverickTargeting
+                && ordinaryTicks + maverickLead + EMERGENCY_MARGIN_TICKS
+                        < state.phaseTicksRemaining) {
             return null;
         }
 
@@ -58,10 +70,15 @@ public final class MobInteractionDecision {
             double horizontal = Math.hypot(mx, mz);
             if (horizontal < 0.15) continue;
 
-            // Normal bump velocity is player - monster.
-            double bumpUx = -mx / horizontal;
-            double bumpUz = -mz / horizontal;
-            double towardPad = bumpUx * padUx + bumpUz * padUz;
+            /*
+             * Maverick uses source getMobKnockTarget(): its actual bump velocity
+             * is redirected toward the active/preview pad. The old policy scored
+             * the pre-bump player-minus-mob vector instead, which incorrectly
+             * rejected exactly the contacts Maverick is designed to exploit.
+             */
+            double towardPad = maverickTargeting
+                    ? 1.0D
+                    : ((-mx / horizontal) * padUx + (-mz / horizontal) * padUz);
             if (towardPad < 0.70) continue;
 
             double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;

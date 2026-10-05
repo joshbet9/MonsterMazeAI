@@ -5,6 +5,7 @@ import me.monstermazeai.game.PadModel;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
+import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
@@ -38,6 +39,7 @@ final class NoMobLocomotionController {
 
     private final AiProfile profile;
     private final MonsterAwareRoutePlanner planner = new MonsterAwareRoutePlanner();
+    private final PlayerPathfinder pathfinder = new PlayerPathfinder();
 
     private PlayerRoute route;
     private int routeEdgeIndex;
@@ -87,11 +89,29 @@ final class NoMobLocomotionController {
         }
 
         if (route == null || routeBroken(state)) {
-            route = planner.routeToRegionFast(
-                    state, start, goal, Math.max(0, regionRadius));
+            /*
+             * No monsters means there is no reason to spend a jump on a gap
+             * unless the ordinary floor graph cannot reach the target region.
+             * Establishing the no-gap path as the default also matches the
+             * observed human behaviour: gap crossings are exceptional shortcuts,
+             * not the normal routing primitive.
+             */
+            List<Cell> noGap = regionRadius > 0
+                    ? pathfinder.fastestPathToRegion(
+                            state.maze, start, goal, regionRadius)
+                    : pathfinder.fastestPath(state.maze, start, goal);
+            if (!noGap.isEmpty()) {
+                route = new PlayerRoute(noGap);
+            } else {
+                route = regionRadius > 0
+                        ? planner.routeToRegionFast(
+                                state, start, goal, Math.max(0, regionRadius))
+                        : planner.routeFast(state, start, goal);
+            }
             routeEdgeIndex = 0;
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()
-                    + " route=" + route.size();
+                    + " route=" + route.size()
+                    + " gaps=" + gapCount(route);
         }
 
         if (route == null || route.size() <= 1) {
@@ -570,6 +590,18 @@ final class NoMobLocomotionController {
 
     private float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static int gapCount(PlayerRoute route) {
+        if (route == null || route.size() < 2) return 0;
+        int count = 0;
+        List<Cell> cells = route.cells();
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            int dr = Math.abs(cells.get(i + 1).row() - cells.get(i).row());
+            int dc = Math.abs(cells.get(i + 1).column() - cells.get(i).column());
+            if (dr + dc == 2) count++;
+        }
+        return count;
     }
 
     private static boolean playerAabbOverlapsCell(

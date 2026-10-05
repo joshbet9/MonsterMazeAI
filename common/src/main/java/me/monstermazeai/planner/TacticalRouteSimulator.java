@@ -208,9 +208,57 @@ public final class TacticalRouteSimulator {
     }
 
     private static int tacticalHorizon(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
-                ? MODERN_TACTICAL_HORIZON
-                : SPEED_TACTICAL_HORIZON;
+        if (state == null || state.monsters == null) {
+            return SPEED_TACTICAL_HORIZON;
+        }
+
+        int relevant = 0;
+        double nearest = Double.POSITIVE_INFINITY;
+        double earliestContact = Double.POSITIVE_INFINITY;
+
+        for (var monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)
+                    || !MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, TACTICAL_RELEVANCE_RADIUS)) {
+                continue;
+            }
+
+            relevant++;
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            double distance = Math.hypot(dx, dz);
+            nearest = Math.min(nearest, distance);
+
+            if (distance > 1.0E-6D) {
+                double closing = -(monster.vx * dx + monster.vz * dz) / distance;
+                if (closing > 0.01D) {
+                    double eta = Math.max(
+                            0.0D,
+                            (distance - MonsterMazeBumpModel.CONTACT_DISTANCE) / closing);
+                    earliestContact = Math.min(earliestContact, eta);
+                }
+            }
+        }
+
+        /*
+         * Shared policy for all modes:
+         *  - 6 ticks while the local field is simple and no collision is close.
+         *  - 10 ticks for a genuinely developing interaction.
+         *  - 12 ticks when the collision window is immediate or several mobs
+         *    constrain the same local decision.
+         *
+         * This keeps one controller/mechanics path while adapting compute to
+         * the actual threat geometry rather than the game mode.
+         */
+        if (relevant == 0) return SPEED_TACTICAL_HORIZON;
+        if (earliestContact <= 5.0D || relevant >= 3 || nearest <= 1.35D) {
+            return MODERN_TACTICAL_HORIZON;
+        }
+        if (earliestContact <= 11.0D || relevant >= 2 || nearest <= 2.75D) {
+            return SPEED_TACTICAL_HORIZON + 4;
+        }
+        return SPEED_TACTICAL_HORIZON;
     }
 
     private static int tacticalBeam(GameState state) {

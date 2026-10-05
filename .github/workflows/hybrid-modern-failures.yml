@@ -1,0 +1,39 @@
+name: Diagnostic — hybrid Modern failures
+on:
+  push:
+    branches:
+      - diagnostic/hybrid-modern-failures-v1
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Trace P1 Slowballer and P2 Maverick
+        shell: bash
+        run: |
+          set -o pipefail
+          : > trace.log
+          for spec in "1 SLOWBALLER" "2 MAVERICK"; do
+            set -- $spec
+            echo "===== MODERN P$1 $2 =====" | tee -a trace.log
+            mvn -B -ntp -pl common -am               -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase               -DmatrixMode=MODERN               -DmatrixPattern="$1"               -DmatrixKit="$2"               -DmatrixSpawnMonsters=true               -DmatrixDiagnostic=true               -Dsurefire.failIfNoSpecifiedTests=false               -Dsurefire.useFile=false               -Dsurefire.redirectTestOutputToFile=false               test 2>&1 | tee -a trace.log
+          done
+      - name: Summarize
+        run: |
+          grep -E '^(FIRST_FALL|DIAGNOSTIC)' trace.log > trace-summary.txt || true
+          cat trace-summary.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hybrid-modern-failure-traces
+          path: |
+            trace.log
+            trace-summary.txt

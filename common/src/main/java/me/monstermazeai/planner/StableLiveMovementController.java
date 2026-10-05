@@ -1082,8 +1082,13 @@ public final class StableLiveMovementController {
         if (!allowJump || state.kit == me.monstermazeai.kit.Kit.JUMPER || !state.player.grounded) {
             return false;
         }
-        // The repeated Jump -10 + sprint-jump acceleration is a Speed-mode
-        // mechanic. Modern non-Jumpers must stay on ordinary source movement.
+        /*
+         * The source jump lock is shared by Original/Speed/Modern. With the
+         * -10 Jump effect, repeated sprint-jump input cannot produce a normal
+         * vertical jump but does retain the source horizontal "speeding" burst.
+         * This is therefore a universal non-Jumper movement mechanic, not a
+         * Speed-only optimisation.
+         */
 
         long cadenceTicks = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpInputTick != Long.MIN_VALUE

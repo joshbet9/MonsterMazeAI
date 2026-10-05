@@ -287,65 +287,176 @@ final class NoMobLocomotionController {
     }
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
-        Cell target = edge.to;
-        double targetX = target.row() + 0.5D;
-        double targetZ = target.column() + 0.5D;
-        double remainingX = targetX - state.player.x;
-        double remainingZ = targetZ - state.player.z;
-        double remaining = Math.hypot(remainingX, remainingZ);
-
         /*
-         * Keep the target direction cardinal. The previous target-centre vector
-         * could rotate diagonally at corners and cut across a one-cell void.
-         * Translation stays aligned with the committed floor edge while the
-         * camera converges concurrently.
+         * PHASE 1 — one-tick safe-action search.
+         *
+         * Routing is deliberately static: the floor pathfinder supplies only
+         * the next cardinal edge. There is no strategic replanning or tactical
+         * scoring here. For the motor, however, we evaluate a small lattice of
+         * camera turns and forward/strafe magnitudes against the real movement
+         * model and select the fastest action that remains physically supported.
          */
-        double worldX = edge.dirX;
-        double worldZ = edge.dirZ;
-        float yawError = headingErrorForDirection(state, worldX, worldZ);
-        double speed = Math.hypot(state.player.vx, state.player.vz);
+        Action best = bestSafeAction(state, edge);
+        if (best == null) {
+            lastDecision = "SURVIVAL_NO_SAFE_ACTION edge=" + edge.index;
+            return Action.IDLE;
+        }
 
-        /*
-         * At a large heading reversal, first bleed residual momentum and then
-         * rotate. This is the minimum turn lock required for a one-cell corridor.
-         */
-        if (Math.abs(yawError) > 75.0F) {
-            if (speed > 0.035D) {
-                lastDecision = "FAST_BRAKE edge=" + edge.index
-                        + " yawError=" + format(yawError)
-                        + " speed=" + format(speed);
-                return guardProjectedFloor(state, Action.IDLE, edge);
+        lastDecision = "SURVIVAL_SAFE_ACTION edge=" + edge.index
+                + " progress=" + format(edge.progress)
+                + " yawError=" + format(headingError(state, edge))
+                + " output=f=" + format(best.forward())
+                + ",s=" + format(best.strafe())
+                + ",jump=" + best.jump()
+                + ",yaw=" + format(best.yawDelta());
+        return best;
+    }
+
+    private Action bestSafeAction(GameState state, Edge edge) {
+        double currentProgress = edge.progress;
+        double currentCross = edgeLateral(state, edge.from,
+                directionRow(edge), directionColumn(edge));
+
+        Action best = null;
+        double bestScore = -Double.MAX_VALUE;
+
+        double[] magnitudes = {1.0D, 0.85D, 0.65D, 0.45D, 0.0D};
+        float[] turns = {-30.0F, -20.0F, -10.0F, 0.0F, 10.0F, 20.0F, 30.0F};
+
+        for (float turn : turns) {
+            double postYaw = Math.toRadians(state.player.yaw + turn);
+            double forwardAxisX = -Math.sin(postYaw);
+            double forwardAxisZ = Math.cos(postYaw);
+            double strafeAxisX = Math.cos(postYaw);
+            double strafeAxisZ = Math.sin(postYaw);
+
+            for (double magnitude : magnitudes) {
+                double forward = edge.dirX * forwardAxisX
+                        + edge.dirZ * forwardAxisZ;
+                double strafe = edge.dirX * strafeAxisX
+                        + edge.dirZ * strafeAxisZ;
+
+                double inputLength = Math.hypot(forward, strafe);
+                if (magnitude <= 0.0D) {
+                    forward = 0.0D;
+                    strafe = 0.0D;
+                } else if (inputLength > 1.0E-9D) {
+                    forward = forward / inputLength * magnitude;
+                    strafe = strafe / inputLength * magnitude;
+                }
+
+                boolean sprint = magnitude >= 0.8D;
+                Action candidate = new Action(
+                        forward, strafe, false, sprint, turn, false);
+
+                double score = scoreSafeCandidate(
+                        state, edge, candidate, currentProgress, currentCross);
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
+
+                /*
+                 * Charged Jumper jumps are optional in phase 1. Allow one only
+                 * where the source physics confirms the whole one-tick action
+                 * remains supported. This keeps survival robust while still
+                 * allowing a safe natural jump when it is genuinely useful.
+                 */
+                if (state.kit == Kit.JUMPER
+                        && state.ability.charges > 0
+                        && state.player.grounded
+                        && edge.progress < edge.length - 1.0D) {
+                    Action jumpCandidate = new Action(
+                            forward, strafe, true, sprint, turn, false);
+                    double jumpScore = scoreSafeCandidate(
+                            state, edge, jumpCandidate, currentProgress, currentCross);
+                    if (jumpScore > bestScore) {
+                        bestScore = jumpScore;
+                        best = jumpCandidate;
+                    }
+                }
             }
-            float turn = clamp(yawError, -30.0F, 30.0F);
-            lastDecision = "FAST_TURN edge=" + edge.index
-                    + " yawError=" + format(yawError)
-                    + " turn=" + format(turn);
-            return guardProjectedFloor(
-                    state, new Action(0.0, 0.0, false, false, turn, false), edge);
+        }
+
+        return bestScore > -1.0E8D ? best : null;
+    }
+
+    private double scoreSafeCandidate(
+            GameState state,
+            Edge edge,
+            Action candidate,
+            double currentProgress,
+            double currentCross) {
+        me.monstermazeai.player.PlayerState projected = state.player.copy();
+        int jumpAmplifier =
+                state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
+
+        new LegacyMazePhysics().tick(
+                projected, candidate, state.maze, jumpAmplifier);
+
+        if (projected.y < -0.01D) return -1.0E9D;
+
+        boolean airborneVerticalJump =
+                candidate.jump()
+                        && state.kit == Kit.JUMPER
+                        && state.ability.charges > 0
+                        && projected.y > 0.01D;
+        if (!airborneVerticalJump
+                && !physicalFloorUnderAabb(state, projected.x, projected.z)) {
+            return -1.0E9D;
+        }
+
+        double projectedProgress =
+                (projected.x - (edge.from.row() + 0.5D)) * edge.dirX
+                        + (projected.z - (edge.from.column() + 0.5D)) * edge.dirZ;
+        double projectedCross = edgeLateral(
+                projected.x, projected.z,
+                edge.from, directionRow(edge), directionColumn(edge));
+
+        double progressGain = projectedProgress - currentProgress;
+        double crossGain = Math.abs(currentCross) - Math.abs(projectedCross);
+        double yawAfter = headingErrorAfter(state, edge.dirX, edge.dirZ, candidate.yawDelta());
+
+        double speed = Math.hypot(projected.vx, projected.vz);
+        double score = progressGain * 100.0D
+                + crossGain * 35.0D
+                + speed * 8.0D
+                - Math.abs(yawAfter) * 0.10D;
+
+        if (candidate.forward() != 0.0D || candidate.strafe() != 0.0D) {
+            score += 0.5D;
+        }
+        if (candidate.jump()) {
+            /*
+             * Survival is the priority. A charged jump gets only a small bonus
+             * so it is selected when it actually improves physical progress,
+             * rather than being spent just because it is available.
+             */
+            score += 1.0D;
         }
 
         /*
-         * Non-Jumpers may use the source -10 jump-spam input. Charged Jumpers
-         * deliberately conserve their vertical charges in the survival baseline;
-         * after they reach zero the same input becomes the speeding mechanic.
+         * Do not deliberately reverse along the committed edge unless the
+         * current lateral correction is materially improved.
          */
-        boolean jump = shouldSpeedJump(
-                state,
-                allowJump,
-                state.player.vx * edge.dirX + state.player.vz * edge.dirZ,
-                Math.max(0.0D, edge.length - edge.progress),
-                false);
+        if (progressGain < -0.05D && crossGain < 0.02D) {
+            score -= 20.0D;
+        }
+        return score;
+    }
 
-        Action proposed = driveVector(
-                state, worldX, worldZ, 1.0, true, jump);
+    private float headingErrorAfter(
+            GameState state, double worldX, double worldZ, float yawDelta) {
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-worldX, worldZ));
+        return normalize(desiredYaw - (state.player.yaw + yawDelta));
+    }
 
-        lastDecision = "FAST_FORWARD edge=" + edge.index
-                + " target=" + target.row() + "," + target.column()
-                + " remaining=" + format(remaining)
-                + " yawError=" + format(yawError)
-                + " speed=" + format(speed)
-                + " jump=" + jump;
-        return guardProjectedFloor(state, proposed, edge);
+    private static double edgeLateral(
+            double x, double z, Cell from, int dirRow, int dirColumn) {
+        if (dirRow == 0) {
+            return x - (from.row() + 0.5D);
+        }
+        return z - (from.column() + 0.5D);
     }
 
     /**

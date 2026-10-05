@@ -9,7 +9,7 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final float GROUND_FRICTION = 0.91F;
     private static final float WALK_SPEED = 0.10F;
     private static final float SPRINT_MULTIPLIER = 1.30F;
-    private static final float AIR_MOVE_FACTOR = 0.02F;
+    private static final float AIR_MOVE_FACTOR = 0.026F;
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;

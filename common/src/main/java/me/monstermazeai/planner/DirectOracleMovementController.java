@@ -43,6 +43,7 @@ public final class DirectOracleMovementController {
 
     private final AiProfile profile;
     private final PlayerPathfinder pathfinder = new PlayerPathfinder();
+    private final me.monstermazeai.maze.TurnAwarePathfinder turnAware = new me.monstermazeai.maze.TurnAwarePathfinder();
     private String lastDecisionDetail = "UNSET";
 
     public DirectOracleMovementController(AiProfile profile) {
@@ -158,20 +159,30 @@ public final class DirectOracleMovementController {
                 + " yawError=" + format(yawError)
                 + " forward=" + format(forward);
 
-        return new Action(forward, 0.0, false, sprint, driveTurn, false);
+        boolean speedJump = allowJump
+                && state.kit != me.monstermazeai.kit.Kit.JUMPER
+                && state.player.grounded;
+        return new Action(forward, 0.0, speedJump, sprint, driveTurn, false);
     }
 
     private PlayerRoute route(GameState state, Cell start, Cell goal, int regionRadius) {
         List<Cell> cells;
         if (regionRadius > 0) {
-            cells = pathfinder.shortestPathToRegionWithoutGaps(
+            cells = turnAware.shortestPathToRegion(
                     state.maze, start, goal, regionRadius);
+            if (cells.isEmpty()) {
+                cells = pathfinder.shortestPathToRegionWithoutGaps(
+                        state.maze, start, goal, regionRadius);
+            }
             if (cells.isEmpty()) {
                 cells = pathfinder.shortestPathToRegion(
                         state.maze, start, goal, regionRadius);
             }
         } else {
-            cells = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
+            cells = turnAware.shortestPath(state.maze, start, goal);
+            if (cells.isEmpty()) {
+                cells = pathfinder.shortestPathWithoutGaps(state.maze, start, goal);
+            }
             if (cells.isEmpty()) {
                 cells = pathfinder.shortestPath(state.maze, start, goal);
             }

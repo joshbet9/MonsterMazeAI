@@ -145,7 +145,6 @@ final class NoMobLocomotionController {
          * monotonic: only a later cell on the already-selected route can advance
          * the edge index, so this cannot jump to an unrelated future branch.
          */
-        reanchorFromSupportedCell(state);
         advanceCompletedEdges(state);
 
         if (routeEdgeIndex >= route.size() - 1) {
@@ -288,68 +287,65 @@ final class NoMobLocomotionController {
     }
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
-        Cell target = edge.to;
-        double targetX = target.row() + 0.5D;
-        double targetZ = target.column() + 0.5D;
-        double worldX = targetX - state.player.x;
-        double worldZ = targetZ - state.player.z;
-        double remaining = Math.hypot(worldX, worldZ);
+        /*
+         * PHASE 1 — NO-MOB SURVIVAL MOTOR
+         *
+         * The only routing information used here is the already-selected
+         * shortest floor path. There is no dynamic route scoring, tactical
+         * replanning, gap shortcut, strafe correction, or jump optimization.
+         *
+         * Motor invariant:
+         *   1. brake before a corner;
+         *   2. rotate in place until facing the next cardinal edge;
+         *   3. sprint straight ahead with zero strafe and zero vertical jump.
+         *
+         * This intentionally sacrifices movement efficiency for a clean,
+         * deterministic proof that the AI can survive the source maze with no
+         * monsters. Efficiency can be optimized only after every cell reaches
+         * the tick ceiling.
+         */
+        float yawError = headingError(state, edge);
+        double speed = Math.hypot(state.player.vx, state.player.vz);
 
-        if (remaining < 1.0E-9D) {
-            worldX = edge.dirX;
-            worldZ = edge.dirZ;
-            remaining = 1.0D;
-        } else {
-            worldX /= remaining;
-            worldZ /= remaining;
+        boolean turningNext = false;
+        if (route != null && routeEdgeIndex + 2 < route.size()) {
+            Cell next = route.cells().get(routeEdgeIndex + 2);
+            turningNext = changesDirection(edge.from, edge.to, next);
         }
 
-        /*
-         * No-gap baseline invariant: drive toward the next cell centre, not a
-         * diagonally corrected lane. This preserves the actual one-cell-wide
-         * path geometry and prevents the controller from cutting across a void
-         * corner merely because its geometric cross-track error is large.
-         */
-        float yawError = headingErrorForDirection(state, worldX, worldZ);
-        double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
+        // Stop accelerating before a turn so legacy momentum cannot carry the
+        // player past a one-cell corner while the camera rotates.
+        if (turningNext && edge.progress >= edge.length - 0.70D && speed > 0.03D) {
+            lastDecision = "SURVIVAL_BRAKE edge=" + edge.index
+                    + " progress=" + format(edge.progress)
+                    + " speed=" + format(speed);
+            return Action.IDLE;
+        }
 
-        /*
-         * At an extreme heading error the physical direction and the current
-         * camera face are nearly opposite. Translating through that state is
-         * unsafe on a one-cell corridor, especially immediately after a pad
-         * transition. Turn a small, monotonic amount in place until the
-         * controller reaches the normal concurrent-steering range.
-         */
-        if (state.player.grounded && Math.abs(yawError) > 100.0F) {
-            float turn = clamp(yawError, -15.0F, 15.0F);
-            lastDecision = "TURN_EXTREME edge=" + edge.index
+        // Never translate while the camera is more than a few degrees off the
+        // committed cardinal corridor. Rotate at the source-compatible maximum.
+        if (Math.abs(yawError) > 5.0F) {
+            float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+            lastDecision = "SURVIVAL_TURN edge=" + edge.index
                     + " yawError=" + format(yawError)
+                    + " speed=" + format(speed)
                     + " turn=" + format(turn);
             return new Action(
                     0.0, 0.0, false, false, turn, false);
         }
 
-        boolean jump = shouldSpeedJump(
-                state, allowJump, speedAlong, remaining,
-                false);
-
         /*
-         * The Jump -10 horizontal impulse follows the player's facing. When the
-         * requested cell is behind that facing, suppress the pulse until the
-         * camera has converged; translation itself remains fully active.
+         * No jump input in phase 1. With gaps explicitly disabled, there is no
+         * reason to consume Jumper charges or invoke the -10 jump-spam path yet.
+         * The next phase will measure how much speed is lost by this conservative
+         * choice and optimize it independently.
          */
-        if (Math.abs(yawError) > 75.0F) {
-            jump = false;
-        }
+        lastDecision = "SURVIVAL_FORWARD edge=" + edge.index
+                + " progress=" + format(edge.progress)
+                + " speed=" + format(speed);
 
-        lastDecision = "CELL_DRIVE edge=" + edge.index
-                + " target=" + target.row() + "," + target.column()
-                + " remaining=" + format(remaining)
-                + " speed=" + format(speedAlong)
-                + " yawError=" + format(yawError)
-                + " jump=" + jump;
-
-        Action proposed = driveVector(state, worldX, worldZ, 1.0, true, jump);
+        Action proposed = new Action(
+                1.0, 0.0, false, true, 0.0F, false);
         return guardProjectedFloor(state, proposed, edge);
     }
 

@@ -1628,30 +1628,62 @@ public final class StableLiveMovementController {
         MonsterState threat = null;
         double bestScore = Double.POSITIVE_INFINITY;
         double bestDistance = Double.POSITIVE_INFINITY;
+        double bestTime = Double.POSITIVE_INFINITY;
+        double bestPredictedLateral = 0.0D;
+
+        /*
+         * Do not wait for the mob to enter the old 2.15-block reaction box.
+         * Predict the closest approach over the next few ticks using the
+         * observed player and monster velocities. This is the useful human-like
+         * signal: a mob three blocks ahead moving away is harmless, while a mob
+         * four blocks ahead closing rapidly is already a collision threat.
+         */
+        final double COLLISION_HORIZON = 8.0D;
+        final double COLLISION_RADIUS = 1.35D;
         for (MonsterState monster : state.monsters) {
             if (monster == null || monster.removed
                     || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
 
             double dx = monster.x - state.player.x;
             double dz = monster.z - state.player.z;
-            double distance = Math.hypot(dx, dz);
-            if (distance > 2.15D || distance < 0.05D) continue;
-
             double along = dx * routeDirRow + dz * routeDirColumn;
-            if (along <= 0.0D || along > 2.15D) continue;
+            if (along <= 0.0D) continue;
 
-            double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
-            if (lateral > 0.95D) continue;
+            double relativeVx = monster.vx - state.player.vx;
+            double relativeVz = monster.vz - state.player.vz;
+            double relativeSpeedSq = relativeVx * relativeVx + relativeVz * relativeVz;
 
-            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
-            double score = distance - 0.20D * Math.max(0.0D, closing);
+            double time = 0.0D;
+            if (relativeSpeedSq > 1.0E-9D) {
+                time = -(dx * relativeVx + dz * relativeVz) / relativeSpeedSq;
+                time = Math.max(0.0D, Math.min(COLLISION_HORIZON, time));
+            }
+
+            double predictedDx = dx + relativeVx * time;
+            double predictedDz = dz + relativeVz * time;
+            double predictedDistance = Math.hypot(predictedDx, predictedDz);
+            double predictedAlong = predictedDx * routeDirRow
+                    + predictedDz * routeDirColumn;
+            double predictedLateral = predictedDx * routeDirColumn
+                    - predictedDz * routeDirRow;
+
+            if (predictedAlong < -0.35D || predictedDistance > COLLISION_RADIUS) continue;
+
+            double currentDistance = Math.hypot(dx, dz);
+            double closing = time > 1.0E-6D
+                    ? Math.max(0.0D, (currentDistance - predictedDistance) / time)
+                    : 0.0D;
+            double score = predictedDistance + 0.08D * time
+                    - 0.12D * closing;
+
             if (score < bestScore) {
                 bestScore = score;
-                bestDistance = distance;
+                bestDistance = currentDistance;
+                bestTime = time;
+                bestPredictedLateral = predictedLateral;
                 threat = monster;
             }
         }
-
         if (threat == null) return null;
 
         int sideRow = routeDirColumn;

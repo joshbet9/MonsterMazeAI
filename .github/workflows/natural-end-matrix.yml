@@ -3,6 +3,8 @@ name: Natural End Matrix
 on:
   workflow_dispatch:
   push:
+  pull_request:
+    branches: [ main ]
     branches: [ brake-050-experiment ]
     paths:
       - 'common/src/main/java/me/monstermazeai/planner/StableLiveMovementController.java'

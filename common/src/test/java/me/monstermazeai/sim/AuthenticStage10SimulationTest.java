@@ -190,7 +190,7 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
+            if (kit == Kit.JUMPER && (pattern == 0 || pattern == 2)) {
                 trace.addLast("tick=" + state.tick
                         + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " y=" + format(state.player.y)

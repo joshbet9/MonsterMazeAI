@@ -163,6 +163,9 @@ class AuthenticStage10SimulationTest {
 
         int maxStage = 1;
         int lastStage = 1;
+        final int[] checkpointTicks = {5_000, 10_000, 15_000, 20_000};
+        int[] stageAtCheckpoint = {1, 1, 1, 1};
+        int checkpointIndex = 0;
         long firstFallTick = -1L;
         double firstFallX = Double.NaN, firstFallY = Double.NaN, firstFallZ = Double.NaN;
         double firstFallVx = Double.NaN, firstFallVz = Double.NaN;
@@ -232,6 +235,12 @@ class AuthenticStage10SimulationTest {
 
             maxStage = Math.max(maxStage, state.stage);
 
+            while (checkpointIndex < checkpointTicks.length
+                    && state.tick >= checkpointTicks[checkpointIndex]) {
+                stageAtCheckpoint[checkpointIndex] = maxStage;
+                checkpointIndex++;
+            }
+
             if (firstFallTick < 0L && state.player.y < GameState.PATH_Y - 0.05D) {
                 firstFallTick = state.tick;
                 firstFallPreX = preX; firstFallPreY = preY; firstFallPreZ = preZ;
@@ -263,6 +272,11 @@ class AuthenticStage10SimulationTest {
             }
 
             if (stopStage > 0 && maxStage >= stopStage) break;
+        }
+
+        while (checkpointIndex < checkpointTicks.length) {
+            stageAtCheckpoint[checkpointIndex] = maxStage;
+            checkpointIndex++;
         }
 
         if (diagnostic) {
@@ -298,7 +312,12 @@ class AuthenticStage10SimulationTest {
                 firstFallPreX, firstFallPreY, firstFallPreZ,
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
-                firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
+                firstFallVx, firstFallVz, firstFallDecision,
+                agent.lastDecisionDetail(),
+                stageAtCheckpoint[0],
+                stageAtCheckpoint[1],
+                stageAtCheckpoint[2],
+                stageAtCheckpoint[3]);
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -429,5 +448,9 @@ class AuthenticStage10SimulationTest {
             double firstFallVx,
             double firstFallVz,
             String firstFallDecision,
-            String decision) {}
+            String decision,
+            int stageAt5k,
+            int stageAt10k,
+            int stageAt15k,
+            int stageAt20k) {}
 }

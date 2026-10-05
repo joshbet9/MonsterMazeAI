@@ -24,6 +24,25 @@ public final class AlternativePhysicalRoutes {
         PriorityQueue<PlayerRoute> queue = new PriorityQueue<>(
                 Comparator.comparingInt(PlayerRoute::size).thenComparing(r -> key(r.cells())));
 
+        /*
+         * For moving-mob play, an alternative that diverges only near the goal
+         * is often useless: the player still traverses the same blocked corridor
+         * before reaching the first junction. Seed the candidate set with early
+         * edge deviations before the general K-shortest expansion.
+         */
+        List<Cell> baselineCells = baseline.cells();
+        int earlyEdges = Math.min(8, baselineCells.size() - 1);
+        for (int i = 0; i < earlyEdges && accepted.size() < limit; i++) {
+            List<Cell> earlyAlternative = shortestAvoidingEdge(
+                    maze, start, goal, baselineCells.get(i), baselineCells.get(i + 1));
+            if (!earlyAlternative.isEmpty()) {
+                String k = key(earlyAlternative);
+                if (seen.add(k)) {
+                    accepted.add(new PlayerRoute(earlyAlternative));
+                }
+            }
+        }
+
         addDeviations(maze, start, goal, baseline, queue, seen);
         while (accepted.size() < limit && !queue.isEmpty()) {
             PlayerRoute candidate = queue.poll();

@@ -96,10 +96,11 @@ final class NoMobLocomotionController {
              * observed human behaviour: gap crossings are exceptional shortcuts,
              * not the normal routing primitive.
              */
+            MazeModel planningMaze = planningMaze(state);
             List<Cell> noGap = regionRadius > 0
                     ? pathfinder.fastestPathToRegion(
-                            state.maze, start, goal, regionRadius)
-                    : pathfinder.fastestPath(state.maze, start, goal);
+                            planningMaze, start, goal, regionRadius)
+                    : pathfinder.fastestPath(planningMaze, start, goal);
             if (!noGap.isEmpty()) {
                 route = new PlayerRoute(noGap);
             } else {
@@ -188,7 +189,8 @@ final class NoMobLocomotionController {
         List<Cell> cells = route.cells();
         for (int i = routeEdgeIndex; i < cells.size(); i++) {
             Cell cell = cells.get(i);
-            if (!state.maze.isPhysicalFloor(cell.row(), cell.column())) return true;
+            if (!state.maze.isPhysicalFloor(cell.row(), cell.column())
+                    || projectedCenterCollapse(state, cell)) return true;
             if (i + 1 >= cells.size()) continue;
 
             Cell next = cells.get(i + 1);
@@ -595,6 +597,32 @@ final class NoMobLocomotionController {
 
     private float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    /**
+     * Before the final center-decay tick, treat decorative center cells (raw 3/4)
+     * as future void so the route planner has time to move around them.
+     */
+    private static MazeModel planningMaze(GameState state) {
+        if (state.centerSafeZoneDecay > 3) return state.maze;
+
+        MazeModel copy = state.maze.copy();
+        for (int row = 0; row < MazeModel.SIZE; row++) {
+            for (int column = 0; column < MazeModel.SIZE; column++) {
+                int raw = copy.raw(row, column);
+                if (raw == 3 || raw == 4) {
+                    copy.setPhysicalFloor(row, column, false);
+                }
+            }
+        }
+        return copy;
+    }
+
+    private static boolean projectedCenterCollapse(
+            GameState state, Cell cell) {
+        return state.centerSafeZoneDecay <= 3
+                && (state.maze.raw(cell.row(), cell.column()) == 3
+                || state.maze.raw(cell.row(), cell.column()) == 4);
     }
 
     private static int gapCount(PlayerRoute route) {

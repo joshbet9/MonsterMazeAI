@@ -26,9 +26,11 @@ class NaturalTerminationMatrixIT {
         Mode mode = Mode.valueOf(modeValue);
         int pattern = Integer.parseInt(patternValue) - 1;
         Kit kit = Kit.valueOf(kitValue);
+        boolean spawnMonsters = Boolean.parseBoolean(
+                System.getProperty("matrixSpawnMonsters", "true"));
         AuthenticStage10SimulationTest.RunResult result =
                 AuthenticStage10SimulationTest.run(
-                        pattern, kit, AiProfile.HIGH_SKILL, mode, 0);
+                        pattern, kit, AiProfile.HIGH_SKILL, mode, 0, spawnMonsters);
 
         String row = String.format(
                 java.util.Locale.ROOT,
@@ -48,7 +50,7 @@ class NaturalTerminationMatrixIT {
                 for (Kit kit : Kit.values()) {
                     AuthenticStage10SimulationTest.RunResult result =
                             AuthenticStage10SimulationTest.run(
-                                    pattern, kit, AiProfile.HIGH_SKILL, mode, 0);
+                                    pattern, kit, AiProfile.HIGH_SKILL, mode, 0, true);
                     String row = String.format(
                             java.util.Locale.ROOT,
                             "FULL_MATRIX mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%.2f",

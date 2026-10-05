@@ -1,0 +1,11 @@
+STALE_MATRIX mode=MODERN pattern=1 kit=JUMPER stage=2 ticks=1260 health=0.00
+STALE_MATRIX mode=MODERN pattern=1 kit=SLOWBALLER stage=2 ticks=1220 health=0.00
+STALE_MATRIX mode=MODERN pattern=1 kit=BODY_BUILDER stage=4 ticks=2220 health=-2.00
+STALE_MATRIX mode=MODERN pattern=1 kit=REPULSOR stage=3 ticks=1340 health=-2.00
+STALE_MATRIX mode=MODERN pattern=1 kit=MAVERICK stage=1 ticks=220 health=16.00
+STALE_MATRIX mode=MODERN pattern=2 kit=JUMPER stage=2 ticks=1300 health=0.00
+STALE_MATRIX mode=MODERN pattern=2 kit=SLOWBALLER stage=5 ticks=2760 health=-2.00
+STALE_MATRIX mode=MODERN pattern=2 kit=BODY_BUILDER stage=1 ticks=700 health=20.00
+STALE_MATRIX mode=MODERN pattern=2 kit=REPULSOR stage=7 ticks=2540 health=4.00
+STALE_MATRIX mode=MODERN pattern=2 kit=MAVERICK stage=4 ticks=1760 health=0.00
+STALE_MODERN_MEAN=3.1000

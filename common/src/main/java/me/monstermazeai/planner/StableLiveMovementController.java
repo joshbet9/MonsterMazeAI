@@ -454,7 +454,6 @@ public final class StableLiveMovementController {
                     anchoredSegmentIndex = -1;
                     localBranchActive = true;
                     localBranchRejoinIndex = choice.rejoinIndex;
-                    completedRoutePlan = null;
                     fullRouteEvaluationPending = false;
                     lastThreatSignature = localThreat;
                     lastTacticalSignature = Long.MIN_VALUE;

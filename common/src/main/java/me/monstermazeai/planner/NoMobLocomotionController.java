@@ -31,8 +31,8 @@ final class NoMobLocomotionController {
     private static final double LANE_TOLERANCE = 0.32D;
 
     private static final double TARGET_SPEED = 0.46D;
-    private static final double CORNER_SPEED = 0.14D;
-    private static final double CORNER_BRAKE_DISTANCE = 0.70D;
+    private static final double CORNER_SPEED = 0.035D;
+    private static final double CORNER_BRAKE_DISTANCE = 0.80D;
 
     private static final double GAP_JUMP_PROGRESS = -0.80D;
     private static final double GAP_LANDING_PROGRESS = 1.10D;

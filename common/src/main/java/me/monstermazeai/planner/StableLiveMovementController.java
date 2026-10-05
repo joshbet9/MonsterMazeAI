@@ -460,7 +460,7 @@ public final class StableLiveMovementController {
              * changes, preventing stale yaw/ability pulses from being replayed.
              */
             Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
+                    state, route, goal, regionRadius, waypointIndex);
             lastTacticalSignature = currentThreatSignature;
             if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;

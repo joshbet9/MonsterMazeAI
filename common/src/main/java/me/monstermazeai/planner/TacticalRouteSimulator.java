@@ -39,8 +39,15 @@ public final class TacticalRouteSimulator {
 
     public Action nextAction(GameState source, PlayerRoute route, Cell goal,
                               boolean regionGoal, int regionRadius) {
-        if (!needsTacticalSearch(source)) return routeFollowerAction(source, route, 0);
-        return chooseTacticalAction(source, route, 0, goal, regionGoal, regionRadius);
+        return nextAction(source, route, 0, goal, regionGoal, regionRadius);
+    }
+
+    public Action nextAction(GameState source, PlayerRoute route, int waypoint,
+                             Cell goal, boolean regionGoal, int regionRadius) {
+        if (!needsTacticalSearch(source)) {
+            return routeFollowerAction(source, route, waypoint);
+        }
+        return chooseTacticalAction(source, route, waypoint, goal, regionGoal, regionRadius);
     }
 
     public boolean shouldUseTacticalAction(GameState state) {

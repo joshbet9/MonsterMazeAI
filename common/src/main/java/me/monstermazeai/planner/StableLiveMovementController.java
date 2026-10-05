@@ -438,9 +438,8 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && acceptPredictiveTacticalAction(
-                    state, route, waypointIndex, tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL_PREDICTIVE=" + tactical;
+            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+                lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }
         }
@@ -596,16 +595,6 @@ public final class StableLiveMovementController {
                  * the camera turns. The vector is derived from the actual
                  * heading error, so it rotates smoothly toward the next
                  * cardinal segment instead of waiting in place or strafing blindly.
-                 */
-                /*
-                 * Do not translate the full heading error directly into the
-                 * movement vector. At a 90-degree corner that produces almost
-                 * pure A/D and throws away the forward component for several
-                 * ticks. A human rounds the corner with W+A/D while the camera
-                 * closes the remaining heading error. Using half the remaining
-                 * angle preserves forward drive without authorising a diagonal
-                 * cut across unsupported terrain; the existing support guard
-                 * remains authoritative.
                  */
                 double errorRad = Math.toRadians(yawError) * 0.5D;
                 double forward = Math.cos(errorRad) * 0.75D;
@@ -800,14 +789,7 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                /*
-                 * Monster motion is expected to make the threat signature stale
-                 * before the background simulation finishes. Rejecting solely on
-                 * that signature made the strategic planner effectively
-                 * self-disabling in a live maze. The route is still bounded by
-                 * age, unchanged topology, and current-heading preservation;
-                 * current mob motion is handled by the predictive tactical layer.
-                 */
+                || currentThreat != planned.threatSignature
                 || state.tick - planned.requestedTick > 10L) {
             fullRouteEvaluationPending = true;
             return;
@@ -1328,69 +1310,6 @@ public final class StableLiveMovementController {
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
         return action.useAbility() || (allowJump && action.jump());
-    }
-
-    /**
-     * The tactical simulator is source-faithful and already predicts several
-     * future ticks of monster motion. The live motor must therefore not discard
-     * its ordinary movement decisions merely because they are not an ability or
-     * jump pulse.
-     *
-     * Accept a predictive movement action when its first-tick world-space vector
-     * still has a non-negative useful component along the active route, or when
-     * it is a genuine local dodge/reposition that remains physically supported.
-     * The final support guard remains authoritative; this keeps the predictive
-     * planner from cutting through an air cell while allowing it to steer around
-     * a mob before the collision actually happens.
-     */
-    private boolean acceptPredictiveTacticalAction(
-            GameState state, PlayerRoute activeRoute, int activeWaypoint,
-            Action action, boolean allowJump) {
-        if (action == null) return false;
-        if (action.useAbility() || (allowJump && action.jump())) return true;
-        if (activeRoute == null || activeWaypoint <= 0 || activeWaypoint >= activeRoute.size()) {
-            return false;
-        }
-
-        Cell from = activeRoute.cells().get(activeWaypoint - 1);
-        Cell to = activeRoute.cells().get(activeWaypoint);
-        int dirRow = Integer.signum(to.row() - from.row());
-        int dirColumn = Integer.signum(to.column() - from.column());
-        if (dirRow == 0 && dirColumn == 0) return false;
-
-        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
-        double forwardX = -Math.sin(yaw);
-        double forwardZ = Math.cos(yaw);
-        double strafeX = Math.cos(yaw);
-        double strafeZ = Math.sin(yaw);
-        double worldX = forwardX * action.forward() + strafeX * action.strafe();
-        double worldZ = forwardZ * action.forward() + strafeZ * action.strafe();
-        double magnitude = Math.hypot(worldX, worldZ);
-        if (magnitude < 1.0E-6) return false;
-
-        double routeComponent = (worldX * dirRow + worldZ * dirColumn) / magnitude;
-        /*
-         * A pure perpendicular vector is not a route decision. Ordinary mob
-         * avoidance owns supported lateral dodges, while predictive routing
-         * should choose actions that still make forward progress through the
-         * active corridor. Without this boundary the six-tick tactical beam can
-         * repeatedly select strafe-only states and hand control to the lane
-         * recovery code instead of actually passing the threat.
-         */
-        if (routeComponent < 0.35D) return false;
-
-        /*
-         * Predictive movement is allowed to bend the route, but it must not
-         * authorise an unbounded lane excursion. Reject it when the immediate
-         * world-space input is already outside the supported one-block corridor;
-         * the normal dodge/recovery owner handles those cases from the live
-         * geometry instead.
-         */
-        Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
-        if (guarded == null || guarded == Action.IDLE) return false;
-        double lateral = Math.abs(worldX * dirColumn - worldZ * dirRow) / magnitude;
-        if (lateral > 0.80D) return false;
-        return true;
     }
 
     private boolean detectLiveMobHit(GameState state) {

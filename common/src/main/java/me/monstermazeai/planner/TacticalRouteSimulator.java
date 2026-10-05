@@ -178,32 +178,7 @@ public final class TacticalRouteSimulator {
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-
-        /*
-         * Equal-topology candidates should prefer the action that keeps moving
-         * through the corridor. A human does not stop at every mob crossing and
-         * then recover the route; preserving forward velocity is itself part of
-         * the tactical outcome.
-         */
-        double routeVx = 0.0D;
-        double routeVz = 0.0D;
-        if (waypoint > 0 && waypoint < route.size()) {
-            var from = route.cells().get(waypoint - 1);
-            var to = route.cells().get(waypoint);
-            routeVx = Integer.signum(to.row() - from.row());
-            routeVz = Integer.signum(to.column() - from.column());
-        }
-        double forwardVelocity = state.player.vx * routeVx + state.player.vz * routeVz;
-        double lateralVelocity = state.player.vx * routeVz - state.player.vz * routeVx;
-        long speedPenalty = Math.min(999_999L,
-                Math.round(Math.max(0.0D, 0.20D - forwardVelocity) * 1000));
-        long lateralPenalty = Math.min(999_999L,
-                Math.round(Math.max(0.0D, Math.abs(lateralVelocity) - 0.18D) * 250));
-
-        return remaining * 1_000_000_000_000L
-                + distance * 1_000_000L
-                + (speedPenalty + lateralPenalty) * 1_000L
-                + damage;
+        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
     }
 
     private boolean needsTacticalSearch(GameState state) {
@@ -307,21 +282,12 @@ public final class TacticalRouteSimulator {
         float desiredYaw = (float)Math.toDegrees(Math.atan2(-dx, dz));
         float error = normalise(desiredYaw - state.player.yaw);
         float delta = Math.max(-30, Math.min(30, error));
-
-        /*
-         * Keep the predictive model consistent with the live motor. Near a
-         * cardinal corner, stop-and-turn is materially slower than the actual
-         * W+A/D cornering controller and can make the route chooser prefer the
-         * wrong topology. Round the corner with half the remaining heading error
-         * while retaining a small safety margin from the full route vector.
-         */
         if (distance <= 4.50 && Math.abs(error) < 135.0F) {
             double halfError = Math.toRadians(error) * 0.5D;
             double forward = Math.cos(halfError) * 0.75D;
             double strafe = -Math.sin(halfError) * 0.75D;
             return new Action(forward, strafe, false, false, delta, false);
         }
-
         double forward = Math.abs(error) > 70 ? 0 : 1;
         boolean sprint = forward != 0;
         return new Action(forward, 0, false, sprint, delta, false);

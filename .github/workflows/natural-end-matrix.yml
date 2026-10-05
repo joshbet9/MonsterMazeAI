@@ -51,3 +51,5 @@ jobs:
           -Dexec.classpathScope=test
           -Dexec.args="${{ matrix.mode }} ${{ matrix.pattern }} ${{ matrix.kit }}"
           org.codehaus.mojo:exec-maven-plugin:3.5.0:java
+
+# Matrix trigger comment: keep benchmark tied to the latest test harness.

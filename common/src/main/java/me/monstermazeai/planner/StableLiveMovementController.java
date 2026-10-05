@@ -1436,7 +1436,13 @@ public final class StableLiveMovementController {
     }
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+        if (action == null) return false;
+        if (action.useAbility() || (allowJump && action.jump())) return true;
+
+        // TacticalRouteSimulator uses the same LegacyMovementModel, so its
+        // lateral inputs are source-physical and can be applied live. Gap
+        // execution still returns earlier and retains its dedicated motor.
+        return !action.jump() && Math.abs(action.strafe()) >= 0.5D;
     }
 
     private boolean detectLiveMobHit(GameState state) {

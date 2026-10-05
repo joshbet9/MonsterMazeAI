@@ -175,10 +175,20 @@ public final class TacticalRouteSimulator {
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
+
+        /*
+         * Once a monster is close enough to wake tactical search, avoiding a
+         * source 4-damage bump is the dominant objective. Only after survival
+         * is preserved do we optimize waypoint progress and distance.
+         */
+        long damage = Math.min(9_999_999L,
+                Math.round(state.player.damageTaken * 1000));
         long remaining = Math.max(0, route.size() - 1L - waypoint);
-        long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
-        long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        long distance = Math.min(999_999L,
+                Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
+        return damage * 1_000_000_000_000L
+                + remaining * 1_000_000L
+                + distance;
     }
 
     private boolean needsTacticalSearch(GameState state) {

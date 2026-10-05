@@ -272,6 +272,17 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
+        /*
+         * Let the source-faithful tactical search see the live threat before
+         * the hand-written local dodge takes control. It starts from the actual
+         * route waypoint and is still passed through the physical support guard.
+         * Ordinary movement therefore remains unchanged when no useful tactical
+         * response exists.
+         */
+        Action tacticalFirst = tacticalActionBeforeAvoidance(
+                state, goal, allowJump, regionRadius);
+        if (tacticalFirst != null) return tacticalFirst;
+
         Action mobAvoidance = avoidIncomingMonster(state, allowJump);
         if (mobAvoidance != null) return mobAvoidance;
 
@@ -448,7 +459,7 @@ public final class StableLiveMovementController {
              * changes, preventing stale yaw/ability pulses from being replayed.
              */
             Action tactical = routePlanner.tacticalAction(
-                    state, route, waypointIndex, goal, regionRadius);
+                    state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
             if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
@@ -1390,6 +1401,56 @@ public final class StableLiveMovementController {
      * which is physically supported. This keeps the behaviour source-valid and
      * leaves genuine unavoidable contacts to MonsterManager.bump().
      */
+    private Action tacticalActionBeforeAvoidance(
+            GameState state, Cell goal, boolean allowJump, int regionRadius) {
+        if (route == null || route.size() < 2
+                || goal.row() != goalRow
+                || goal.column() != goalColumn
+                || regionRadius != goalRadius
+                || gapExecutionActive
+                || padEntryCommitment) {
+            return null;
+        }
+
+        if (!routePlanner.shouldUseTacticalAction(state)) return null;
+
+        long signature = threatSignature(state);
+        if (signature == lastTacticalSignature) return null;
+
+        Action tactical = routePlanner.tacticalAction(
+                state, route, waypointIndex, goal, regionRadius);
+        lastTacticalSignature = signature;
+
+        if (tactical == null) return null;
+        if (tactical.useAbility() || (allowJump && tactical.jump())) {
+            lastDecisionDetail = lastDecisionDetail + " TACTICAL_FIRST=" + tactical;
+            return tactical;
+        }
+
+        /*
+         * Tactical lateral movement is physically executable, but it must pass
+         * the exact same one-tick support projection used by normal routing.
+         * Reject only stationary/turn-only tactical suggestions here.
+         */
+        if (Math.hypot(tactical.forward(), tactical.strafe()) < 0.20D) {
+            return null;
+        }
+
+        if (waypointIndex <= 0 || waypointIndex >= route.size()) return null;
+        Cell from = route.cells().get(waypointIndex - 1);
+        Cell to = route.cells().get(waypointIndex);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (Math.abs(dirRow) + Math.abs(dirColumn) != 1) return null;
+
+        Action guarded = guardProjectedSupport(
+                state, tactical, dirRow, dirColumn);
+        if (guarded == null) return null;
+
+        lastDecisionDetail = lastDecisionDetail + " TACTICAL_FIRST=" + guarded;
+        return guarded;
+    }
+
     private Action avoidIncomingMonster(GameState state, boolean allowJump) {
         if (!state.player.grounded || state.maze == null) return null;
 

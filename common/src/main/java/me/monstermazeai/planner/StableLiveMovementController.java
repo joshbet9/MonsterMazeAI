@@ -462,9 +462,12 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
+            Action acceptedTactical = tactical == null
+                    ? null
+                    : acceptTacticalAction(state, tactical, allowJump);
+            if (acceptedTactical != null) {
+                lastDecisionDetail += " TACTICAL=" + acceptedTactical;
+                return acceptedTactical;
             }
         }
 
@@ -1433,6 +1436,79 @@ public final class StableLiveMovementController {
             }
         }
         return false;
+    }
+
+    private Action acceptTacticalAction(
+            GameState state, Action action, boolean allowJump) {
+        if (action == null) return null;
+        if (action.useAbility() || (allowJump && action.jump())) return action;
+        if (action.jump() || Math.abs(action.strafe()) < 0.5D
+                || route == null || waypointIndex <= 0 || waypointIndex >= route.size()) {
+            return null;
+        }
+
+        Cell from = route.cells().get(waypointIndex - 1);
+        Cell to = route.cells().get(waypointIndex);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (Math.abs(dirRow) + Math.abs(dirColumn) != 1) return null;
+
+        /*
+         * Tactical movement is allowed only when the same one-tick physical
+         * support guard that protects the normal motor accepts it. Then keep
+         * the projected player inside a generous one-cell corridor envelope.
+         */
+        Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
+        if (guarded == null
+                || (Math.abs(guarded.forward()) < 1.0E-9D
+                && Math.abs(guarded.strafe()) < 1.0E-9D)) {
+            return null;
+        }
+
+        PlayerState projected = state.player.copy();
+        int jumpAmplifier = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && state.ability.charges > 0 ? 0 : -10;
+        movementProjection.tick(projected, guarded, state.maze, jumpAmplifier);
+
+        if (!projected.grounded && projected.y > 0.02D) {
+            return null;
+        }
+        if (!hasPhysicalFloorFootprint(state.maze, projected.x, projected.z)) {
+            return null;
+        }
+
+        if (distanceFromRouteCorridorCoordinates(
+                projected.x, projected.z, route) > 1.15D) {
+            return null;
+        }
+        return guarded;
+    }
+
+    private static double distanceFromRouteCorridorCoordinates(
+            double x, double z, PlayerRoute candidate) {
+        if (candidate == null || candidate.size() < 2) return 0.0D;
+        double best = Double.POSITIVE_INFINITY;
+        List<Cell> cells = candidate.cells();
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell start = cells.get(i);
+            Cell target = cells.get(i + 1);
+            double sx = start.row() + 0.5D;
+            double sz = start.column() + 0.5D;
+            double tx = target.row() + 0.5D;
+            double tz = target.column() + 0.5D;
+            double vx = tx - sx;
+            double vz = tz - sz;
+            double lengthSq = vx * vx + vz * vz;
+            if (lengthSq <= 1.0E-9D) continue;
+            double px = x - sx;
+            double pz = z - sz;
+            double t = Math.max(0.0D,
+                    Math.min(1.0D, (px * vx + pz * vz) / lengthSq));
+            double nx = sx + t * vx;
+            double nz = sz + t * vz;
+            best = Math.min(best, Math.hypot(x - nx, z - nz));
+        }
+        return best == Double.POSITIVE_INFINITY ? 0.0D : best;
     }
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {

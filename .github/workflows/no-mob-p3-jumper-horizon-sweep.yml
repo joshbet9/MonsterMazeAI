@@ -1,0 +1,64 @@
+name: No-mob P3 Jumper horizon sweep
+
+on:
+  push:
+    branches:
+      - autonomous/locomotion-026-v1
+
+concurrency:
+  group: monstermaze-no-mob-p3-jumper-horizon
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Sweep horizons
+        run: |
+          set -o pipefail
+          : > horizon-sweep.log
+          for horizon in 0 1 2 3 4 5 6 7 8; do
+            for mode in SPEED MODERN; do
+              echo "===== horizon=$horizon mode=$mode P3 JUMPER =====" | tee -a horizon-sweep.log
+              mvn -B -ntp -pl common -am                 -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase                 -DmatrixMode="$mode"                 -DmatrixPattern=3                 -DmatrixKit=JUMPER                 -DmatrixSpawnMonsters=false                 -Dp3JumperTurnLookahead="$horizon"                 -Dsurefire.failIfNoSpecifiedTests=false                 -Dsurefire.useFile=false                 -Dsurefire.redirectTestOutputToFile=false                 test 2>&1 | tee -a horizon-sweep.log
+            done
+          done
+      - name: Summarize sweep
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path("horizon-sweep.log").read_text(encoding="utf-8", errors="replace")
+          current = None
+          rows = []
+          for line in text.splitlines():
+              m = re.match(r"===== horizon=(\d+) mode=(SPEED|MODERN) P3 JUMPER =====$", line)
+              if m:
+                  current = (int(m.group(1)), m.group(2))
+                  continue
+              m = re.search(
+                  r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=3\s+kit=JUMPER\s+"
+                  r"stage=(\d+)\s+ticks=(\d+)", line)
+              if m and current:
+                  rows.append((current[0], current[1], int(m.group(2)), int(m.group(3))))
+          for h, mode, stage, ticks in rows:
+              print(f"horizon={h} mode={mode} stage={stage} ticks={ticks} cap={ticks == 20000}")
+          PY
+      - name: Upload sweep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-mob-p3-jumper-horizon-sweep-${{ github.sha }}
+          path: horizon-sweep.log

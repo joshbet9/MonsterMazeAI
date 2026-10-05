@@ -1362,8 +1362,18 @@ public final class StableLiveMovementController {
          */
         if (routeComponent < 0.35D) return false;
 
+        /*
+         * Predictive movement is allowed to bend the route, but it must not
+         * authorise an unbounded lane excursion. Reject it when the immediate
+         * world-space input is already outside the supported one-block corridor;
+         * the normal dodge/recovery owner handles those cases from the live
+         * geometry instead.
+         */
         Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
-        return guarded != null && guarded != Action.IDLE;
+        if (guarded == null || guarded == Action.IDLE) return false;
+        double lateral = Math.abs(worldX * dirColumn - worldZ * dirRow) / magnitude;
+        if (lateral > 0.80D) return false;
+        return true;
     }
 
     private boolean detectLiveMobHit(GameState state) {

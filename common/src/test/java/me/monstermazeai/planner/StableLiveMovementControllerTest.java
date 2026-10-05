@@ -48,7 +48,7 @@ class StableLiveMovementControllerTest {
         s.player.z = 0.5;
         s.player.yaw = 0.0F;
         s.player.grounded = true;
-        s.monsters.add(new MonsterState(77L, 0.5, GameState.PATH_Y, 2.1));
+        s.monsters.add(new MonsterState(77, 0.5, GameState.PATH_Y, 2.1));
         s.monsters.get(0).vz = 0.60D;
         s.tick = 1;
 

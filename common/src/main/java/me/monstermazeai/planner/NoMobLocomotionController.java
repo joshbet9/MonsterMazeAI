@@ -344,7 +344,8 @@ final class NoMobLocomotionController {
                 state, edge.from, directionRow(edge), directionColumn(edge));
         if (state.kit == Kit.JUMPER
                 && (Math.abs(crossTrack) > 0.30D
-                    || Math.abs(yawError) > 25.0F)) {
+                    || Math.abs(yawError) > 25.0F
+                    || hasTurnWithinCells(4))) {
             jump = false;
         }
 
@@ -446,6 +447,23 @@ final class NoMobLocomotionController {
         return driveVector(
                 state, desiredWorldX, desiredWorldZ,
                 1.0, true, jump);
+    }
+
+    private boolean hasTurnWithinCells(int lookaheadCells) {
+        if (route == null || route.size() < 3) return false;
+        int end = Math.min(
+                route.size() - 2,
+                routeEdgeIndex + Math.max(1, lookaheadCells));
+        for (int i = Math.max(0, routeEdgeIndex); i <= end; i++) {
+            if (i + 2 >= route.size()) break;
+            if (changesDirection(
+                    route.cells().get(i),
+                    route.cells().get(i + 1),
+                    route.cells().get(i + 2))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean shouldSpeedJump(

@@ -175,10 +175,27 @@ public final class TacticalRouteSimulator {
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
+
+        /*
+         * Tactical search is entered specifically because a live monster can
+         * interact with the player within the short horizon. In that state,
+         * survival is the first ordering criterion: a four-damage source bump
+         * is much more expensive than giving up a waypoint for a few ticks.
+         *
+         * All nodes in this beam share the same route and source physics; this
+         * simply makes the planner choose a survivable lateral/retreat action
+         * when one exists instead of preferring forward motion that immediately
+         * consumes another health chunk.
+         */
+        long damage = Math.min(9_999_999L,
+                Math.round(state.player.damageTaken * 1000));
         long remaining = Math.max(0, route.size() - 1L - waypoint);
-        long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
-        long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        long distance = Math.min(999_999L,
+                Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
+
+        return damage * 1_000_000_000_000L
+                + remaining * 1_000_000L
+                + distance;
     }
 
     private boolean needsTacticalSearch(GameState state) {

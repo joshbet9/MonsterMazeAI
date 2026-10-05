@@ -1,0 +1,40 @@
+name: Fix — charged Jumper gap takeoff regression
+
+on:
+  push:
+    branches:
+      - fix/charged-jumper-gap-takeoff-v1
+
+permissions:
+  contents: read
+
+jobs:
+  jumper:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run three Modern Jumper cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > jumper-gap.log
+          for pattern in 1 2 3; do
+            echo "===== MODERN P$pattern JUMPER =====" | tee -a jumper-gap.log
+            mvn -B -ntp -pl common -am               -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase               -DmatrixMode=MODERN               -DmatrixPattern="$pattern"               -DmatrixKit=JUMPER               -DmatrixSpawnMonsters=true               -DmatrixDiagnostic=true               -Dsurefire.failIfNoSpecifiedTests=false               -Dsurefire.useFile=false               -Dsurefire.redirectTestOutputToFile=false               test 2>&1 | tee -a jumper-gap.log
+          done
+      - name: Extract compact matrix
+        shell: bash
+        run: |
+          grep -E '^(FULL_MATRIX|FIRST_FALL|DIAGNOSTIC)' jumper-gap.log > jumper-gap-report.txt || true
+          cat jumper-gap-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: charged-jumper-gap
+          path: jumper-gap.log

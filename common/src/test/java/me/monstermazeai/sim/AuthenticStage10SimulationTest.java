@@ -148,7 +148,8 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = initialMonsterCount(mode);
+        boolean noMobs = Boolean.getBoolean("matrixNoMobs");
+        state.pendingMonsterSpawns = noMobs ? 0 : initialMonsterCount(mode);
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -205,7 +206,8 @@ class AuthenticStage10SimulationTest {
             }
 
             if (state.stage != lastStage) {
-                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
+                int spawned = noMobs ? 0
+                        : spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
                 state.pendingMonsterSpawns -= spawned;
                 if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
 

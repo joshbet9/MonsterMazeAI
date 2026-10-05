@@ -34,7 +34,7 @@ import java.util.*;
  * to be reconsidered, which prevents oscillation and preserves human-like speed.
  */
 public final class DeterministicMazeController {
-    private static final float MAX_TURN_PER_TICK = 30.0F;
+    private static final float MAX_TURN_PER_TICK = 180.0F;
     private static final double CORNER_LOOKAHEAD = 0.80D;
     private static final double WAYPOINT_ADVANCE = 0.58D;
     private static final double ROUTE_DEVIATION = 0.95D;

@@ -800,7 +800,14 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
+                /*
+                 * Monster motion is expected to make the threat signature stale
+                 * before the background simulation finishes. Rejecting solely on
+                 * that signature made the strategic planner effectively
+                 * self-disabling in a live maze. The route is still bounded by
+                 * age, unchanged topology, and current-heading preservation;
+                 * current mob motion is handled by the predictive tactical layer.
+                 */
                 || state.tick - planned.requestedTick > 10L) {
             fullRouteEvaluationPending = true;
             return;

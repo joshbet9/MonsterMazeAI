@@ -11,6 +11,10 @@ on:
       - 'common/src/test/java/me/monstermazeai/sim/NaturalEndMatrixRunner.java'
       - '.github/workflows/natural-end-matrix.yml'
 
+concurrency:
+  group: natural-end-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

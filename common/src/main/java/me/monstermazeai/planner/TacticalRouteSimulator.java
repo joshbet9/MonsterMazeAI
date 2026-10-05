@@ -26,8 +26,10 @@ import java.util.Random;
  * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
-    private static final int TACTICAL_HORIZON = 12;
-    private static final int TACTICAL_BEAM = 16;
+    private static final int SPEED_TACTICAL_HORIZON = 6;
+    private static final int SPEED_TACTICAL_BEAM = 10;
+    private static final int MODERN_TACTICAL_HORIZON = 12;
+    private static final int MODERN_TACTICAL_BEAM = 16;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;
@@ -147,7 +149,9 @@ public final class TacticalRouteSimulator {
         List<Node> beam = new ArrayList<>();
         beam.add(new Node(tacticalSource, waypoint, List.of()));
 
-        for (int depth = 0; depth < TACTICAL_HORIZON; depth++) {
+        int tacticalHorizon = tacticalHorizon(source);
+        int tacticalBeam = tacticalBeam(source);
+        for (int depth = 0; depth < tacticalHorizon; depth++) {
             List<Node> next = new ArrayList<>();
             for (Node node : beam) {
                 for (Action action : tacticalActions(node.state, route, node.waypoint)) {
@@ -162,7 +166,7 @@ public final class TacticalRouteSimulator {
             }
             next.sort(Comparator.comparingLong(n ->
                     tacticalRank(n.state, route, n.waypoint, goal, regionGoal, regionRadius)));
-            if (next.size() > TACTICAL_BEAM) next.subList(TACTICAL_BEAM, next.size()).clear();
+            if (next.size() > tacticalBeam) next.subList(tacticalBeam, next.size()).clear();
             beam = next;
             if (beam.isEmpty()) return routeFollowerAction(source, route, waypoint);
         }
@@ -182,7 +186,8 @@ public final class TacticalRouteSimulator {
     }
 
     private boolean needsTacticalSearch(GameState state) {
-        double playerReach = 0.45 + Math.hypot(state.player.vx, state.player.vz) * TACTICAL_HORIZON;
+        int horizon = tacticalHorizon(state);
+        double playerReach = 0.45 + Math.hypot(state.player.vx, state.player.vz) * horizon;
         double contactReach = MonsterMazeBumpModel.CONTACT_DISTANCE + playerReach;
 
         for (var m : state.monsters) {
@@ -191,7 +196,7 @@ public final class TacticalRouteSimulator {
             double separationSq = sq(state.player.x - m.x)
                     + sq(state.player.y - m.y)
                     + sq(state.player.z - m.z);
-            double monsterReach = Math.hypot(m.vx, m.vz) * TACTICAL_HORIZON;
+            double monsterReach = Math.hypot(m.vx, m.vz) * horizon;
             double threshold = contactReach + monsterReach;
             if (separationSq <= threshold * threshold) return true;
         }
@@ -200,6 +205,18 @@ public final class TacticalRouteSimulator {
         // by the local interaction envelope. No distant monster can wake the
         // expensive tactical branch merely because it exists in the world.
         return false;
+    }
+
+    private static int tacticalHorizon(GameState state) {
+        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
+                ? MODERN_TACTICAL_HORIZON
+                : SPEED_TACTICAL_HORIZON;
+    }
+
+    private static int tacticalBeam(GameState state) {
+        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
+                ? MODERN_TACTICAL_BEAM
+                : SPEED_TACTICAL_BEAM;
     }
 
     private List<Action> tacticalActions(GameState state, PlayerRoute route, int waypoint) {

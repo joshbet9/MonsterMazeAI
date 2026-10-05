@@ -39,6 +39,14 @@ class NaturalTerminationMatrixIT {
                 result.ticks(), result.health());
 
         System.out.println(row);
+        System.out.printf(
+                java.util.Locale.ROOT,
+                "EFFICIENCY mode=%s pattern=%d kit=%s s5k=%d s10k=%d s15k=%d s20k=%d%n",
+                mode, pattern + 1, kit,
+                result.stageAt5k(),
+                result.stageAt10k(),
+                result.stageAt15k(),
+                result.stageAt20k());
         System.setProperty("matrixRow", row);
         assertTrue(result.maxStage() >= 1);
     }
@@ -59,6 +67,14 @@ class NaturalTerminationMatrixIT {
                             mode, pattern + 1, kit, result.maxStage(),
                             result.ticks(), result.health());
                     System.out.println(row);
+                    System.out.printf(
+                            java.util.Locale.ROOT,
+                            "EFFICIENCY mode=%s pattern=%d kit=%s s5k=%d s10k=%d s15k=%d s20k=%d%n",
+                            mode, pattern + 1, kit,
+                            result.stageAt5k(),
+                            result.stageAt10k(),
+                            result.stageAt15k(),
+                            result.stageAt20k());
                     rows.add(row);
                 }
             }

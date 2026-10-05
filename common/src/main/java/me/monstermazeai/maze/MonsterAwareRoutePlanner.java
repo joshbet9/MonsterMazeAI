@@ -21,6 +21,18 @@ public final class MonsterAwareRoutePlanner {
     private static final double ROUTE_U_TURN_COST = 4.0D;
     private static final double ROUTE_GAP_COST = 4.0D;
 
+    /*
+     * Source MonsterManager moves mobs along a cardinal corridor until the
+     * next junction. During that interval their direction is deterministic;
+     * only the branch chosen at the next junction is random. Use that
+     * deterministic window as a cheap predictive route-risk signal.
+     */
+    private static final double MONSTER_TRAVEL_SPEED = 1.4D * 0.20D;
+    private static final double PLAYER_BLOCK_TICKS = 5.0D;
+    private static final double PREDICTIVE_COLLISION_WINDOW = 7.0D;
+    private static final double PREDICTIVE_LANE_RADIUS = 0.90D;
+    private static final double PREDICTIVE_RISK_MARGIN = 0.50D;
+
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
     private final GapJumpPolicy gapJumpPolicy;
@@ -237,6 +249,11 @@ public final class MonsterAwareRoutePlanner {
         }
         if (!hasRelevantMonster) return shortest(candidates);
 
+        double[] predictiveRisks = new double[candidates.size()];
+        IntStream.range(0, candidates.size()).parallel().forEach(i ->
+                predictiveRisks[i] = deterministicCorridorThreatRisk(
+                        state, candidates.get(i)));
+
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
         IntStream.range(0, candidates.size()).parallel().forEach(i -> {
             results[i] = simulator.simulate(
@@ -245,20 +262,35 @@ public final class MonsterAwareRoutePlanner {
 
         PlayerRoute best = null;
         TacticalRouteSimulator.Result bestResult = null;
+        double bestRisk = Double.POSITIVE_INFINITY;
         for (int i = 0; i < candidates.size(); i++) {
             PlayerRoute candidate = candidates.get(i);
             TacticalRouteSimulator.Result result = results[i];
-            if (bestResult == null || better(result, candidate, bestResult, best)) {
+            double risk = predictiveRisks[i];
+            if (bestResult == null
+                    || better(result, candidate, risk, bestResult, best, bestRisk)) {
                 best = candidate;
                 bestResult = result;
+                bestRisk = risk;
             }
         }
         return best;
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,
-                           TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute) {
+                           double candidateRisk,
+                           TacticalRouteSimulator.Result incumbent, PlayerRoute incumbentRoute,
+                           double incumbentRisk) {
         if (candidate.reached() != incumbent.reached()) return candidate.reached();
+
+        /*
+         * A deterministic current-corridor collision is more important than a
+         * small travel-time advantage. Only let risk override the existing
+         * result when the difference is material; this avoids route churn from
+         * tiny geometry fluctuations.
+         */
+        if (candidateRisk + PREDICTIVE_RISK_MARGIN < incumbentRisk) return true;
+        if (incumbentRisk + PREDICTIVE_RISK_MARGIN < candidateRisk) return false;
 
         if (candidate.reached()) {
             double candidateTime = candidate.arrivalTicks()
@@ -279,6 +311,73 @@ public final class MonsterAwareRoutePlanner {
         int gapCompare = Integer.compare(gapCount(candidateRoute), gapCount(incumbentRoute));
         if (gapCompare != 0) return gapCompare < 0;
         return candidateRoute.size() < incumbentRoute.size();
+    }
+
+    private static double deterministicCorridorThreatRisk(
+            GameState state, PlayerRoute route) {
+        if (state == null || route == null || route.size() < 2
+                || state.monsters == null || state.monsters.isEmpty()) {
+            return 0.0D;
+        }
+
+        double risk = 0.0D;
+        double playerEta = 0.0D;
+
+        for (int i = 0; i < route.size(); i++) {
+            Cell cell = route.cells().get(i);
+            double px = cell.row() + 0.5D;
+            double pz = cell.column() + 0.5D;
+
+            if (i > 0) {
+                Cell previous = route.cells().get(i - 1);
+                int dr = Math.abs(cell.row() - previous.row());
+                int dc = Math.abs(cell.column() - previous.column());
+                playerEta += (dr + dc == 2 ? 8.0D : PLAYER_BLOCK_TICKS);
+                if (i >= 2) {
+                    Cell before = route.cells().get(i - 2);
+                    int oldDir = direction(before, previous);
+                    int newDir = direction(previous, cell);
+                    if (oldDir != newDir) {
+                        playerEta += turnCost(oldDir, newDir);
+                    }
+                }
+            }
+
+            for (var monster : state.monsters) {
+                if (monster == null || monster.removed
+                        || monster.launched(state.tick)
+                        || monster.frozen(state.tick)
+                        || monster.direction == me.monstermazeai.monster.CardinalDirection.NONE
+                        || monster.waypointRow < 0 || monster.waypointColumn < 0) {
+                    continue;
+                }
+
+                double dirX = monster.direction.dr;
+                double dirZ = monster.direction.dc;
+                double dx = px - monster.x;
+                double dz = pz - monster.z;
+                double along = dx * dirX + dz * dirZ;
+                if (along < -0.35D) continue;
+
+                double lateral = Math.abs(dx * dirZ - dz * dirX);
+                if (lateral > PREDICTIVE_LANE_RADIUS) continue;
+
+                double targetDx = monster.waypointRow + 0.5D - monster.x;
+                double targetDz = monster.waypointColumn + 0.5D - monster.z;
+                double corridorEnd = targetDx * dirX + targetDz * dirZ;
+                if (corridorEnd <= 0.0D || along > corridorEnd + 0.5D) continue;
+
+                double monsterEta = along / MONSTER_TRAVEL_SPEED;
+                double timingDelta = Math.abs(monsterEta - playerEta);
+                if (timingDelta <= PREDICTIVE_COLLISION_WINDOW) {
+                    double proximity = Math.max(
+                            0.05D, 1.0D - lateral / PREDICTIVE_LANE_RADIUS);
+                    risk += proximity / (1.0D + timingDelta);
+                }
+            }
+        }
+
+        return risk;
     }
 
     private PlayerRoute chooseByGapRisk(GameState state,

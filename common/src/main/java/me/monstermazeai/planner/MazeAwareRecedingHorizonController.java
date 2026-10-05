@@ -13,7 +13,7 @@ import me.monstermazeai.player.AiProfile;
  * movement must not choose between competing strafe/yaw controls every tick.
  */
 public final class MazeAwareRecedingHorizonController {
-    private final StableLiveMovementController stableMovement;
+    private final DirectOracleMovementController stableMovement;
     private final int executionTicks;
     private String lastDecisionDetail = "UNSET";
 
@@ -35,7 +35,7 @@ public final class MazeAwareRecedingHorizonController {
         if (executionTicks < 1) throw new IllegalArgumentException();
         if (profile == null) throw new IllegalArgumentException("profile");
         this.executionTicks = executionTicks;
-        this.stableMovement = new StableLiveMovementController(profile);
+        this.stableMovement = new DirectOracleMovementController(profile);
     }
 
     public String lastDecisionDetail() {

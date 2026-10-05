@@ -1696,8 +1696,7 @@ public final class StableLiveMovementController {
         boolean rightFloor = inBounds(right.row(), right.column())
                 && state.maze.isPhysicalFloor(right.row(), right.column());
 
-        double monsterLateral = (threat.x - state.player.x) * routeDirColumn
-                - (threat.z - state.player.z) * routeDirRow;
+        double monsterLateral = bestPredictedLateral;
 
         /*
          * Jumper's real three-charge jump is the emergency "go over the mob"
@@ -1714,8 +1713,8 @@ public final class StableLiveMovementController {
                 && state.kit == me.monstermazeai.kit.Kit.JUMPER
                 && state.ability.charges > 0
                 && !gapExecutionActive
-                && bestDistance <= 1.25D
-                && (closingSpeed > 0.03D || !(leftFloor || rightFloor));
+                && (bestDistance <= 1.25D || bestTime <= 1.50D)
+                && (closingSpeed > 0.03D || bestTime <= 1.50D || !(leftFloor || rightFloor));
         if (urgentJumperJump) {
             float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
             float yawError = normalise(desiredYaw - state.player.yaw);

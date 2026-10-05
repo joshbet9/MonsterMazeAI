@@ -51,10 +51,15 @@ public final class TacticalRouteSimulator {
 
     public Result simulate(GameState source, PlayerRoute route, Cell goal,
                            boolean regionGoal, int regionRadius) {
+        return simulate(source, route, goal, regionGoal, regionRadius, source.tick);
+    }
+
+    public Result simulate(GameState source, PlayerRoute route, Cell goal,
+                           boolean regionGoal, int regionRadius, long scenarioSeed) {
         GameState state = MonsterRelevance.copyForRoute(source, route);
         initialiseMissingAbilityState(state);
         int waypoint = route.nextWaypoint(state.player.x, state.player.z, 0, WAYPOINT_TOLERANCE);
-        MonsterSimulator monsters = monsterSimulator(state, source.tick);
+        MonsterSimulator monsters = monsterSimulator(state, scenarioSeed);
         int simulationLimit = simulationLimit(route);
 
         for (int elapsed = 1; elapsed <= simulationLimit; elapsed++) {
@@ -66,7 +71,7 @@ public final class TacticalRouteSimulator {
             }
 
             Action action = needsTacticalSearch(state)
-                    ? chooseTacticalAction(state, route, waypoint, goal, regionGoal, regionRadius)
+                    ? chooseTacticalAction(state, route, waypoint, goal, regionGoal, regionRadius, scenarioSeed)
                     : routeFollowerAction(state, route, waypoint);
 
             step(state, action, monsters);
@@ -80,6 +85,39 @@ public final class TacticalRouteSimulator {
 
         return new Result(false, Integer.MAX_VALUE, state.player.health,
                 state.player.damageTaken, state, waypoint);
+    }
+
+    public RobustResult simulateRobust(GameState source, PlayerRoute route, Cell goal,
+                                        boolean regionGoal, int regionRadius, int samples) {
+        if (samples < 1) throw new IllegalArgumentException("samples must be positive");
+        int reached = 0;
+        int survived = 0;
+        int damaged = 0;
+        double health = 0.0D;
+        double damage = 0.0D;
+        double arrival = 0.0D;
+
+        for (int i = 0; i < samples; i++) {
+            long seed = mixSeed(source.tick, i);
+            Result result = simulate(source, route, goal, regionGoal, regionRadius, seed);
+            if (result.reached()) reached++;
+            if (result.finalState() != null && result.finalState().alive) survived++;
+            if (result.damageTaken() > 0.0D) damaged++;
+            health += result.remainingHealth();
+            damage += result.damageTaken();
+            arrival += result.reached() ? result.arrivalTicks() : simulationLimit(route);
+        }
+
+        return new RobustResult(
+                samples, reached, survived, damaged,
+                health / samples, damage / samples, arrival / samples);
+    }
+
+    private static long mixSeed(long base, int index) {
+        long x = base + 0x9E3779B97F4A7C15L * (index + 1L);
+        x = (x ^ (x >>> 30)) * 0xBF58476D1CE4E5B9L;
+        x = (x ^ (x >>> 27)) * 0x94D049BB133111EBL;
+        return x ^ (x >>> 31);
     }
 
     private int simulationLimit(PlayerRoute route) {
@@ -141,7 +179,8 @@ public final class TacticalRouteSimulator {
     }
 
     private Action chooseTacticalAction(GameState source, PlayerRoute route, int waypoint,
-                                        Cell goal, boolean regionGoal, int regionRadius) {
+                                        Cell goal, boolean regionGoal, int regionRadius,
+                                        long scenarioSeed) {
         // The tactical branch uses the same local interaction envelope as the
         // full route simulation. Filtering is planner-only; the live observer
         // and source-faithful mechanics retain the complete world snapshot.
@@ -157,7 +196,8 @@ public final class TacticalRouteSimulator {
                 for (Action action : tacticalActions(node.state, route, node.waypoint)) {
                     GameState s = node.state.copyForSimulation();
                     s.tick = source.tick + depth + 1;
-                    MonsterSimulator branchMonsters = monsterSimulator(s, source.tick + depth + 1);
+                    MonsterSimulator branchMonsters = monsterSimulator(
+                            s, scenarioSeed ^ (0x9E3779B97F4A7C15L * (depth + 1L)));
                     int wp = route.nextWaypoint(s.player.x, s.player.z, node.waypoint, WAYPOINT_TOLERANCE);
                     step(s, action, branchMonsters);
                     if (s.player.health <= 0.0 || !s.alive) continue;
@@ -344,5 +384,9 @@ public final class TacticalRouteSimulator {
 
     public record Result(boolean reached, int arrivalTicks, double remainingHealth,
                          double damageTaken, GameState finalState, int finalWaypoint) {}
+
+    public record RobustResult(int samples, int reached, int survived, int damaged,
+                               double meanHealth, double meanDamage, double meanArrival) {}
+
     private record Node(GameState state, int waypoint, List<Action> actions) {}
 }

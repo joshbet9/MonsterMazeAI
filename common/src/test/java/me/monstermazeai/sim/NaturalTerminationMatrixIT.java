@@ -44,13 +44,15 @@ class NaturalTerminationMatrixIT {
     }
 
     private void runAll() {
+        boolean spawnMonsters = Boolean.parseBoolean(
+                System.getProperty("matrixSpawnMonsters", "true"));
         List<String> rows = new ArrayList<>();
-        for (Mode mode : List.of(Mode.SPEED, Mode.MODERN)) {
+        for (Mode mode : List.of(Mode.SPEED, Mode.MODERN))
             for (int pattern = 0; pattern < 3; pattern++) {
                 for (Kit kit : Kit.values()) {
                     AuthenticStage10SimulationTest.RunResult result =
                             AuthenticStage10SimulationTest.run(
-                                    pattern, kit, AiProfile.HIGH_SKILL, mode, 0, true);
+                                    pattern, kit, AiProfile.HIGH_SKILL, mode, 0, spawnMonsters);
                     String row = String.format(
                             java.util.Locale.ROOT,
                             "FULL_MATRIX mode=%s pattern=%d kit=%s stage=%d ticks=%d health=%.2f",

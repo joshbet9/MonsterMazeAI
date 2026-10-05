@@ -312,6 +312,24 @@ final class NoMobLocomotionController {
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
+        /*
+         * Jumper-only transition protection: after a Safe Pad transition the
+         * first floor edge can require a near-180° camera reversal. Letting
+         * translation begin while that reversal is still large is what causes
+         * the deterministic Pattern 3/Jumper edge loss. Other kits retain the
+         * proven 28/30 control path unchanged.
+         */
+        if (state.kit == Kit.JUMPER
+                && state.player.grounded
+                && Math.abs(yawError) > 60.0F) {
+            float turn = clamp(yawError, -15.0F, 15.0F);
+            lastDecision = "JUMPER_TURN_SAFE edge=" + edge.index
+                    + " yawError=" + format(yawError)
+                    + " turn=" + format(turn);
+            return new Action(
+                    0.0, 0.0, false, false, turn, false);
+        }
+
         boolean jump = shouldSpeedJump(
                 state, allowJump, speedAlong, remaining,
                 false);

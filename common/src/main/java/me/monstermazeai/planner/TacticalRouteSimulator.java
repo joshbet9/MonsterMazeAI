@@ -307,6 +307,21 @@ public final class TacticalRouteSimulator {
         float desiredYaw = (float)Math.toDegrees(Math.atan2(-dx, dz));
         float error = normalise(desiredYaw - state.player.yaw);
         float delta = Math.max(-30, Math.min(30, error));
+
+        /*
+         * Keep the predictive model consistent with the live motor. Near a
+         * cardinal corner, stop-and-turn is materially slower than the actual
+         * W+A/D cornering controller and can make the route chooser prefer the
+         * wrong topology. Round the corner with half the remaining heading error
+         * while retaining a small safety margin from the full route vector.
+         */
+        if (distance <= 4.50 && Math.abs(error) < 135.0F) {
+            double halfError = Math.toRadians(error) * 0.5D;
+            double forward = Math.cos(halfError) * 0.75D;
+            double strafe = -Math.sin(halfError) * 0.75D;
+            return new Action(forward, strafe, false, false, delta, false);
+        }
+
         double forward = Math.abs(error) > 70 ? 0 : 1;
         boolean sprint = forward != 0;
         return new Action(forward, 0, false, sprint, delta, false);

@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - autonomous/locomotion-026-v1
-  pull_request:
-    branches: [ main ]
 
 concurrency:
   group: monstermaze-v46-no-mobs

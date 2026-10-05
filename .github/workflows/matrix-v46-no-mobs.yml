@@ -58,6 +58,13 @@ jobs:
               })
           if len(rows) != 30:
               raise SystemExit(f"expected 30 rows, found {len(rows)}")
+          short = [r for r in rows if r["ticks"] < 20000]
+          if short:
+              details = ", ".join(
+                  f'{r["mode"]} P{r["pattern"]} {r["kit"]}: stage={r["maxStage"]} ticks={r["ticks"]}'
+                  for r in short
+              )
+              raise SystemExit("no-mob max-run requirement failed: " + details)
           rows.sort(key=lambda r: (r["mode"], r["pattern"], r["kit"]))
           speed = [r["maxStage"] for r in rows if r["mode"] == "SPEED"]
           modern = [r["maxStage"] for r in rows if r["mode"] == "MODERN"]

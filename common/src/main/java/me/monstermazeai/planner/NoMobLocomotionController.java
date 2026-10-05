@@ -346,7 +346,7 @@ final class NoMobLocomotionController {
     }
 
     private Action gapAction(GameState state, Edge edge, boolean allowJump) {
-        float yawError = headingError(edge);
+        float yawError = headingError(state, edge);
         if (Math.abs(yawError) > HEADING_TOLERANCE) {
             lastDecision = "GAP_ALIGN edge=" + edge.index
                     + " yawError=" + format(yawError);

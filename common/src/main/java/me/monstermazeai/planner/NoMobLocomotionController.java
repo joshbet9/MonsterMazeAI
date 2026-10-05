@@ -449,8 +449,20 @@ final class NoMobLocomotionController {
                 1.0, true, jump);
     }
 
+    private static double p3JumperCrossTrackLimit() {
+        double value = Double.parseDouble(
+                System.getProperty("p3JumperCrossTrackLimit", "0.30"));
+        return Math.max(0.05D, Math.min(0.75D, value));
+    }
+
+    private static float p3JumperYawLimit() {
+        float value = Float.parseFloat(
+                System.getProperty("p3JumperYawLimit", "25.0"));
+        return Math.max(5.0F, Math.min(75.0F, value));
+    }
+
     private static int p3JumperTurnLookahead() {
-        int value = Integer.getInteger("p3JumperTurnLookahead", 4);
+        int value = Integer.getInteger("p3JumperTurnLookahead", 0);
         return Math.max(0, Math.min(10, value));
     }
 

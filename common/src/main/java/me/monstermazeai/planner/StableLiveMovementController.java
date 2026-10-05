@@ -1416,15 +1416,27 @@ public final class StableLiveMovementController {
             double dx = monster.x - state.player.x;
             double dz = monster.z - state.player.z;
             double distance = Math.hypot(dx, dz);
-            if (distance > 2.15D || distance < 0.05D) continue;
+            if (distance < 0.05D || distance > 3.25D) continue;
 
             double along = dx * routeDirRow + dz * routeDirColumn;
-            if (along <= 0.0D || along > 2.15D) continue;
+            if (along <= 0.0D) continue;
 
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
             if (lateral > 0.95D) continue;
 
             double closing = -(monster.vx * dx + monster.vz * dz) / distance;
+
+            /*
+             * Extend the reaction box only for a genuinely closing source mob.
+             * A monster three blocks ahead that is stationary or moving away is
+             * not worth stealing a route tick for; a closing mob can reach the
+             * player inside the existing tactical horizon.
+             */
+            double triggerRange = closing > 0.12D ? 3.25D : 2.15D;
+            if (distance > triggerRange) continue;
+            double maxAlong = closing > 0.12D ? 3.25D : 2.15D;
+            if (along > maxAlong) continue;
+
             double score = distance - 0.20D * Math.max(0.0D, closing);
             if (score < bestScore) {
                 bestScore = score;

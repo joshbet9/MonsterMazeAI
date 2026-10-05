@@ -152,6 +152,20 @@ public final class StableLiveMovementController {
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
+    /*
+     * A dodge can alternate between different monsters while the player
+     * remains trapped in the same physical pocket. Track net displacement
+     * across the entire avoidance episode instead of keying the detector to
+     * one monster id.
+     */
+    private static final int MOB_AVOIDANCE_STALL_TICKS = 10;
+    private static final double MOB_AVOIDANCE_STALL_DISTANCE = 0.35D;
+    private long mobAvoidanceStartTick = Long.MIN_VALUE;
+    private double mobAvoidanceStartX = Double.NaN;
+    private double mobAvoidanceStartZ = Double.NaN;
+    private int mobAvoidanceTicks;
+    private long mobDeadlockEscapeUntilTick = Long.MIN_VALUE;
+
     /**
      * Terminal SafePad transition commitment. The live observer exposes the
      * source's 5x5 pad as physical floor even where the canonical maze layout
@@ -272,7 +286,7 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump, goal);
         if (mobAvoidance != null) return mobAvoidance;
 
         int previousGoalRow = goalRow;
@@ -444,6 +458,16 @@ public final class StableLiveMovementController {
                         allowJump);
                 if (gapAction != null) return gapAction;
             }
+        }
+
+        /*
+         * Once a local mob pocket has been declared stuck, give the new
+         * strategic route a few source-physical ticks to pull the player out of
+         * the contact zone. This is ordinary reverse movement, not a special
+         * physics action.
+         */
+        if (state.tick <= mobDeadlockEscapeUntilTick) {
+            return new Action(-0.65, 0.0, false, false, 0.0F, false);
         }
 
         // When a source interaction is close enough to matter this tick, hand
@@ -728,6 +752,8 @@ public final class StableLiveMovementController {
         clearGapCommitment();
         clearPadTransitionFacing();
         lastSpeedJumpInputTick = Long.MIN_VALUE;
+        resetMobAvoidanceStall();
+        mobDeadlockEscapeUntilTick = Long.MIN_VALUE;
         noMobController.reset();
         Future<?> pending = pendingRoutePlan;
         if (pending != null) pending.cancel(false);
@@ -1609,7 +1635,7 @@ public final class StableLiveMovementController {
      * which is physically supported. This keeps the behaviour source-valid and
      * leaves genuine unavoidable contacts to MonsterManager.bump().
      */
-    private Action avoidIncomingMonster(GameState state, boolean allowJump) {
+    private Action avoidIncomingMonster(GameState state, boolean allowJump, Cell goal) {
         if (!state.player.grounded || state.maze == null) return null;
 
         Cell supported = resolveSupportedStartCell(state);
@@ -1652,7 +1678,51 @@ public final class StableLiveMovementController {
             }
         }
 
-        if (threat == null) return null;
+        if (threat == null) {
+            resetMobAvoidanceStall();
+            return null;
+        }
+
+        if (mobAvoidanceStartTick == Long.MIN_VALUE) {
+            mobAvoidanceStartTick = state.tick;
+            mobAvoidanceStartX = state.player.x;
+            mobAvoidanceStartZ = state.player.z;
+            mobAvoidanceTicks = 0;
+        } else if (state.tick == mobAvoidanceStartTick + mobAvoidanceTicks + 1L) {
+            mobAvoidanceTicks++;
+        } else {
+            mobAvoidanceStartTick = state.tick;
+            mobAvoidanceStartX = state.player.x;
+            mobAvoidanceStartZ = state.player.z;
+            mobAvoidanceTicks = 0;
+        }
+
+        double avoidanceDisplacement = Double.isFinite(mobAvoidanceStartX)
+                ? Math.hypot(state.player.x - mobAvoidanceStartX,
+                             state.player.z - mobAvoidanceStartZ)
+                : Double.POSITIVE_INFINITY;
+
+        if (mobAvoidanceTicks >= MOB_AVOIDANCE_STALL_TICKS
+                && avoidanceDisplacement < MOB_AVOIDANCE_STALL_DISTANCE) {
+            /*
+             * The current local response has failed to make meaningful net
+             * progress. Do not synchronously run the expensive planner from the
+             * live tick. Mark the route for immediate background reevaluation,
+             * then reserve a few ticks for a controlled reverse input so the
+             * player can actually leave the blocked contact pocket.
+             */
+            fullRouteEvaluationPending = true;
+            lastThreatSignature = Long.MIN_VALUE;
+            lastTacticalSignature = Long.MIN_VALUE;
+            mobDeadlockEscapeUntilTick = state.tick + 4L;
+            anchoredSegmentIndex = -1;
+            lastDecisionDetail = "MOB_AVOIDANCE_DEADLOCK"
+                    + " monster=" + threat.id
+                    + " ticks=" + mobAvoidanceTicks
+                    + " displacement=" + format(avoidanceDisplacement);
+            resetMobAvoidanceStall();
+            return null;
+        }
 
         int sideRow = routeDirColumn;
         int sideColumn = -routeDirRow;
@@ -1797,6 +1867,13 @@ public final class StableLiveMovementController {
                 + " distance=" + format(bestDistance)
                 + (guarded == yield ? "" : " EDGE_GUARD");
         return guarded;
+    }
+
+    private void resetMobAvoidanceStall() {
+        mobAvoidanceStartTick = Long.MIN_VALUE;
+        mobAvoidanceStartX = Double.NaN;
+        mobAvoidanceStartZ = Double.NaN;
+        mobAvoidanceTicks = 0;
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

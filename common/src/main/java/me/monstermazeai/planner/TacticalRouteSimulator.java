@@ -26,10 +26,8 @@ import java.util.Random;
  * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
-    private static final int SPEED_TACTICAL_HORIZON = 6;
-    private static final int SPEED_TACTICAL_BEAM = 10;
-    private static final int MODERN_TACTICAL_HORIZON = 12;
-    private static final int MODERN_TACTICAL_BEAM = 16;
+    private static final int TACTICAL_HORIZON = 8;
+    private static final int TACTICAL_BEAM = 12;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;
@@ -208,15 +206,11 @@ public final class TacticalRouteSimulator {
     }
 
     private static int tacticalHorizon(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
-                ? MODERN_TACTICAL_HORIZON
-                : SPEED_TACTICAL_HORIZON;
+        return TACTICAL_HORIZON;
     }
 
     private static int tacticalBeam(GameState state) {
-        return state != null && state.mode == me.monstermazeai.game.Mode.MODERN
-                ? MODERN_TACTICAL_BEAM
-                : SPEED_TACTICAL_BEAM;
+        return TACTICAL_BEAM;
     }
 
     private List<Action> tacticalActions(GameState state, PlayerRoute route, int waypoint) {

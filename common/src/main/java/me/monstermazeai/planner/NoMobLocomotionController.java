@@ -312,6 +312,22 @@ final class NoMobLocomotionController {
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
+        /*
+         * At an extreme heading error the physical direction and the current
+         * camera face are nearly opposite. Translating through that state is
+         * unsafe on a one-cell corridor, especially immediately after a pad
+         * transition. Turn a small, monotonic amount in place until the
+         * controller reaches the normal concurrent-steering range.
+         */
+        if (state.player.grounded && Math.abs(yawError) > 100.0F) {
+            float turn = clamp(yawError, -15.0F, 15.0F);
+            lastDecision = "TURN_EXTREME edge=" + edge.index
+                    + " yawError=" + format(yawError)
+                    + " turn=" + format(turn);
+            return new Action(
+                    0.0, 0.0, false, false, turn, false);
+        }
+
         boolean jump = shouldSpeedJump(
                 state, allowJump, speedAlong, remaining,
                 false);

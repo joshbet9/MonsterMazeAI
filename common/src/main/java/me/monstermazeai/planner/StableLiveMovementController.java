@@ -1355,19 +1355,57 @@ public final class StableLiveMovementController {
         double counter = lateralVelocity > 0.0 ? -1.0 : lateralVelocity < 0.0 ? 1.0 : 0.0;
 
         Action[] alternatives = {
-                new Action(0.0, 0.0, false, false, action.yawDelta(), false),
+                new Action(action.forward() * 0.5D, action.strafe() * 0.5D,
+                        action.jump(), action.sprint(), action.yawDelta(), action.useAbility()),
                 new Action(-0.8, 0.0, false, false, action.yawDelta(), false),
                 new Action(0.0, counter, false, false, action.yawDelta(), false),
-                new Action(0.0, -counter, false, false, action.yawDelta(), false)
+                new Action(0.0, -counter, false, false, action.yawDelta(), false),
+                new Action(0.0, 0.0, false, false, action.yawDelta(), false)
         };
 
+        /*
+         * Once the requested movement is unsafe, the fallback should preserve
+         * its intended world-space direction as closely as the physical floor
+         * allows. The previous scorer gave IDLE a zero-progress baseline, so a
+         * supported retreat/strafe whose projection was merely negative against
+         * the requested route could lose to standing still.
+         */
+        double requestedLength = Math.hypot(action.forward(), action.strafe());
+        double requestedYaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double requestedWorldX = -Math.sin(requestedYaw) * action.forward()
+                + Math.cos(requestedYaw) * action.strafe();
+        double requestedWorldZ = Math.cos(requestedYaw) * action.forward()
+                + Math.sin(requestedYaw) * action.strafe();
+        if (requestedLength > 1.0E-9D) {
+            requestedWorldX /= requestedLength;
+            requestedWorldZ /= requestedLength;
+        }
+
         Action best = null;
-        double bestProgress = Double.NEGATIVE_INFINITY;
+        double bestScore = Double.NEGATIVE_INFINITY;
         for (Action candidate : alternatives) {
             if (!hasPredictedPhysicalSupport(state, candidate, SUPPORT_LOOKAHEAD_TICKS)) continue;
+
+            double candidateLength = Math.hypot(candidate.forward(), candidate.strafe());
+            double candidateYaw = Math.toRadians(state.player.yaw + candidate.yawDelta());
+            double candidateWorldX = -Math.sin(candidateYaw) * candidate.forward()
+                    + Math.cos(candidateYaw) * candidate.strafe();
+            double candidateWorldZ = Math.cos(candidateYaw) * candidate.forward()
+                    + Math.sin(candidateYaw) * candidate.strafe();
+
+            double alignment = 0.0D;
+            if (requestedLength > 1.0E-9D && candidateLength > 1.0E-9D) {
+                candidateWorldX /= candidateLength;
+                candidateWorldZ /= candidateLength;
+                alignment = requestedWorldX * candidateWorldX
+                        + requestedWorldZ * candidateWorldZ;
+            }
+
             double progress = projectedRouteProgress(state, candidate, dirRow, dirColumn);
-            if (progress > bestProgress) {
-                bestProgress = progress;
+            double score = alignment * 4.0D + progress * 0.5D
+                    - (candidateLength < 1.0E-9D ? 2.5D : 0.0D);
+            if (score > bestScore) {
+                bestScore = score;
                 best = candidate;
             }
         }

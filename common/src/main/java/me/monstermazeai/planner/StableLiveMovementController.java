@@ -152,6 +152,15 @@ public final class StableLiveMovementController {
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
+    /*
+     * Short-lived side ownership for local mob avoidance. Without this,
+     * alternating nearest monsters can flip the preferred strafe direction
+     * every observation and trap the player in a low-displacement oscillation.
+     */
+    private static final long MOB_DODGE_OWNER_TICKS = 10L;
+    private int mobDodgeOwnerSide;
+    private long mobDodgeOwnerUntilTick = Long.MIN_VALUE;
+
     /**
      * Terminal SafePad transition commitment. The live observer exposes the
      * source's 5x5 pad as physical floor even where the canonical maze layout
@@ -1433,7 +1442,10 @@ public final class StableLiveMovementController {
             }
         }
 
-        if (threat == null) return null;
+        if (threat == null) {
+            clearMobDodgeOwner();
+            return null;
+        }
 
         int sideRow = routeDirColumn;
         int sideColumn = -routeDirRow;
@@ -1480,17 +1492,26 @@ public final class StableLiveMovementController {
         }
 
         if (leftFloor || rightFloor) {
-            double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
-            double strafe;
-            if (preferred < 0.0D && leftFloor) {
-                strafe = -1.0D;
-            } else if (preferred > 0.0D && rightFloor) {
-                strafe = 1.0D;
-            } else if (leftFloor) {
-                strafe = -1.0D;
+            int preferredSide;
+            if (state.tick <= mobDodgeOwnerUntilTick && mobDodgeOwnerSide != 0) {
+                preferredSide = mobDodgeOwnerSide;
             } else {
-                strafe = 1.0D;
+                preferredSide = monsterLateral > 0.0D ? -1 : 1;
             }
+
+            /*
+             * Keep the chosen supported side for a short window. Only abandon
+             * it when that side is no longer floor.
+             */
+            if (preferredSide < 0 && !leftFloor && rightFloor) {
+                preferredSide = 1;
+            } else if (preferredSide > 0 && !rightFloor && leftFloor) {
+                preferredSide = -1;
+            }
+
+            mobDodgeOwnerSide = preferredSide;
+            mobDodgeOwnerUntilTick = state.tick + MOB_DODGE_OWNER_TICKS;
+            double strafe = preferredSide < 0 ? -1.0D : 1.0D;
 
             Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
@@ -2032,6 +2053,11 @@ public final class StableLiveMovementController {
         gapTakeoffStarted = false;
         gapExecutionRouteIndex = -1;
         gapLandingConfirmTicks = 0;
+    }
+
+    private void clearMobDodgeOwner() {
+        mobDodgeOwnerSide = 0;
+        mobDodgeOwnerUntilTick = Long.MIN_VALUE;
     }
 
     private void clearPadEntryCommitment() {

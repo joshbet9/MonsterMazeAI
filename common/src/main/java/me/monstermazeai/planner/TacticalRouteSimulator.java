@@ -178,7 +178,32 @@ public final class TacticalRouteSimulator {
         long remaining = Math.max(0, route.size() - 1L - waypoint);
         long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
         long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+
+        /*
+         * Equal-topology candidates should prefer the action that keeps moving
+         * through the corridor. A human does not stop at every mob crossing and
+         * then recover the route; preserving forward velocity is itself part of
+         * the tactical outcome.
+         */
+        double routeVx = 0.0D;
+        double routeVz = 0.0D;
+        if (waypoint > 0 && waypoint < route.size()) {
+            var from = route.cells().get(waypoint - 1);
+            var to = route.cells().get(waypoint);
+            routeVx = Integer.signum(to.row() - from.row());
+            routeVz = Integer.signum(to.column() - from.column());
+        }
+        double forwardVelocity = state.player.vx * routeVx + state.player.vz * routeVz;
+        double lateralVelocity = state.player.vx * routeVz - state.player.vz * routeVx;
+        long speedPenalty = Math.min(999_999L,
+                Math.round(Math.max(0.0D, 0.20D - forwardVelocity) * 1000));
+        long lateralPenalty = Math.min(999_999L,
+                Math.round(Math.max(0.0D, Math.abs(lateralVelocity) - 0.18D) * 250));
+
+        return remaining * 1_000_000_000_000L
+                + distance * 1_000_000L
+                + (speedPenalty + lateralPenalty) * 1_000L
+                + damage;
     }
 
     private boolean needsTacticalSearch(GameState state) {

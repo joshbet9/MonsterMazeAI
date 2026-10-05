@@ -781,7 +781,15 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        long currentThreat = threatSignature(state);
+        /*
+         * Monster positions are intentionally allowed to differ from the
+         * planning snapshot. They move every tick, so requiring an identical
+         * threat signature made asynchronous route planning self-invalidating:
+         * by the time the route finished, at least one mob had normally moved.
+         * Keep topology/objective/start strict, but treat threat state as a
+         * short-lived forecast and let the live tactical/avoidance layer handle
+         * the newest observation.
+         */
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
@@ -789,8 +797,7 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 6L) {
             fullRouteEvaluationPending = true;
             return;
         }

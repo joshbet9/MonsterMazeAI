@@ -838,7 +838,13 @@ public final class StableLiveMovementController {
         if (planned == null) return;
 
         completedRoutePlan = null;
-        long currentThreat = threatSignature(state);
+        /*
+         * Monster positions are expected to move between the planning snapshot
+         * and the next live observation. Requiring an identical floating-point
+         * threat signature made useful background plans self-invalidating before
+         * they could ever be applied, especially in dense Modern runs. Topology
+         * and objective remain strict; threat state is instead bounded by age.
+         */
         if (planned.startRow != startRow
                 || planned.startColumn != startColumn
                 || planned.goalRow != goal.row()
@@ -846,8 +852,7 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 4L) {
             fullRouteEvaluationPending = true;
             return;
         }

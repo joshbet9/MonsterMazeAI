@@ -412,20 +412,17 @@ final class NoMobLocomotionController {
         desiredWorldX /= length;
         desiredWorldZ /= length;
 
-        float yawError = headingErrorForDirection(
-                state, desiredWorldX, desiredWorldZ);
-        if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
-            return new Action(
-                    0.0, 0.0, false, false,
-                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
-                    false);
-        }
-
+        /*
+         * Lane correction is still movement. Do not turn in place here; the
+         * current 1.8 client can combine forward+strafe while facing away from
+         * the route. Full sprint keeps the player moving through the correction
+         * instead of donating deadline time to camera-only ticks.
+         */
         lastDecision = "LANE edge=" + edge.index
                 + " cross=" + format(crossTrack);
         return driveVector(
                 state, desiredWorldX, desiredWorldZ,
-                0.65, false, false);
+                1.0, true, false);
     }
 
     private boolean shouldSpeedJump(

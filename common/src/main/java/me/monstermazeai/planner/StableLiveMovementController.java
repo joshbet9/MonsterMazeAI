@@ -9,7 +9,13 @@ import me.monstermazeai.monster.MonsterState;
 import me.monstermazeai.monster.MobInteractionDecision;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
+import me.monstermazeai.collision.CollisionModel;
+import me.monstermazeai.monster.MonsterRelevance;
+import me.monstermazeai.monster.MonsterSimulator;
+import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.physics.LegacyMovementModel;
+import me.monstermazeai.sim.MonsterTrajectoryPredictor;
+import me.monstermazeai.sim.Simulator;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -1320,6 +1326,43 @@ public final class StableLiveMovementController {
     }
 
     /**
+     * Source-faithful short-horizon forecast of the selected monster against
+     * continued route travel. Only the selected monster is retained in the
+     * forecast so a distant mob cannot change the decision.
+     */
+    private boolean predictsImmediateContact(
+            GameState source, MonsterState threat, int routeDirRow, int routeDirColumn) {
+        if (source.maze == null || threat == null) return true;
+
+        GameState forecastSource = MonsterRelevance.copyForRoute(source, route);
+        forecastSource.monsters.removeIf(m -> m.id != threat.id);
+
+        long seed = 0x4D4D415A4544L
+                ^ source.tick * 0x9E3779B97F4A7C15L
+                ^ threat.id * 0xBF58476D1CE4E5B9L;
+
+        MonsterSimulator forecastMonsters = new MonsterSimulator(
+                forecastSource.maze, new Random(seed), 1.4D, seed);
+        Simulator simulator = new Simulator(
+                new LegacyMazePhysics(), forecastMonsters, new CollisionModel());
+        MonsterTrajectoryPredictor predictor = new MonsterTrajectoryPredictor(simulator);
+
+        float desiredYaw = cardinalYaw(routeDirRow, routeDirColumn);
+        float yawError = normalise(desiredYaw - source.player.yaw);
+        float yawDelta = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        Action[] actions = new Action[8];
+        actions[0] = new Action(1.0D, 0.0D, false, true, yawDelta, false);
+        for (int i = 1; i < actions.length; i++) {
+            actions[i] = new Action(1.0D, 0.0D, false, true, 0.0F, false);
+        }
+
+        MonsterTrajectoryPredictor.Prediction prediction =
+                predictor.predict(forecastSource, actions, seed);
+        return prediction.collisionRisk() || prediction.damageTaken() > 0.0D;
+    }
+
+    /**
      * Airborne mob-hit recovery. The bump velocity is authoritative, but
      * Minecraft 1.8 still permits a small amount of air steering. Aim that
      * steering at a physical floor landing point, preferring the active pad
@@ -1526,6 +1569,20 @@ public final class StableLiveMovementController {
         }
 
         if (threat == null) return null;
+
+        /*
+         * Do not dodge merely because a monster occupies the lane right now.
+         * Run a short source-faithful forecast for this specific threat while
+         * the player continues the active route. If that trajectory never
+         * reaches the real 1.0-block bump distance and causes no damage, the
+         * human-equivalent decision is to hold the line and keep speed.
+         */
+        if (!predictsImmediateContact(state, threat, routeDirRow, routeDirColumn)) {
+            lastDecisionDetail = "MOB_PREDICT_CLEAR"
+                    + " monster=" + threat.id
+                    + " distance=" + format(bestDistance);
+            return null;
+        }
 
         int sideRow = routeDirColumn;
         int sideColumn = -routeDirRow;

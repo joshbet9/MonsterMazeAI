@@ -163,7 +163,7 @@ final class NoMobLocomotionController {
         if (edge.gap) {
             return gapAction(state, edge, allowJump);
         }
-        return normalAction(state, edge);
+        return normalAction(state, edge, allowJump);
     }
 
     String lastDecisionDetail() {
@@ -265,7 +265,7 @@ final class NoMobLocomotionController {
         }
     }
 
-    private Action normalAction(GameState state, Edge edge) {
+    private Action normalAction(GameState state, Edge edge, boolean allowJump) {
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
         double progress = edge.progress;
         double remaining = edge.length - progress;
@@ -473,7 +473,7 @@ final class NoMobLocomotionController {
             routeEdgeIndex++;
             lastDecision = "GAP_LANDED edge=" + edge.index
                     + " progress=" + format(progress);
-            return normalActionAfterGap(state);
+            return normalActionAfterGap(state, allowJump);
         }
 
         lastDecision = "GAP edge=" + edge.index
@@ -483,14 +483,14 @@ final class NoMobLocomotionController {
         return driveVector(state, edge.dirX, edge.dirZ, 1.0, true, jump);
     }
 
-    private Action normalActionAfterGap(GameState state) {
+    private Action normalActionAfterGap(GameState state, boolean allowJump) {
         if (routeEdgeIndex >= route.size() - 1) return Action.IDLE;
         Edge next = edge(
                 route.cells().get(routeEdgeIndex),
                 route.cells().get(routeEdgeIndex + 1),
                 routeEdgeIndex,
                 state);
-        return normalAction(state, next);
+        return normalAction(state, next, allowJump);
     }
 
     private Edge edge(Cell from, Cell to, int index, GameState state) {

@@ -312,23 +312,6 @@ final class NoMobLocomotionController {
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
-        /*
-         * Pattern 3/Jumper has a documented deterministic near-opposite
-         * heading at the difficult post-pad transition. Protect only that
-         * known case; applying this lock to every Jumper turn breaks otherwise
-         * healthy Pattern 1/2 runs by waiting out the pad timer.
-         */
-        if (state.mazePattern == 2
-                && state.kit == Kit.JUMPER
-                && state.player.grounded
-                && Math.abs(yawError) > 100.0F) {
-            float turn = clamp(yawError, -15.0F, 15.0F);
-            lastDecision = "P3_JUMPER_TURN_SAFE edge=" + edge.index
-                    + " yawError=" + format(yawError)
-                    + " turn=" + format(turn);
-            return new Action(0.0, 0.0, false, false, turn, false);
-        }
-
         boolean jump = shouldSpeedJump(
                 state, allowJump, speedAlong, remaining,
                 false);

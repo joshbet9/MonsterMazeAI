@@ -2101,22 +2101,32 @@ public final class StableLiveMovementController {
          * Let Max Speed control this pre-gap cadence while the gap motor owns
          * the timing window, so tactical replanning cannot steal the inputs.
          */
+        /*
+         * Non-Jumper gap traversal uses the real source Jump -10 behaviour:
+         * jump input does not create a useful vertical arc, but repeated
+         * grounded presses feed the sprint-jump horizontal impulse. Keep the
+         * cadence alive for the whole committed crossing, not only the
+         * approach before the takeoff threshold. The old one-shot pulse often
+         * left a Body Builder player with insufficient momentum at the middle
+         * of the missing block.
+         */
         boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
-                && progress < GAP_JUMP_PROGRESS
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
         if (nonJumperSpeedPulse) {
             jumpThisTick = true;
             lastSpeedJumpInputTick = state.tick;
-            lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
-                    + " progress=" + format(progress)
-                    + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
-        } else if (!gapTakeoffStarted && state.player.grounded && progress >= GAP_JUMP_PROGRESS) {
-            jumpThisTick = true;
-            gapTakeoffStarted = true;
-            lastDecisionDetail = "GAP_TAKEOFF edge=" + gapEdgeText()
-                    + " progress=" + format(progress);
+            if (!gapTakeoffStarted && progress >= GAP_JUMP_PROGRESS) {
+                gapTakeoffStarted = true;
+                lastDecisionDetail = "GAP_TAKEOFF_PULSE edge=" + gapEdgeText()
+                        + " progress=" + format(progress)
+                        + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
+            } else {
+                lastDecisionDetail = "GAP_SPEED_PULSE edge=" + gapEdgeText()
+                        + " progress=" + format(progress)
+                        + " cadence=" + profile.attributes.nonJumperJumpCadenceTicks();
+            }
         }
         if (gapTakeoffStarted && state.player.grounded && !jumpThisTick && progress > 0.90D
                 && playerAabbOverlapsCell(state, toRow, toColumn)) {

@@ -272,72 +272,67 @@ final class NoMobLocomotionController {
             int dirColumn = Integer.signum(dc);
             double progress = edgeProgress(state, from, to);
 
-            if (progress < 0.88D) return;
-
-            double lateral = edgeLateral(state, from, dirRow, dirColumn);
-            if (Math.abs(lateral) > LANE_TOLERANCE) return;
+            Cell target = to;
+            double targetX = target.row() + 0.5D;
+            double targetZ = target.column() + 0.5D;
+            double centerDistance = Math.hypot(
+                    state.player.x - targetX,
+                    state.player.z - targetZ);
+            if (progress < 0.82D && centerDistance > 0.42D) return;
+            if (!playerAabbOverlapsCell(state, target.row(), target.column())
+                    && centerDistance > 0.55D) return;
 
             routeEdgeIndex++;
         }
     }
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
-        double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
-        double progress = edge.progress;
-        double remaining = edge.length - progress;
+        Cell target = edge.to;
+        double targetX = target.row() + 0.5D;
+        double targetZ = target.column() + 0.5D;
+        double worldX = targetX - state.player.x;
+        double worldZ = targetZ - state.player.z;
+        double remaining = Math.hypot(worldX, worldZ);
 
-        float yawError = headingError(state, edge);
-
-        boolean nextTurn = edge.index + 2 < route.size()
-                && changesDirection(route.cells().get(edge.index),
-                route.cells().get(edge.index + 1),
-                route.cells().get(edge.index + 2));
-
-        double horizontalSpeed = Math.hypot(state.player.vx, state.player.vz);
-
-        /*
-         * Never enter a yaw-only deadlock. The client can translate in any
-         * world direction through the forward/strafe basis, so even a 90-degree
-         * camera mismatch is actionable. The motor gradually corrects yaw while
-         * continuing to make physical progress.
-         */
-        double crossTrack = edgeLateral(
-                state, edge.from, directionRow(edge), directionColumn(edge));
-
-        if (Math.abs(crossTrack) > LANE_TOLERANCE) {
-            Action lane = laneCorrection(state, edge, crossTrack);
-            if (lane != null) return lane;
+        if (remaining < 1.0E-9D) {
+            worldX = edge.dirX;
+            worldZ = edge.dirZ;
+            remaining = 1.0D;
+        } else {
+            worldX /= remaining;
+            worldZ /= remaining;
         }
 
-        boolean jump = shouldSpeedJump(state, allowJump, speedAlong, remaining, nextTurn);
+        /*
+         * No-gap baseline invariant: drive toward the next cell centre, not a
+         * diagonally corrected lane. This preserves the actual one-cell-wide
+         * path geometry and prevents the controller from cutting across a void
+         * corner merely because its geometric cross-track error is large.
+         */
+        float yawError = headingErrorForDirection(state, worldX, worldZ);
+        double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
+
+        boolean jump = shouldSpeedJump(
+                state, allowJump, speedAlong, remaining,
+                false);
 
         /*
-         * The non-Jumper Jump -10 interaction adds a horizontal impulse in the
-         * player's facing direction. When the desired corridor is more than
-         * 90 degrees behind that facing, that impulse opposes the route input
-         * and can reverse travel. Backward WASD itself is valid, so suppress
-         * only the jump pulse until the facing is reasonably aligned.
+         * The Jump -10 horizontal impulse follows the player's facing. When the
+         * requested cell is behind that facing, suppress the pulse until the
+         * camera has converged; translation itself remains fully active.
          */
         if (Math.abs(yawError) > 75.0F) {
             jump = false;
         }
 
-        /*
-         * Sprint is a movement-state choice, not a camera-alignment reward.
-         * With Jump -10 the source's sprint-jump interaction is the mechanism
-         * that builds horizontal momentum. The previous yaw threshold silently
-         * disabled sprint at ordinary 24-36 degree route bends.
-         */
-        boolean sprint = true;
-
-        lastDecision = "DRIVE_EDGE edge=" + edge.index
-                + " progress=" + format(progress)
+        lastDecision = "CELL_DRIVE edge=" + edge.index
+                + " target=" + target.row() + "," + target.column()
                 + " remaining=" + format(remaining)
                 + " speed=" + format(speedAlong)
                 + " yawError=" + format(yawError)
                 + " jump=" + jump;
 
-        return driveVector(state, edge.dirX, edge.dirZ, 1.0, sprint, jump);
+        return driveVector(state, worldX, worldZ, 1.0, true, jump);
     }
 
     private Action brakeVelocity(GameState state) {

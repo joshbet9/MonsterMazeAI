@@ -1,4 +1,4 @@
-name: No-mob P3 Jumper horizon sweep
+name: No-mob P3 Jumper jump-envelope sweep
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - autonomous/locomotion-026-v1
 
 concurrency:
-  group: monstermaze-no-mob-p3-jumper-horizon
+  group: monstermaze-no-mob-p3-jumper-envelope
   cancel-in-progress: true
 
 permissions:
@@ -25,14 +25,16 @@ jobs:
           cache: maven
       - name: Install common-api
         run: mvn -B -ntp -pl common-api -am -DskipTests install
-      - name: Sweep horizons
+      - name: Sweep envelope
         run: |
           set -o pipefail
-          : > horizon-sweep.log
-          for horizon in 0 1 2 3 4 5 6 7 8; do
-            for mode in SPEED MODERN; do
-              echo "===== horizon=$horizon mode=$mode P3 JUMPER =====" | tee -a horizon-sweep.log
-              mvn -B -ntp -pl common -am                 -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase                 -DmatrixMode="$mode"                 -DmatrixPattern=3                 -DmatrixKit=JUMPER                 -DmatrixSpawnMonsters=false                 -Dp3JumperTurnLookahead="$horizon"                 -Dsurefire.failIfNoSpecifiedTests=false                 -Dsurefire.useFile=false                 -Dsurefire.redirectTestOutputToFile=false                 test 2>&1 | tee -a horizon-sweep.log
+          : > envelope-sweep.log
+          for cross in 0.30 0.40 0.50; do
+            for yaw in 25 35 45; do
+              for mode in SPEED MODERN; do
+                echo "===== cross=$cross yaw=$yaw mode=$mode P3 JUMPER =====" | tee -a envelope-sweep.log
+                mvn -B -ntp -pl common -am                   -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase                   -DmatrixMode="$mode"                   -DmatrixPattern=3                   -DmatrixKit=JUMPER                   -DmatrixSpawnMonsters=false                   -Dp3JumperTurnLookahead=0                   -Dp3JumperCrossTrackLimit="$cross"                   -Dp3JumperYawLimit="$yaw"                   -Dsurefire.failIfNoSpecifiedTests=false                   -Dsurefire.useFile=false                   -Dsurefire.redirectTestOutputToFile=false                   test 2>&1 | tee -a envelope-sweep.log
+              done
             done
           done
       - name: Summarize sweep
@@ -40,25 +42,30 @@ jobs:
           python - <<'PY'
           import re
           from pathlib import Path
-          text = Path("horizon-sweep.log").read_text(encoding="utf-8", errors="replace")
+          text = Path("envelope-sweep.log").read_text(encoding="utf-8", errors="replace")
           current = None
           rows = []
           for line in text.splitlines():
-              m = re.match(r"===== horizon=(\d+) mode=(SPEED|MODERN) P3 JUMPER =====$", line)
+              m = re.match(r"===== cross=([0-9.]+) yaw=([0-9.]+) mode=(SPEED|MODERN) P3 JUMPER =====$", line)
               if m:
-                  current = (int(m.group(1)), m.group(2))
+                  current = (float(m.group(1)), float(m.group(2)), m.group(3))
                   continue
               m = re.search(
                   r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=3\s+kit=JUMPER\s+"
                   r"stage=(\d+)\s+ticks=(\d+)", line)
               if m and current:
-                  rows.append((current[0], current[1], int(m.group(2)), int(m.group(3))))
-          for h, mode, stage, ticks in rows:
-              print(f"horizon={h} mode={mode} stage={stage} ticks={ticks} cap={ticks == 20000}")
+                  rows.append((current[0], current[1], current[2], int(m.group(1)), int(m.group(2))))
+          print("cross yaw mode stage ticks cap")
+          for row in rows:
+              print(*row, row[4] == 20000)
+          best = sorted(rows, key=lambda r: (r[4] == 20000, r[3], r[4]), reverse=True)[:6]
+          print("BEST")
+          for row in best:
+              print(*row, row[4] == 20000)
           PY
       - name: Upload sweep
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: no-mob-p3-jumper-horizon-sweep-${{ github.sha }}
-          path: horizon-sweep.log
+          name: no-mob-p3-jumper-envelope-${{ github.sha }}
+          path: envelope-sweep.log

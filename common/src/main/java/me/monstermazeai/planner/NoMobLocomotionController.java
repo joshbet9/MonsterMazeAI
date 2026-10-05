@@ -99,6 +99,14 @@ final class NoMobLocomotionController {
             return Action.IDLE;
         }
 
+        /*
+         * The player can cross a corner between observations because vanilla
+         * momentum is continuous. Before steering, reconcile the logical route
+         * edge with the block that actually supports the player's AABB. This is
+         * monotonic: only a later cell on the already-selected route can advance
+         * the edge index, so this cannot jump to an unrelated future branch.
+         */
+        reanchorFromSupportedCell(state);
         advanceCompletedEdges(state);
 
         if (routeEdgeIndex >= route.size() - 1) {
@@ -153,6 +161,31 @@ final class NoMobLocomotionController {
             }
         }
         return false;
+    }
+
+    private void reanchorFromSupportedCell(GameState state) {
+        Cell supported = resolveSupportedStart(state);
+        if (supported == null || route == null) return;
+
+        List<Cell> cells = route.cells();
+        int current = Math.max(0, Math.min(routeEdgeIndex, cells.size() - 1));
+        for (int i = current + 1; i < cells.size(); i++) {
+            if (!cells.get(i).equals(supported)) continue;
+
+            /*
+             * Do not skip an in-flight gap. A supported destination means the
+             * jump has physically landed; a future normal cell is likewise safe
+             * to adopt because the player is actually standing on it.
+             */
+            routeEdgeIndex = i;
+            return;
+        }
+
+        /*
+         * If the player is still in the current source cell, keep the existing
+         * edge. When the current edge is already the final edge, the caller will
+         * handle completion normally.
+         */
     }
 
     private void advanceCompletedEdges(GameState state) {

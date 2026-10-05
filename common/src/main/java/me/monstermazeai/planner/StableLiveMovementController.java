@@ -1872,7 +1872,39 @@ public final class StableLiveMovementController {
             clearGapCommitment();
             return null;
         }
+
+        /*
+         * A committed gap belongs to one physical launch window. After a bump,
+         * recovery, route re-anchor, or an otherwise large displacement, the
+         * stored edge can remain topologically valid while being nowhere near
+         * the player. Continuing to press the gap motor in that state can send
+         * the controller racing across the maze on an obsolete edge.
+         */
         double progress = currentGapProgress(state, gapExecutionRouteIndex);
+        double startX = fromRow + 0.5D;
+        double startZ = fromColumn + 0.5D;
+        double endX = toRow + 0.5D;
+        double endZ = toColumn + 0.5D;
+        double edgeX = endX - startX;
+        double edgeZ = endZ - startZ;
+        double edgeLength = Math.hypot(edgeX, edgeZ);
+        if (edgeLength < 1.0E-9D) {
+            clearGapCommitment();
+            return null;
+        }
+        double playerDX = state.player.x - startX;
+        double playerDZ = state.player.z - startZ;
+        double normalisedX = edgeX / edgeLength;
+        double normalisedZ = edgeZ / edgeLength;
+        double lateralDistance = Math.abs(
+                playerDX * normalisedZ - playerDZ * normalisedX);
+        if (progress < -3.0D || progress > 3.0D || lateralDistance > 1.35D) {
+            lastDecisionDetail = "GAP_COMMITMENT_STALE edge=" + gapEdgeText()
+                    + " progress=" + format(progress)
+                    + " lateral=" + format(lateralDistance);
+            clearGapCommitment();
+            return null;
+        }
         boolean jumpThisTick = false;
 
         /*

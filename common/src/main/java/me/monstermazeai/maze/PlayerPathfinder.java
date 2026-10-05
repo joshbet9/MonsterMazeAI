@@ -48,7 +48,7 @@ public final class PlayerPathfinder {
                 break;
             }
 
-            for (Cell next : maze.physicalMovementNeighbours(current.key().cell())) {
+            for (Cell next : movementNeighbours(maze, current.key().cell(), allowGaps)) {
                 boolean gap = isGapEdge(maze, current.key().cell(), next);
                 if (gap && !allowGaps) continue;
 
@@ -109,7 +109,7 @@ public final class PlayerPathfinder {
                 break;
             }
 
-            for (Cell next : maze.physicalMovementNeighbours(current.key().cell())) {
+            for (Cell next : movementNeighbours(maze, current.key().cell(), allowGaps)) {
                 boolean gap = isGapEdge(maze, current.key().cell(), next);
                 if (gap && !allowGaps) continue;
 
@@ -131,6 +131,43 @@ public final class PlayerPathfinder {
 
         if (bestGoal == null) return List.of();
         return reconstructStates(previous, bestGoal);
+    }
+
+    private List<Cell> movementNeighbours(
+            MazeModel maze, Cell current, boolean allowGaps) {
+        ArrayList<Cell> out = new ArrayList<>();
+        int r = current.row();
+        int c = current.column();
+
+        addIfFloor(maze, out, r - 1, c);
+        addIfFloor(maze, out, r + 1, c);
+        addIfFloor(maze, out, r, c - 1);
+        addIfFloor(maze, out, r, c + 1);
+
+        if (allowGaps) {
+            addIfGap(maze, out, r, c, r - 2, c);
+            addIfGap(maze, out, r, c, r + 2, c);
+            addIfGap(maze, out, r, c, r, c - 2);
+            addIfGap(maze, out, r, c, r, c + 2);
+        }
+        return out;
+    }
+
+    private void addIfFloor(
+            MazeModel maze, List<Cell> out, int row, int column) {
+        if (row >= 0 && row < MazeModel.SIZE
+                && column >= 0 && column < MazeModel.SIZE
+                && maze.isPhysicalFloor(row, column)) {
+            out.add(new Cell(row, column));
+        }
+    }
+
+    private void addIfGap(
+            MazeModel maze, List<Cell> out,
+            int fromRow, int fromColumn, int toRow, int toColumn) {
+        Cell from = new Cell(fromRow, fromColumn);
+        Cell to = new Cell(toRow, toColumn);
+        if (isGapEdge(maze, from, to)) out.add(to);
     }
 
     private static int direction(Cell from, Cell to) {

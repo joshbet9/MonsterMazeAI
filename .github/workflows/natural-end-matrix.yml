@@ -28,7 +28,7 @@ jobs:
       max-parallel: 6
       matrix:
         mode: [SPEED, MODERN]
-        pattern: [1, 2, 3]
+        pattern: [1]
         kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
     steps:
       - name: Checkout

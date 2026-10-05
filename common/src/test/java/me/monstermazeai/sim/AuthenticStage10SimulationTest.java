@@ -102,7 +102,7 @@ class AuthenticStage10SimulationTest {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }
 
-    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -351,7 +351,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,

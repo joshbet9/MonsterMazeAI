@@ -328,6 +328,17 @@ final class NoMobLocomotionController {
         boolean jump = shouldSpeedJump(state, allowJump, speedAlong, remaining, nextTurn);
 
         /*
+         * The non-Jumper Jump -10 interaction adds a horizontal impulse in the
+         * player's facing direction. When the desired corridor is more than
+         * 90 degrees behind that facing, that impulse opposes the route input
+         * and can reverse travel. Backward WASD itself is valid, so suppress
+         * only the jump pulse until the facing is reasonably aligned.
+         */
+        if (Math.abs(yawError) > 75.0F) {
+            jump = false;
+        }
+
+        /*
          * Sprint is a movement-state choice, not a camera-alignment reward.
          * With Jump -10 the source's sprint-jump interaction is the mechanism
          * that builds horizontal momentum. The previous yaw threshold silently
@@ -451,6 +462,18 @@ final class NoMobLocomotionController {
 
         double progress = edge.progress;
         boolean jump = false;
+
+        /*
+         * A gap requires the jump impulse, so unlike ordinary floor edges we
+         * first rotate in place when facing backwards. A small fixed turn step
+         * converges without the old +/-24 degree oscillation.
+         */
+        if (Math.abs(yawError) > 75.0F) {
+            return new Action(
+                    0.0, 0.0, false, false,
+                    clamp(yawError, -15.0F, 15.0F),
+                    false);
+        }
 
         if (state.player.grounded) {
             if (state.kit == Kit.JUMPER) {

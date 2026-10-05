@@ -150,6 +150,19 @@ public final class StableLiveMovementController {
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
+    /*
+     * Mob avoidance is an owned short-lived interaction, not a fresh decision
+     * every tick. Re-evaluating DODGE versus YIELD against the same monster
+     * makes the controller oscillate when the monster crosses the lane boundary
+     * or a support projection changes by a few centimetres.
+     */
+    private static final long MOB_AVOIDANCE_OWNERSHIP_TICKS = 4L;
+    private static final double MOB_AVOIDANCE_RELEASE_DISTANCE = 2.80D;
+    private long mobAvoidanceMonsterId = Long.MIN_VALUE;
+    private long mobAvoidanceUntilTick = Long.MIN_VALUE;
+    private MobAvoidanceMode mobAvoidanceMode = MobAvoidanceMode.NONE;
+    private double mobAvoidanceStrafe;
+
     /**
      * Terminal SafePad transition commitment. The live observer exposes the
      * source's 5x5 pad as physical floor even where the canonical maze layout
@@ -655,6 +668,7 @@ public final class StableLiveMovementController {
 
     public void reset() {
         clearRoute();
+        clearMobAvoidance();
         goalRow = -1;
         goalColumn = -1;
         goalRadius = 0;
@@ -1571,7 +1585,34 @@ public final class StableLiveMovementController {
             return jumpOver;
         }
 
-        if (leftFloor || rightFloor) {
+        boolean ownsThreat = mobAvoidanceMonsterId == threat.id
+                && state.tick <= mobAvoidanceUntilTick
+                && bestDistance <= MOB_AVOIDANCE_RELEASE_DISTANCE
+                && mobAvoidanceMode != MobAvoidanceMode.NONE;
+
+        if (ownsThreat && mobAvoidanceMode == MobAvoidanceMode.DODGE) {
+            double strafe = mobAvoidanceStrafe;
+            boolean supportedSide = (strafe < 0.0D && leftFloor)
+                    || (strafe > 0.0D && rightFloor);
+            if (!supportedSide) {
+                // The owned dodge can no longer be executed safely. Do not
+                // immediately flip back and forth: convert the ownership to
+                // yield for the remainder of the interaction window.
+                mobAvoidanceMode = MobAvoidanceMode.YIELD;
+            } else {
+                Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+                Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
+                lastDecisionDetail = "MOB_DODGE_OWNED"
+                        + " monster=" + threat.id
+                        + " distance=" + format(bestDistance)
+                        + " strafe=" + format(strafe)
+                        + " until=" + mobAvoidanceUntilTick
+                        + (guarded == dodge ? "" : " EDGE_GUARD");
+                return guarded;
+            }
+        }
+
+        if (!ownsThreat && (leftFloor || rightFloor)) {
             double preferred = monsterLateral > 0.0D ? -1.0D : 1.0D;
             double strafe;
             if (preferred < 0.0D && leftFloor) {
@@ -1584,12 +1625,18 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
+            mobAvoidanceMonsterId = threat.id;
+            mobAvoidanceUntilTick = state.tick + MOB_AVOIDANCE_OWNERSHIP_TICKS;
+            mobAvoidanceMode = MobAvoidanceMode.DODGE;
+            mobAvoidanceStrafe = strafe;
+
             Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
-            lastDecisionDetail = "MOB_DODGE"
+            lastDecisionDetail = "MOB_DODGE_ACQUIRE"
                     + " monster=" + threat.id
                     + " distance=" + format(bestDistance)
                     + " strafe=" + format(strafe)
+                    + " until=" + mobAvoidanceUntilTick
                     + (guarded == dodge ? "" : " EDGE_GUARD");
             return guarded;
         }
@@ -1670,6 +1717,15 @@ public final class StableLiveMovementController {
                 + " distance=" + format(bestDistance)
                 + (guarded == yield ? "" : " EDGE_GUARD");
         return guarded;
+    }
+
+    private enum MobAvoidanceMode { NONE, DODGE, YIELD }
+
+    private void clearMobAvoidance() {
+        mobAvoidanceMonsterId = Long.MIN_VALUE;
+        mobAvoidanceUntilTick = Long.MIN_VALUE;
+        mobAvoidanceMode = MobAvoidanceMode.NONE;
+        mobAvoidanceStrafe = 0.0D;
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

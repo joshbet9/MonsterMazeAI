@@ -317,9 +317,9 @@ final class NoMobLocomotionController {
          * camera face are nearly opposite. Translating through that state is
          * unsafe on a one-cell corridor, especially immediately after a pad
          * transition. Turn a small, monotonic amount in place until the
-         * controller reaches the normal concurrent-steering range.
+         * controller reaches a reasonably safe concurrent-steering range.
          */
-        if (state.player.grounded && Math.abs(yawError) > 100.0F) {
+        if (state.player.grounded && Math.abs(yawError) > 60.0F) {
             float turn = clamp(yawError, -15.0F, 15.0F);
             lastDecision = "TURN_EXTREME edge=" + edge.index
                     + " yawError=" + format(yawError)

@@ -1,0 +1,55 @@
+name: Experiment — gated edge-safe mob dodge
+
+on:
+  push:
+    branches:
+      - experiment/stale-gap-dodge-candidate-gating-v2
+
+permissions:
+  contents: read
+
+jobs:
+  modern:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run six affected Modern cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > gated.log
+          for spec in "1 SLOWBALLER" "1 REPULSOR" "2 REPULSOR" "3 REPULSOR" "1 JUMPER" "3 JUMPER"; do
+            set -- $spec
+            pattern=$1
+            kit=$2
+            echo "===== MODERN P$pattern $kit =====" | tee -a gated.log
+            mvn -B -ntp -pl common -am               -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase               -DmatrixMode=MODERN               -DmatrixPattern="$pattern"               -DmatrixKit="$kit"               -DmatrixSpawnMonsters=true               -Dsurefire.failIfNoSpecifiedTests=false               -Dsurefire.useFile=false               -Dsurefire.redirectTestOutputToFile=false               test 2>&1 | tee -a gated.log
+          done
+      - name: Summarize
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          t=Path("gated.log").read_text(encoding="utf-8",errors="replace")
+          rows=[(int(m.group(1)),m.group(2),int(m.group(3)),int(m.group(4)))
+                for m in re.finditer(r"FULL_MATRIX mode=MODERN pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]
+          if len(rows)!=6: raise SystemExit(f"expected 6 rows, got {len(rows)}")
+          vals=[r[2] for r in rows]
+          lines=[f"Modern P{p} {k} stage={s} ticks={ticks}" for p,k,s,ticks in rows]
+          lines += ["",f"mean={sum(vals)/len(vals):.4f}",f">=10={sum(x>=10 for x in vals)}/6"]
+          Path("gated-report.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
+          print("\n".join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gated-edge-safe
+          path: |
+            gated.log
+            gated-report.txt

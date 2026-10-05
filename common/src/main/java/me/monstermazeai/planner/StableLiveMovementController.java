@@ -597,9 +597,19 @@ public final class StableLiveMovementController {
                  * heading error, so it rotates smoothly toward the next
                  * cardinal segment instead of waiting in place or strafing blindly.
                  */
-                double errorRad = Math.toRadians(yawError);
-                double forward = Math.cos(errorRad) * 0.65D;
-                double strafe = -Math.sin(errorRad) * 0.65D;
+                /*
+                 * Do not translate the full heading error directly into the
+                 * movement vector. At a 90-degree corner that produces almost
+                 * pure A/D and throws away the forward component for several
+                 * ticks. A human rounds the corner with W+A/D while the camera
+                 * closes the remaining heading error. Using half the remaining
+                 * angle preserves forward drive without authorising a diagonal
+                 * cut across unsupported terrain; the existing support guard
+                 * remains authoritative.
+                 */
+                double errorRad = Math.toRadians(yawError) * 0.5D;
+                double forward = Math.cos(errorRad) * 0.75D;
+                double strafe = -Math.sin(errorRad) * 0.75D;
                 boolean jump = shouldSpeedJump(state, allowJump);
                 action = new Action(forward, strafe, jump, false, turn, false);
                 lastDecisionDetail += " CORNER_VECTOR";

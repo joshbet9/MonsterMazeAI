@@ -78,7 +78,7 @@ jobs:
         with:
           pattern: cell-*
           path: cells
-          merge-multiple: true
+          merge-multiple: false
       - name: Aggregate 30 cells
         shell: bash
         run: |
@@ -87,7 +87,7 @@ jobs:
           from pathlib import Path
           t="\n".join(
               p.read_text(encoding="utf-8",errors="replace")
-              for p in Path("cells").glob("cell-report.txt")
+              for p in Path("cells").rglob("cell-report.txt")
           )
           rows=[(m.group(1),int(m.group(2)),m.group(3),int(m.group(4)),int(m.group(5)))
                 for m in re.finditer(r"FULL_MATRIX mode=(SPEED|MODERN) pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]

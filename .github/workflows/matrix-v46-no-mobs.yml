@@ -15,7 +15,7 @@ permissions:
 jobs:
   matrix:
     name: Full 30-cell no-mob natural termination matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

@@ -106,6 +106,17 @@ final class NoMobLocomotionController {
             return Action.IDLE;
         }
 
+        if (route != null && !routeContainsSupportedCell(start)) {
+            /*
+             * The player has physically left the committed route. Rebuild only
+             * from the static PlayerPathfinder; never jump to an arbitrary
+             * future edge based on AABB overlap.
+             */
+            clearRoute();
+            lastDecision = "ROUTE_DESYNC supported="
+                    + start.row() + "," + start.column();
+        }
+
         if (route == null || routeBroken(state)) {
             /*
              * No monsters means there is no reason to spend a jump on a gap
@@ -233,33 +244,35 @@ final class NoMobLocomotionController {
         return false;
     }
 
-    private void reanchorFromSupportedCell(GameState state) {
-        if (route == null) return;
+    private boolean routeContainsSupportedCell(Cell supported) {
+        if (route == null || supported == null) return true;
 
         List<Cell> cells = route.cells();
         int current = Math.max(0, Math.min(routeEdgeIndex, cells.size() - 1));
-        int bestIndex = -1;
-        double bestOverlap = 0.0D;
 
         /*
-         * Use the same 0.6-wide player AABB support semantics as the physics
-         * model. At a 90-degree corner the AABB can overlap both cells, so
-         * nearest-centre selection is ambiguous and can choose the wrong branch.
-         * Only move the route index forward, and prefer the later cell with the
-         * greatest actual support overlap.
+         * Only exact route-cell identity may advance the logical route cursor.
+         * Search forward from the committed edge, but never use an AABB overlap
+         * with a distant future cell as evidence of route progress.
          */
-        for (int i = current + 1; i < cells.size(); i++) {
-            Cell cell = cells.get(i);
-            double overlap = horizontalAabbOverlap(
-                    state.player.x, state.player.z, cell);
-            if (overlap > bestOverlap + 1.0E-6D) {
-                bestOverlap = overlap;
-                bestIndex = i;
+        for (int i = current; i < cells.size(); i++) {
+            if (cells.get(i).equals(supported)) {
+                routeEdgeIndex = Math.max(routeEdgeIndex, i);
+                return true;
             }
         }
+        return false;
+    }
 
-        if (bestIndex >= 0) {
-            routeEdgeIndex = bestIndex;
+    private void reanchorFromSupportedCell(GameState state) {
+        /*
+         * Retained as a compatibility hook for the existing call site. Route
+         * progress is now reconciled exclusively against the exact supported
+         * floor cell; no future-cell overlap heuristic remains.
+         */
+        Cell supported = resolveSupportedStart(state);
+        if (supported != null) {
+            routeContainsSupportedCell(supported);
         }
     }
 

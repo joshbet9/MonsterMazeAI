@@ -293,13 +293,13 @@ class StableLiveMovementControllerTest {
     void cornerVectorUsesPostTurnCameraFrame() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         for (int column = 0; column <= 5; column++) raw[0][column] = 1;
-        for (int row = 1; row <= 2; row++) raw[row][5] = 1;
+        for (int row = 1; row <= 8; row++) raw[row][5] = 1;
 
         GameState s = new GameState();
         s.inMonsterMaze = true;
         s.alive = true;
         s.maze = new MazeModel(raw);
-        s.activePadRow = 2;
+        s.activePadRow = 8;
         s.activePadColumn = 5;
         s.player.x = 0.5;
         s.player.z = 4.5;
@@ -308,20 +308,20 @@ class StableLiveMovementControllerTest {
         s.tick = 1;
 
         StableLiveMovementController controller = new StableLiveMovementController();
-        controller.nextAction(s, new me.monstermazeai.maze.Cell(2, 5), false);
+        controller.nextAction(s, new me.monstermazeai.maze.Cell(8, 5), false);
 
         // Place the player just beyond the +Z -> +X corner. The live motor
         // must now acquire +X without stopping or producing a pre-turn-frame
         // strafe vector that carries the player diagonally off the corridor.
-        s.player.x = 0.5;
-        s.player.z = 5.6;
+        s.player.x = 1.6;
+        s.player.z = 5.5;
         s.player.yaw = 0.0F;
         s.player.vx = 0.0;
         s.player.vz = 0.0;
         s.tick = 2;
 
         Action action = controller.nextAction(
-                s, new me.monstermazeai.maze.Cell(2, 5), false);
+                s, new me.monstermazeai.maze.Cell(8, 5), false);
 
         assertTrue(controller.lastDecisionDetail().contains("CORNER_VECTOR_POST_TURN"),
                 controller.lastDecisionDetail());

@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.PadModel;
 import me.monstermazeai.kit.Kit;
 import me.monstermazeai.maze.Cell;
+import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.maze.MonsterAwareRoutePlanner;
 import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.maze.PlayerRoute;

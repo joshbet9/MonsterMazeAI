@@ -10,7 +10,6 @@ import me.monstermazeai.maze.PlayerPathfinder;
 import me.monstermazeai.maze.PlayerRoute;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.player.AiProfile;
-import me.monstermazeai.physics.LegacyMazePhysics;
 
 import java.util.List;
 
@@ -122,15 +121,10 @@ final class NoMobLocomotionController {
             if (!noGap.isEmpty()) {
                 route = new PlayerRoute(noGap);
             } else {
-                /*
-                 * Phase 1 must not reintroduce strategic routing. An empty
-                 * static floor route is a topology failure, not a reason to
-                 * invoke the monster-aware planner.
-                 */
-                lastDecision = "NO_STATIC_FLOOR_ROUTE start="
-                        + start.row() + "," + start.column()
-                        + " goal=" + goal.row() + "," + goal.column();
-                return Action.IDLE;
+                route = regionRadius > 0
+                        ? planner.routeToRegionFast(
+                                state, start, goal, Math.max(0, regionRadius))
+                        : planner.routeFast(state, start, goal);
             }
             routeEdgeIndex = 0;
             lastDecision = "REPLAN start=" + start.row() + "," + start.column()
@@ -150,6 +144,7 @@ final class NoMobLocomotionController {
          * monotonic: only a later cell on the already-selected route can advance
          * the edge index, so this cannot jump to an unrelated future branch.
          */
+        reanchorFromSupportedCell(state);
         advanceCompletedEdges(state);
 
         if (routeEdgeIndex >= route.size() - 1) {
@@ -292,258 +287,52 @@ final class NoMobLocomotionController {
     }
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
-        /*
-         * PHASE 1 — one-tick safe-action search.
-         *
-         * Routing is deliberately static: the floor pathfinder supplies only
-         * the next cardinal edge. There is no strategic replanning or tactical
-         * scoring here. For the motor, however, we evaluate a small lattice of
-         * camera turns and forward/strafe magnitudes against the real movement
-         * model and select the fastest action that remains physically supported.
-         */
-        Action best = bestSafeAction(state, edge);
-        if (best == null) {
-            lastDecision = "SURVIVAL_NO_SAFE_ACTION edge=" + edge.index;
-            return Action.IDLE;
-        }
+        Cell target = edge.to;
+        double targetX = target.row() + 0.5D;
+        double targetZ = target.column() + 0.5D;
+        double worldX = targetX - state.player.x;
+        double worldZ = targetZ - state.player.z;
+        double remaining = Math.hypot(worldX, worldZ);
 
-        lastDecision = "SURVIVAL_SAFE_ACTION edge=" + edge.index
-                + " progress=" + format(edge.progress)
-                + " yawError=" + format(headingError(state, edge))
-                + " output=f=" + format(best.forward())
-                + ",s=" + format(best.strafe())
-                + ",jump=" + best.jump()
-                + ",yaw=" + format(best.yawDelta());
-        return best;
-    }
-
-    private Action bestSafeAction(GameState state, Edge edge) {
-        double currentProgress = edge.progress;
-        double currentCross = edgeLateral(state, edge.from,
-                directionRow(edge), directionColumn(edge));
-
-        Action best = null;
-        double bestScore = -Double.MAX_VALUE;
-
-        double[] magnitudes = {1.0D, 0.85D, 0.65D, 0.45D, 0.0D};
-        float[] turns = {-30.0F, -20.0F, -10.0F, 0.0F, 10.0F, 20.0F, 30.0F};
-
-        for (float turn : turns) {
-            double postYaw = Math.toRadians(state.player.yaw + turn);
-            double forwardAxisX = -Math.sin(postYaw);
-            double forwardAxisZ = Math.cos(postYaw);
-            double strafeAxisX = Math.cos(postYaw);
-            double strafeAxisZ = Math.sin(postYaw);
-
-            for (double magnitude : magnitudes) {
-                double forward = edge.dirX * forwardAxisX
-                        + edge.dirZ * forwardAxisZ;
-                double strafe = edge.dirX * strafeAxisX
-                        + edge.dirZ * strafeAxisZ;
-
-                double inputLength = Math.hypot(forward, strafe);
-                if (magnitude <= 0.0D) {
-                    forward = 0.0D;
-                    strafe = 0.0D;
-                } else if (inputLength > 1.0E-9D) {
-                    forward = forward / inputLength * magnitude;
-                    strafe = strafe / inputLength * magnitude;
-                }
-
-                boolean sprint = magnitude >= 0.8D;
-                Action candidate = new Action(
-                        forward, strafe, false, sprint, turn, false);
-
-                double score = scoreSafeCandidate(
-                        state, edge, candidate, currentProgress, currentCross);
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = candidate;
-                }
-
-                /*
-                 * Charged Jumper jumps are optional in phase 1. Allow one only
-                 * where the source physics confirms the whole one-tick action
-                 * remains supported. This keeps survival robust while still
-                 * allowing a safe natural jump when it is genuinely useful.
-                 */
-                if (state.kit == Kit.JUMPER
-                        && state.ability.charges > 0
-                        && state.player.grounded
-                        && edge.progress < edge.length - 1.0D) {
-                    Action jumpCandidate = new Action(
-                            forward, strafe, true, sprint, turn, false);
-                    double jumpScore = scoreSafeCandidate(
-                            state, edge, jumpCandidate, currentProgress, currentCross);
-                    if (jumpScore > bestScore) {
-                        bestScore = jumpScore;
-                        best = jumpCandidate;
-                    }
-                }
-            }
-        }
-
-        return bestScore > -1.0E8D ? best : null;
-    }
-
-    private double scoreSafeCandidate(
-            GameState state,
-            Edge edge,
-            Action candidate,
-            double currentProgress,
-            double currentCross) {
-        me.monstermazeai.player.PlayerState projected = state.player.copy();
-        int jumpAmplifier =
-                state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
-
-        new LegacyMazePhysics().tick(
-                projected, candidate, state.maze, jumpAmplifier);
-
-        if (projected.y < -0.01D) return -1.0E9D;
-
-        boolean airborneVerticalJump =
-                candidate.jump()
-                        && state.kit == Kit.JUMPER
-                        && state.ability.charges > 0
-                        && projected.y > 0.01D;
-        if (!airborneVerticalJump
-                && !physicalFloorUnderAabb(state, projected.x, projected.z)) {
-            return -1.0E9D;
-        }
-
-        double projectedProgress =
-                (projected.x - (edge.from.row() + 0.5D)) * edge.dirX
-                        + (projected.z - (edge.from.column() + 0.5D)) * edge.dirZ;
-        double projectedCross = edgeLateral(
-                projected.x, projected.z,
-                edge.from, directionRow(edge), directionColumn(edge));
-
-        double progressGain = projectedProgress - currentProgress;
-        double crossGain = Math.abs(currentCross) - Math.abs(projectedCross);
-        double yawAfter = headingErrorAfter(state, edge.dirX, edge.dirZ, candidate.yawDelta());
-
-        double speed = Math.hypot(projected.vx, projected.vz);
-        double score = progressGain * 100.0D
-                + crossGain * 35.0D
-                + speed * 8.0D
-                - Math.abs(yawAfter) * 0.10D;
-
-        if (candidate.forward() != 0.0D || candidate.strafe() != 0.0D) {
-            score += 0.5D;
-        }
-        if (candidate.jump()) {
-            /*
-             * Survival is the priority. A charged jump gets only a small bonus
-             * so it is selected when it actually improves physical progress,
-             * rather than being spent just because it is available.
-             */
-            score += 1.0D;
+        if (remaining < 1.0E-9D) {
+            worldX = edge.dirX;
+            worldZ = edge.dirZ;
+            remaining = 1.0D;
+        } else {
+            worldX /= remaining;
+            worldZ /= remaining;
         }
 
         /*
-         * Do not deliberately reverse along the committed edge unless the
-         * current lateral correction is materially improved.
+         * No-gap baseline invariant: drive toward the next cell centre, not a
+         * diagonally corrected lane. This preserves the actual one-cell-wide
+         * path geometry and prevents the controller from cutting across a void
+         * corner merely because its geometric cross-track error is large.
          */
-        if (progressGain < -0.05D && crossGain < 0.02D) {
-            score -= 20.0D;
-        }
-        return score;
-    }
+        float yawError = headingErrorForDirection(state, worldX, worldZ);
+        double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
-    private float headingErrorAfter(
-            GameState state, double worldX, double worldZ, float yawDelta) {
-        float desiredYaw = (float) Math.toDegrees(Math.atan2(-worldX, worldZ));
-        return normalize(desiredYaw - (state.player.yaw + yawDelta));
-    }
-
-    private static double edgeLateral(
-            double x, double z, Cell from, int dirRow, int dirColumn) {
-        if (dirRow == 0) {
-            return x - (from.row() + 0.5D);
-        }
-        return z - (from.column() + 0.5D);
-    }
-
-    /**
-     * Source-faithful one-tick safety oracle for the no-gap baseline. We are
-     * not asking the predictor to choose the route; we only reject a WASD/yaw
-     * command when the exact movement model says that command would leave the
-     * physical floor. This turns edge safety into a hard invariant rather than
-     * another heuristic threshold.
-     */
-    private Action guardProjectedFloor(GameState state, Action proposed, Edge edge) {
-        if (state.player == null || !state.player.grounded) return proposed;
-
-        if (projectedFloorSafe(state, proposed)) return proposed;
-
-        Action brake = brakeVelocity(state);
-        if (projectedFloorSafe(state, brake)) {
-            lastDecision = "EDGE_SAFE_BRAKE edge=" + edge.index;
-            return brake;
-        }
-
-        float yawError = headingError(state, edge);
-        Action turn = new Action(
-                0.0, 0.0, false, false,
-                clamp(yawError, -15.0F, 15.0F),
+        boolean jump = shouldSpeedJump(
+                state, allowJump, speedAlong, remaining,
                 false);
-        if (projectedFloorSafe(state, turn)) {
-            lastDecision = "EDGE_SAFE_TURN edge=" + edge.index
-                    + " yawError=" + format(yawError);
-            return turn;
-        }
 
         /*
-         * The current one-tick state is already at an awkward boundary and no
-         * candidate keeps the AABB supported. Prefer zero input over knowingly
-         * issuing a command whose source physics predicts an immediate fall.
+         * The Jump -10 horizontal impulse follows the player's facing. When the
+         * requested cell is behind that facing, suppress the pulse until the
+         * camera has converged; translation itself remains fully active.
          */
-        lastDecision = "EDGE_SAFE_IDLE edge=" + edge.index;
-        return Action.IDLE;
-    }
-
-    private boolean projectedFloorSafe(GameState state, Action action) {
-        me.monstermazeai.player.PlayerState projected = state.player.copy();
-        int jumpAmplifier =
-                state.kit == Kit.JUMPER && state.ability.charges > 0 ? 0 : -10;
-
-        /*
-         * One-tick source-physics support is the correct safety horizon for the
-         * observe -> decide -> simulate cadence. Longer horizons falsely reject
-         * valid movement when a corner is reached on the next observation.
-         */
-        new LegacyMazePhysics().tick(
-                projected, action, state.maze, jumpAmplifier);
-
-        if (projected.y < -0.01D) return false;
-
-        boolean airborneVerticalJump =
-                action.jump()
-                        && state.kit == Kit.JUMPER
-                        && state.ability.charges > 0
-                        && projected.y > 0.01D;
-        return airborneVerticalJump
-                || physicalFloorUnderAabb(state, projected.x, projected.z);
-    }
-
-    private static boolean physicalFloorUnderAabb(
-            GameState state, double x, double z) {
-        final double halfWidth = 0.30D;
-        double minX = x - halfWidth;
-        double maxX = x + halfWidth;
-        double minZ = z - halfWidth;
-        double maxZ = z + halfWidth;
-        int minRow = (int) Math.floor(minX);
-        int maxRow = (int) Math.floor(Math.nextDown(maxX));
-        int minColumn = (int) Math.floor(minZ);
-        int maxColumn = (int) Math.floor(Math.nextDown(maxZ));
-
-        for (int row = minRow; row <= maxRow; row++) {
-            for (int column = minColumn; column <= maxColumn; column++) {
-                if (state.maze.isPhysicalFloor(row, column)) return true;
-            }
+        if (Math.abs(yawError) > 75.0F) {
+            jump = false;
         }
-        return false;
+
+        lastDecision = "CELL_DRIVE edge=" + edge.index
+                + " target=" + target.row() + "," + target.column()
+                + " remaining=" + format(remaining)
+                + " speed=" + format(speedAlong)
+                + " yawError=" + format(yawError)
+                + " jump=" + jump;
+
+        return driveVector(state, worldX, worldZ, 1.0, true, jump);
     }
 
     private Action brakeVelocity(GameState state) {
@@ -633,14 +422,26 @@ final class NoMobLocomotionController {
             double speedAlong,
             double remaining,
             boolean nextTurn) {
-        if (!state.player.grounded) return false;
-        if (state.kit == Kit.JUMPER && state.ability.charges > 0) return false;
+        /*
+         * In Monster Maze, Jump is always a valid client input. Whether it is
+         * a vertical jump is decided by the source Jump effect: Jumper charges
+         * temporarily remove the -10 lock; once charges are gone, -10 returns
+         * and the same Jump input becomes the horizontal speeding mechanic.
+         *
+         * Therefore the no-mob motor must never disable Jump merely because
+         * the observation layer says a Jumper has no vertical charge left.
+         */
+        if (!state.player.grounded) {
+            return false;
+        }
         if (nextTurn && remaining <= 1.20D) return false;
         if (speedAlong >= TARGET_SPEED) return false;
 
         long cadence = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpTick != Long.MIN_VALUE
-                && state.tick - lastSpeedJumpTick < cadence) return false;
+                && state.tick - lastSpeedJumpTick < cadence) {
+            return false;
+        }
         lastSpeedJumpTick = state.tick;
         return true;
     }

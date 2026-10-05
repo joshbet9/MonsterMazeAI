@@ -430,22 +430,10 @@ public final class StableLiveMovementController {
         if (padEntry != null) return padEntry;
 
         /*
-         * Gap crossings are a motor-level source interaction. They must own the
-         * command before tactical replanning can run, otherwise a local mob
-         * branch can replace the edge-timed speeding/jump input for one tick.
+         * Gap execution is owned by the verified NoMob locomotion motor below.
+         * StableLiveMovementController must not run a second gap state machine
+         * here, otherwise a committed edge can alternate between two cursors.
          */
-        if (waypointIndex > 0 && waypointIndex < route.size()) {
-            Cell gapFrom = route.cells().get(waypointIndex - 1);
-            Cell gapTo = route.cells().get(waypointIndex);
-            if (isGapEdge(state, gapFrom.row(), gapFrom.column(), gapTo.row(), gapTo.column())) {
-                Action gapAction = prepareOrStartGap(state,
-                        Integer.signum(gapTo.row() - gapFrom.row()),
-                        Integer.signum(gapTo.column() - gapFrom.column()),
-                        allowJump);
-                if (gapAction != null) return gapAction;
-            }
-        }
-
         // When a source interaction is close enough to matter this tick, hand
         // control to the same tactical simulator used during route selection.
         // This is what makes deliberate contact and ability use real live actions,

@@ -1,0 +1,32 @@
+name: Experiment — multi-future route risk
+
+on:
+  push:
+    branches:
+      - experiment/multifuture-route-risk-v1
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run difficult cells
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=MultiFutureRouteRiskIT#difficultCells             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee multifuture.log
+          grep -E '^(ROBUST_MATRIX|ROBUST_MEAN)' multifuture.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multifuture-route-risk
+          path: multifuture.log

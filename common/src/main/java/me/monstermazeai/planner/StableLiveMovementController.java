@@ -438,8 +438,9 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
+            if (tactical != null && acceptPredictiveTacticalAction(
+                    state, route, waypointIndex, tactical, allowJump)) {
+                lastDecisionDetail += " TACTICAL_PREDICTIVE=" + tactical;
                 return tactical;
             }
         }
@@ -1310,6 +1311,51 @@ public final class StableLiveMovementController {
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
         return action.useAbility() || (allowJump && action.jump());
+    }
+
+    /**
+     * The tactical simulator is source-faithful and already predicts several
+     * future ticks of monster motion. The live motor must therefore not discard
+     * its ordinary movement decisions merely because they are not an ability or
+     * jump pulse.
+     *
+     * Accept a predictive movement action when its first-tick world-space vector
+     * still has a non-negative useful component along the active route, or when
+     * it is a genuine local dodge/reposition that remains physically supported.
+     * The final support guard remains authoritative; this keeps the predictive
+     * planner from cutting through an air cell while allowing it to steer around
+     * a mob before the collision actually happens.
+     */
+    private boolean acceptPredictiveTacticalAction(
+            GameState state, PlayerRoute activeRoute, int activeWaypoint,
+            Action action, boolean allowJump) {
+        if (action == null) return false;
+        if (action.useAbility() || (allowJump && action.jump())) return true;
+        if (activeRoute == null || activeWaypoint <= 0 || activeWaypoint >= activeRoute.size()) {
+            return false;
+        }
+
+        Cell from = activeRoute.cells().get(activeWaypoint - 1);
+        Cell to = activeRoute.cells().get(activeWaypoint);
+        int dirRow = Integer.signum(to.row() - from.row());
+        int dirColumn = Integer.signum(to.column() - from.column());
+        if (dirRow == 0 && dirColumn == 0) return false;
+
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        double worldX = forwardX * action.forward() + strafeX * action.strafe();
+        double worldZ = forwardZ * action.forward() + strafeZ * action.strafe();
+        double magnitude = Math.hypot(worldX, worldZ);
+        if (magnitude < 1.0E-6) return false;
+
+        double routeComponent = (worldX * dirRow + worldZ * dirColumn) / magnitude;
+        if (routeComponent < -0.20D) return false;
+
+        Action guarded = guardProjectedSupport(state, action, dirRow, dirColumn);
+        return guarded != null && guarded != Action.IDLE;
     }
 
     private boolean detectLiveMobHit(GameState state) {

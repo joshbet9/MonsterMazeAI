@@ -288,76 +288,61 @@ final class NoMobLocomotionController {
     }
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
+        Cell target = edge.to;
+        double targetX = target.row() + 0.5D;
+        double targetZ = target.column() + 0.5D;
+        double remainingX = targetX - state.player.x;
+        double remainingZ = targetZ - state.player.z;
+        double remaining = Math.hypot(remainingX, remainingZ);
+
         /*
-         * PHASE 1 SURVIVAL MOTOR
-         *
-         * The route is only a static cardinal topology path. Translation is
-         * always requested along the committed edge direction; the camera is
-         * converged separately. This means a 90-degree turn cannot become a
-         * diagonal world-space shortcut through an air corner.
+         * Keep the target direction cardinal. The previous target-centre vector
+         * could rotate diagonally at corners and cut across a one-cell void.
+         * Translation stays aligned with the committed floor edge while the
+         * camera converges concurrently.
          */
-        float yawError = headingErrorForDirection(state, edge.dirX, edge.dirZ);
+        double worldX = edge.dirX;
+        double worldZ = edge.dirZ;
+        float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speed = Math.hypot(state.player.vx, state.player.vz);
 
-        boolean turningNext = false;
-        if (route != null && routeEdgeIndex + 2 < route.size()) {
-            Cell next = route.cells().get(routeEdgeIndex + 2);
-            turningNext = changesDirection(edge.from, edge.to, next);
-        }
-
         /*
-         * Bleed legacy momentum before a turn. This is deliberately an input
-         * pause rather than a new movement vector: ground friction is the
-         * source-faithful decelerator and cannot push the player toward the
-         * outside of a corridor.
+         * At a large heading reversal, first bleed residual momentum and then
+         * rotate. This is the minimum turn lock required for a one-cell corridor.
          */
-        if (turningNext && edge.progress >= edge.length - 0.65D && speed > 0.035D) {
-            lastDecision = "SURVIVAL_BRAKE edge=" + edge.index
-                    + " progress=" + format(edge.progress)
-                    + " speed=" + format(speed);
-            return guardProjectedFloor(
-                    state,
-                    Action.IDLE,
-                    edge);
-        }
-
-        /*
-         * Acquire the new cardinal heading before translating when the camera
-         * is substantially misaligned. Thirty degrees/tick is the source-safe
-         * maximum, so a right-angle turn costs only three camera ticks once
-         * velocity has been bled off.
-         */
-        if (Math.abs(yawError) > 12.0F) {
-            float turn = clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-            lastDecision = "SURVIVAL_TURN edge=" + edge.index
-                    + " yawError=" + format(yawError)
-                    + " speed=" + format(speed)
-                    + " turn=" + format(turn);
-            Action turnOnly = new Action(
-                    0.0, 0.0, false, false, turn, false);
-            if (speed <= 0.035D) {
-                return guardProjectedFloor(state, turnOnly, edge);
+        if (Math.abs(yawError) > 75.0F) {
+            if (speed > 0.035D) {
+                lastDecision = "FAST_BRAKE edge=" + edge.index
+                        + " yawError=" + format(yawError)
+                        + " speed=" + format(speed);
+                return guardProjectedFloor(state, Action.IDLE, edge);
             }
-            return guardProjectedFloor(state, Action.IDLE, edge);
+            float turn = clamp(yawError, -30.0F, 30.0F);
+            lastDecision = "FAST_TURN edge=" + edge.index
+                    + " yawError=" + format(yawError)
+                    + " turn=" + format(turn);
+            return guardProjectedFloor(
+                    state, new Action(0.0, 0.0, false, false, turn, false), edge);
         }
 
         /*
-         * Preserve the real -10 jump-spam speed mechanic for non-Jumpers.
-         * A charged Jumper never spends a vertical charge in the survival
-         * baseline; once charges are exhausted the same Jump input naturally
-         * becomes the source speeding interaction.
+         * Non-Jumpers may use the source -10 jump-spam input. Charged Jumpers
+         * deliberately conserve their vertical charges in the survival baseline;
+         * after they reach zero the same input becomes the speeding mechanic.
          */
         boolean jump = shouldSpeedJump(
-                state, allowJump,
-                speedAlong(state, edge),
+                state,
+                allowJump,
+                state.player.vx * edge.dirX + state.player.vz * edge.dirZ,
                 Math.max(0.0D, edge.length - edge.progress),
-                turningNext);
+                false);
 
         Action proposed = driveVector(
-                state, edge.dirX, edge.dirZ,
-                1.0, true, jump);
-        lastDecision = "SURVIVAL_FORWARD edge=" + edge.index
-                + " progress=" + format(edge.progress)
+                state, worldX, worldZ, 1.0, true, jump);
+
+        lastDecision = "FAST_FORWARD edge=" + edge.index
+                + " target=" + target.row() + "," + target.column()
+                + " remaining=" + format(remaining)
                 + " yawError=" + format(yawError)
                 + " speed=" + format(speed)
                 + " jump=" + jump;
@@ -537,24 +522,14 @@ final class NoMobLocomotionController {
             double speedAlong,
             double remaining,
             boolean nextTurn) {
-        if (!state.player.grounded) {
-            return false;
-        }
-        if (state.kit == Kit.JUMPER && state.ability.charges > 0) {
-            return false;
-        }
-        if (nextTurn && remaining <= 1.20D) {
-            return false;
-        }
-        if (speedAlong >= TARGET_SPEED) {
-            return false;
-        }
+        if (!state.player.grounded) return false;
+        if (state.kit == Kit.JUMPER && state.ability.charges > 0) return false;
+        if (nextTurn && remaining <= 1.20D) return false;
+        if (speedAlong >= TARGET_SPEED) return false;
 
         long cadence = profile.attributes.nonJumperJumpCadenceTicks();
         if (lastSpeedJumpTick != Long.MIN_VALUE
-                && state.tick - lastSpeedJumpTick < cadence) {
-            return false;
-        }
+                && state.tick - lastSpeedJumpTick < cadence) return false;
         lastSpeedJumpTick = state.tick;
         return true;
     }

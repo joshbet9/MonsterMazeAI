@@ -57,6 +57,47 @@ final class NoMobLocomotionController {
         this.profile = profile;
     }
 
+    /**
+     * Executes a route supplied by an external threat-aware planner while
+     * retaining this controller's verified movement/turn/gap motor.
+     */
+    Action nextActionUsingRoute(GameState state, Cell goal, boolean allowJump,
+                                int regionRadius, PlayerRoute preferredRoute) {
+        if (preferredRoute == null) {
+            return nextAction(state, goal, allowJump, regionRadius);
+        }
+
+        boolean objectiveChanged = goal == null
+                || goal.row() != goalRow
+                || goal.column() != goalColumn
+                || regionRadius != goalRadius;
+        boolean routeChanged = route == null
+                || !route.cells().equals(preferredRoute.cells());
+
+        if (objectiveChanged || routeChanged) {
+            goalRow = goal == null ? -1 : goal.row();
+            goalColumn = goal == null ? -1 : goal.column();
+            goalRadius = regionRadius;
+            route = preferredRoute;
+            routeEdgeIndex = 0;
+
+            Cell supported = resolveSupportedStart(state);
+            if (supported != null) {
+                for (int i = 0; i < route.size(); i++) {
+                    if (route.cells().get(i).equals(supported)) {
+                        routeEdgeIndex = i;
+                        break;
+                    }
+                }
+            }
+            lastDecision = "ADOPT_EXTERNAL_ROUTE"
+                    + " size=" + route.size()
+                    + " edge=" + routeEdgeIndex;
+        }
+
+        return nextAction(state, goal, allowJump, regionRadius);
+    }
+
     Action nextAction(GameState state, Cell goal, boolean allowJump, int regionRadius) {
         if (state == null || state.maze == null || goal == null) {
             lastDecision = "INVALID";

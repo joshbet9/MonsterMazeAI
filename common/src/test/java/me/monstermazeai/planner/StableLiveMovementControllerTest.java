@@ -290,6 +290,48 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void cornerVectorUsesPostTurnCameraFrame() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int column = 0; column <= 5; column++) raw[0][column] = 1;
+        for (int row = 1; row <= 2; row++) raw[row][5] = 1;
+
+        GameState s = new GameState();
+        s.inMonsterMaze = true;
+        s.alive = true;
+        s.maze = new MazeModel(raw);
+        s.activePadRow = 2;
+        s.activePadColumn = 5;
+        s.player.x = 0.5;
+        s.player.z = 4.5;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.tick = 1;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+        controller.nextAction(s, new me.monstermazeai.maze.Cell(2, 5), false);
+
+        // Place the player just beyond the +Z -> +X corner. The live motor
+        // must now acquire +X without stopping or producing a pre-turn-frame
+        // strafe vector that carries the player diagonally off the corridor.
+        s.player.x = 0.5;
+        s.player.z = 5.6;
+        s.player.yaw = 0.0F;
+        s.player.vx = 0.0;
+        s.player.vz = 0.0;
+        s.tick = 2;
+
+        Action action = controller.nextAction(
+                s, new me.monstermazeai.maze.Cell(2, 5), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("CORNER_VECTOR_POST_TURN"),
+                controller.lastDecisionDetail());
+        assertTrue(action.forward() > 0.20,
+                "post-turn corner steering should retain forward input in the new camera frame");
+        assertTrue(action.strafe() > 0.0,
+                "post-turn corner steering should use the positive local strafe component");
+    }
+
+    @Test
     void reducesTurnPulseNearCardinalHeading() {
         GameState s = state(0.5, 0.5, -87.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

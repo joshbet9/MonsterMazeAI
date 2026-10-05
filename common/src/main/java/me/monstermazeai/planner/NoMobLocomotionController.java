@@ -345,7 +345,7 @@ final class NoMobLocomotionController {
         if (state.kit == Kit.JUMPER
                 && (Math.abs(crossTrack) > 0.30D
                     || Math.abs(yawError) > 25.0F
-                    || hasTurnWithinCells(8))) {
+                    || hasTurnWithinCells(p3JumperTurnLookahead()))) {
             jump = false;
         }
 
@@ -447,6 +447,11 @@ final class NoMobLocomotionController {
         return driveVector(
                 state, desiredWorldX, desiredWorldZ,
                 1.0, true, jump);
+    }
+
+    private static int p3JumperTurnLookahead() {
+        int value = Integer.getInteger("p3JumperTurnLookahead", 4);
+        return Math.max(0, Math.min(10, value));
     }
 
     private boolean hasTurnWithinCells(int lookaheadCells) {

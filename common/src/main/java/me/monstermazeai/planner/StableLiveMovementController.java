@@ -2110,11 +2110,25 @@ public final class StableLiveMovementController {
          * left a Body Builder player with insufficient momentum at the middle
          * of the missing block.
          */
+        boolean chargedJumperTakeoff = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                && allowJump
+                && state.player.grounded
+                && state.ability.charges > 0
+                && progress >= GAP_JUMP_PROGRESS;
+
         boolean nonJumperSpeedPulse = state.kit != me.monstermazeai.kit.Kit.JUMPER
                 && state.player.grounded
                 && (lastSpeedJumpInputTick == Long.MIN_VALUE
                     || state.tick - lastSpeedJumpInputTick >= profile.attributes.nonJumperJumpCadenceTicks());
-        if (nonJumperSpeedPulse) {
+
+        if (chargedJumperTakeoff) {
+            jumpThisTick = true;
+            gapTakeoffStarted = true;
+            gapLandingConfirmTicks = 0;
+            lastDecisionDetail = "GAP_TAKEOFF_CHARGED_JUMPER edge=" + gapEdgeText()
+                    + " progress=" + format(progress)
+                    + " charges=" + state.ability.charges;
+        } else if (nonJumperSpeedPulse) {
             jumpThisTick = true;
             lastSpeedJumpInputTick = state.tick;
             if (!gapTakeoffStarted && progress >= GAP_JUMP_PROGRESS) {

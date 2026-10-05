@@ -156,7 +156,7 @@ public final class StableLiveMovementController {
      * makes the controller oscillate when the monster crosses the lane boundary
      * or a support projection changes by a few centimetres.
      */
-    private static final long MOB_AVOIDANCE_OWNERSHIP_TICKS = 12L;
+    private static final long MOB_AVOIDANCE_OWNERSHIP_TICKS = 4L;
     private static final double MOB_AVOIDANCE_RELEASE_DISTANCE = 2.80D;
     private long mobAvoidanceMonsterId = Long.MIN_VALUE;
     private long mobAvoidanceUntilTick = Long.MIN_VALUE;
@@ -1639,15 +1639,6 @@ public final class StableLiveMovementController {
                     + " until=" + mobAvoidanceUntilTick
                     + (guarded == dodge ? "" : " EDGE_GUARD");
             return guarded;
-        }
-
-        // If the interaction cannot be dodged, own YIELD rather than allowing
-        // the next tick to reacquire a different mode for the same monster.
-        if (!ownsThreat) {
-            mobAvoidanceMonsterId = threat.id;
-            mobAvoidanceUntilTick = state.tick + MOB_AVOIDANCE_OWNERSHIP_TICKS;
-            mobAvoidanceMode = MobAvoidanceMode.YIELD;
-            mobAvoidanceStrafe = 0.0D;
         }
 
         /*

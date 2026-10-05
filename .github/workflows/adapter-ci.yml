@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   adapter:
-    if: github.head_ref != 'autonomous/locomotion-026-v1'
+    if: github.ref_name != 'autonomous/locomotion-026-v1'
     name: Minecraft 1.8.9 Forge adapter
     runs-on: ubuntu-latest
 

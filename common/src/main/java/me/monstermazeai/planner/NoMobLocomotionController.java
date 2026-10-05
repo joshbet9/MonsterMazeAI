@@ -51,6 +51,7 @@ final class NoMobLocomotionController {
 
     private long lastSpeedJumpTick = Long.MIN_VALUE;
     private String lastDecision = "UNSET";
+    private boolean externalRouteMode;
 
     NoMobLocomotionController(AiProfile profile) {
         if (profile == null) throw new IllegalArgumentException("profile");
@@ -64,7 +65,12 @@ final class NoMobLocomotionController {
     Action nextActionUsingRoute(GameState state, Cell goal, boolean allowJump,
                                 int regionRadius, PlayerRoute preferredRoute) {
         if (preferredRoute == null) {
+            externalRouteMode = true;
+        try {
             return nextAction(state, goal, allowJump, regionRadius);
+        } finally {
+            externalRouteMode = false;
+        }
         }
 
         boolean objectiveChanged = goal == null
@@ -149,13 +155,21 @@ final class NoMobLocomotionController {
 
         if (route != null && !routeContainsSupportedCell(start)) {
             /*
-             * The player has physically left the committed route. Rebuild only
-             * from the static PlayerPathfinder; never jump to an arbitrary
-             * future edge based on AABB overlap.
+             * During a real mob interaction the player can be knocked onto a
+             * neighbouring floor cell without changing the topology chosen by
+             * the threat-aware planner. In external-route mode, preserve that
+             * route and reanchor to its nearest physical cell instead of falling
+             * back to the static no-mob pathfinder.
              */
-            clearRoute();
-            lastDecision = "ROUTE_DESYNC supported="
-                    + start.row() + "," + start.column();
+            if (externalRouteMode && reanchorExternalRoute(start)) {
+                lastDecision = "ROUTE_REANCHOR_EXTERNAL supported="
+                        + start.row() + "," + start.column()
+                        + " edge=" + routeEdgeIndex;
+            } else {
+                clearRoute();
+                lastDecision = "ROUTE_DESYNC supported="
+                        + start.row() + "," + start.column();
+            }
         }
 
         if (route == null || routeBroken(state)) {
@@ -307,6 +321,33 @@ final class NoMobLocomotionController {
             }
         }
         return false;
+    }
+
+    private boolean reanchorExternalRoute(Cell supported) {
+        if (route == null || supported == null || route.size() == 0) return false;
+
+        int bestIndex = -1;
+        int bestDistance = Integer.MAX_VALUE;
+        int start = Math.max(0, Math.min(routeEdgeIndex, route.size() - 1));
+        for (int i = start; i < route.size(); i++) {
+            Cell cell = route.cells().get(i);
+            int distance = Math.abs(cell.row() - supported.row())
+                    + Math.abs(cell.column() - supported.column());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+            }
+        }
+
+        /*
+         * A source mob bump can move the player roughly one to two blocks.
+         * Preserve the planned route only when the new support cell is still
+         * plausibly part of the same local corridor; otherwise force a fresh
+         * physical replan.
+         */
+        if (bestIndex < 0 || bestDistance > 3) return false;
+        routeEdgeIndex = bestIndex;
+        return true;
     }
 
     private void reanchorFromSupportedCell(GameState state) {

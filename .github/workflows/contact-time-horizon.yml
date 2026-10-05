@@ -1,0 +1,32 @@
+name: Experiment — contact-time shared tactical horizon
+
+on:
+  push:
+    branches:
+      - experiment/contact-time-horizon-v1
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run mixed cells
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=ContactTimeHorizonIT#mixedWeakAndStrongCells             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee contact-time.log
+          grep -E '^(CONTACT_MATRIX|CONTACT_MEAN)' contact-time.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contact-time-horizon
+          path: contact-time.log

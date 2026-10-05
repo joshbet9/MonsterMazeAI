@@ -1,4 +1,4 @@
-name: Experiment — disable live tactical preemption
+name: Experiment — disable live tactical preemption v2
 on:
   push:
     branches:

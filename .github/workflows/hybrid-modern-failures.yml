@@ -1,4 +1,4 @@
-name: Diagnostic — hybrid Modern failures
+name: Diagnostic — hybrid Modern failures v2
 on:
   push:
     branches:

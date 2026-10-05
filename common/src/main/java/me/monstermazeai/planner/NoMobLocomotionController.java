@@ -110,6 +110,26 @@ final class NoMobLocomotionController {
         advanceCompletedEdges(state);
 
         if (routeEdgeIndex >= route.size() - 1) {
+            if (regionRadius > 0 && !PadModel.isOn(
+                    state.player,
+                    goal.row() + 0.5D,
+                    GameState.PAD_SURFACE_Y,
+                    goal.column() + 0.5D)) {
+                /*
+                 * The graph objective intentionally stops within the SafePad
+                 * region, but the source completion check is a 5x5 geometric
+                 * surface. Finish the last few blocks by driving directly onto
+                 * the actual pad instead of idling at the edge of the region.
+                 */
+                double dx = goal.row() + 0.5D - state.player.x;
+                double dz = goal.column() + 0.5D - state.player.z;
+                double len = Math.hypot(dx, dz);
+                if (len > 1.0E-9D) {
+                    return driveVector(
+                            state, dx / len, dz / len,
+                            1.0, true, false);
+                }
+            }
             lastDecision = "ROUTE_DONE edge=" + routeEdgeIndex;
             return Action.IDLE;
         }

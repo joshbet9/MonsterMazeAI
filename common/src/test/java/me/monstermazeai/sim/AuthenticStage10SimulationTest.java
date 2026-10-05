@@ -238,7 +238,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (!naturalEnd && maxStage >= REQUIRED_STAGE) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,

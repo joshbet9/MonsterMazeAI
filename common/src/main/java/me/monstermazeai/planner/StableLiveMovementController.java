@@ -152,6 +152,20 @@ public final class StableLiveMovementController {
     private long lastSpeedJumpInputTick = Long.MIN_VALUE;
     private double previousHealth = Double.NaN;
 
+    /*
+     * Local mob avoidance must not become a permanent attractor. Track a
+     * repeated same-monster dodge with almost no player displacement and force
+     * a fresh threat-aware route decision once the local maneuver has clearly
+     * stalled.
+     */
+    private long mobDodgeMonsterId = Long.MIN_VALUE;
+    private long mobDodgeLastTick = Long.MIN_VALUE;
+    private double mobDodgeLastX = Double.NaN;
+    private double mobDodgeLastZ = Double.NaN;
+    private int mobDodgeStallTicks;
+    private static final int MOB_DODGE_STALL_TICKS = 4;
+    private static final double MOB_DODGE_STALL_DISTANCE = 0.16D;
+
     /**
      * Terminal SafePad transition commitment. The live observer exposes the
      * source's 5x5 pad as physical floor even where the canonical maze layout
@@ -272,7 +286,7 @@ public final class StableLiveMovementController {
             if (bumpAction != null) return bumpAction;
         }
 
-        Action mobAvoidance = avoidIncomingMonster(state, allowJump);
+        Action mobAvoidance = avoidIncomingMonster(state, allowJump, goal);
         if (mobAvoidance != null) return mobAvoidance;
 
         int previousGoalRow = goalRow;
@@ -1609,7 +1623,7 @@ public final class StableLiveMovementController {
      * which is physically supported. This keeps the behaviour source-valid and
      * leaves genuine unavoidable contacts to MonsterManager.bump().
      */
-    private Action avoidIncomingMonster(GameState state, boolean allowJump) {
+    private Action avoidIncomingMonster(GameState state, boolean allowJump, Cell goal) {
         if (!state.player.grounded || state.maze == null) return null;
 
         Cell supported = resolveSupportedStartCell(state);
@@ -1652,7 +1666,62 @@ public final class StableLiveMovementController {
             }
         }
 
-        if (threat == null) return null;
+        if (threat == null) {
+            resetMobDodgeStall();
+            return null;
+        }
+
+        boolean sameThreat = threat.id == mobDodgeMonsterId
+                && state.tick == mobDodgeLastTick + 1L;
+        double displacementSinceDodge = sameThreat && Double.isFinite(mobDodgeLastX)
+                ? Math.hypot(state.player.x - mobDodgeLastX,
+                             state.player.z - mobDodgeLastZ)
+                : Double.POSITIVE_INFINITY;
+
+        if (sameThreat && displacementSinceDodge < MOB_DODGE_STALL_DISTANCE) {
+            mobDodgeStallTicks++;
+        } else {
+            mobDodgeStallTicks = 0;
+        }
+        mobDodgeMonsterId = threat.id;
+        mobDodgeLastTick = state.tick;
+        mobDodgeLastX = state.player.x;
+        mobDodgeLastZ = state.player.z;
+
+        if (mobDodgeStallTicks >= MOB_DODGE_STALL_TICKS) {
+            /*
+             * We have demonstrated that the current lane-level maneuver is not
+             * progressing. Ask the full source-faithful planner to choose among
+             * the existing alternative routes from the player's actual cell.
+             * This is intentionally rare and state-triggered, so normal mob
+             * avoidance remains cheap and immediate.
+             */
+            PlayerRoute replanned = regionRadiusOrZero() > 0
+                    ? routePlanner.routeToRegion(
+                            state,
+                            resolveSupportedStartCell(state),
+                            goal,
+                            regionRadiusOrZero())
+                    : routePlanner.route(
+                            state,
+                            resolveSupportedStartCell(state),
+                            goal);
+
+            route = replanned;
+            waypointIndex = reanchorWaypointIndex(state, replanned);
+            anchoredSegmentIndex = -1;
+            lastRouteTick = state.tick;
+            routePlanCount++;
+            fullRouteEvaluationPending = false;
+            lastThreatSignature = threatSignature(state);
+            lastTacticalSignature = Long.MIN_VALUE;
+            resetMobDodgeStall();
+            lastDecisionDetail = "MOB_DODGE_DEADLOCK_REPLAN"
+                    + " monster=" + threat.id
+                    + " routeSize=" + replanned.size()
+                    + " waypoint=" + waypointIndex;
+            return null;
+        }
 
         int sideRow = routeDirColumn;
         int sideColumn = -routeDirRow;
@@ -1797,6 +1866,18 @@ public final class StableLiveMovementController {
                 + " distance=" + format(bestDistance)
                 + (guarded == yield ? "" : " EDGE_GUARD");
         return guarded;
+    }
+
+    private int regionRadiusOrZero() {
+        return goalRadius;
+    }
+
+    private void resetMobDodgeStall() {
+        mobDodgeMonsterId = Long.MIN_VALUE;
+        mobDodgeLastTick = Long.MIN_VALUE;
+        mobDodgeLastX = Double.NaN;
+        mobDodgeLastZ = Double.NaN;
+        mobDodgeStallTicks = 0;
     }
 
     private Action steerIntoMonster(GameState state, MonsterState monster) {

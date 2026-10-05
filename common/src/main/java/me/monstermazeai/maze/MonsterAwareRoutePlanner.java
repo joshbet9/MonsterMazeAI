@@ -20,6 +20,7 @@ public final class MonsterAwareRoutePlanner {
     private static final double ROUTE_TURN_COST = 1.75D;
     private static final double ROUTE_U_TURN_COST = 4.0D;
     private static final double ROUTE_GAP_COST = 4.0D;
+    private static final int ROBUST_ROUTE_SAMPLES = 3;
 
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
@@ -237,23 +238,43 @@ public final class MonsterAwareRoutePlanner {
         }
         if (!hasRelevantMonster) return shortest(candidates);
 
-        TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
+        TacticalRouteSimulator.RobustResult[] robust = new TacticalRouteSimulator.RobustResult[candidates.size()];
         IntStream.range(0, candidates.size()).parallel().forEach(i -> {
-            results[i] = simulator.simulate(
-                    state, candidates.get(i), goal, regionGoal, regionRadius);
+            robust[i] = simulator.simulateRobust(
+                    state, candidates.get(i), goal, regionGoal, regionRadius, ROBUST_ROUTE_SAMPLES);
         });
 
         PlayerRoute best = null;
-        TacticalRouteSimulator.Result bestResult = null;
+        TacticalRouteSimulator.RobustResult bestResult = null;
         for (int i = 0; i < candidates.size(); i++) {
             PlayerRoute candidate = candidates.get(i);
-            TacticalRouteSimulator.Result result = results[i];
-            if (bestResult == null || better(result, candidate, bestResult, best)) {
+            TacticalRouteSimulator.RobustResult result = robust[i];
+            if (bestResult == null || betterRobust(result, candidate, bestResult, best)) {
                 best = candidate;
                 bestResult = result;
             }
         }
         return best;
+    }
+
+    private boolean betterRobust(
+            TacticalRouteSimulator.RobustResult candidate, PlayerRoute candidateRoute,
+            TacticalRouteSimulator.RobustResult incumbent, PlayerRoute incumbentRoute) {
+        if (candidate.reached() != incumbent.reached()) {
+            return candidate.reached() > incumbent.reached();
+        }
+        if (candidate.survived() != incumbent.survived()) {
+            return candidate.survived() > incumbent.survived();
+        }
+        int healthCompare = Double.compare(candidate.meanHealth(), incumbent.meanHealth());
+        if (healthCompare != 0) return healthCompare > 0;
+        int damageCompare = Double.compare(candidate.meanDamage(), incumbent.meanDamage());
+        if (damageCompare != 0) return damageCompare < 0;
+        int arrivalCompare = Double.compare(candidate.meanArrival(), incumbent.meanArrival());
+        if (arrivalCompare != 0) return arrivalCompare < 0;
+        int gapCompare = Integer.compare(gapCount(candidateRoute), gapCount(incumbentRoute));
+        if (gapCompare != 0) return gapCompare < 0;
+        return candidateRoute.size() < incumbentRoute.size();
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,

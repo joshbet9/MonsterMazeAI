@@ -1,0 +1,78 @@
+name: Benchmark — single gap owner Modern full matrix
+
+on:
+  push:
+    branches:
+      - benchmark/single-gap-owner-modern-v1
+
+permissions:
+  contents: read
+
+jobs:
+  cell:
+    strategy:
+      fail-fast: false
+      max-parallel: 15
+      matrix:
+        include:
+          - {pattern: 1, kit: JUMPER}
+          - {pattern: 1, kit: SLOWBALLER}
+          - {pattern: 1, kit: BODY_BUILDER}
+          - {pattern: 1, kit: REPULSOR}
+          - {pattern: 1, kit: MAVERICK}
+          - {pattern: 2, kit: JUMPER}
+          - {pattern: 2, kit: SLOWBALLER}
+          - {pattern: 2, kit: BODY_BUILDER}
+          - {pattern: 2, kit: REPULSOR}
+          - {pattern: 2, kit: MAVERICK}
+          - {pattern: 3, kit: JUMPER}
+          - {pattern: 3, kit: SLOWBALLER}
+          - {pattern: 3, kit: BODY_BUILDER}
+          - {pattern: 3, kit: REPULSOR}
+          - {pattern: 3, kit: MAVERICK}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    name: MODERN P${{ matrix.pattern }} ${{ matrix.kit }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run cell
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase             -DmatrixMode=MODERN             -DmatrixPattern="${{ matrix.pattern }}"             -DmatrixKit="${{ matrix.kit }}"             -DmatrixSpawnMonsters=true             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee cell.log
+          grep '^FULL_MATRIX ' cell.log > cell-report.txt
+          test -s cell-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cell-P${{ matrix.pattern }}-${{ matrix.kit }}
+          path: cell-report.txt
+
+  aggregate:
+    needs: cell
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cell-P*
+          path: cells
+          merge-multiple: false
+      - name: Aggregate
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          t="\n".join(p.read_text(encoding="utf-8",errors="replace")
+                      for p in Path("cells").rglob("cell-report.txt"))
+          rows=[(int(m.group(1)),m.group(2),int(m.group(3)),int(m.group(4)))
+                for m in re.finditer(r"FULL_MATRIX mode=MODERN pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]
+          if len(rows)!=15: raise SystemExit(f"expected 15 rows, got {len(rows)}")
+          vals=[r[2] for r in rows]
+          print(f"Modern mean={sum(vals)/15:.4f} min={min(vals)} max={max(vals)} >=10={sum(x>=10 for x in vals)}/15 >=20={sum(x>=20 for x in vals)}/15")
+          for r in sorted(rows): print(f"Modern P{r[0]} {r[1]} stage={r[2]} ticks={r[3]}")
+          PY

@@ -474,11 +474,11 @@ public final class StableLiveMovementController {
          * preempt the tick, so route choice and route execution no longer use
          * two different steering implementations.
          */
-        Action mobRouteMotor = noMobController.nextActionUsingRoute(
+        Action routeMotorAction = noMobController.nextActionUsingRoute(
                 state, goal, allowJump, regionRadius, route);
         lastDecisionDetail = "MOB_ROUTE_MOTOR "
                 + noMobController.lastDecisionDetail();
-        return mobRouteMotor;
+        return routeMotorAction;
 
 }
 

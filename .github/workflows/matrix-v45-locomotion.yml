@@ -1,5 +1,7 @@
 name: Matrix v45 — Locomotion mechanics
 
+# Deliberately isolated from monster-routing experiments.
+
 on:
   push:
     branches:

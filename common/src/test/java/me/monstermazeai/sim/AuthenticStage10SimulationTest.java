@@ -102,7 +102,14 @@ class AuthenticStage10SimulationTest {
         return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
     }
 
+    enum ControllerMode { STABLE, BEAM_MOB }
+
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, false, ControllerMode.STABLE);
+    }
+
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode,
+                         boolean naturalEnd, ControllerMode controllerMode) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -148,6 +155,10 @@ class AuthenticStage10SimulationTest {
                         new LiveObjectiveController(
                                 new MazeAwareRecedingHorizonController(1, profile))));
 
+        BeamSearchPlanner beamPlanner = controllerMode == ControllerMode.BEAM_MOB
+                ? new BeamSearchPlanner(simulator, new Heuristic(), 8, 8)
+                : null;
+
         int maxStage = 1;
         int lastStage = 1;
         long firstFallTick = -1L;
@@ -171,8 +182,26 @@ class AuthenticStage10SimulationTest {
 
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
-            ActionInput action = decide(agent, state);
-            String decisionBeforeTick = agent.lastDecisionDetail();
+            boolean useBeam = controllerMode == ControllerMode.BEAM_MOB
+                    && hasNearbyMonster(state, 10.0D);
+
+            Action chosenAction;
+            String decisionBeforeTick;
+            if (useBeam) {
+                BeamSearchPlanner.Plan plan = beamPlanner.plan(
+                        state, state.targetPadX(), state.targetPadZ(),
+                        state.kit != Kit.JUMPER || state.ability.charges > 0);
+                Action[] plannedActions = plan.sequence().actions();
+                chosenAction = plannedActions.length == 0 ? Action.IDLE : plannedActions[0];
+                decisionBeforeTick = "BEAM_MOB " + plan.decisionReason()
+                        + " score=" + plan.score();
+            } else {
+                chosenAction = agent.decide(
+                        state, state.kit != Kit.JUMPER || state.ability.charges > 0);
+                decisionBeforeTick = agent.lastDecisionDetail();
+            }
+
+            ActionInput action = new ActionInput(chosenAction);
             String currentAction = action.action.toString();
             if (pattern == 0 && kit == Kit.JUMPER) {
                 trace.addLast("tick=" + state.tick
@@ -231,7 +260,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (!naturalEnd && maxStage >= REQUIRED_STAGE) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -240,6 +269,19 @@ class AuthenticStage10SimulationTest {
                 firstFallPreVx, firstFallPreVy, firstFallPreVz,
                 firstFallX, firstFallY, firstFallZ,
                 firstFallVx, firstFallVz, firstFallDecision, agent.lastDecisionDetail());
+    }
+
+    private static boolean hasNearbyMonster(GameState state, double radius) {
+        if (state == null || state.monsters == null) return false;
+        double radiusSq = radius * radius;
+        for (MonsterState monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            if (dx * dx + dz * dz <= radiusSq) return true;
+        }
+        return false;
     }
 
     private static ActionInput decide(AutonomousMonsterMazeAgent agent, GameState state) {
@@ -351,7 +393,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,

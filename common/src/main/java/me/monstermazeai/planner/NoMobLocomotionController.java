@@ -501,6 +501,14 @@ final class NoMobLocomotionController {
         if (!state.player.grounded) {
             return false;
         }
+
+        // Phase-1 survival rule: ordinary floor traversal never needs a charged
+        // Jumper jump because gap edges are disabled in the static route. Keep
+        // the charges intact until the movement-efficiency phase.
+        if (state.kit == Kit.JUMPER && state.ability.charges > 0) {
+            return false;
+        }
+
         if (nextTurn && remaining <= 1.20D) return false;
         if (speedAlong >= TARGET_SPEED) return false;
 

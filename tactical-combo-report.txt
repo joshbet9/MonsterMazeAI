@@ -1,0 +1,15 @@
+Modern P1 SLOWBALLER stage=2 ticks=1120
+Modern P2 SLOWBALLER stage=1 ticks=700
+Modern P3 SLOWBALLER stage=2 ticks=1100
+Modern P1 BODY_BUILDER stage=1 ticks=700
+Modern P2 BODY_BUILDER stage=1 ticks=700
+Modern P3 BODY_BUILDER stage=2 ticks=1000
+Modern P1 REPULSOR stage=5 ticks=2340
+Modern P2 REPULSOR stage=4 ticks=2020
+Modern P3 REPULSOR stage=2 ticks=1220
+Modern P1 MAVERICK stage=4 ticks=1840
+Modern P2 MAVERICK stage=6 ticks=2260
+Modern P3 MAVERICK stage=4 ticks=1820
+
+Modern mean=2.8333
+Modern >=10=0/12

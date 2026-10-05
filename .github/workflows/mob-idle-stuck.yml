@@ -1,4 +1,4 @@
-name: Experiment — mob idle stuck recovery
+name: Experiment — mob idle stuck recovery v2
 on:
   push:
     branches:

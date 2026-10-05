@@ -9,8 +9,8 @@ import java.util.*;
 import java.util.stream.IntStream;
 
 public final class MonsterAwareRoutePlanner {
-    private static final int MAX_ROUTE_CANDIDATES = 8;
-    private static final int MAX_REGION_CANDIDATES = 12;
+    private static final int MAX_ROUTE_CANDIDATES = 20;
+    private static final int MAX_REGION_CANDIDATES = 20;
 
     /*
      * Keep candidate selection consistent with PlayerPathfinder.fastestPath:

@@ -1,0 +1,57 @@
+name: Experiment — upcoming-route monster relevance
+
+on:
+  push:
+    branches:
+      - experiment/43e4-upcoming-route-threat-v1
+
+permissions:
+  contents: read
+
+jobs:
+  modern:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run 12 Modern cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > upcoming-route.log
+          for kit in JUMPER SLOWBALLER BODY_BUILDER REPULSOR MAVERICK; do
+            for pattern in 1 2 3; do
+              echo "===== MODERN P$pattern $kit =====" | tee -a upcoming-route.log
+              mvn -B -ntp -pl common -am                 -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase                 -DmatrixMode=MODERN                 -DmatrixPattern="$pattern"                 -DmatrixKit="$kit"                 -DmatrixSpawnMonsters=true                 -Dsurefire.failIfNoSpecifiedTests=false                 -Dsurefire.useFile=false                 -Dsurefire.redirectTestOutputToFile=false                 test 2>&1 | tee -a upcoming-route.log
+            done
+          done
+      - name: Summarize
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          t=Path("upcoming-route.log").read_text(encoding="utf-8",errors="replace")
+          rows=[(int(m.group(1)),m.group(2),int(m.group(3)),int(m.group(4)))
+                for m in re.finditer(r"FULL_MATRIX mode=MODERN pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+)",t)]
+          if len(rows)!=15: raise SystemExit(f"expected 15 rows, got {len(rows)}")
+          vals=[r[2] for r in rows]
+          lines=[f"Modern P{p} {k} stage={s} ticks={ticks}" for p,k,s,ticks in rows]
+          lines += ["",f"Modern mean={sum(vals)/len(vals):.4f}",
+                    f"Modern >=10={sum(x>=10 for x in vals)}/15",
+                    f"Modern >=40={sum(x>=40 for x in vals)}/15"]
+          Path("upcoming-route-report.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
+          print("\n".join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upcoming-route
+          path: |
+            upcoming-route.log
+            upcoming-route-report.txt

@@ -99,10 +99,17 @@ class AuthenticStage10SimulationTest {
     }
 
     private RunResult run(int pattern, Kit kit) {
-        return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN);
+        return run(pattern, kit, AiProfile.BASELINE, Mode.MODERN, REQUIRED_STAGE);
     }
 
-    private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, REQUIRED_STAGE);
+    }
+
+    /**
+     * stopStage <= 0 means run until natural simulator termination or MAX_TICKS.
+     */
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int stopStage) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -141,7 +148,8 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = initialMonsterCount(mode);
+        boolean noMobs = Boolean.getBoolean("matrixNoMobs");
+        state.pendingMonsterSpawns = noMobs ? 0 : initialMonsterCount(mode);
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -198,7 +206,8 @@ class AuthenticStage10SimulationTest {
             }
 
             if (state.stage != lastStage) {
-                int spawned = spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
+                int spawned = noMobs ? 0
+                        : spawnAdditional(state, monsterRandom, nextMonsterId, additionalMonsterCount(mode));
                 state.pendingMonsterSpawns -= spawned;
                 if (state.pendingMonsterSpawns < 0) state.pendingMonsterSpawns = 0;
 
@@ -231,7 +240,7 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (stopStage > 0 && maxStage >= stopStage) break;
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -351,7 +360,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    record RunResult(
             int maxStage,
             long ticks,
             double health,

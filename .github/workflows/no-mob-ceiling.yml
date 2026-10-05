@@ -1,0 +1,22 @@
+name: Diagnostic — No-Mob Movement Ceiling
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - autonomous/local-mob-avoidance-v45
+
+jobs:
+  no-mob:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - run: |
+          mvn -B -ntp -pl common -am             -Dtest=NaturalTerminationMatrixIT             -DmatrixNoMobs=true             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test

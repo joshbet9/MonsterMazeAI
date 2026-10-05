@@ -176,9 +176,21 @@ public final class TacticalRouteSimulator {
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
         long remaining = Math.max(0, route.size() - 1L - waypoint);
-        long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
-        long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        long distance = Math.min(999_999L,
+                Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
+        long damage = Math.min(999_999L,
+                Math.round(state.player.damageTaken * 1000));
+
+        /*
+         * During a live mob encounter, preserving health is the dominant
+         * objective. The previous rank made route progress outweigh a 4-health
+         * mob bump, so the beam could repeatedly select "closer but hit" states.
+         * Keep progress/distance as tie-breakers after minimizing accumulated
+         * source-faithful damage.
+         */
+        return damage * 1_000_000_000_000L
+                + remaining * 1_000_000_000L
+                + distance * 1_000_000L;
     }
 
     private boolean needsTacticalSearch(GameState state) {

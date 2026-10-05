@@ -22,6 +22,8 @@ public final class MonsterRelevance {
     public static final double INTERACTION_RADIUS = 20.0;
     private static final double RADIUS_SQUARED =
             INTERACTION_RADIUS * INTERACTION_RADIUS;
+    private static final int UPCOMING_ROUTE_SEGMENTS = 24;
+    private static final double UPCOMING_ROUTE_RADIUS = 8.0D;
 
     private MonsterRelevance() {}
 
@@ -37,8 +39,11 @@ public final class MonsterRelevance {
     public static GameState copyForRoute(GameState source, PlayerRoute route) {
         GameState state = source.copyForSimulation();
         state.monsters.removeIf(m ->
-                m.removed || !withinPlayerRadius(
-                        m, state.player, INTERACTION_RADIUS));
+                m.removed
+                        || (!withinPlayerRadius(m, state.player, INTERACTION_RADIUS)
+                        && !withinUpcomingRouteEnvelope(
+                        m, state.player, route,
+                        UPCOMING_ROUTE_SEGMENTS, UPCOMING_ROUTE_RADIUS)));
         return state;
     }
 
@@ -95,4 +100,34 @@ public final class MonsterRelevance {
 
         return best <= RADIUS_SQUARED;
     }
+    /**
+     * Predictive planner-only envelope covering the first part of the current
+     * route. A monster can be outside the player's 20-block interaction sphere
+     * yet already be occupying the corridor the player is about to traverse.
+     */
+    public static boolean withinUpcomingRouteEnvelope(
+            MonsterState monster, PlayerState player, PlayerRoute route,
+            int maxSegments, double radius) {
+        if (monster == null || player == null || monster.removed
+                || route == null || route.size() < 2
+                || maxSegments <= 0 || radius < 0.0D) return false;
+        int end = Math.min(route.size() - 1, maxSegments);
+        double px = monster.x, py = monster.y, pz = monster.z;
+        double radiusSq = radius * radius;
+        for (int i = 0; i < end; i++) {
+            double ax = route.targetX(i), az = route.targetZ(i);
+            double bx = route.targetX(i + 1), bz = route.targetZ(i + 1);
+            double abx = bx - ax, abz = bz - az;
+            double lengthSq = abx * abx + abz * abz;
+            double t = lengthSq <= 1.0E-12D
+                    ? 0.0D
+                    : ((px - ax) * abx + (pz - az) * abz) / lengthSq;
+            t = Math.max(0.0D, Math.min(1.0D, t));
+            double nx = ax + t * abx, nz = az + t * abz;
+            double dx = px - nx, dy = py - GameState.PATH_Y, dz = pz - nz;
+            if (dx * dx + dy * dy + dz * dz <= radiusSq) return true;
+        }
+        return false;
+    }
+
 }

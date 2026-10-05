@@ -227,14 +227,7 @@ public final class MonsterAwareRoutePlanner {
 
     private PlayerRoute choose(GameState state, List<PlayerRoute> candidates,
                                Cell goal, boolean regionGoal, int regionRadius) {
-        boolean hasRelevantMonster = false;
-        for (var monster : state.monsters) {
-            if (MonsterRelevance.withinPlayerRadius(
-                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
-                hasRelevantMonster = true;
-                break;
-            }
-        }
+        boolean hasRelevantMonster = hasCurrentOrUpcomingThreat(state, candidates);
         if (!hasRelevantMonster) return shortest(candidates);
 
         TacticalRouteSimulator.Result[] results = new TacticalRouteSimulator.Result[candidates.size()];
@@ -254,6 +247,25 @@ public final class MonsterAwareRoutePlanner {
             }
         }
         return best;
+    }
+
+
+    private static boolean hasCurrentOrUpcomingThreat(
+            GameState state, List<PlayerRoute> candidates) {
+        for (var monster : state.monsters) {
+            if (monster == null || monster.removed) continue;
+            if (MonsterRelevance.withinPlayerRadius(
+                    monster, state.player, MonsterRelevance.INTERACTION_RADIUS)) {
+                return true;
+            }
+            for (PlayerRoute candidate : candidates) {
+                if (MonsterRelevance.withinUpcomingRouteEnvelope(
+                        monster, state.player, candidate, 24, 8.0D)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean better(TacticalRouteSimulator.Result candidate, PlayerRoute candidateRoute,

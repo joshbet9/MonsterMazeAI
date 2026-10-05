@@ -190,27 +190,43 @@ final class NoMobLocomotionController {
         double remaining = edge.length - progress;
 
         float yawError = headingError(state, edge);
-        if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
-            lastDecision = "TURN_EDGE edge=" + edge.index
-                    + " yawError=" + format(yawError);
-            return new Action(
-                    0.0, 0.0, false, false,
-                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
-                    false);
-        }
 
         boolean nextTurn = edge.index + 2 < route.size()
                 && changesDirection(route.cells().get(edge.index),
                 route.cells().get(edge.index + 1),
                 route.cells().get(edge.index + 2));
 
+        double horizontalSpeed = Math.hypot(
+                state.player.vx, state.player.vz);
+
+        /*
+         * Minecraft keeps horizontal velocity across a yaw change. Simply
+         * stopping W before a corner therefore does not actually stop the
+         * player: the old velocity continues into the new corridor. Actively
+         * counter-steer the measured velocity first, then acquire the new
+         * heading once the residual motion is small.
+         */
         if (nextTurn && remaining <= CORNER_BRAKE_DISTANCE
-                && speedAlong > CORNER_SPEED) {
-            lastDecision = "CORNER_COAST edge=" + edge.index
+                && horizontalSpeed > CORNER_SPEED) {
+            lastDecision = "CORNER_BRAKE edge=" + edge.index
                     + " remaining=" + format(remaining)
-                    + " speed=" + format(speedAlong);
+                    + " speed=" + format(horizontalSpeed);
+            return brakeVelocity(state);
+        }
+
+        if (Math.abs(yawError) > DRIVE_HEADING_LIMIT) {
+            if (horizontalSpeed > CORNER_SPEED) {
+                lastDecision = "TURN_BRAKE edge=" + edge.index
+                        + " yawError=" + format(yawError)
+                        + " speed=" + format(horizontalSpeed);
+                return brakeVelocity(state);
+            }
+            lastDecision = "TURN_EDGE edge=" + edge.index
+                    + " yawError=" + format(yawError);
             return new Action(
-                    0.0, 0.0, false, false, 0.0F, false);
+                    0.0, 0.0, false, false,
+                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
+                    false);
         }
 
         double crossTrack = edgeLateral(
@@ -232,6 +248,41 @@ final class NoMobLocomotionController {
                 + " jump=" + jump;
 
         return driveVector(state, edge.dirX, edge.dirZ, 1.0, sprint, jump);
+    }
+
+    private Action brakeVelocity(GameState state) {
+        double speed = Math.hypot(state.player.vx, state.player.vz);
+        if (speed < 1.0E-9D) {
+            return Action.IDLE;
+        }
+
+        double worldX = -state.player.vx / speed;
+        double worldZ = -state.player.vz / speed;
+        float yawError = headingErrorForDirection(state, worldX, worldZ);
+        float yawDelta = clamp(
+                yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+
+        /*
+         * Keep the camera fixed while braking. Turning the camera at the same
+         * time changes the meaning of the counter-input and makes deceleration
+         * less predictable.
+         */
+        yawDelta = 0.0F;
+
+        double yaw = Math.toRadians(state.player.yaw);
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        double forward = worldX * forwardX + worldZ * forwardZ;
+        double strafe = worldX * strafeX + worldZ * strafeZ;
+        double magnitude = Math.hypot(forward, strafe);
+        if (magnitude > 1.0E-9D) {
+            forward /= magnitude;
+            strafe /= magnitude;
+        }
+
+        return new Action(forward, strafe, false, false, yawDelta, false);
     }
 
     private Action laneCorrection(GameState state, Edge edge, double crossTrack) {

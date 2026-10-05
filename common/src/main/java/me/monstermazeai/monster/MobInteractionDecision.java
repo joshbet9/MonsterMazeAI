@@ -2,6 +2,7 @@ package me.monstermazeai.monster;
 
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.game.PadModel;
+import me.monstermazeai.kit.Kit;
 
 /**
  * Strategic live monster-contact policy.
@@ -33,7 +34,19 @@ public final class MobInteractionDecision {
         double padDistance = Math.max(0.0, Math.hypot(padDx, padDz) - PAD_RADIUS);
         double ordinaryTicks = padDistance * ESTIMATED_TICKS_PER_BLOCK;
 
-        if (ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
+        boolean maverickTargeting = state.kit == Kit.MAVERICK;
+        boolean stalledInMobPocket = maverickTargeting
+                && Math.hypot(state.player.vx, state.player.vz) < 0.12D
+                && hasNearbyBumpCandidate(state, 1.75D);
+
+        /*
+         * Keep the normal deadline rule shared. Maverick also gets a
+         * source-grounded early trigger when movement is actually stalled in a
+         * live mob pocket, so it can use its real padward knockback before the
+         * player has already spent most of the health budget.
+         */
+        if (!stalledInMobPocket
+                && ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
             return null;
         }
 
@@ -61,7 +74,9 @@ public final class MobInteractionDecision {
             // Normal bump velocity is player - monster.
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
-            double towardPad = bumpUx * padUx + bumpUz * padUz;
+            double towardPad = maverickTargeting
+                    ? 1.0D
+                    : bumpUx * padUx + bumpUz * padUz;
             if (towardPad < 0.70) continue;
 
             double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
@@ -71,6 +86,19 @@ public final class MobInteractionDecision {
             }
         }
         return best;
+    }
+
+    private static boolean hasNearbyBumpCandidate(GameState state, double radius) {
+        double radiusSq = radius * radius;
+        for (MonsterState monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) continue;
+            double dx = monster.x - state.player.x;
+            double dy = monster.y - state.player.y;
+            double dz = monster.z - state.player.z;
+            if (dx * dx + dy * dy + dz * dz <= radiusSq) return true;
+        }
+        return false;
     }
 
     private static boolean onActivePad(GameState state) {

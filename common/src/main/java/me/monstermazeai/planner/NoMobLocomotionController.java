@@ -425,11 +425,23 @@ final class NoMobLocomotionController {
          * the route. Full sprint keeps the player moving through the correction
          * instead of donating deadline time to camera-only ticks.
          */
+        boolean jump = shouldSpeedJump(
+                state,
+                true,
+                state.player.vx * desiredWorldX + state.player.vz * desiredWorldZ,
+                edge.length - edge.progress,
+                false);
+        /*
+         * Lane correction is still ordinary floor travel. Preserve sprint and
+         * the source -10 jump-spam technique rather than falling back to the
+         * much slower no-jump correction speed.
+         */
         lastDecision = "LANE edge=" + edge.index
-                + " cross=" + format(crossTrack);
+                + " cross=" + format(crossTrack)
+                + " jump=" + jump;
         return driveVector(
                 state, desiredWorldX, desiredWorldZ,
-                1.0, true, false);
+                1.0, true, jump);
     }
 
     private boolean shouldSpeedJump(

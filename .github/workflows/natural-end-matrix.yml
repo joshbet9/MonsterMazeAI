@@ -1,0 +1,41 @@
+name: Natural End Matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ d3-predictive-live-mob-routing ]
+    paths:
+      - 'common/src/main/java/me/monstermazeai/planner/StableLiveMovementController.java'
+      - 'common/src/main/java/me/monstermazeai/planner/TacticalRouteSimulator.java'
+      - 'common/src/test/java/me/monstermazeai/sim/AuthenticStage10SimulationTest.java'
+      - 'common/src/test/java/me/monstermazeai/sim/NaturalEndMatrixRunner.java'
+      - '.github/workflows/natural-end-matrix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: 30-cell natural-end matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Compile common tests
+        run: mvn -B -ntp -pl common -am test-compile -DskipTests
+
+      - name: Run natural-end matrix
+        run: >
+          mvn -B -ntp -pl common
+          -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner
+          -Dexec.classpathScope=test
+          org.codehaus.mojo:exec-maven-plugin:3.5.0:java

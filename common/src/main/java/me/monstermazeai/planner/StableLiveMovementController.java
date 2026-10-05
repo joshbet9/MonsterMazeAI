@@ -1083,8 +1083,53 @@ public final class StableLiveMovementController {
         int plannedRowDirection = Integer.signum(plannedTo.row() - plannedFrom.row());
         int plannedColumnDirection = Integer.signum(plannedTo.column() - plannedFrom.column());
 
-        return currentRowDirection == plannedRowDirection
-                && currentColumnDirection == plannedColumnDirection;
+        if (currentRowDirection == plannedRowDirection
+                && currentColumnDirection == plannedColumnDirection) {
+            return true;
+        }
+
+        /*
+         * A threat-aware route is allowed to change heading when the current
+         * corridor is actually blocked by a live monster. The old invariant was
+         * useful against oscillation, but it also rejected the exact 90-degree
+         * escape a human would take when a mob occupies the lane ahead.
+         * Restrict this exception to an imminent threat and a quarter-turn;
+         * ordinary replans still preserve heading.
+         */
+        int directionDelta = Math.abs(currentRowDirection - plannedRowDirection)
+                + Math.abs(currentColumnDirection - plannedColumnDirection);
+        if (directionDelta != 2) {
+            return false;
+        }
+
+        return currentHeadingBlockedByMonster(state, currentRowDirection, currentColumnDirection);
+    }
+
+    private static boolean currentHeadingBlockedByMonster(
+            GameState state, int dirRow, int dirColumn) {
+        if (state == null || state.monsters == null) return false;
+
+        for (MonsterState monster : state.monsters) {
+            if (monster == null || monster.removed
+                    || monster.launched(state.tick) || monster.frozen(state.tick)) {
+                continue;
+            }
+
+            double dx = monster.x - state.player.x;
+            double dz = monster.z - state.player.z;
+            double along = dx * dirRow + dz * dirColumn;
+            if (along <= 0.0D || along > 6.0D) continue;
+
+            double lateral = Math.abs(dx * dirColumn - dz * dirRow);
+            if (lateral > 1.05D) continue;
+
+            double distance = Math.hypot(dx, dz);
+            double closing = distance < 1.0E-6D
+                    ? 0.0D
+                    : -(monster.vx * dx + monster.vz * dz) / distance;
+            if (along <= 3.0D || closing > 0.02D) return true;
+        }
+        return false;
     }
 
     private boolean shouldSpeedJump(GameState state, boolean allowJump) {

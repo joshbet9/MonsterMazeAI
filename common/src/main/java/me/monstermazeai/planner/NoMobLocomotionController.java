@@ -85,6 +85,22 @@ final class NoMobLocomotionController {
 
         Cell start = resolveSupportedStart(state);
         if (start == null) {
+            /*
+             * A zero-mob run can still be recoverable after an edge crossing:
+             * the player may be below the floor plane for a few ticks and land
+             * on a later corridor block. Do not surrender control just because
+             * support is temporarily absent; keep steering along the committed
+             * route so horizontal motion can reach the next surface.
+             */
+            if (route != null && routeEdgeIndex < route.size() - 1) {
+                Cell from = route.cells().get(routeEdgeIndex);
+                Cell to = route.cells().get(routeEdgeIndex + 1);
+                Edge recovery = edge(from, to, routeEdgeIndex, state);
+                lastDecision = "AIRBORNE_RECOVERY edge=" + recovery.index;
+                return driveVector(
+                        state, recovery.dirX, recovery.dirZ,
+                        1.0, true, false);
+            }
             lastDecision = "NO_SUPPORT";
             return Action.IDLE;
         }

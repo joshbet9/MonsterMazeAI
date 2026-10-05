@@ -6,64 +6,92 @@ import me.monstermazeai.monster.MonsterState;
 import java.util.*;
 
 /**
- * Low-cost local threat-aware path search used only for synchronous bootstrap
- * routing. It does not alter maze topology or monster mechanics; it biases the
- * cardinal path toward currently safer physical cells so the async tactical
- * simulator has time to take over.
+ * Low-cost threat-aware path search used for live/bootstrap routing.
+ *
+ * Threat cost remains the primary objective, but equal-cost physical routes are
+ * resolved by the fewest heading changes. This prevents moving monsters from
+ * turning an otherwise sensible detour into a stop/zig-zag route.
  */
 public final class ThreatAwarePathfinder {
     private static final double MONSTER_DANGER_RADIUS = 3.0D;
-    private static final double MAX_DANGER_PENALTY = 8.0D;
-    private static final double MOVING_TOWARD_PENALTY = 3.0D;
+    private static final double MAX_DANGER_PENALTY = 2.5D;
+    private static final double MOVING_TOWARD_PENALTY = 0.75D;
 
     public List<Cell> shortestPathToRegion(GameState state, Cell start, Cell center, int radius,
                                             boolean allowGaps) {
         Objects.requireNonNull(state);
         Objects.requireNonNull(state.maze);
         if (start == null || center == null || radius < 0) return List.of();
+        if (!state.maze.isPhysicalFloor(start.row(), start.column())) return List.of();
 
-        PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(n -> n.cost));
-        Map<Cell, Double> best = new HashMap<>();
-        Map<Cell, Cell> previous = new HashMap<>();
+        PriorityQueue<Node> open = new PriorityQueue<>(
+                Comparator.comparingDouble((Node n) -> n.cost)
+                        .thenComparingInt(n -> n.turns)
+                        .thenComparingInt(n -> n.state.cell.row())
+                        .thenComparingInt(n -> n.state.cell.column())
+                        .thenComparingInt(n -> n.state.direction.ordinal()));
 
-        best.put(start, 0.0D);
-        previous.put(start, null);
-        open.add(new Node(start, 0.0D));
+        Map<StateKey, Best> best = new HashMap<>();
+        Map<StateKey, StateKey> previous = new HashMap<>();
 
-        Cell bestGoal = null;
+        StateKey origin = new StateKey(start, Direction.NONE);
+        best.put(origin, new Best(0.0D, 0));
+        open.add(new Node(origin, 0.0D, 0));
+
+        StateKey bestGoal = null;
         double bestGoalCost = Double.POSITIVE_INFINITY;
+        int bestGoalTurns = Integer.MAX_VALUE;
 
         while (!open.isEmpty()) {
             Node node = open.poll();
-            double known = best.getOrDefault(node.cell, Double.POSITIVE_INFINITY);
-            if (node.cost > known + 1.0E-9D) continue;
-            if (node.cost > bestGoalCost) continue;
+            Best known = best.get(node.state);
+            if (known == null
+                    || Double.compare(node.cost, known.cost) != 0
+                    || node.turns != known.turns) continue;
 
-            if (insideRegion(node.cell, center, radius)) {
-                if (bestGoal == null || node.cost < bestGoalCost
-                        || (Double.compare(node.cost, bestGoalCost) == 0
-                        && compareRegionGoal(node.cell, bestGoal, center) < 0)) {
-                    bestGoal = node.cell;
+            if (node.cost > bestGoalCost + 1.0E-9D) break;
+
+            if (insideRegion(node.state.cell, center, radius)) {
+                if (bestGoal == null
+                        || node.cost < bestGoalCost - 1.0E-9D
+                        || (Math.abs(node.cost - bestGoalCost) <= 1.0E-9D
+                        && (node.turns < bestGoalTurns
+                        || (node.turns == bestGoalTurns
+                        && compareRegionGoal(node.state.cell, bestGoal.cell, center) < 0)))) {
+                    bestGoal = node.state;
                     bestGoalCost = node.cost;
+                    bestGoalTurns = node.turns;
                 }
                 continue;
             }
 
-            int r = node.cell.row();
-            int c = node.cell.column();
+            int row = node.state.cell.row();
+            int column = node.state.cell.column();
 
-            for (Cell next : List.of(
-                    new Cell(r - 1, c), new Cell(r + 1, c),
-                    new Cell(r, c - 1), new Cell(r, c + 1))) {
-                relax(state, node.cell, next, 1.0D, node.cost, open, best, previous);
-            }
+            relax(state, node, new Cell(row - 1, column), Direction.NORTH,
+                    1.0D, open, best, previous);
+            relax(state, node, new Cell(row + 1, column), Direction.SOUTH,
+                    1.0D, open, best, previous);
+            relax(state, node, new Cell(row, column - 1), Direction.WEST,
+                    1.0D, open, best, previous);
+            relax(state, node, new Cell(row, column + 1), Direction.EAST,
+                    1.0D, open, best, previous);
 
             if (allowGaps) {
-                for (Cell next : List.of(
-                        new Cell(r - 2, c), new Cell(r + 2, c),
-                        new Cell(r, c - 2), new Cell(r, c + 2))) {
-                    if (isGapEdge(state, node.cell, next)) {
-                        relax(state, node.cell, next, 1.35D, node.cost, open, best, previous);
+                Cell[] gaps = {
+                        new Cell(row - 2, column),
+                        new Cell(row + 2, column),
+                        new Cell(row, column - 2),
+                        new Cell(row, column + 2)
+                };
+                Direction[] directions = {
+                        Direction.NORTH, Direction.SOUTH,
+                        Direction.WEST, Direction.EAST
+                };
+                for (int i = 0; i < gaps.length; i++) {
+                    if (isGapEdge(state, node.state.cell, gaps[i])) {
+                        relax(state, node, gaps[i], directions[i],
+                                1.35D, open, best, previous);
                     }
                 }
             }
@@ -71,23 +99,32 @@ public final class ThreatAwarePathfinder {
 
         if (bestGoal == null) return List.of();
         ArrayList<Cell> path = new ArrayList<>();
-        for (Cell at = bestGoal; at != null; at = previous.get(at)) path.add(at);
+        for (StateKey at = bestGoal; at != null; at = previous.get(at)) {
+            path.add(at.cell);
+        }
         Collections.reverse(path);
         return path;
     }
 
-    private void relax(GameState state, Cell from, Cell to, double baseCost,
-                        double currentCost, PriorityQueue<Node> open,
-                        Map<Cell, Double> best, Map<Cell, Cell> previous) {
+    private void relax(GameState state, Node from, Cell to, Direction direction,
+                       double baseCost, PriorityQueue<Node> open,
+                       Map<StateKey, Best> best, Map<StateKey, StateKey> previous) {
         if (!state.maze.isPhysicalFloor(to.row(), to.column())) return;
 
-        double nextCost = currentCost + baseCost + dangerPenalty(state, to);
-        double previousBest = best.getOrDefault(to, Double.POSITIVE_INFINITY);
-        if (nextCost + 1.0E-9D >= previousBest) return;
+        double nextCost = from.cost + baseCost + dangerPenalty(state, to);
+        int nextTurns = from.turns
+                + (from.state.direction != Direction.NONE && from.state.direction != direction ? 1 : 0);
+        StateKey next = new StateKey(to, direction);
+        Best prior = best.get(next);
 
-        best.put(to, nextCost);
-        previous.put(to, from);
-        open.add(new Node(to, nextCost));
+        boolean better = prior == null
+                || nextCost < prior.cost - 1.0E-9D
+                || (Math.abs(nextCost - prior.cost) <= 1.0E-9D && nextTurns < prior.turns);
+        if (!better) return;
+
+        best.put(next, new Best(nextCost, nextTurns));
+        previous.put(next, from.state);
+        open.add(new Node(next, nextCost, nextTurns));
     }
 
     private double dangerPenalty(GameState state, Cell cell) {
@@ -143,5 +180,11 @@ public final class ThreatAwarePathfinder {
                 && state.maze.isPhysicalFloor(to.row(), to.column());
     }
 
-    private record Node(Cell cell, double cost) {}
+    private enum Direction {
+        NONE, NORTH, SOUTH, WEST, EAST
+    }
+
+    private record StateKey(Cell cell, Direction direction) {}
+    private record Best(double cost, int turns) {}
+    private record Node(StateKey state, double cost, int turns) {}
 }

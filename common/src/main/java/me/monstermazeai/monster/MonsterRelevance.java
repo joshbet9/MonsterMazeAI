@@ -22,6 +22,10 @@ public final class MonsterRelevance {
     public static final double INTERACTION_RADIUS = 20.0;
     private static final double RADIUS_SQUARED =
             INTERACTION_RADIUS * INTERACTION_RADIUS;
+    private static final int UPCOMING_ROUTE_SEGMENTS = 24;
+    private static final double UPCOMING_ROUTE_RADIUS = 8.0D;
+    private static final double UPCOMING_ROUTE_RADIUS_SQUARED =
+            UPCOMING_ROUTE_RADIUS * UPCOMING_ROUTE_RADIUS;
 
     private MonsterRelevance() {}
 
@@ -37,8 +41,13 @@ public final class MonsterRelevance {
     public static GameState copyForRoute(GameState source, PlayerRoute route) {
         GameState state = source.copyForSimulation();
         state.monsters.removeIf(m ->
-                m.removed || !withinPlayerRadius(
-                        m, state.player, INTERACTION_RADIUS));
+                m.removed
+                        || (!withinPlayerRadius(
+                                m, state.player, INTERACTION_RADIUS)
+                        && !withinUpcomingRouteEnvelope(
+                                m, route,
+                                UPCOMING_ROUTE_SEGMENTS,
+                                UPCOMING_ROUTE_RADIUS)));
         return state;
     }
 
@@ -50,6 +59,44 @@ public final class MonsterRelevance {
         double dy = monster.y - player.y;
         double dz = monster.z - player.z;
         return dx * dx + dy * dy + dz * dz <= radius * radius;
+    }
+
+    public static boolean withinUpcomingRouteEnvelope(
+            MonsterState monster,
+            PlayerRoute route,
+            int maxSegments,
+            double radius) {
+        if (monster == null || monster.removed || route == null
+                || route.size() < 2 || maxSegments <= 0 || radius < 0.0D) {
+            return false;
+        }
+
+        int end = Math.min(route.size() - 1, maxSegments);
+        double radiusSq = radius * radius;
+        double px = monster.x;
+        double py = monster.y;
+        double pz = monster.z;
+
+        for (int i = 0; i < end; i++) {
+            double ax = route.targetX(i);
+            double az = route.targetZ(i);
+            double bx = route.targetX(i + 1);
+            double bz = route.targetZ(i + 1);
+            double abx = bx - ax;
+            double abz = bz - az;
+            double lengthSq = abx * abx + abz * abz;
+            double t = lengthSq <= 1.0E-12D
+                    ? 0.0D
+                    : ((px - ax) * abx + (pz - az) * abz) / lengthSq;
+            t = Math.max(0.0D, Math.min(1.0D, t));
+            double nx = ax + t * abx;
+            double nz = az + t * abz;
+            double dx = px - nx;
+            double dy = py - GameState.PATH_Y;
+            double dz = pz - nz;
+            if (dx * dx + dy * dy + dz * dz <= radiusSq) return true;
+        }
+        return false;
     }
 
     public static boolean withinRouteEnvelope(MonsterState monster,

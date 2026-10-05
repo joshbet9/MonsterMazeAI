@@ -615,8 +615,7 @@ public final class StableLiveMovementController {
                 || planned.regionRadius != regionRadius
                 || planned.route.cells().isEmpty()
                 || state.maze.dynamicSignature() != planned.topologySignature
-                || currentThreat != planned.threatSignature
-                || state.tick - planned.requestedTick > 10L) {
+                || state.tick - planned.requestedTick > 4L) {
             fullRouteEvaluationPending = true;
             return;
         }
@@ -639,6 +638,7 @@ public final class StableLiveMovementController {
         lastRouteTick = planned.requestedTick;
         routePlanCount++;
         lastDecisionDetail = "ASYNC_ROUTE_APPLIED"
+                + " threatAge=" + (state.tick - planned.requestedTick)
                 + " size=" + route.size()
                 + " regionRadius=" + regionRadius
                 + " start=" + startRow + "," + startColumn

@@ -1,0 +1,63 @@
+name: Phase 2 — World-space mob dodge Modern regression
+
+on:
+  push:
+    branches:
+      - phase2-worldspace-dodge-v1
+
+permissions:
+  contents: write
+
+jobs:
+  matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install common-api
+        run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run 12 Modern cells
+        shell: bash
+        run: |
+          set -o pipefail
+          : > worldspace-dodge.log
+          for kit in SLOWBALLER BODY_BUILDER REPULSOR MAVERICK; do
+            for pattern in 1 2 3; do
+              echo "===== MODERN P$pattern $kit =====" | tee -a worldspace-dodge.log
+              mvn -B -ntp -pl common -am                 -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase                 -DmatrixMode=MODERN                 -DmatrixPattern="$pattern"                 -DmatrixKit="$kit"                 -DmatrixSpawnMonsters=true                 -Dsurefire.failIfNoSpecifiedTests=false                 -Dsurefire.useFile=false                 -Dsurefire.redirectTestOutputToFile=false                 test 2>&1 | tee -a worldspace-dodge.log
+            done
+          done
+      - name: Capture compact result
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          t=Path("worldspace-dodge.log").read_text(encoding="utf-8",errors="replace")
+          rows=[(int(m.group(1)),m.group(2),int(m.group(3)),int(m.group(4)))
+                for m in re.finditer(r"FULL_MATRIX mode=MODERN pattern=(d+) kit=([A-Z_]+) stage=(d+) ticks=(d+)",t)]
+          if len(rows)!=12: raise SystemExit(f"expected 12 rows, got {len(rows)}")
+          lines=[f"Modern P{p} {k} stage={s} ticks={t}" for p,k,s,t in rows]
+          vals=[r[2] for r in rows]
+          lines += ["",f"Modern mean={sum(vals)/len(vals):.4f}",f"Modern >=10={sum(x>=10 for x in vals)}/12"]
+          Path("worldspace-dodge-report.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
+          print("\n".join(lines))
+          PY
+      - name: Persist result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worldspace-dodge-report.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "Capture world-space dodge Modern result [skip ci]"
+          git push
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worldspace-dodge
+          path: worldspace-dodge.log

@@ -1,0 +1,1 @@
+Trigger tactical mob escape benchmark after goal-scope fix.

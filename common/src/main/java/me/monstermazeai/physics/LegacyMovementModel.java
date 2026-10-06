@@ -44,7 +44,7 @@ public final class LegacyMovementModel implements PhysicsModel {
         boolean groundedAtStart = p.grounded;
         // EntityPlayerSP cancels sprint when forward input drops below 0.8F.
         // Keep the simulator faithful to that actual 1.8.9 input contract.
-        boolean sprinting = sprinting && action.forward() >= 0.8D;
+        boolean sprinting = action.sprint() && action.forward() >= 0.8D;
         float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
         /*

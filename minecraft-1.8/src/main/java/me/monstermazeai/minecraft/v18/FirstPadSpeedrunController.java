@@ -702,6 +702,7 @@ public final class FirstPadSpeedrunController {
                     routeRows[nextIndex], routeColumns[nextIndex]);
             yawError = normalise(desiredYaw - state.player.yaw);
             yawDelta = clamp(yawError, -MAX_YAW_STEP, MAX_YAW_STEP);
+        }
 
         /*
          * Hard movement safety invariant. During testing, large heading errors         * are resolved with stationary yaw only. Forward input is permitted

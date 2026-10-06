@@ -1,6 +1,7 @@
 package me.monstermazeai.adapter;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeCoordinates;
 import me.monstermazeai.monster.MonsterState;

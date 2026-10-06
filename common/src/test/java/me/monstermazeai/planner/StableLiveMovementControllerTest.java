@@ -187,6 +187,24 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void oneCellRegionRouteStillDrivesOntoPhysicalPad() {
+        GameState s = state(2.6, 0.5, 0.0F);
+        s.activePadRow = 0;
+        s.activePadColumn = 0;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 0), false, 2);
+
+        assertNotEquals(Action.IDLE, action,
+                "being inside the graph radius but outside the physical SafePad must not be treated as complete");
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "controller must continue toward the physical SafePad surface");
+        assertFalse(controller.lastDecisionDetail().contains("REACHED routeSize=1"),
+                controller.lastDecisionDetail());
+    }
+
+    @Test
     void commitsSafePadEdgeCrossingInsteadOfTreatingPadSurfaceAsOrdinaryMazeFloor() {
         int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
         raw[0][0] = 1;

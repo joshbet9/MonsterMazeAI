@@ -61,6 +61,43 @@ class MovementBenchmarkTest {
                 "the successful crossing must preserve forward momentum");
     }
 
+    @Test
+    void sprintCancelsWhenForwardInputFallsBelowVanillaThreshold() {
+        GameState diagonal = player();
+        diagonal.kit = Kit.MAVERICK;
+        LegacyMovementModel physics = new LegacyMovementModel();
+
+        Action requestedSprint = new Action(0.65, 0.75, false, true, 0, false);
+        physics.tick(diagonal.player, requestedSprint);
+
+        GameState noSprint = player();
+        noSprint.kit = Kit.MAVERICK;
+        physics.tick(noSprint.player,
+                new Action(0.65, 0.75, false, false, 0, false));
+
+        assertEquals(noSprint.player.vx, diagonal.player.vx, 1.0e-12);
+        assertEquals(noSprint.player.vz, diagonal.player.vz, 1.0e-12);
+    }
+
+    @Test
+    void sprintJumpImpulseAlsoRequiresVanillaSprintValidForwardInput() {
+        GameState sprintCancelled = player();
+        sprintCancelled.kit = Kit.MAVERICK;
+        LegacyMovementModel physics = new LegacyMovementModel();
+        physics.tick(sprintCancelled.player,
+                new Action(0.65, 0.0, true, true, 0, false),
+                sprintCancelled.maze, -10);
+
+        GameState sprintValid = player();
+        sprintValid.kit = Kit.MAVERICK;
+        physics.tick(sprintValid.player,
+                new Action(1.0, 0.0, true, true, 0, false),
+                sprintValid.maze, -10);
+
+        assertTrue(sprintValid.player.vz > sprintCancelled.player.vz + 0.05,
+                "a sub-0.8 forward input must not receive the sprint-jump impulse");
+    }
+
     @Test void movementIsTickDeterministic(){
         assertEquals(run(60,6),run(60,6),1e-12);
         assertEquals(run(60,8),run(60,8),1e-12);

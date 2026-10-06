@@ -169,9 +169,9 @@ class AuthenticStage10SimulationTest {
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
-        boolean diagnosticTrace = mode == Mode.SPEED
-                && pattern == 1
-                && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER);
+        boolean diagnosticTrace = pattern == 1
+                && ((mode == Mode.SPEED || mode == Mode.MODERN)
+                && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER));
 
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its

@@ -200,6 +200,28 @@ final class NoMobLocomotionController {
         }
 
         if (route == null || route.size() <= 1) {
+            /*
+             * A region search can intentionally return the player's current cell
+             * when that cell is inside the graph radius. The source completion
+             * condition is stricter: the player's AABB must actually be on the
+             * 5x5 SafePad surface. Drive the final physical distance whenever
+             * the graph has already reduced to a one-cell region route.
+             */
+            if (regionRadius > 0 && !PadModel.isOn(
+                    state.player,
+                    goal.row() + 0.5D,
+                    GameState.PAD_SURFACE_Y,
+                    goal.column() + 0.5D)) {
+                double dx = goal.row() + 0.5D - state.player.x;
+                double dz = goal.column() + 0.5D - state.player.z;
+                double len = Math.hypot(dx, dz);
+                if (len > 1.0E-9D) {
+                    lastDecision = "PAD_REGION_DIRECT_FINISH";
+                    return driveVector(
+                            state, dx / len, dz / len,
+                            1.0, true, allowJump && state.player.grounded);
+                }
+            }
             lastDecision = "ROUTE_DONE";
             return Action.IDLE;
         }

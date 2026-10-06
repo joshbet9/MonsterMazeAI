@@ -1999,11 +1999,13 @@ public final class FirstPadSpeedrunController {
                 routeRows[routeIndex], routeColumns[routeIndex],
                 nextRow, nextColumn)) return "route-disconnected";
 
-        for (int i = routeIndex; i < targetIndex; i++) {
-            int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
-            if (!routeCellSupported(state, i) || !routeCellSupported(state, i + 1)) return "lookahead-floor";
-            if (!canTraverseEdge(state, r1, c1, r2, c2)) return "lookahead-disconnected";
-        }
+        /*
+         * Only the immediate edge is a hard movement-safety constraint. Future
+         * route cells can legitimately change during SafePad/monster updates;
+         * stopping on a currently safe edge because a later edge changed creates
+         * a dead stop. The next observation will replan before that future edge
+         * is entered.
+         */
 
         /*
          * A one-block gap is the one deliberate exception to the normal

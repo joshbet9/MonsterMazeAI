@@ -23,13 +23,15 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private boolean yawPulsePending;
     private float pendingYawDelta;
     private long actionExpiryTick = Long.MIN_VALUE;
+    private long jumpExpiryTick = Long.MIN_VALUE;
     /*
      * Live commands are one-tick control intents. The common controller is
      * closed-loop, so reusing an older movement command beyond one client tick
      * changes the state on which the next decision should have been based.
      * Yaw/ability pulses remain one-shot and are never repeated by this hold.
      */
-    private static final long MAX_COMMAND_HOLD_TICKS = 1L;
+    private static final long MAX_COMMAND_HOLD_TICKS = 4L;
+    private static final long JUMP_PULSE_HOLD_TICKS = 1L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -69,6 +71,9 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         actionExpiryTick = currentTick == Long.MAX_VALUE
                 ? Long.MAX_VALUE
                 : currentTick + holdTicks;
+        jumpExpiryTick = next.jump && currentTick != Long.MAX_VALUE
+                ? currentTick + JUMP_PULSE_HOLD_TICKS
+                : Long.MIN_VALUE;
         applyCount++;
 
         if (applyCount == 1 || applyCount % 20 == 0
@@ -82,6 +87,29 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     public synchronized LegacyAction currentAction() {
         return currentAction;
+    }
+
+    /**
+     * Return the command that should be consumed on this exact world tick.
+     * Continuous WASD/sprint intent may be held for a short bounded window when
+     * IPC latency is unavoidable, but jump remains a one-tick pulse so the live
+     * cadence cannot silently become faster than the simulator.
+     */
+    public synchronized LegacyAction currentAction(long currentTick) {
+        if (currentAction == null) return LegacyAction.IDLE;
+        if (actionExpiryTick != Long.MAX_VALUE
+                && actionExpiryTick != Long.MIN_VALUE
+                && currentTick > actionExpiryTick) {
+            return LegacyAction.IDLE;
+        }
+        boolean jumpActive = jumpExpiryTick != Long.MIN_VALUE && currentTick <= jumpExpiryTick;
+        return new LegacyAction(
+                currentAction.forward,
+                currentAction.strafe,
+                jumpActive,
+                currentAction.sprint,
+                0.0F,
+                false);
     }
 
     /** Consume the cursor step once; movement fields remain held until expiry. */
@@ -99,6 +127,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
             yawPulsePending = false;
             pendingYawDelta = 0.0f;
             actionExpiryTick = Long.MIN_VALUE;
+            jumpExpiryTick = Long.MIN_VALUE;
         }
     }
 

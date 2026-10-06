@@ -811,7 +811,14 @@ final class NoMobLocomotionController {
          */
         float yawDelta = clamp(
                 yawError * 0.50F, -30.0F, 30.0F);
-        double yaw = Math.toRadians(state.player.yaw);
+        /*
+         * LegacyMovementModel and the 1.8 MovementInput bridge apply yawDelta
+         * before converting WASD into world motion. Build this local movement
+         * vector in that same post-turn frame. Using the pre-turn yaw here makes
+         * every simultaneous steer+drive action rotate its WASD vector twice
+         * relative to the simulator.
+         */
+        double yaw = Math.toRadians(state.player.yaw + yawDelta);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
         double strafeX = Math.cos(yaw);

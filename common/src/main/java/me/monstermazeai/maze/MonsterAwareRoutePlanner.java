@@ -70,24 +70,22 @@ public final class MonsterAwareRoutePlanner {
             return new PlayerRoute(List.of(start));
         }
 
+        /*
+         * This method is the synchronous bootstrap/recovery path. It must stay
+         * topology-only and bounded: a 99x99 grid can be searched immediately,
+         * while threat-aware scoring is already performed by the asynchronous
+         * strategic planner. Calling ThreatAwarePathfinder here makes the first
+         * live action wait on one danger scan per explored cell x every nearby
+         * monster, which is invisible in the simulator but stalls Minecraft.
+         */
         PlayerPathfinder pathfinder = new PlayerPathfinder();
-        PlayerRoute chosen;
-        if (hasRelevantMonster(state)) {
-            ThreatAwarePathfinder threatAware = new ThreatAwarePathfinder();
-            chosen = chooseByGapRisk(
-                    state,
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, regionCenter, radius, false)),
-                    toRoute(threatAware.shortestPathToRegion(
-                            state, start, regionCenter, radius, true)));
-        } else {
-            chosen = chooseByGapRisk(
-                    state,
-                    toRoute(pathfinder.fastestPathToRegion(
-                            state.maze, start, regionCenter, radius)),
-                    toRoute(pathfinder.fastestPathToRegionWithGaps(
-                            state.maze, start, regionCenter, radius)));
-        }
+        PlayerRoute chosen = chooseByGapRisk(
+                state,
+                toRoute(pathfinder.fastestPathToRegion(
+                        state.maze, start, regionCenter, radius)),
+                toRoute(pathfinder.fastestPathToRegionWithGaps(
+                        state.maze, start, regionCenter, radius)));
+
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
         return chosen;
     }

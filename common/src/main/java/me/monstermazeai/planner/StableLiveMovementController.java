@@ -1300,7 +1300,7 @@ public final class StableLiveMovementController {
             forward /= inputMagnitude;
             strafe /= inputMagnitude;
         }
-        boolean sprint = true;
+        boolean sprint = forward >= 0.8D;
         lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
                 + " target=" + format(target[0]) + "," + format(target[1])
                 + " yawError=" + format(yawError)
@@ -1653,7 +1653,15 @@ public final class StableLiveMovementController {
         double ux = dx / length;
         double uz = dz / length;
 
-        double yawRad = Math.toRadians(state.player.yaw);
+        /*
+         * EntityPlayerSP applies the yaw pulse before the movement step. Convert
+         * the recovery vector in that same post-turn frame, exactly as the
+         * simulator's LegacyMovementModel does.
+         */
+        double yawDelta = clamp(normalise(
+                (float) Math.toDegrees(Math.atan2(-dx, dz)) - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        double yawRad = Math.toRadians(state.player.yaw + yawDelta);
         double forwardX = -Math.sin(yawRad);
         double forwardZ = Math.cos(yawRad);
         double strafeX = Math.cos(yawRad);
@@ -1672,10 +1680,9 @@ public final class StableLiveMovementController {
                 && state.ability.charges > 0
                 && state.player.y > -0.05D;
         float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
-                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        float desiredYawDelta = normalise(desiredYaw - state.player.yaw);
 
-        return new Action(forward, strafe, emergencyJump, forward > 0.75,
+        return new Action(forward, strafe, emergencyJump, forward >= 0.8D,
                 yawDelta, false);
     }
 

@@ -35,7 +35,9 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
 
         if (!executor.isAiEnabled()) return;
 
-        LegacyAction action = executor.currentAction();
+        LegacyAction action = executor.currentAction(minecraft.theWorld == null
+                ? 0L
+                : minecraft.theWorld.getTotalWorldTime());
         if (action == null) action = LegacyAction.IDLE;
 
         if (minecraft.thePlayer != null) {

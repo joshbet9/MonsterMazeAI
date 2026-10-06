@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: recovered-natural-end-\${{ github.ref }}
+  group: recovered-natural-end-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   matrix:
-    name: \${{ matrix.mode }} P\${{ matrix.pattern }} \${{ matrix.kit }}
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -43,5 +43,5 @@ jobs:
           mvn -B -ntp -pl common
           -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner
           -Dexec.classpathScope=test
-          -Dexec.args="\${{ matrix.mode }} \${{ matrix.pattern }} \${{ matrix.kit }}"
+          -Dexec.args="${{ matrix.mode }} ${{ matrix.pattern }} ${{ matrix.kit }}"
           org.codehaus.mojo:exec-maven-plugin:3.5.0:java

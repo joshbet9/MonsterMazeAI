@@ -40,7 +40,7 @@ public final class Minecraft18AiRuntime {
      * a small bounded latency window in live Minecraft; genuinely old commands
      * still fail closed rather than being applied indefinitely.
      */
-    private static final long MAX_ACTION_AGE_TICKS = 1L;
+    private static final long MAX_ACTION_AGE_TICKS = 4L;
 
     private volatile Process process;
     private volatile DataInputStream input;
@@ -225,6 +225,20 @@ public final class Minecraft18AiRuntime {
         }
 
         lastCompletedTick = result.tick;
+        if (age > 1L) {
+            /*
+             * A late result may still be useful for continuous movement, but its
+             * camera/ability pulse was calculated against an older world state.
+             * Keep movement and jump intent; never replay a stale one-shot pulse.
+             */
+            return new LegacyAction(
+                    result.action.forward,
+                    result.action.strafe,
+                    result.action.jump,
+                    result.action.sprint,
+                    0.0F,
+                    false);
+        }
         return result.action;
     }
 

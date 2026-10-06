@@ -592,15 +592,15 @@ public final class FirstPadSpeedrunController {
                     || state.worldTick - lastFailedMobReplanTick >= MOB_REPLAN_RETRY_TICKS;
 
             /*
-             * A future predicted monster is not a reason to throw away a good
-             * current edge. During the retry cooldown keep driving the existing
-             * route unless the monster actually occupies the immediate edge.
-             * This removes the observed multi-tick wall stall while retaining
-             * hard avoidance where the next edge is genuinely blocked.
+             * A predicted future monster is not an immediate control decision.
+             * If the current edge is safe, keep committing to it. Replacing the
+             * route here lets a moving monster alternately make two valid routes
+             * look preferable; the resulting first-edge headings can flip 180
+             * degrees and create the exact wall oscillation seen in live F7 data.
+             * A genuinely blocked immediate edge still forces an immediate
+             * replan.
              */
-            boolean preserveExistingRoute = mobBlocked
-                    && !immediateMobBlocked
-                    && !retryAllowed;
+            boolean preserveExistingRoute = mobBlocked && !immediateMobBlocked;
             if (!preserveExistingRoute) {
                 if (!buildRoute(state)) {
                     /*
@@ -1360,17 +1360,22 @@ public final class FirstPadSpeedrunController {
     private boolean routeNeedsPhysicalReplan(LegacyWorldObservation state) {
         if (routeRows == null || routeLength <= 1 || routeIndex >= routeLength - 1) return false;
         int next = routeIndex + 1;
+
+        /*
+         * Only the edge the player is about to enter can invalidate the
+         * committed physical route. Looking several cells ahead turns transient
+         * observation changes at future corners/gaps into immediate replans,
+         * which can replace a safe heading while the player is still traversing
+         * the current edge. The movement safety gate will evaluate the next
+         * edge again when it actually becomes current.
+         */
         if (!routeCellSupported(state, routeIndex)) return true;
         if (!routeCellSupported(state, next)) return true;
-        int end = Math.min(routeLength - 1, routeIndex + LOOKAHEAD_CELLS);
-        for (int i = routeIndex; i <= end; i++) {
-            if (!routeCellSupported(state, i)) return true;
-            if (i > routeIndex && !canTraverseEdge(
-                    state,
-                    routeRows[i - 1], routeColumns[i - 1],
-                    routeRows[i], routeColumns[i])) return true;
-        }
-        return false;
+
+        return !canTraverseEdge(
+                state,
+                routeRows[routeIndex], routeColumns[routeIndex],
+                routeRows[next], routeColumns[next]);
     }
 
     private int[] findNearestPhysicalStartCell(LegacyWorldObservation state,

@@ -175,7 +175,7 @@ public final class MonsterMaze18Mod {
             executor.apply(completed, state.worldTick);
         }
         executor.expireIfNeeded(state.worldTick);
-        LegacyAction action = executor.currentAction();
+        LegacyAction action = executor.currentAction(state.worldTick);
 
         if (state.inMonsterMaze) {
             movementValidator.observe(state, executor.currentAction());

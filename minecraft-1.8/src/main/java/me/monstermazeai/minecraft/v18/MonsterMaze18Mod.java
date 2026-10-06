@@ -112,14 +112,11 @@ public final class MonsterMaze18Mod {
                             minecraft.theWorld.getTotalWorldTime(), "AI_DISABLED"));
                 }
                 executor.releaseAll();
-                firstPadSpeedrun.reset();
-                fullRoutingMode = false;
                 fullRoutingPrimed = false;
                 runtime.stop();
                 movementValidator.reset();
                 System.out.println("[MonsterMazeAI/1.8] FULL ROUTING disabled (F8)");
             } else {
-                firstPadSpeedrun.reset();
                 fullRoutingPrimed = false;
                 runEndedLatch = false;
                 observationLogCount = 0L;
@@ -212,8 +209,6 @@ public final class MonsterMaze18Mod {
             aiEnabled = false;
             executor.setAiEnabled(false);
             executor.releaseAll();
-            firstPadSpeedrun.reset();
-            fullRoutingMode = false;
             fullRoutingPrimed = false;
             runtime.stop();
             movementValidator.reset();

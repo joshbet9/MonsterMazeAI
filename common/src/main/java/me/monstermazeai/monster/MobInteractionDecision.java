@@ -1,22 +1,3 @@
-package me.monstermazeai.monster;
-
-import me.monstermazeai.game.GameState;
-import me.monstermazeai.game.PadModel;
-
-/**
- * Strategic live monster-contact policy.
- *
- * Normal contact costs four health and launches the player. Therefore contact
- * is only deliberately entered when the Safe Pad deadline is already outside
- * ordinary travel time and the resulting source bump points toward the pad.
- */
-public final class MobInteractionDecision {
-    private static final double MIN_SAFE_HEALTH = 4.0; // 2 hearts: never intentionally contact.
-    private static final double CONTACT_RANGE = 2.75;
-    private static final double CONTACT_RANGE_SQ = CONTACT_RANGE * CONTACT_RANGE;
-    private static final double PAD_RADIUS = 2.5;
-    private static final double ESTIMATED_TICKS_PER_BLOCK = 5.0;
-    private static final double EMERGENCY_MARGIN_TICKS = 8.0;
 
     private MobInteractionDecision() {}
 

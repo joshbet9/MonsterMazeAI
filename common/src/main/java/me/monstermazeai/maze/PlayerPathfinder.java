@@ -3,6 +3,204 @@ package me.monstermazeai.maze;
 import java.util.*;
 
 public final class PlayerPathfinder {
+
+    /*
+     * Estimated time model for a human-like runner. Cell-count BFS is useful
+     * for topology, but it systematically prefers zig-zag routes over smoother
+     * routes. On a one-block corridor, a 90-degree turn costs real momentum and
+     * camera-control time, so route selection should optimize estimated travel
+     * time rather than raw edge count.
+     */
+    private static final double STEP_COST = 1.0D;
+    private static final double GAP_COST = 1.45D;
+    private static final double TURN_90_COST = 1.75D;
+    private static final double TURN_180_COST = 4.0D;
+
+    /** Physics-aware route to a specific floor cell. */
+    public List<Cell> fastestPath(MazeModel maze, Cell start, Cell goal) {
+        return fastestPath(maze, start, goal, false);
+    }
+
+    /** Physics-aware route to a specific floor cell, optionally allowing source gap edges. */
+    public List<Cell> fastestPathWithGaps(MazeModel maze, Cell start, Cell goal) {
+        return fastestPath(maze, start, goal, true);
+    }
+
+    private List<Cell> fastestPath(MazeModel maze, Cell start, Cell goal, boolean allowGaps) {
+        if (!isPhysicalFloor(maze, start) || !isPhysicalFloor(maze, goal)) return List.of();
+
+        PriorityQueue<SearchNode> queue = new PriorityQueue<>(
+                Comparator.comparingDouble(SearchNode::cost));
+        Map<SearchKey, Double> best = new HashMap<>();
+        Map<SearchKey, SearchKey> previous = new HashMap<>();
+
+        SearchKey initial = new SearchKey(start, -1);
+        queue.add(new SearchNode(initial, 0.0D));
+        best.put(initial, 0.0D);
+        SearchKey bestGoal = null;
+
+        while (!queue.isEmpty()) {
+            SearchNode current = queue.poll();
+            double known = best.getOrDefault(current.key(), Double.POSITIVE_INFINITY);
+            if (current.cost() > known + 1.0E-9D) continue;
+            if (current.key().cell().equals(goal)) {
+                bestGoal = current.key();
+                break;
+            }
+
+            for (Cell next : movementNeighbours(maze, current.key().cell(), allowGaps)) {
+                boolean gap = isGapEdge(maze, current.key().cell(), next);
+                if (gap && !allowGaps) continue;
+
+                int dir = direction(current.key().cell(), next);
+                double edgeCost = gap ? GAP_COST : STEP_COST;
+                if (current.key().direction() >= 0 && dir != current.key().direction()) {
+                    edgeCost += turnCost(current.key().direction(), dir);
+                }
+
+                SearchKey candidate = new SearchKey(next, dir);
+                double newCost = current.cost() + edgeCost;
+                if (newCost + 1.0E-9D < best.getOrDefault(candidate, Double.POSITIVE_INFINITY)) {
+                    best.put(candidate, newCost);
+                    previous.put(candidate, current.key());
+                    queue.add(new SearchNode(candidate, newCost));
+                }
+            }
+        }
+
+        if (bestGoal == null) return List.of();
+        return reconstructStates(previous, bestGoal);
+    }
+
+    /** Physics-aware route to any floor cell in the SafePad region. */
+    public List<Cell> fastestPathToRegion(
+            MazeModel maze, Cell start, Cell center, int radius) {
+        return fastestPathToRegion(maze, start, center, radius, false);
+    }
+
+    /** Physics-aware route to a SafePad region, optionally allowing gap edges. */
+    public List<Cell> fastestPathToRegionWithGaps(
+            MazeModel maze, Cell start, Cell center, int radius) {
+        return fastestPathToRegion(maze, start, center, radius, true);
+    }
+
+    private List<Cell> fastestPathToRegion(
+            MazeModel maze, Cell start, Cell center, int radius, boolean allowGaps) {
+        if (radius < 0) throw new IllegalArgumentException("radius must be non-negative");
+        if (!isPhysicalFloor(maze, start)) return List.of();
+
+        PriorityQueue<SearchNode> queue = new PriorityQueue<>(
+                Comparator.comparingDouble(SearchNode::cost));
+        Map<SearchKey, Double> best = new HashMap<>();
+        Map<SearchKey, SearchKey> previous = new HashMap<>();
+
+        SearchKey initial = new SearchKey(start, -1);
+        queue.add(new SearchNode(initial, 0.0D));
+        best.put(initial, 0.0D);
+        SearchKey bestGoal = null;
+
+        while (!queue.isEmpty()) {
+            SearchNode current = queue.poll();
+            double known = best.getOrDefault(current.key(), Double.POSITIVE_INFINITY);
+            if (current.cost() > known + 1.0E-9D) continue;
+
+            if (insideRegion(current.key().cell(), center, radius)) {
+                bestGoal = current.key();
+                break;
+            }
+
+            for (Cell next : movementNeighbours(maze, current.key().cell(), allowGaps)) {
+                boolean gap = isGapEdge(maze, current.key().cell(), next);
+                if (gap && !allowGaps) continue;
+
+                int dir = direction(current.key().cell(), next);
+                double edgeCost = gap ? GAP_COST : STEP_COST;
+                if (current.key().direction() >= 0 && dir != current.key().direction()) {
+                    edgeCost += turnCost(current.key().direction(), dir);
+                }
+
+                SearchKey candidate = new SearchKey(next, dir);
+                double newCost = current.cost() + edgeCost;
+                if (newCost + 1.0E-9D < best.getOrDefault(candidate, Double.POSITIVE_INFINITY)) {
+                    best.put(candidate, newCost);
+                    previous.put(candidate, current.key());
+                    queue.add(new SearchNode(candidate, newCost));
+                }
+            }
+        }
+
+        if (bestGoal == null) return List.of();
+        return reconstructStates(previous, bestGoal);
+    }
+
+    private List<Cell> movementNeighbours(
+            MazeModel maze, Cell current, boolean allowGaps) {
+        ArrayList<Cell> out = new ArrayList<>();
+        int r = current.row();
+        int c = current.column();
+
+        addIfFloor(maze, out, r - 1, c);
+        addIfFloor(maze, out, r + 1, c);
+        addIfFloor(maze, out, r, c - 1);
+        addIfFloor(maze, out, r, c + 1);
+
+        if (allowGaps) {
+            addIfGap(maze, out, r, c, r - 2, c);
+            addIfGap(maze, out, r, c, r + 2, c);
+            addIfGap(maze, out, r, c, r, c - 2);
+            addIfGap(maze, out, r, c, r, c + 2);
+        }
+        return out;
+    }
+
+    private void addIfFloor(
+            MazeModel maze, List<Cell> out, int row, int column) {
+        if (row >= 0 && row < MazeModel.SIZE
+                && column >= 0 && column < MazeModel.SIZE
+                && maze.isPhysicalFloor(row, column)) {
+            out.add(new Cell(row, column));
+        }
+    }
+
+    private void addIfGap(
+            MazeModel maze, List<Cell> out,
+            int fromRow, int fromColumn, int toRow, int toColumn) {
+        Cell from = new Cell(fromRow, fromColumn);
+        Cell to = new Cell(toRow, toColumn);
+        if (isGapEdge(maze, from, to)) out.add(to);
+    }
+
+    private static int direction(Cell from, Cell to) {
+        int dr = Integer.signum(to.row() - from.row());
+        int dc = Integer.signum(to.column() - from.column());
+        if (dr < 0) return 0; // north
+        if (dr > 0) return 1; // south
+        if (dc < 0) return 2; // west
+        if (dc > 0) return 3; // east
+        throw new IllegalArgumentException("duplicate route cell");
+    }
+
+    private static double turnCost(int from, int to) {
+        int delta = Math.abs(from - to);
+        delta = Math.min(delta, 4 - delta);
+        return delta == 2 ? TURN_180_COST : TURN_90_COST;
+    }
+
+    private static List<Cell> reconstructStates(
+            Map<SearchKey, SearchKey> previous, SearchKey goal) {
+        ArrayList<Cell> path = new ArrayList<>();
+        SearchKey at = goal;
+        while (at != null) {
+            path.add(at.cell());
+            at = previous.get(at);
+        }
+        Collections.reverse(path);
+        return path;
+    }
+
+    private record SearchKey(Cell cell, int direction) {}
+    private record SearchNode(SearchKey key, double cost) {}
+
     public List<Cell> shortestPath(MazeModel maze, Cell start, Cell goal) {
         return shortestPath(maze, start, goal, true);
     }

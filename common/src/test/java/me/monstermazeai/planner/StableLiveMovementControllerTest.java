@@ -144,6 +144,22 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void sprintMotorKeepsForwardInputHighEnoughForVanillaSprint() {
+        GameState s = state(0.5, 0.5, -35.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.sprint());
+        assertEquals(0.0, action.strafe(), 1.0e-9,
+                "the sprint motor must not rely on A/D input that vanilla can use to cancel sprint");
+        assertTrue(action.forward() >= 0.8,
+                "a sprinting common-core action must remain sprint-valid in Minecraft 1.8.9");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+    }
+
+    @Test
     void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

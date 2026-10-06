@@ -60,10 +60,10 @@ class StableLiveMovementControllerTest {
 
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, action.forward(), 1.0e-9);
+        assertEquals(1.0, action.forward(), 0.0);
         assertEquals(0.0, action.strafe(), 1.0e-9);
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
-        assertFalse(action.sprint());
+        assertTrue(action.sprint());
     }
 
     @Test
@@ -73,10 +73,10 @@ class StableLiveMovementControllerTest {
 
         Action first = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, first.forward(), 1.0e-6);
+        assertEquals(1.0, first.forward(), 0.0);
         assertEquals(0.0, first.strafe(), 1.0e-6);
         assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
-                "the initial 90-degree heading error must turn in place rather than safety-stop");
+                "the initial 90-degree heading error should converge while still driving");
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
     }
 
@@ -173,16 +173,17 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
-    void usesInPlaceTurnForLargeHeadingError() {
+    void keepsDrivingThroughLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, action.forward(), 1.0e-6,
-                "a 90-degree corner acquisition must not cut across the corridor");
+        assertEquals(1.0, action.forward(), 0.0,
+                "normal maze travel must continue while the camera converges");
         assertEquals(0.0, action.strafe(), 1.0e-6);
         assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+        assertTrue(action.sprint());
     }
 
     @Test

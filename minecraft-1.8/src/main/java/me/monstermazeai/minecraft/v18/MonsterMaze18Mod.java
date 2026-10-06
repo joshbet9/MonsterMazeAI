@@ -34,6 +34,7 @@ public final class MonsterMaze18Mod {
     private boolean fullRoutingMode;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
     private long observationLogCount;
+    private LegacyWorldObservation lastObservedState;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -53,6 +54,7 @@ public final class MonsterMaze18Mod {
         runEndedLatch = false;
         fullRoutingMode = false;
         observationLogCount = 0L;
+        lastObservedState = null;
         executor.setAiEnabled(false);
 
         MinecraftForge.EVENT_BUS.register(observer);
@@ -83,6 +85,7 @@ public final class MonsterMaze18Mod {
             fullRoutingMode = false;
             firstPadSpeedrun.reset();
             observationLogCount = 0L;
+            lastObservedState = null;
             controlledPlayer = null;
             movementValidator.reset();
             return;
@@ -109,6 +112,7 @@ public final class MonsterMaze18Mod {
                 fullRoutingMode = false;
                 runEndedLatch = false;
                 observationLogCount = 0L;
+                lastObservedState = null;
                 gameSummary.reset();
                 System.out.println("[MonsterMazeAI/1.8] HYBRID enabled (F8): first-pad speedrun -> full routing");
             }
@@ -121,6 +125,7 @@ public final class MonsterMaze18Mod {
         }
 
         LegacyWorldObservation state = observer.observe().state;
+        lastObservedState = state;
         observationLogCount++;
 
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
@@ -229,6 +234,50 @@ public final class MonsterMaze18Mod {
     private void printGameSummary(String summary) {
         if (summary == null) return;
         System.out.println(summary);
+    }
+
+    @SubscribeEvent
+    public void renderOverlay(RenderGameOverlayEvent.Post event) {
+        if (event.type != RenderGameOverlayEvent.ElementType.ALL || !aiEnabled) return;
+
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.fontRendererObj == null) return;
+
+        LegacyWorldObservation state = lastObservedState;
+        LegacyAction action = executor.currentAction();
+
+        String stateLine = state == null
+                ? "waiting for Monster Maze"
+                : "pattern=" + state.mazePattern
+                    + " stage=" + state.stage
+                    + " pad=" + (state.pad == null
+                        ? "none"
+                        : state.pad.row + "," + state.pad.column
+                            + (state.pad.reached ? " REACHED" : ""))
+                    + " hp=" + format(state.player.health)
+                    + " mobs=" + state.monsters.size();
+
+        String actionLine = action == null
+                ? "action=IDLE"
+                : "action F=" + format(action.forward)
+                    + " S=" + format(action.strafe)
+                    + " J=" + action.jump
+                    + " SP=" + action.sprint
+                    + " Y=" + format(action.yawDelta)
+                    + " A=" + action.useAbility;
+
+        String modeLine = "AI HIGH_SKILL | "
+                + (fullRoutingMode ? "FULL_ROUTING" : "FIRST_PAD")
+                + " | " + (runtime == null ? "runtime=unknown" : runtime.runtimeStatus());
+
+        minecraft.fontRendererObj.drawStringWithShadow(
+                "MonsterMazeAI", 8, 8, 0xFFFFFF);
+        minecraft.fontRendererObj.drawStringWithShadow(
+                modeLine, 8, 18, 0xD0D0D0);
+        minecraft.fontRendererObj.drawStringWithShadow(
+                stateLine, 8, 28, 0xD0D0D0);
+        minecraft.fontRendererObj.drawStringWithShadow(
+                actionLine, 8, 38, 0xD0D0D0);
     }
 
     private void ensureMovementInput(Minecraft minecraft) {

@@ -374,8 +374,10 @@ class StableLiveMovementControllerTest {
                 controller.lastDecisionDetail());
         if (controller.lastDecisionDetail().contains("MOB_DODGE")) {
             assertEquals(1.0, action.forward(), 0.0);
-            assertTrue(Math.abs(action.strafe()) > 0.0);
+            assertEquals(0.0, action.strafe(), 1.0e-9,
+                    "the dodge motor should express lateral movement through camera steering, not raw A/D");
             assertTrue(action.sprint());
+            assertTrue(Math.abs(action.yawDelta()) > 0.0F);
         }
     }
 

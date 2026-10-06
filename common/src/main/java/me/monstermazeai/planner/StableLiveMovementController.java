@@ -1217,7 +1217,17 @@ public final class StableLiveMovementController {
     }
 
     private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+        /*
+         * Tactical search may request a jump while evaluating a nearby mob,
+         * but ordinary jump timing belongs to the committed route motor. A
+         * tactical jump can otherwise replace a corridor-safe action with a
+         * stale forward/strafe vector and send the player across a floor edge
+         * immediately before the next observation.
+         *
+         * Source abilities remain eligible here; those actions are discrete
+         * game mechanics rather than an alternate locomotion controller.
+         */
+        return action != null && action.useAbility();
     }
 
     private boolean detectLiveMobHit(GameState state) {

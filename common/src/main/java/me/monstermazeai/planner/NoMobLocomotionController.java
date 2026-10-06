@@ -810,19 +810,14 @@ final class NoMobLocomotionController {
          * not movement physics.
          */
         /*
-         * For large errors, rotate in place first. This is both source-valid
-         * and topology-safe: sending W while the camera is still 75+ degrees
-         * away from the route would spend the turn crossing the wrong corridor.
-         * Once inside that window, use the full available 30-degree camera step
-         * so convergence is as fast as the simulator's same action semantics.
+         * Ordinary maze travel is a continuous steering problem. The vanilla
+         * client can combine W with camera movement on the same tick, so a
+         * large heading error must not automatically donate a full tick to
+         * turning in place. Produce the exact source-valid control intent:
+         * full forward, up to 30 degrees of camera correction, then let the
+         * caller's one-tick floor prediction decide whether that movement is
+         * safe.
          */
-        if (Math.abs(yawError) > 75.0F) {
-            return new Action(
-                    0.0, 0.0, false, false,
-                    clamp(yawError, -30.0F, 30.0F),
-                    false);
-        }
-
         float yawDelta = clamp(
                 yawError, -30.0F, 30.0F);
         /*

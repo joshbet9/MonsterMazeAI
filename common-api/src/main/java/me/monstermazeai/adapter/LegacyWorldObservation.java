@@ -53,7 +53,7 @@ public final class LegacyWorldObservation {
                             int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
                             int[][] maze, List<Monster> monsters, String scoreboardTitle,
                             List<String> scoreboardLines) {
-        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, "MODERN", alive, completed, stage,
+        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, mode, alive, completed, stage,
                 safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
                 center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
     }

@@ -169,6 +169,9 @@ class AuthenticStage10SimulationTest {
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
+        boolean diagnosticTrace = mode == Mode.SPEED
+                && pattern == 1
+                && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER);
 
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
@@ -185,15 +188,18 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
+            if (diagnosticTrace || (pattern == 0 && kit == Kit.JUMPER)) {
                 trace.addLast("tick=" + state.tick
+                        + " stage=" + state.stage
                         + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " y=" + format(state.player.y)
                         + " yaw=" + format(state.player.yaw)
                         + " v=" + format(state.player.vx) + "," + format(state.player.vz)
+                        + " hp=" + format(state.player.health)
+                        + " pad=" + state.activePadRow + "," + state.activePadColumn
                         + " decision=" + decisionBeforeTick.replace(' ', '_')
                         + " action=" + currentAction.replace(' ', '_'));
-                while (trace.size() > 30) trace.removeFirst();
+                while (trace.size() > (diagnosticTrace ? 120 : 30)) trace.removeFirst();
             }
 
             simulator.tick(state, action.action);
@@ -243,6 +249,17 @@ class AuthenticStage10SimulationTest {
             previousAction = currentAction;
 
             if (stopStage > 0 && maxStage >= stopStage) break;
+        }
+
+        if (diagnosticTrace) {
+            System.out.println("OUTLIER_DIAGNOSTIC mode=" + mode
+                    + " pattern=" + (pattern + 1)
+                    + " kit=" + kit
+                    + " maxStage=" + maxStage
+                    + " ticks=" + state.tick
+                    + " firstFallTick=" + firstFallTick
+                    + " firstFallDecision=" + firstFallDecision
+                    + " TRACE=" + String.join(" || ", trace));
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,

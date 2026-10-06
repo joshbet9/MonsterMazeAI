@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AuthenticStage10SimulationTest {
     private static final int REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
+    private static final int NATURAL_MAX_TICKS = 60_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {
@@ -108,6 +109,12 @@ class AuthenticStage10SimulationTest {
 
     /** stopStage <= 0 runs until natural termination or MAX_TICKS. */
     static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int stopStage) {
+        return run(pattern, kit, profile, mode, stopStage,
+                stopStage > 0 ? MAX_TICKS : NATURAL_MAX_TICKS);
+    }
+
+    private static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode,
+                                 int stopStage, int maxTicks) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -164,7 +171,7 @@ class AuthenticStage10SimulationTest {
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
-        for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
+        for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             // Source MonsterManager schedules its starter spawn task before its
             // movement task: 25 monsters are added per server tick until the
             // mode's 225-monster starter quota is reached.

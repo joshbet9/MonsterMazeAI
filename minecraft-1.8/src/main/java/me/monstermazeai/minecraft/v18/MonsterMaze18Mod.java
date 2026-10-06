@@ -34,6 +34,7 @@ public final class MonsterMaze18Mod {
     private boolean aiEnabled;
     private boolean runEndedLatch;
     private boolean fullRoutingMode;
+    private boolean fullRoutingPrimed;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
     private long observationLogCount;
 
@@ -58,6 +59,7 @@ public final class MonsterMaze18Mod {
         aiEnabled = false;
         runEndedLatch = false;
         fullRoutingMode = false;
+        fullRoutingPrimed = false;
         observationLogCount = 0L;
         executor.setAiEnabled(false);
 
@@ -119,13 +121,17 @@ public final class MonsterMaze18Mod {
                 executor.releaseAll();
                 firstPadSpeedrun.reset();
                 fullRoutingMode = false;
+                fullRoutingPrimed = false;
+                runtime.stop();
                 movementValidator.reset();
                 System.out.println("[MonsterMazeAI/1.8] HYBRID disabled (F8)");
             } else {
                 firstPadSpeedrun.reset();
-                fullRoutingMode = false;
+                fullRoutingMode = true;
+                fullRoutingPrimed = false;
                 runEndedLatch = false;
                 observationLogCount = 0L;
+                runtime.startIfConfigured();
                 gameSummary.reset();
                 System.out.println("[MonsterMazeAI/1.8] HYBRID enabled (F8): first-pad speedrun -> full routing");
             }
@@ -142,7 +148,7 @@ public final class MonsterMaze18Mod {
 
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
             System.out.println("[MonsterMazeAI/1.8] OBS#" + observationLogCount
-                    + " mode=" + (fullRoutingMode ? "FULL_ROUTING" : "FIRST_PAD")
+                    + " mode=" + (fullRoutingMode ? "FULL_ROUTING" : "OFF")
                     + " tick=" + state.worldTick
                     + " inMaze=" + state.inMonsterMaze
                     + " detected=" + state.mazeDetected
@@ -160,44 +166,22 @@ public final class MonsterMaze18Mod {
         }
 
         LegacyAction action;
-        if (!fullRoutingMode) {
-            /*
-             * The first-pad controller is intentionally retained as the proven
-             * synchronous bootstrap. It owns movement until it geometrically
-             * reaches the first active SafePad.
-             */
-            action = firstPadSpeedrun.next(state);
-            executor.applyForTicks(action, state.worldTick, 1L);
-            executor.expireIfNeeded(state.worldTick);
-
-            if (firstPadSpeedrun.hasReachedTarget()) {
-                /*
-                 * Do not ask the normal runtime to make the first-pad journey
-                 * again. Start it only after bootstrap completion; its first
-                 * observation is therefore the player safely standing on the
-                 * first active pad. On the next active-pad transition,
-                 * LiveObjectiveController sees the new target and routes away.
-                 */
-                fullRoutingMode = true;
-                runtime.startIfConfigured();
-                if (gameSummary != null && gameSummary.isActive()) {
-                    gameSummary.controllerEvent(state.worldTick,
-                            "[MonsterMazeAI/1.8] FULL ROUTING HANDOFF"
-                                    + " tick=" + state.worldTick
-                                    + " firstPad=" + state.pad.row + "," + state.pad.column
-                                    + " runtime=" + runtime.runtimeStatus());
-                }
-                System.out.println("[MonsterMazeAI/1.8] FULL ROUTING HANDOFF"
-                        + " tick=" + state.worldTick
-                        + " firstPad=" + state.pad.row + "," + state.pad.column);
-            }
+        /*
+         * The simulation benchmark and the live client must execute the same
+         * common-core autonomous controller. There is intentionally no separate
+         * first-pad controller here.
+         *
+         * Prime the sidecar synchronously for the first observation so the
+         * asynchronous bridge cannot turn the beginning of a run into an
+         * artificial idle period. Every later tick uses the same sidecar agent
+         * through the normal submit/poll path.
+         */
+        if (!fullRoutingPrimed) {
+            runtime.startIfConfigured();
+            action = runtime.decide(state);
+            executor.apply(action, state.worldTick);
+            fullRoutingPrimed = true;
         } else {
-            /*
-             * Restore the same asynchronous closed-loop runtime that previously
-             * drove multi-pad progression. It receives the live state after the
-             * first-pad bootstrap instead of competing with the bootstrap
-             * controller for ownership of the first leg.
-             */
             runtime.submit(state);
             LegacyAction completed = runtime.pollCompleted(state.worldTick);
             if (completed != null) {
@@ -238,6 +222,8 @@ public final class MonsterMaze18Mod {
             executor.releaseAll();
             firstPadSpeedrun.reset();
             fullRoutingMode = false;
+            fullRoutingPrimed = false;
+            runtime.stop();
             movementValidator.reset();
             System.out.println("[MonsterMazeAI/1.8] RUN END LATCH chat=\"" + text + "\"");
         }

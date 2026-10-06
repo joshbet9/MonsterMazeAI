@@ -35,6 +35,7 @@ public final class LegacyProtocol {
 
         writePlayer(out, o.player);
         out.writeInt(o.kit.ordinal());
+        writeString(out, o.mode);
         out.writeInt(o.jumpCharges);
         out.writeInt(o.abilityCharges);
 
@@ -84,6 +85,7 @@ public final class LegacyProtocol {
         Kit[] kits = Kit.values();
         if (kitOrdinal < 0 || kitOrdinal >= kits.length) throw new IOException("Invalid kit");
         Kit kit = kits[kitOrdinal];
+        String mode = readString(in);
         int jumpCharges = in.readInt();
         int abilityCharges = in.readInt();
 
@@ -114,7 +116,7 @@ public final class LegacyProtocol {
         }
 
         return new LegacyWorldObservation(tick, inMaze, detected, pattern, alive, completed,
-                stage, safe, live, player, kit, jumpCharges, abilityCharges, center, pad,
+                stage, safe, live, player, kit, jumpCharges, abilityCharges, mode, center, pad,
                 maze, physicalFloor, monsters, title, lines);
     }
 

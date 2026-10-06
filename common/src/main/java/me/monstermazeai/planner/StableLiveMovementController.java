@@ -395,8 +395,27 @@ public final class StableLiveMovementController {
         }
 
         if (route.size() == 1) {
-            lastDecisionDetail = "REACHED routeSize=1";
-            return Action.IDLE;
+            /*
+             * A region route can legitimately contain only the player's current
+             * cell when the graph considers that cell inside the SafePad search
+             * radius. That is not equivalent to the source's 5x5 PadModel.isOn()
+             * completion check. Keep driving toward the actual pad surface until
+             * the geometric source condition is satisfied.
+             */
+            if (regionRadius <= 0 || PadModel.isOn(
+                    state.player,
+                    goal.row() + 0.5,
+                    GameState.PAD_SURFACE_Y,
+                    goal.column() + 0.5)) {
+                lastDecisionDetail = "REACHED routeSize=1";
+                return Action.IDLE;
+            }
+
+            Action finishPad = noMobController.nextActionUsingRoute(
+                    state, goal, allowJump, regionRadius, route);
+            lastDecisionDetail = "PAD_REGION_FINISH "
+                    + noMobController.lastDecisionDetail();
+            return finishPad;
         }
 
         /*

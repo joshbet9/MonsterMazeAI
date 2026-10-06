@@ -21,11 +21,9 @@ jobs:
           cache: maven
       - name: Compile common tests
         run: mvn -B -ntp -pl common -am install -DskipTests
-      - name: Run Modern P3 Maverick
-        run: >
-          mvn -B -ntp -pl common
-          -DmonsterMaze.opportunisticMaverickBump=true
-          -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner
-          -Dexec.classpathScope=test
-          -Dexec.args="MODERN 3 MAVERICK"
-          org.codehaus.mojo:exec-maven-plugin:3.5.0:java
+      - name: Run Modern Maverick cells
+        shell: bash
+        run: |
+          for pattern in 1 2 3; do
+            mvn -B -ntp -pl common               -DmonsterMaze.opportunisticMaverickBump=true               -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner               -Dexec.classpathScope=test               -Dexec.args="MODERN $pattern MAVERICK"               org.codehaus.mojo:exec-maven-plugin:3.5.0:java
+          done

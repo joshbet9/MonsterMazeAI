@@ -26,10 +26,10 @@ import java.util.Random;
  * physics/contact semantics remain unchanged.
  */
 public final class TacticalRouteSimulator {
-    private static final int SPEED_TACTICAL_HORIZON = 4;
-    private static final int SPEED_TACTICAL_BEAM = 6;
-    private static final int MODERN_TACTICAL_HORIZON = 6;
-    private static final int MODERN_TACTICAL_BEAM = 8;
+    private static final int SPEED_TACTICAL_HORIZON = 6;
+    private static final int SPEED_TACTICAL_BEAM = 10;
+    private static final int MODERN_TACTICAL_HORIZON = 12;
+    private static final int MODERN_TACTICAL_BEAM = 16;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;
@@ -187,34 +187,23 @@ public final class TacticalRouteSimulator {
 
     private boolean needsTacticalSearch(GameState state) {
         int horizon = tacticalHorizon(state);
-        double contactDistance = MonsterMazeBumpModel.CONTACT_DISTANCE;
+        double playerReach = 0.45 + Math.hypot(state.player.vx, state.player.vz) * horizon;
+        double contactReach = MonsterMazeBumpModel.CONTACT_DISTANCE + playerReach;
 
         for (var m : state.monsters) {
             if (m.removed || m.launched(state.tick) || m.frozen(state.tick)
                     || !MonsterRelevance.withinPlayerRadius(m, state.player, TACTICAL_RELEVANCE_RADIUS)) continue;
-
-            double dx = m.x - state.player.x;
-            double dz = m.z - state.player.z;
-            double distance = Math.hypot(dx, dz);
-            if (distance <= contactDistance) return true;
-
-            /*
-             * Wake the expensive tactical search only when relative motion says
-             * contact can occur inside the short planning horizon. A 20-block
-             * observation sphere is useful for other planner features, but it
-             * must not turn every nearby monster into a multi-branch search.
-             */
-            double relativeVx = m.vx - state.player.vx;
-            double relativeVz = m.vz - state.player.vz;
-            double closing = distance < 1.0E-9
-                    ? Double.POSITIVE_INFINITY
-                    : -(relativeVx * dx + relativeVz * dz) / distance;
-            double timeToContact = closing > 0.05D
-                    ? Math.max(0.0D, distance - contactDistance) / closing
-                    : Double.POSITIVE_INFINITY;
-            if (timeToContact <= horizon) return true;
+            double separationSq = sq(state.player.x - m.x)
+                    + sq(state.player.y - m.y)
+                    + sq(state.player.z - m.z);
+            double monsterReach = Math.hypot(m.vx, m.vz) * horizon;
+            double threshold = contactReach + monsterReach;
+            if (separationSq <= threshold * threshold) return true;
         }
 
+        // Source ability range is six blocks and is therefore already contained
+        // by the local interaction envelope. No distant monster can wake the
+        // expensive tactical branch merely because it exists in the world.
         return false;
     }
 

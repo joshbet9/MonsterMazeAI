@@ -1,3 +1,22 @@
+package me.monstermazeai.monster;
+
+import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.PadModel;
+
+/**
+ * Strategic live monster-contact policy.
+ *
+ * Normal contact costs four health and launches the player. Therefore contact
+ * is only deliberately entered when the Safe Pad deadline is already outside
+ * ordinary travel time and the resulting source bump points toward the pad.
+ */
+public final class MobInteractionDecision {
+    private static final double MIN_SAFE_HEALTH = 4.0; // 2 hearts: never intentionally contact.
+    private static final double CONTACT_RANGE = 2.75;
+    private static final double CONTACT_RANGE_SQ = CONTACT_RANGE * CONTACT_RANGE;
+    private static final double PAD_RADIUS = 2.5;
+    private static final double ESTIMATED_TICKS_PER_BLOCK = 5.0;
+    private static final double EMERGENCY_MARGIN_TICKS = 8.0;
 
     private MobInteractionDecision() {}
 
@@ -14,7 +33,15 @@
         double padDistance = Math.max(0.0, Math.hypot(padDx, padDz) - PAD_RADIUS);
         double ordinaryTicks = padDistance * ESTIMATED_TICKS_PER_BLOCK;
 
-        if (ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
+        boolean emergency = ordinaryTicks + EMERGENCY_MARGIN_TICKS >= state.phaseTicksRemaining;
+        boolean opportunisticMaverick = Boolean.getBoolean(
+                "monsterMaze.opportunisticMaverickBump")
+                && state.mode == me.monstermazeai.game.Mode.SPEED
+                && state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                && state.stage >= 40
+                && state.player.health >= 12.0
+                && state.phaseTicksRemaining > 30;
+        if (!emergency && !opportunisticMaverick) {
             return null;
         }
 
@@ -43,9 +70,13 @@
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
             double towardPad = bumpUx * padUx + bumpUz * padUz;
-            if (towardPad < 0.70) continue;
+            if (state.kit != me.monstermazeai.kit.Kit.MAVERICK && towardPad < 0.70) {
+                continue;
+            }
 
-            double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
+            double score = state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                    ? horizontal
+                    : Math.abs(horizontal - 1.0) - towardPad * 2.0;
             if (score < bestScore) {
                 bestScore = score;
                 best = monster;

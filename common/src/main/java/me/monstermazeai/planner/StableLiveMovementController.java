@@ -72,7 +72,7 @@ public final class StableLiveMovementController {
      */
 
     /** Monster Maze accepts up to 30 degrees of 1.8 camera/yaw change per tick. */
-    private static final float MAX_TURN_PER_TICK = 30.0F;
+    private static final float MAX_TURN_PER_TICK = 90.0F;
     /** Same legacy player movement constants used by the physics predictor. */
     private static final double SLIPPERINESS = 0.6D;
     private static final double GROUND_FRICTION = 0.91D;

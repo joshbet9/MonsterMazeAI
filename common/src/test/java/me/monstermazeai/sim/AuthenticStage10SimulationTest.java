@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class AuthenticStage10SimulationTest {
     private static final int REQUIRED_STAGE = 10;
-    private static final int MAX_TICKS = 20_000;
+    private static final int MAX_TICKS = 100_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {

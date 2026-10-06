@@ -438,34 +438,48 @@ public final class StableLiveMovementController {
         // control to the same tactical simulator used during route selection.
         // This is what makes deliberate contact and ability use real live actions,
         // rather than merely simulated route preferences.
-        long currentThreatSignature = threatSignature(state);
-        if (routePlanner.shouldUseTacticalAction(state)
-                && currentThreatSignature != lastTacticalSignature) {
-            /*
-             * Tactical search is a receding-horizon event, not a held command.
-             * Only its first action is returned. The next observation falls back
-             * to the live steering motor unless the local threat state materially
-             * changes, preventing stale yaw/ability pulses from being replayed.
-             */
-            Action tactical = routePlanner.tacticalAction(
-                    state, route, goal, regionRadius);
-            lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
-                lastDecisionDetail += " TACTICAL=" + tactical;
-                return tactical;
-            }
-        }
-
         /*
          * The no-mob motor is the proven source-faithful movement executor.
-         * Reuse it here after mob-specific decisions have had their chance to
-         * preempt the tick, so route choice and route execution no longer use
-         * two different steering implementations.
+         * Calculate its action first. Tactical search may add a discrete
+         * interaction, but it does not get to replace a freshly computed route
+         * vector with a stale forward/strafe/yaw solution.
          */
         Action routeMotorAction = noMobController.nextActionUsingRoute(
                 state, goal, allowJump, regionRadius, route);
         lastDecisionDetail = "MOB_ROUTE_MOTOR "
                 + noMobController.lastDecisionDetail();
+
+        long currentThreatSignature = threatSignature(state);
+        if (routePlanner.shouldUseTacticalAction(state)
+                && currentThreatSignature != lastTacticalSignature) {
+            /*
+             * Tactical search remains a receding-horizon decision. Keep source
+             * abilities exactly as selected, but for locomotion use only the
+             * discrete jump bit and preserve the verified route motor's vector.
+             */
+            Action tactical = routePlanner.tacticalAction(
+                    state, route, goal, regionRadius);
+            lastTacticalSignature = currentThreatSignature;
+            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+                if (tactical.useAbility()) {
+                    lastDecisionDetail += " TACTICAL=" + tactical;
+                    return tactical;
+                }
+                if (tactical.jump() && routeMotorAction != Action.IDLE) {
+                    Action overlay = new Action(
+                            routeMotorAction.forward(),
+                            routeMotorAction.strafe(),
+                            true,
+                            routeMotorAction.sprint(),
+                            routeMotorAction.yawDelta(),
+                            false);
+                    lastDecisionDetail += " TACTICAL_JUMP_OVERLAY="
+                            + tactical + " ROUTE=" + routeMotorAction;
+                    return overlay;
+                }
+            }
+        }
+
         return routeMotorAction;
 
 }

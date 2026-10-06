@@ -1658,7 +1658,7 @@ public final class StableLiveMovementController {
          * the recovery vector in that same post-turn frame, exactly as the
          * simulator's LegacyMovementModel does.
          */
-        double yawDelta = clamp(normalise(
+        float yawDelta = clamp(normalise(
                 (float) Math.toDegrees(Math.atan2(-dx, dz)) - state.player.yaw),
                 -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
         double yawRad = Math.toRadians(state.player.yaw + yawDelta);

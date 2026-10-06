@@ -193,15 +193,16 @@ class AuthenticStage10SimulationTest {
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (kit == Kit.JUMPER && (pattern == 0 || pattern == 2)) {
+            if (diagnostic) {
                 trace.addLast("tick=" + state.tick
                         + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " y=" + format(state.player.y)
+                        + " grounded=" + state.player.grounded
                         + " yaw=" + format(state.player.yaw)
-                        + " v=" + format(state.player.vx) + "," + format(state.player.vz)
+                        + " v=" + format(state.player.vx) + "," + format(state.player.vy) + "," + format(state.player.vz)
                         + " decision=" + decisionBeforeTick.replace(' ', '_')
                         + " action=" + currentAction.replace(' ', '_'));
-                while (trace.size() > 30) trace.removeFirst();
+                while (trace.size() > 80) trace.removeFirst();
             }
 
             simulator.tick(state, action.action);

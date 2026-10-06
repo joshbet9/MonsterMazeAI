@@ -193,6 +193,14 @@ public final class AbilityDecision {
             if (imminentClosingContact(state, monster)) return true;
             if (distance <= 2.0) close++;
         }
+
+        /*
+         * Body Rush is specifically a contact-immunity resource. In enhanced
+         * modes the source gives two 10-second activations, so waiting until a
+         * monster is already on top of the player wastes the protection window.
+         * At <= 6 hearts, one nearby active monster is enough reason to spend
+         * the next activation unless an intentional source bump is preferable.
+         */
         return state.player.health <= 12.0 && close >= 1;
     }
 

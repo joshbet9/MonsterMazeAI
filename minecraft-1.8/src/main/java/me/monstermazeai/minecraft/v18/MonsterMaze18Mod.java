@@ -42,6 +42,13 @@ public final class MonsterMaze18Mod {
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
         movementValidator = new LiveMovementValidator();
         runtime = new Minecraft18AiRuntime();
+        /*
+         * Prewarm the Java-17 sidecar before the first F8/gameplay tick. Startup
+         * is asynchronous inside Minecraft18AiRuntime, so this never blocks the
+         * Minecraft client thread, but it removes the avoidable first-round
+         * dead period seen when AI was enabled only after the round had begun.
+         */
+        runtime.startIfConfigured();
         gameSummary = new GameRunSummaryRecorder();
         humanRunRecorder = new HumanRunRecorder(Minecraft.getMinecraft(), observer);
 

@@ -64,6 +64,17 @@ public final class LegacyWorldObservation {
                             int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
                             int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
                             String scoreboardTitle, List<String> scoreboardLines) {
+        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, "MODERN", alive, completed, stage,
+                safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges, center, pad,
+                maze, physicalFloor, monsters, scoreboardTitle, scoreboardLines);
+    }
+
+    public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
+                            int mazePattern, String mode, boolean alive, boolean completed, int stage,
+                            int safePadSeconds, int liveSeconds, Player player, Kit kit,
+                            int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
+                            int[][] maze, boolean[][] physicalFloor, List<Monster> monsters,
+                            String scoreboardTitle, List<String> scoreboardLines) {
         if (player == null || kit == null || mode == null || maze == null || physicalFloor == null || monsters == null
                 || scoreboardTitle == null || scoreboardLines == null) {
             throw new IllegalArgumentException("Observation fields must not be null");

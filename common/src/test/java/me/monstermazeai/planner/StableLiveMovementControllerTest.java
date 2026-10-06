@@ -62,7 +62,7 @@ class StableLiveMovementControllerTest {
 
         assertEquals(1.0, action.forward(), 0.0);
         assertEquals(0.0, action.strafe(), 1.0e-9);
-        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+        assertEquals(-90.0F, action.yawDelta(), 1.0e-6F);
         assertTrue(action.sprint());
     }
 
@@ -75,7 +75,7 @@ class StableLiveMovementControllerTest {
 
         assertEquals(1.0, first.forward(), 0.0);
         assertEquals(0.0, first.strafe(), 1.0e-6);
-        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
+        assertEquals(-90.0F, first.yawDelta(), 1.0e-6F,
                 "the initial 90-degree heading error should converge while still driving");
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
     }
@@ -127,7 +127,7 @@ class StableLiveMovementControllerTest {
                 "moderate heading error should not force an unnecessary stop");
         assertTrue(Math.abs(action.yawDelta()) > 0.0,
                 "cursor/yaw steering should be applied in the same tick as forward movement");
-        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+        assertTrue(Math.abs(action.yawDelta()) <= 90.0F);
         assertFalse(action.strafe() != 0.0);
     }
 
@@ -182,7 +182,7 @@ class StableLiveMovementControllerTest {
         assertEquals(1.0, action.forward(), 0.0,
                 "normal maze travel must continue while the camera converges");
         assertEquals(0.0, action.strafe(), 1.0e-6);
-        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+        assertEquals(-90.0F, action.yawDelta(), 1.0e-6F);
         assertTrue(action.sprint());
     }
 

@@ -1232,7 +1232,7 @@ public final class StableLiveMovementController {
          * physical edge. Keep the established tactical motor for every other
          * kit, including the high-performance Body Builder/Maverick behaviours.
          */
-        if (state.kit != Kit.REPULSOR) return true;
+        if (state.kit != me.monstermazeai.kit.Kit.REPULSOR) return true;
 
         int fromIndex = Math.max(0, Math.min(
                 waypointIndex > 0 ? waypointIndex - 1 : 0, route.size() - 2));

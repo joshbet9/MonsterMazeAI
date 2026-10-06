@@ -820,7 +820,9 @@ final class NoMobLocomotionController {
 
         float yawDelta = clamp(
                 yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-        float residualError = normalise(yawError - yawDelta);
+        float residualError = yawError - yawDelta;
+        while (residualError >= 180.0F) residualError -= 360.0F;
+        while (residualError < -180.0F) residualError += 360.0F;
 
         double residualRadians = Math.toRadians(residualError);
         double forward = Math.max(0.8D, Math.min(1.0D, forwardMagnitude));

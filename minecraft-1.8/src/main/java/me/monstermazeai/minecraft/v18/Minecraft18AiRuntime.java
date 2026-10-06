@@ -35,8 +35,12 @@ import java.util.regex.Pattern;
 public final class Minecraft18AiRuntime {
     private static final String EMBEDDED_RUNTIME_RESOURCE =
             "/runtime/monster-maze-ai-runtime.jar";
-    /** Movement-only branch: a decision is valid only for the exact observation tick it was planned from. */
-    private static final long MAX_ACTION_AGE_TICKS = 0L;
+    /**
+     * Async sidecar results normally arrive 1 tick after their observation. Allow
+     * a small bounded latency window in live Minecraft; genuinely old commands
+     * still fail closed rather than being applied indefinitely.
+     */
+    private static final long MAX_ACTION_AGE_TICKS = 2L;
 
     private volatile Process process;
     private volatile DataInputStream input;
@@ -179,10 +183,10 @@ public final class Minecraft18AiRuntime {
 
         if (age > MAX_ACTION_AGE_TICKS) {
             /*
-             * There is deliberately no stale-turn exception. A yaw pulse is
-             * part of the movement command for a specific world state; applying
-             * it one tick later can rotate the player after the route/velocity
-             * has already changed. This branch is an exact-tick benchmark.
+             * Live control is asynchronous by design: the Minecraft thread must
+             * never block waiting for the Java-17 planner. A small bounded latency
+             * window therefore exists between the observed world tick and the tick
+             * on which the resulting command is consumed.
              */
             lastCompletedTick = result.tick;
             return LegacyAction.IDLE;

@@ -13,7 +13,7 @@ class LegacyProtocolTest {
     void roundTripsLiveObservationAndAction() throws Exception {
         boolean[][] physicalFloor = new boolean[][]{{true, false}, {false, true}};
         LegacyWorldObservation source = new LegacyWorldObservation(
-                42L, true, true, 3, true, false, 2, 17, 9,
+                42L, true, true, 3, "SPEED", true, false, 2, 17, 9,
                 new LegacyWorldObservation.Player(24.2, 14.0, 16.7, 0.1, 0.0, -0.2,
                         12.5f, -3.0f, true, 18.0, 20.0),
                 Kit.JUMPER, 2, 1, "SPEED",

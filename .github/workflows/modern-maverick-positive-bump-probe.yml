@@ -1,0 +1,31 @@
+name: Modern Maverick Positive Bump Probe
+
+on:
+  push:
+    branches: [ autonomous/modern-maverick-positive-bump-20261006 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p3:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compile common tests
+        run: mvn -B -ntp -pl common -am install -DskipTests
+      - name: Run Modern P3 Maverick
+        run: >
+          mvn -B -ntp -pl common
+          -DmonsterMaze.opportunisticMaverickBump=true
+          -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner
+          -Dexec.classpathScope=test
+          -Dexec.args="MODERN 3 MAVERICK"
+          org.codehaus.mojo:exec-maven-plugin:3.5.0:java

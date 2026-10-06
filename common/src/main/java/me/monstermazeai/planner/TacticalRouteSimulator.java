@@ -28,8 +28,13 @@ import java.util.Random;
 public final class TacticalRouteSimulator {
     private static final int SPEED_TACTICAL_HORIZON = 6;
     private static final int SPEED_TACTICAL_BEAM = 10;
-    private static final int MODERN_TACTICAL_HORIZON = 12;
-    private static final int MODERN_TACTICAL_BEAM = 16;
+    /*
+     * Modern spawns substantially more active monsters. Give the tactical
+     * beam enough lookahead to see the next interaction sequence instead of
+     * optimising only the first half-second of the approach.
+     */
+    private static final int MODERN_TACTICAL_HORIZON = 20;
+    private static final int MODERN_TACTICAL_BEAM = 24;
     private static final int MAX_SIMULATION_TICKS = 2400;
     private static final double ROUTE_TICKS_PER_CELL = 12.0;
     private static final int ROUTE_TICK_MARGIN = 40;

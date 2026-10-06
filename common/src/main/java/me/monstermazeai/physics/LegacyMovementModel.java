@@ -44,13 +44,20 @@ public final class LegacyMovementModel implements PhysicsModel {
         boolean groundedAtStart = p.grounded;
         float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
+        /*
+         * The sprint state used by both the movement multiplier and the
+         * sprint-jump impulse is the post-input vanilla state. Minecraft 1.8.9
+         * cancels sprint below 0.8 forward input before movement is applied.
+         */
+        boolean effectiveSprint = action.sprint() && action.forward() >= 0.8D;
+
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
                 // Monster Maze applies Jump -10 to non-Jumpers. That blocks the
                 // vertical impulse but the sprint-jump's horizontal impulse is
                 // still applied by the source jump routine.
                 p.vy = 0.0D;
-                if (action.sprint()) {
+                if (effectiveSprint) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
@@ -59,7 +66,7 @@ public final class LegacyMovementModel implements PhysicsModel {
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;
-                if (action.sprint()) {
+                if (effectiveSprint) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
@@ -71,14 +78,6 @@ public final class LegacyMovementModel implements PhysicsModel {
         } else if (p.jumpTicks > 0) {
             p.jumpTicks--;
         }
-
-        /*
-         * Minecraft 1.8.9 only maintains sprint while forward input is at least
-         * 0.8F. The real client applies that gate after MovementInput is updated;
-         * model it here as part of the same action contract so simulator and live
-         * adapter cannot disagree about whether the 1.30 sprint multiplier applies.
-         */
-        boolean effectiveSprint = action.sprint() && action.forward() >= 0.8D;
 
         float movementFactor;
         if (groundedAtStart) {

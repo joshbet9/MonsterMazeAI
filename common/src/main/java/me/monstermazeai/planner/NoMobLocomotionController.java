@@ -454,6 +454,24 @@ final class NoMobLocomotionController {
             return brake;
         }
 
+        /*
+         * The player is still physically supported at the observation point,
+         * but the one-tick projection may reject every candidate because the
+         * existing velocity already carries the AABB toward the edge. Returning
+         * IDLE preserves that velocity and was observed to cause the exact
+         * P2-Repulsor tick-55 failure. A source-faithful counter-input is the
+         * safer control: it applies ordinary WASD against the current momentum
+         * without inventing a teleport or recovery surface.
+         */
+        if (state.player.grounded
+                && physicalFloorUnderAabb(state, state.player.x, state.player.z)) {
+            Action supportedBrake = brakeVelocity(state);
+            if (supportedBrake != Action.IDLE) {
+                lastDecision += "_FALLBACK_SUPPORTED_BRAKE";
+                return supportedBrake;
+            }
+        }
+
         lastDecision += "_FALLBACK_IDLE";
         return Action.IDLE;
     }

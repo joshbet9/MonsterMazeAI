@@ -26,14 +26,12 @@ public final class MonsterMaze18Mod {
     private Minecraft18ActionExecutor executor;
     private LiveMovementValidator movementValidator;
     private Minecraft18AiRuntime runtime;
-    private FirstPadSpeedrunController firstPadSpeedrun;
     private GameRunSummaryRecorder gameSummary;
     private HumanRunRecorder humanRunRecorder;
     private net.minecraft.client.settings.KeyBinding toggleAi;
     private net.minecraft.client.settings.KeyBinding toggleHumanRecorder;
     private boolean aiEnabled;
     private boolean runEndedLatch;
-    private boolean fullRoutingMode;
     private boolean fullRoutingPrimed;
     private net.minecraft.client.entity.EntityPlayerSP controlledPlayer;
     private long observationLogCount;
@@ -44,9 +42,7 @@ public final class MonsterMaze18Mod {
         executor = new Minecraft18ActionExecutor(Minecraft.getMinecraft());
         movementValidator = new LiveMovementValidator();
         runtime = new Minecraft18AiRuntime();
-        firstPadSpeedrun = new FirstPadSpeedrunController();
         gameSummary = new GameRunSummaryRecorder();
-        firstPadSpeedrun.setTelemetry(gameSummary);
         humanRunRecorder = new HumanRunRecorder(Minecraft.getMinecraft(), observer);
 
         toggleAi = new net.minecraft.client.settings.KeyBinding(
@@ -58,7 +54,6 @@ public final class MonsterMaze18Mod {
 
         aiEnabled = false;
         runEndedLatch = false;
-        fullRoutingMode = false;
         fullRoutingPrimed = false;
         observationLogCount = 0L;
         executor.setAiEnabled(false);
@@ -66,9 +61,9 @@ public final class MonsterMaze18Mod {
         MinecraftForge.EVENT_BUS.register(observer);
         MinecraftForge.EVENT_BUS.register(this);
 
-        System.out.println("[MonsterMazeAI/1.8] HYBRID mode ready (F8)");
+        System.out.println("[MonsterMazeAI/1.8] FULL ROUTING mode ready (F8)");
         System.out.println("[MonsterMazeAI/1.8] Human run recorder ready (F7): actual keyboard/mouse input + live observation -> human-runs/*.jsonl");
-        System.out.println("[MonsterMazeAI/1.8] First pad uses synchronous optimal speedrun; subsequent pads use normal live AI runtime");
+        System.out.println("[MonsterMazeAI/1.8] Uses the common full-routing autonomous controller from game start");
         System.out.println("[MonsterMazeAI/1.8] Per-game GPT summary telemetry enabled");
     }
 
@@ -89,8 +84,6 @@ public final class MonsterMaze18Mod {
             executor.releaseAll();
             executor.setAiEnabled(false);
             aiEnabled = false;
-            fullRoutingMode = false;
-            firstPadSpeedrun.reset();
             observationLogCount = 0L;
             controlledPlayer = null;
             movementValidator.reset();
@@ -124,16 +117,15 @@ public final class MonsterMaze18Mod {
                 fullRoutingPrimed = false;
                 runtime.stop();
                 movementValidator.reset();
-                System.out.println("[MonsterMazeAI/1.8] HYBRID disabled (F8)");
+                System.out.println("[MonsterMazeAI/1.8] FULL ROUTING disabled (F8)");
             } else {
                 firstPadSpeedrun.reset();
-                fullRoutingMode = true;
                 fullRoutingPrimed = false;
                 runEndedLatch = false;
                 observationLogCount = 0L;
                 runtime.startIfConfigured();
                 gameSummary.reset();
-                System.out.println("[MonsterMazeAI/1.8] HYBRID enabled (F8): first-pad speedrun -> full routing");
+                System.out.println("[MonsterMazeAI/1.8] FULL ROUTING enabled (F8): common controller from game start");
             }
         }
 
@@ -148,7 +140,7 @@ public final class MonsterMaze18Mod {
 
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
             System.out.println("[MonsterMazeAI/1.8] OBS#" + observationLogCount
-                    + " mode=" + (fullRoutingMode ? "FULL_ROUTING" : "OFF")
+                    + " mode=FULL_ROUTING"
                     + " tick=" + state.worldTick
                     + " inMaze=" + state.inMonsterMaze
                     + " detected=" + state.mazeDetected

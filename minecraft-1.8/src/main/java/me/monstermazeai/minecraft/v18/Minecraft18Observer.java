@@ -307,11 +307,18 @@ public final class Minecraft18Observer {
      * details and are not part of the logical maze topology.
      */
     private boolean readMaze(World world, BlockPos center, int[][] raw) {
-        int pattern = findMatchingPattern(world, center);
+        int pattern = cachedMazePattern;
+        if (pattern < 0 || pattern >= MazeLayouts.ALL_MAZES.length) {
+            pattern = findCenterPattern(world, center);
+        }
         if (pattern < 0) {
             cachedMazePattern = -1;
             return false;
         }
+        /*
+         * The embedded layouts are the authoritative topology. The client only
+         * needs the center anchor to identify which source layout is active.
+         */
         int[][] expected = MazeLayouts.ALL_MAZES[pattern];
         for (int row = 0; row < MAZE_SIZE; row++) {
             System.arraycopy(expected[row], 0, raw[row], 0, MAZE_SIZE);
@@ -392,11 +399,17 @@ public final class Minecraft18Observer {
                 for (int z = pz - CENTER_SEARCH_RADIUS; z <= pz + CENTER_SEARCH_RADIUS; z++) {
                     BlockPos candidate = new BlockPos(x, centerY, z);
                     if (!matchesCenterAnchor(world, candidate)) continue;
-                    int pattern = findMatchingPattern(world, candidate);
+                    int pattern = findCenterPattern(world, candidate);
                     if (pattern >= 0) {
                         cachedCenter = candidate;
                         cachedMazePattern = pattern;
-                        cachedMazeDetected = false;
+                        /*
+                         * The center anchor is a source-accurate, pattern-specific
+                         * 13x13 signature. Requiring the full 99x99 occupancy match
+                         * made startup depend on every arena block being loaded in
+                         * the client at the same moment.
+                         */
+                        cachedMazeDetected = true;
                         cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
                         cachedPhysicalFloor = null;
                         cachedPhysicalPad = null;
@@ -419,7 +432,7 @@ public final class Minecraft18Observer {
      * those cells as STAINED_CLAY data 5. This is a much stronger anchor than a
      * generic occupancy check and directly models the authoritative server logic.
      */
-    private boolean matchesCenterAnchor(World world, BlockPos center) {
+    private int findCenterPattern(World world, BlockPos center) {
         int surfaceY = center.getY() - 1;
 
         for (int pattern = 0; pattern < MazeLayouts.ALL_MAZES.length; pattern++) {
@@ -455,9 +468,9 @@ public final class Minecraft18Observer {
                 }
             }
 
-            if (possible && sawCenterMarker) return true;
+            if (possible && sawCenterMarker) return pattern;
         }
-        return false;
+        return -1;
     }
 
     private boolean matchesMazeOccupancy(World world, BlockPos center, int[][] expected) {

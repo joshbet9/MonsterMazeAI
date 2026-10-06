@@ -121,7 +121,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
     /** Expire a one-tick command after the client tick that consumed it. */
     public synchronized void expireIfNeeded(long currentTick) {
-        if (actionExpiryTick != Long.MAX_VALUE && currentTick >= actionExpiryTick) {
+        if (actionExpiryTick != Long.MAX_VALUE && currentTick > actionExpiryTick) {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;
             yawPulsePending = false;

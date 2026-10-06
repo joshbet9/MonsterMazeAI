@@ -42,6 +42,9 @@ public final class LegacyMovementModel implements PhysicsModel {
         while (p.yaw < -180.0F) p.yaw += 360.0F;
 
         boolean groundedAtStart = p.grounded;
+        // EntityPlayerSP cancels sprint when forward input drops below 0.8F.
+        // Keep the simulator faithful to that actual 1.8.9 input contract.
+        boolean sprinting = sprinting && action.forward() >= 0.8D;
         float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
         /*
@@ -49,7 +52,7 @@ public final class LegacyMovementModel implements PhysicsModel {
          * sprint-jump impulse is the post-input vanilla state. Minecraft 1.8.9
          * cancels sprint below 0.8 forward input before movement is applied.
          */
-        boolean effectiveSprint = action.sprint() && action.forward() >= 0.8D;
+        boolean effectiveSprint = sprinting && action.forward() >= 0.8D;
 
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {

@@ -47,6 +47,18 @@ public final class LegacyWorldObservation {
                 center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
     }
 
+    /** Backwards-compatible pattern-aware constructor; defaults to the Modern/QOL mode. */
+    public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
+                            int mazePattern, boolean alive, boolean completed, int stage,
+                            int safePadSeconds, int liveSeconds, Player player, Kit kit,
+                            int jumpCharges, int abilityCharges, BlockPoint center, Pad pad,
+                            int[][] maze, List<Monster> monsters, String scoreboardTitle,
+                            List<String> scoreboardLines) {
+        this(worldTick, inMonsterMaze, mazeDetected, mazePattern, "MODERN", alive, completed, stage,
+                safePadSeconds, liveSeconds, player, kit, jumpCharges, abilityCharges,
+                center, pad, maze, defaultPhysicalFloor(maze), monsters, scoreboardTitle, scoreboardLines);
+    }
+
     public LegacyWorldObservation(long worldTick, boolean inMonsterMaze, boolean mazeDetected,
                             int mazePattern, String mode, boolean alive, boolean completed, int stage,
                             int safePadSeconds, int liveSeconds, Player player, Kit kit,

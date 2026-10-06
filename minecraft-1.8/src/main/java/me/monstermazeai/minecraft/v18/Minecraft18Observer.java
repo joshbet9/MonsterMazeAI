@@ -398,7 +398,6 @@ public final class Minecraft18Observer {
             for (int x = px - CENTER_SEARCH_RADIUS; x <= px + CENTER_SEARCH_RADIUS; x++) {
                 for (int z = pz - CENTER_SEARCH_RADIUS; z <= pz + CENTER_SEARCH_RADIUS; z++) {
                     BlockPos candidate = new BlockPos(x, centerY, z);
-                    if (!matchesCenterAnchor(world, candidate)) continue;
                     int pattern = findCenterPattern(world, candidate);
                     if (pattern >= 0) {
                         cachedCenter = candidate;

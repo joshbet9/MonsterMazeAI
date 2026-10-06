@@ -1424,8 +1424,28 @@ public final class StableLiveMovementController {
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
             if (lateral > 0.95D) continue;
 
-            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
-            double score = distance - 0.20D * Math.max(0.0D, closing);
+            /*
+             * Threat is a relative-motion question. The old calculation used
+             * monster velocity only, so a stationary monster sitting 2 blocks
+             * ahead was treated as an incoming threat even when the player's
+             * trajectory would pass safely beside it. Use the actual relative
+             * closing speed and only enter the dodge branch when contact is
+             * plausibly imminent.
+             */
+            double relativeVx = monster.vx - state.player.vx;
+            double relativeVz = monster.vz - state.player.vz;
+            double closing = -(relativeVx * dx + relativeVz * dz) / distance;
+            double contactDistance = 1.05D;
+            double distanceUntilContact = distance - contactDistance;
+            double timeToContact = closing > 1.0E-6D
+                    ? Math.max(0.0D, distanceUntilContact) / closing
+                    : Double.POSITIVE_INFINITY;
+
+            boolean imminent = distance <= contactDistance
+                    || (closing > 0.05D && timeToContact <= 3.0D);
+            if (!imminent) continue;
+
+            double score = distance + 0.20D * timeToContact;
             if (score < bestScore) {
                 bestScore = score;
                 bestDistance = distance;
@@ -1492,7 +1512,24 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            /*
+             * Keep forward at the vanilla sprint threshold, but express the
+             * dodge as a camera-steered world vector so the same directional
+             * intent is executed by the simulator and the 1.8.9 client.
+             * Bias forward motion toward the route while adding one full side
+             * component away from the monster.
+             */
+            double preferredSide = strafe;
+            double dodgeSideBias = 0.75D;
+            double dodgeWorldX = routeDirRow + preferredSide * dodgeSideBias;
+            double dodgeWorldZ = routeDirColumn - preferredSide * dodgeSideBias;
+            double dodgeLength = Math.hypot(dodgeWorldX, dodgeWorldZ);
+            if (dodgeLength > 1.0E-9D) {
+                dodgeWorldX /= dodgeLength;
+                dodgeWorldZ /= dodgeLength;
+            }
+            Action dodge = noMobController.driveVector(
+                    state, dodgeWorldX, dodgeWorldZ, 1.0D, true, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
@@ -1646,7 +1683,15 @@ public final class StableLiveMovementController {
         double ux = dx / length;
         double uz = dz / length;
 
-        double yawRad = Math.toRadians(state.player.yaw);
+        /*
+         * EntityPlayerSP applies the yaw pulse before the movement step. Convert
+         * the recovery vector in that same post-turn frame, exactly as the
+         * simulator's LegacyMovementModel does.
+         */
+        float yawDelta = clamp(normalise(
+                (float) Math.toDegrees(Math.atan2(-dx, dz)) - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        double yawRad = Math.toRadians(state.player.yaw + yawDelta);
         double forwardX = -Math.sin(yawRad);
         double forwardZ = Math.cos(yawRad);
         double strafeX = Math.cos(yawRad);
@@ -1665,10 +1710,9 @@ public final class StableLiveMovementController {
                 && state.ability.charges > 0
                 && state.player.y > -0.05D;
         float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
-                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        float desiredYawDelta = normalise(desiredYaw - state.player.yaw);
 
-        return new Action(forward, strafe, emergencyJump, forward > 0.75,
+        return new Action(forward, strafe, emergencyJump, forward >= 0.8D,
                 yawDelta, false);
     }
 

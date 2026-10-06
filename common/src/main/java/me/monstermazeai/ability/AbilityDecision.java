@@ -198,10 +198,17 @@ public final class AbilityDecision {
          * Body Rush is specifically a contact-immunity resource. In enhanced
          * modes the source gives two 10-second activations, so waiting until a
          * monster is already on top of the player wastes the protection window.
-         * At <= 6 hearts, one nearby active monster is enough reason to spend
-         * the next activation unless an intentional source bump is preferable.
+         * Treat a nearby active cluster as the danger signal rather than requiring
+         * closing velocity, which is often zero immediately before a real contact.
+         * Preserve the intentional-bump strategy when a source-faithful launch is
+         * actually the better deadline action.
          */
-        return state.player.health <= 12.0 && close >= 1;
+        int cluster = 0;
+        for (MonsterState monster : state.monsters) {
+            if (!activeMonster(state, monster)) continue;
+            if (distanceSq(state, monster) <= 3.5D * 3.5D) cluster++;
+        }
+        return state.player.health <= 16.0 && cluster >= 1;
     }
 
     private static boolean cryoImmediateThreat(GameState state) {

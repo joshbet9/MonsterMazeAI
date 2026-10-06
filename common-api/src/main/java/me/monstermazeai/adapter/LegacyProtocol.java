@@ -115,8 +115,8 @@ public final class LegacyProtocol {
                     in.readDouble(), in.readDouble(), in.readDouble(), in.readBoolean()));
         }
 
-        return new LegacyWorldObservation(tick, inMaze, detected, pattern, alive, completed,
-                stage, safe, live, player, kit, jumpCharges, abilityCharges, mode, center, pad,
+        return new LegacyWorldObservation(tick, inMaze, detected, pattern, mode, alive, completed,
+                stage, safe, live, player, kit, jumpCharges, abilityCharges, center, pad,
                 maze, physicalFloor, monsters, title, lines);
     }
 

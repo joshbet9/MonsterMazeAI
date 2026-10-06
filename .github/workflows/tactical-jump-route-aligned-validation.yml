@@ -1,0 +1,44 @@
+name: Tactical Jump Route Aligned Validation
+
+on:
+  push:
+    branches: [ autonomous/tactical-jump-route-aligned-20261006 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cell:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {mode: SPEED, pattern: 2, kit: BODY_BUILDER}
+          - {mode: SPEED, pattern: 2, kit: MAVERICK}
+          - {mode: SPEED, pattern: 2, kit: REPULSOR}
+          - {mode: SPEED, pattern: 3, kit: REPULSOR}
+          - {mode: SPEED, pattern: 1, kit: MAVERICK}
+          - {mode: SPEED, pattern: 2, kit: JUMPER}
+          - {mode: SPEED, pattern: 1, kit: SLOWBALLER}
+          - {mode: SPEED, pattern: 3, kit: BODY_BUILDER}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compile common tests
+        run: mvn -B -ntp -pl common -am install -DskipTests
+      - name: Run natural-end cell
+        run: >
+          mvn -B -ntp -pl common
+          -Dexec.mainClass=me.monstermazeai.sim.NaturalEndMatrixRunner
+          -Dexec.classpathScope=test
+          -Dexec.args="${{ matrix.mode }} ${{ matrix.pattern }} ${{ matrix.kit }}"
+          org.codehaus.mojo:exec-maven-plugin:3.5.0:java

@@ -1,0 +1,75 @@
+name: Benchmark — recovered 35.8 14.6 matrix
+
+on:
+  push:
+    branches:
+      - benchmark/recovered-35-8-14-6-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix-case:
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [SPEED, MODERN]
+        pattern: [1, 2, 3]
+        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run matrix cell
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am             -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase             -DmatrixMode=${{ matrix.mode }}             -DmatrixPattern=${{ matrix.pattern }}             -DmatrixKit=${{ matrix.kit }}             -DmatrixSpawnMonsters=true             -Dsurefire.failIfNoSpecifiedTests=false             -Dsurefire.useFile=false             -Dsurefire.redirectTestOutputToFile=false             test 2>&1 | tee matrix-cell.log
+      - name: Extract row
+        run: |
+          grep 'FULL_MATRIX ' matrix-cell.log | tail -1 > matrix-row.txt
+          test -s matrix-row.txt
+          cat matrix-row.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovered-row-${{ matrix.mode }}-${{ matrix.pattern }}-${{ matrix.kit }}
+          path: matrix-row.txt
+
+  aggregate:
+    name: Aggregate recovered matrix
+    needs: matrix-case
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: recovered-row-*
+          path: matrix-results
+          merge-multiple: false
+      - name: Summarize
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          rows=[]
+          rx=re.compile(r"FULL_MATRIX\s+mode=(SPEED|MODERN)\s+pattern=(\d+)\s+kit=([A-Z_]+)\s+stage=(\d+)")
+          for p in Path("matrix-results").glob("**/matrix-row.txt"):
+              m=rx.search(p.read_text())
+              if m:
+                  rows.append((m.group(1),int(m.group(2)),m.group(3),int(m.group(4))))
+          rows.sort()
+          if len(rows)!=30: raise SystemExit(f"expected 30 rows, got {len(rows)}")
+          sp=[x[3] for x in rows if x[0]=="SPEED"]
+          mo=[x[3] for x in rows if x[0]=="MODERN"]
+          print(f"Speed mean={sum(sp)/15:.4f} min={min(sp)} max={max(sp)}")
+          print(f"Modern mean={sum(mo)/15:.4f} min={min(mo)} max={max(mo)}")
+          for r in rows: print(f"{r[0]} P{r[1]} {r[2]} stage={r[3]}")
+          PY

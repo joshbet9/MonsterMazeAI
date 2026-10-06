@@ -33,7 +33,27 @@ public final class MobInteractionDecision {
         double padDistance = Math.max(0.0, Math.hypot(padDx, padDz) - PAD_RADIUS);
         double ordinaryTicks = padDistance * ESTIMATED_TICKS_PER_BLOCK;
 
-        if (ordinaryTicks + EMERGENCY_MARGIN_TICKS < state.phaseTicksRemaining) {
+        boolean emergency = ordinaryTicks + EMERGENCY_MARGIN_TICKS >= state.phaseTicksRemaining;
+
+        /*
+         * Experimental late-game Maverick strategy: the source Maverick bump
+         * redirects the player velocity toward the active/preview Safe Pad. Once
+         * the run has reached stage 10 and the player still has a healthy
+         * reserve, an already-nearby mob can therefore be used as a deliberate
+         * one-tick movement impulse rather than waiting for deadline failure.
+         *
+         * This is opt-in and Speed-only so the benchmark baseline remains
+         * unchanged unless the experiment explicitly enables it.
+         */
+        boolean opportunisticMaverick = Boolean.getBoolean(
+                "monsterMaze.opportunisticMaverickBump")
+                && state.mode == me.monstermazeai.game.Mode.SPEED
+                && state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                && state.stage >= 10
+                && state.player.health >= 12.0
+                && state.phaseTicksRemaining > 30;
+
+        if (!emergency && !opportunisticMaverick) {
             return null;
         }
 
@@ -62,9 +82,19 @@ public final class MobInteractionDecision {
             double bumpUx = -mx / horizontal;
             double bumpUz = -mz / horizontal;
             double towardPad = bumpUx * padUx + bumpUz * padUz;
-            if (towardPad < 0.70) continue;
+            /*
+             * Normal kits need the geometric bump direction to already point
+             * toward the pad. Maverick is different: MonsterMazeBumpModel
+             * replaces its velocity with the source getMobKnockTarget() vector.
+             */
+            if (state.kit != me.monstermazeai.kit.Kit.MAVERICK
+                    && towardPad < 0.70) {
+                continue;
+            }
 
-            double score = Math.abs(horizontal - 1.0) - towardPad * 2.0;
+            double score = state.kit == me.monstermazeai.kit.Kit.MAVERICK
+                    ? horizontal
+                    : Math.abs(horizontal - 1.0) - towardPad * 2.0;
             if (score < bestScore) {
                 bestScore = score;
                 best = monster;

@@ -24,7 +24,13 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private float pendingYawDelta;
     private long actionExpiryTick = Long.MIN_VALUE;
     /** First-pad branch commands are one client tick intents; never hold stale movement. */
-    private static final long MAX_COMMAND_HOLD_TICKS = 1L;
+    /*
+     * The sidecar is asynchronous and its accepted result may be one or two
+     * client ticks old. Keep the last accepted movement command for at most the
+     * same bounded window so one slow decision cannot turn into a full input gap.
+     * Yaw/ability pulses remain one-shot and are never repeated by this hold.
+     */
+    private static final long MAX_COMMAND_HOLD_TICKS = 2L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");

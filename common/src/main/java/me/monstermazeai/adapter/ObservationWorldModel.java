@@ -21,6 +21,13 @@ public final class ObservationWorldModel {
         state.inMonsterMaze = observation.inMonsterMaze && observation.mazeDetected;
         state.stage = observation.stage;
         state.mazePattern = observation.mazePattern;
+        try {
+            state.mode = Mode.valueOf(observation.mode == null
+                    ? "MODERN"
+                    : observation.mode.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException invalidMode) {
+            state.mode = Mode.MODERN;
+        }
         state.phaseTicksRemaining = observation.safePadSeconds < 0 ? -1 : observation.safePadSeconds * 20;
         state.liveSeconds = observation.liveSeconds;
         state.alive = observation.alive;

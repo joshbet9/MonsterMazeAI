@@ -314,6 +314,34 @@ public final class StableLiveMovementController {
                 state, objectiveChanged ? previousGoalRow : -1, objectiveChanged ? previousGoalColumn : -1);
         Cell supportedStart = resolveSupportedStartCell(state);
         if (supportedStart == null || !inBounds(goal.row(), goal.column())) {
+            /*
+             * A one-tick loss of floor support does not necessarily mean the
+             * player has left the committed route. In particular, the first
+             * falling tick after a corner or gap can occur while the existing
+             * route edge still points directly at the recoverable landing
+             * surface. Delegate that narrow window back to the route motor so
+             * it can preserve the exact committed edge instead of switching to
+             * a generic nearest-floor recovery target.
+             *
+             * This does not change physics or invent a recovery surface: the
+             * NoMob motor uses the already-selected route edge and ordinary
+             * WASD air control. Only a shallow first-fall window is eligible;
+             * deeper falls retain the existing generic last-chance recovery.
+             */
+            if (supportedStart == null
+                    && route != null
+                    && route.size() > 1
+                    && state.player.y > GameState.PATH_Y - 0.50D) {
+                Action routeRecovery = noMobController.nextActionUsingRoute(
+                        state, goal, allowJump, regionRadius, route);
+                if (routeRecovery != null
+                        && !routeRecovery.equals(Action.IDLE)) {
+                    lastDecisionDetail = "ROUTE_AIR_RECOVERY "
+                            + noMobController.lastDecisionDetail();
+                    return routeRecovery;
+                }
+            }
+
             Action recovery = unsupportedEdgeRecoveryAction(state, goal, allowJump);
             lastDecisionDetail = "NO_PHYSICAL_SUPPORT player=" + format(state.player.x) + "," + format(state.player.z)
                     + " y=" + format(state.player.y) + " goal=" + goal.row() + "," + goal.column()

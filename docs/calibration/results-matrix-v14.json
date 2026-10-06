@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "source": "GitHub Actions run 37120990724 / v14 artifact",
+  "rows": [
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "JUMPER",
+      "maxStage": 25
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "SLOWBALLER",
+      "maxStage": 21
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "BODY_BUILDER",
+      "maxStage": 18
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "REPULSOR",
+      "maxStage": 24
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 1,
+      "kit": "MAVERICK",
+      "maxStage": 23
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "JUMPER",
+      "maxStage": 23
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "SLOWBALLER",
+      "maxStage": 22
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "BODY_BUILDER",
+      "maxStage": 22
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "REPULSOR",
+      "maxStage": 25
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 2,
+      "kit": "MAVERICK",
+      "maxStage": 22
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "JUMPER",
+      "maxStage": 20
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "SLOWBALLER",
+      "maxStage": 20
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "BODY_BUILDER",
+      "maxStage": 21
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "REPULSOR",
+      "maxStage": 21
+    },
+    {
+      "mode": "SPEED",
+      "pattern": 3,
+      "kit": "MAVERICK",
+      "maxStage": 18
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "JUMPER",
+      "maxStage": 9
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "SLOWBALLER",
+      "maxStage": 9
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "BODY_BUILDER",
+      "maxStage": 10
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "REPULSOR",
+      "maxStage": 10
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 1,
+      "kit": "MAVERICK",
+      "maxStage": 12
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "JUMPER",
+      "maxStage": 9
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "SLOWBALLER",
+      "maxStage": 10
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "BODY_BUILDER",
+      "maxStage": 9
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "REPULSOR",
+      "maxStage": 4
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 2,
+      "kit": "MAVERICK",
+      "maxStage": 12
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "JUMPER",
+      "maxStage": 10
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "SLOWBALLER",
+      "maxStage": 9
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "BODY_BUILDER",
+      "maxStage": 9
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "REPULSOR",
+      "maxStage": 2
+    },
+    {
+      "mode": "MODERN",
+      "pattern": 3,
+      "kit": "MAVERICK",
+      "maxStage": 9
+    }
+  ]
+}

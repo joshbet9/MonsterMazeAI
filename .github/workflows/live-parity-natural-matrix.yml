@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - fix/live-f7-human-recorder
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:

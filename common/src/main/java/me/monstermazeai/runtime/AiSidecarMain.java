@@ -7,6 +7,7 @@ import me.monstermazeai.planner.LiveObjectiveController;
 import me.monstermazeai.planner.MazeAwareRecedingHorizonController;
 import me.monstermazeai.planner.RobustLiveController;
 import me.monstermazeai.adapter.ObservationWorldModel;
+import me.monstermazeai.player.AiProfile;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
 import me.monstermazeai.telemetry.ReplayRecorder;
@@ -28,7 +29,7 @@ public final class AiSidecarMain {
         AutonomousMonsterMazeAgent fullRoutingAgent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
                         new LiveObjectiveController(
-                                new MazeAwareRecedingHorizonController(1))));
+                                new MazeAwareRecedingHorizonController(1, AiProfile.HIGH_SKILL))));
         TelemetryRecorder telemetry = null;
         ReplayRecorder replay = null;
         String telemetryPath = System.getProperty("monstermazeai.telemetry");
@@ -78,64 +79,3 @@ public final class AiSidecarMain {
                             + " phase=" + state.phaseTicksRemaining
                             + " stage=" + state.stage
                             + " monsters=" + state.monsters.size());
-                    lastDiagnosticTick = observation.worldTick;
-                }
-
-                if (decisionReady) {
-                    // Non-Jumper players deliberately hold jump for the source's
-                    // "speeding" mechanic. Jumpers may jump only while a charge remains.
-                    boolean allowJump = state.kit != me.monstermazeai.kit.Kit.JUMPER
-                            || state.player.jumpCharges > 0;
-                    Action action = fullRoutingAgent.decide(state, allowJump);
-                    result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
-                            action.sprint(), action.yawDelta(), action.useAbility());
-
-                    if (observationCount <= 3 || observationCount % 20 == 0
-                            || action.yawDelta() != 0.0F
-                            || action.useAbility()) {
-                        long decisionMicros = (System.nanoTime() - decisionStart) / 1000L;
-                        System.err.println("[MonsterMazeAI] FULL_ROUTING_DECISION tick=" + observation.worldTick
-                                + " legacyOut=" + describe(result)
-                                + " detail=" + fullRoutingAgent.lastDecisionDetail()
-                                + " decisionUs=" + decisionMicros
-                                + " localMonsters=" + state.monsters.size()
-                                + " mode=full-routing");
-                    }
-                } else {
-                    fullRoutingAgent.reset();
-                    System.err.println("[MonsterMazeAI] FULL_ROUTING reset by gate at tick="
-                            + observation.worldTick);
-                }
-            } catch (RuntimeException failure) {
-                fullRoutingAgent.reset();
-                System.err.println("[MonsterMazeAI] sidecar decision failed: "
-                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
-                failure.printStackTrace(System.err);
-            }
-
-            long latency = System.nanoTime() - decisionStart;
-            if (telemetry != null && telemetryState != null) try {
-                telemetry.record(new TelemetryEvent(observation.worldTick, latency, telemetryState, result,
-                        result.useAbility ? "strategic-threat-response" : ""));
-            } catch (java.io.IOException e) {
-                System.err.println("[MonsterMazeAI] telemetry write failed: " + e.getMessage());
-            }
-            if (replay != null) try {
-                replay.record(observation, result);
-            } catch (java.io.IOException e) {
-                System.err.println("[MonsterMazeAI] replay write failed: " + e.getMessage());
-            }
-            LegacyProtocol.writeAction(out, result);
-            out.flush();
-        }
-    }
-
-    private static String describe(LegacyAction action) {
-        return "f=" + action.forward
-                + ",s=" + action.strafe
-                + ",jump=" + action.jump
-                + ",sprint=" + action.sprint
-                + ",yawDelta=" + action.yawDelta
-                + ",ability=" + action.useAbility;
-    }
-}

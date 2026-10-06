@@ -674,7 +674,7 @@ final class NoMobLocomotionController {
          * first rotate in place when facing backwards. A small fixed turn step
          * converges without the old +/-24 degree oscillation.
          */
-        if (Math.abs(yawError) > 75.0F) {
+        if (Math.abs(yawError) > 90.0F) {
             return new Action(
                     0.0, 0.0, false, false,
                     clamp(yawError, -15.0F, 15.0F),
@@ -803,10 +803,10 @@ final class NoMobLocomotionController {
          * A pure-W camera snap cuts corners badly at large errors; a raw diagonal
          * sprint action can silently cancel sprint. Use the source-valid middle:
          *
-         *   >75° error: turn in place until the route is safely in front.
-         *   <=75° error: turn up to 30° and add only enough A/D to track the
-         *   desired world direction while keeping forward >=0.8 after input
-         *   normalization.
+         *   >90° error: turn in place until the route is within the safe
+         *   camera-control envelope.
+         *   <=90° error: turn up to 90° and add A/D as needed to keep moving
+         *   toward the desired world direction while preserving sprint input.
          *
          * The resulting Action is identical whether consumed by LegacyMovementModel
          * or Minecraft18MovementInput: yaw first, then this local WASD intent.
@@ -829,8 +829,10 @@ final class NoMobLocomotionController {
         double strafe = Math.tan(residualRadians) * forward;
 
         /*
-         * Keep the local vector inside the sprint-valid cone. The maximum
-         * strafe ratio gives a normalized forward component of ~0.857.
+         * Minecraft normalizes the combined forward/strafe input before applying
+         * movement, while sprint eligibility is checked from the raw forward
+         * input. A full strafe is therefore source-valid: forward remains 1.0
+         * for sprint purposes while the normalized vector can reach 45 degrees.
          */
         double maxStrafe = 1.0D;
         strafe = Math.max(-maxStrafe, Math.min(maxStrafe, strafe));

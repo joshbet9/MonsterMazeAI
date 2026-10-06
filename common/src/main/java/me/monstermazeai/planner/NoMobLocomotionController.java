@@ -512,13 +512,7 @@ final class NoMobLocomotionController {
          */
         yawDelta = 0.0F;
 
-        /*
-         * LegacyMovementModel and the live MovementInput bridge apply yawDelta
-         * before converting WASD into world motion. Build the WASD vector in that
-         * post-turn frame, otherwise every simultaneous steer+drive command is
-         * rotated by exactly the camera pulse we just requested.
-         */
-        double yaw = Math.toRadians(state.player.yaw + yawDelta);
+        double yaw = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
         double strafeX = Math.cos(yaw);
@@ -788,7 +782,7 @@ final class NoMobLocomotionController {
         return normalize(desiredYaw - state.player.yaw);
     }
 
-    private Action driveVector(
+    Action driveVector(
             GameState state,
             double worldX,
             double worldZ,

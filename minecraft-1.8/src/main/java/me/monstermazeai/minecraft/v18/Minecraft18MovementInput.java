@@ -30,14 +30,34 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
 
     @Override
     public void updatePlayerMoveState() {
-        // Keep normal keyboard behaviour available whenever AI is disabled.
-        super.updatePlayerMoveState();
-
-        if (!executor.isAiEnabled()) return;
+        if (!executor.isAiEnabled()) {
+            super.updatePlayerMoveState();
+            return;
+        }
 
         LegacyAction action = executor.currentAction(minecraft.theWorld == null
                 ? 0L
                 : minecraft.theWorld.getTotalWorldTime());
+
+        /*
+         * Sprint is an input-state decision in the 1.8.9/LabyMod player loop.
+         * EntityPlayerSP reads the sprint binding/input state after
+         * MovementInputFromOptions.updatePlayerMoveState(). Merely calling
+         * EntityPlayer.setSprinting() here is therefore not authoritative: the
+         * later player sprint logic can immediately overwrite it.
+         *
+         * Feed the planner's sprint intent through the same key-state boundary
+         * that vanilla/LabyMod consumes, while restoring the real keyboard state
+         * immediately afterwards. This keeps the AI isolated from physical input
+         * and makes SP=true produce the same sprint state the simulator models.
+         */
+        boolean physicalSprintPressed = minecraft.gameSettings.keyBindSprint.pressed;
+        minecraft.gameSettings.keyBindSprint.pressed = action.sprint;
+        try {
+            super.updatePlayerMoveState();
+        } finally {
+            minecraft.gameSettings.keyBindSprint.pressed = physicalSprintPressed;
+        }
         if (action == null) action = LegacyAction.IDLE;
 
         if (minecraft.thePlayer != null) {

@@ -40,7 +40,7 @@ public final class Minecraft18AiRuntime {
      * a small bounded latency window in live Minecraft; genuinely old commands
      * still fail closed rather than being applied indefinitely.
      */
-    private static final long MAX_ACTION_AGE_TICKS = 2L;
+    private static final long MAX_ACTION_AGE_TICKS = 1L;
 
     private volatile Process process;
     private volatile DataInputStream input;
@@ -261,8 +261,7 @@ public final class Minecraft18AiRuntime {
             }
 
             long wireStart = System.nanoTime();
-            LegacyWorldObservation localObservation = observation.localInteractionView(20.0);
-            LegacyProtocol.writeObservation(output, localObservation);
+            LegacyProtocol.writeObservation(output, observation);
             output.flush();
 
             LegacyAction action = LegacyProtocol.readAction(input);

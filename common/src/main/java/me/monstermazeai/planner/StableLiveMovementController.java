@@ -450,7 +450,8 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+            if (tactical != null && isDiscreteTacticalAction(
+                    state, tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }
@@ -1216,8 +1217,57 @@ public final class StableLiveMovementController {
         return false;
     }
 
-    private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+    private boolean isDiscreteTacticalAction(
+            GameState state, Action action, boolean allowJump) {
+        if (action == null) return false;
+        if (action.useAbility()) return true;
+        if (!allowJump || !action.jump() || route == null || route.size() < 2) {
+            return false;
+        }
+
+        /*
+         * Jump timing is useful for Speed's source-faithful jump-spam and for
+         * genuine Jumper jumps, but the tactical simulator can return a
+         * movement vector that was optimal a few simulation ticks ago. Never
+         * let such a vector replace the committed route motor when it actually
+         * moves away from the current route edge.
+         */
+        int fromIndex = Math.max(0, Math.min(
+                waypointIndex > 0 ? waypointIndex - 1 : 0, route.size() - 2));
+        int toIndex = fromIndex + 1;
+        Cell from = route.cells().get(fromIndex);
+        Cell to = route.cells().get(toIndex);
+        double routeX = to.row() - from.row();
+        double routeZ = to.column() - from.column();
+        double routeLength = Math.hypot(routeX, routeZ);
+        if (routeLength < 1.0E-9D) return false;
+        routeX /= routeLength;
+        routeZ /= routeLength;
+
+        /*
+         * Convert the tactical input through the post-look yaw because the
+         * live physics applies the same camera delta before movement.
+         */
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        double movementX = forwardX * action.forward() + strafeX * action.strafe();
+        double movementZ = forwardZ * action.forward() + strafeZ * action.strafe();
+        double movementLength = Math.hypot(movementX, movementZ);
+        if (movementLength < 1.0E-9D) return false;
+
+        double routeProgress = (movementX / movementLength) * routeX
+                + (movementZ / movementLength) * routeZ;
+        if (routeProgress < 0.20D) return false;
+
+        /*
+         * A single source-physics projection catches the exact class of edge
+         * failure seen in the diagnostic trace without imposing a multi-tick
+         * safety tax on the high-performance controller.
+         */
+        return hasPredictedPhysicalSupport(state, action, 1);
     }
 
     private boolean detectLiveMobHit(GameState state) {

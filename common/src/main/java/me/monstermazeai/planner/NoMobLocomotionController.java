@@ -798,43 +798,44 @@ final class NoMobLocomotionController {
         float yawError = headingErrorForDirection(state, worldX, worldZ);
 
         /*
-         * Translation is expressed directly in the player's current
-         * forward/strafe basis. Keeping yawDelta at zero removes the unstable
-         * rotate-stop-rotate loop seen in the diagnostic trace; the resulting
-         * input is still equivalent to WASD steering in the 1.8 client.
-         */
-        /*
-         * Human-like camera convergence: large route-heading errors should be
-         * closed quickly while translation continues. The source client accepts
-         * continuous mouse-look; this only changes the controller's yaw input,
-         * not movement physics.
-         */
-        /*
-         * Ordinary maze travel is a continuous steering problem. The vanilla
-         * client can combine W with camera movement on the same tick, so a
-         * large heading error must not automatically donate a full tick to
-         * turning in place. Produce the exact source-valid control intent:
-         * full forward, up to 30 degrees of camera correction, then let the
-         * caller's one-tick floor prediction decide whether that movement is
-         * safe.
-         */
-        float yawDelta = clamp(
-                yawError, -30.0F, 30.0F);
-        /*
-         * Use the same input representation that the simulator evaluates and
-         * Minecraft 1.8.9 can actually sustain while sprinting: W plus camera
-         * steering. Vanilla cancels sprint when forward input drops below 0.8,
-         * whereas LegacyMovementModel deliberately applies its 1.30 sprint
-         * multiplier whenever sprint=true. Emitting A/D-heavy sprint commands
-         * therefore made the simulator faster than the real client.
+         * Vanilla 1.8.9 can steer the camera and move on the same tick, but the
+         * player must retain >=0.8 forward input for sprint to remain active.
+         * A pure-W camera snap cuts corners badly at large errors; a raw diagonal
+         * sprint action can silently cancel sprint. Use the source-valid middle:
          *
-         * Express the desired world vector as a camera heading change and pure
-         * forward input. LegacyMovementModel applies yawDelta before movement,
-         * and the live MovementInput bridge applies the same ordering.
+         *   >75° error: turn in place until the route is safely in front.
+         *   <=75° error: turn up to 30° and add only enough A/D to track the
+         *   desired world direction while keeping forward >=0.8 after input
+         *   normalization.
+         *
+         * The resulting Action is identical whether consumed by LegacyMovementModel
+         * or Minecraft18MovementInput: yaw first, then this local WASD intent.
          */
+        if (Math.abs(yawError) > 75.0F) {
+            return new Action(
+                    0.0, 0.0, false, false,
+                    clamp(yawError, -30.0F, 30.0F),
+                    false);
+        }
+
+        float yawDelta = clamp(
+                yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        float residualError = normalise(yawError - yawDelta);
+
+        double residualRadians = Math.toRadians(residualError);
+        double forward = Math.max(0.8D, Math.min(1.0D, forwardMagnitude));
+        double strafe = Math.tan(residualRadians) * forward;
+
+        /*
+         * Keep the local vector inside the sprint-valid cone. The maximum
+         * strafe ratio gives a normalized forward component of ~0.857.
+         */
+        double maxStrafe = forward * 0.60D;
+        strafe = Math.max(-maxStrafe, Math.min(maxStrafe, strafe));
+
         return new Action(
-                forwardMagnitude,
-                0.0,
+                forward,
+                strafe,
                 jump,
                 sprint,
                 yawDelta,

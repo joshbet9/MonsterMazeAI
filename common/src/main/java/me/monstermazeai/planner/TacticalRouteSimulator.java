@@ -179,10 +179,25 @@ public final class TacticalRouteSimulator {
     private long tacticalRank(GameState state, PlayerRoute route, int waypoint,
                               Cell goal, boolean regionGoal, int regionRadius) {
         if (goalReached(state, route, waypoint, goal, regionGoal, regionRadius)) return 0L;
+
         long remaining = Math.max(0, route.size() - 1L - waypoint);
-        long distance = Math.min(999_999L, Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
-        long damage = Math.min(999_999L, Math.round(state.player.damageTaken * 1000));
-        return remaining * 1_000_000_000_000L + distance * 1_000_000L + damage;
+        long distance = Math.min(999_999L,
+                Math.round(distanceToWaypoint(state, route, waypoint) * 1000));
+        long damage = Math.min(999_999L,
+                Math.round(state.player.damageTaken * 1000));
+
+        /*
+         * Tactical search should prefer a clean line, but a single hit can be
+         * legitimate when it buys substantial route progress. With the stored
+         * damage scaled by 1000, this weight makes four damage roughly equal to
+         * twenty route cells locally rather than making damage an absolute veto.
+         */
+        final long DAMAGE_WEIGHT = 5_000L;
+        final long REMAINING_WEIGHT = 1_000_000L;
+
+        return damage * DAMAGE_WEIGHT
+                + remaining * REMAINING_WEIGHT
+                + distance;
     }
 
     private boolean needsTacticalSearch(GameState state) {

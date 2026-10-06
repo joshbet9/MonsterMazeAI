@@ -70,7 +70,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
         actionExpiryTick = currentTick == Long.MAX_VALUE
                 ? Long.MAX_VALUE
-                : currentTick + holdTicks;
+                : currentTick + holdTicks - 1L;
         jumpExpiryTick = next.jump && currentTick != Long.MAX_VALUE
                 ? currentTick + JUMP_PULSE_HOLD_TICKS
                 : Long.MIN_VALUE;

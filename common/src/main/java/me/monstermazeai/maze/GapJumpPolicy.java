@@ -14,10 +14,10 @@ package me.monstermazeai.maze;
  */
 public final class GapJumpPolicy {
     /**
-     * Baseline: a gap carries a positive risk cost, while an equal-length
-     * route is deterministically preferred when the physical route lengths tie.
+     * Baseline: a gap carries a deliberately strong risk cost. Ordinary floor
+     * routes are therefore preferred unless a gap is a materially better shortcut.
      */
-    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(1.0);
+    public static final GapJumpPolicy BASELINE = new GapJumpPolicy(4.0);
 
     private final double riskCostPerGap;
 

@@ -72,14 +72,22 @@ public final class LegacyMovementModel implements PhysicsModel {
             p.jumpTicks--;
         }
 
+        /*
+         * Minecraft 1.8.9 only maintains sprint while forward input is at least
+         * 0.8F. The real client applies that gate after MovementInput is updated;
+         * model it here as part of the same action contract so simulator and live
+         * adapter cannot disagree about whether the 1.30 sprint multiplier applies.
+         */
+        boolean effectiveSprint = action.sprint() && action.forward() >= 0.8D;
+
         float movementFactor;
         if (groundedAtStart) {
             movementFactor = WALK_SPEED
-                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
+                    * (effectiveSprint ? SPRINT_MULTIPLIER : 1.0F)
                     * (0.16277136F / (friction * friction * friction));
         } else {
             movementFactor = AIR_MOVE_FACTOR
-                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F);
+                    * (effectiveSprint ? SPRINT_MULTIPLIER : 1.0F);
         }
 
         moveFlying(p, action.strafe(), action.forward(), movementFactor);

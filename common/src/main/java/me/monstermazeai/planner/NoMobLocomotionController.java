@@ -25,7 +25,7 @@ import java.util.List;
  * braking. Gap edges are committed and timed separately.
  */
 final class NoMobLocomotionController {
-    private static final float MAX_TURN_PER_TICK = 30.0F;
+    private static final float MAX_TURN_PER_TICK = 90.0F;
 
     private static final double HEADING_TOLERANCE = 5.0D;
     private static final double DRIVE_HEADING_LIMIT = 18.0D;
@@ -399,7 +399,7 @@ final class NoMobLocomotionController {
             jump = false;
         }
 
-        if (Math.abs(yawError) > 75.0F) {
+        if (Math.abs(yawError) > 90.0F) {
             jump = false;
         }
 
@@ -814,7 +814,7 @@ final class NoMobLocomotionController {
         if (Math.abs(yawError) > 75.0F) {
             return new Action(
                     0.0, 0.0, false, false,
-                    clamp(yawError, -30.0F, 30.0F),
+                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
                     false);
         }
 
@@ -832,7 +832,7 @@ final class NoMobLocomotionController {
          * Keep the local vector inside the sprint-valid cone. The maximum
          * strafe ratio gives a normalized forward component of ~0.857.
          */
-        double maxStrafe = forward * 0.60D;
+        double maxStrafe = 1.0D;
         strafe = Math.max(-maxStrafe, Math.min(maxStrafe, strafe));
 
         return new Action(

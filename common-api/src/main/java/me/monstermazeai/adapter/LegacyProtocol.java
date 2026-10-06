@@ -15,7 +15,7 @@ import java.util.List;
  * depending on Minecraft or Java-17 classes.
  */
 public final class LegacyProtocol {
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final int MAX_MAZE_SIZE = 99;
     private static final int MAX_MONSTERS = 256;
 

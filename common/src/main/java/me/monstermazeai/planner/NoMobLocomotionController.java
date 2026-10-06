@@ -809,8 +809,22 @@ final class NoMobLocomotionController {
          * continuous mouse-look; this only changes the controller's yaw input,
          * not movement physics.
          */
+        /*
+         * For large errors, rotate in place first. This is both source-valid
+         * and topology-safe: sending W while the camera is still 75+ degrees
+         * away from the route would spend the turn crossing the wrong corridor.
+         * Once inside that window, use the full available 30-degree camera step
+         * so convergence is as fast as the simulator's same action semantics.
+         */
+        if (Math.abs(yawError) > 75.0F) {
+            return new Action(
+                    0.0, 0.0, false, false,
+                    clamp(yawError, -30.0F, 30.0F),
+                    false);
+        }
+
         float yawDelta = clamp(
-                yawError * 0.50F, -30.0F, 30.0F);
+                yawError, -30.0F, 30.0F);
         /*
          * Use the same input representation that the simulator evaluates and
          * Minecraft 1.8.9 can actually sustain while sprinting: W plus camera

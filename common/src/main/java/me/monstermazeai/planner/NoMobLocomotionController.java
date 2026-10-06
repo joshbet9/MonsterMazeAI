@@ -812,27 +812,24 @@ final class NoMobLocomotionController {
         float yawDelta = clamp(
                 yawError * 0.50F, -30.0F, 30.0F);
         /*
-         * LegacyMovementModel and the 1.8 MovementInput bridge apply yawDelta
-         * before converting WASD into world motion. Build this local movement
-         * vector in that same post-turn frame. Using the pre-turn yaw here makes
-         * every simultaneous steer+drive action rotate its WASD vector twice
-         * relative to the simulator.
+         * Use the same input representation that the simulator evaluates and
+         * Minecraft 1.8.9 can actually sustain while sprinting: W plus camera
+         * steering. Vanilla cancels sprint when forward input drops below 0.8,
+         * whereas LegacyMovementModel deliberately applies its 1.30 sprint
+         * multiplier whenever sprint=true. Emitting A/D-heavy sprint commands
+         * therefore made the simulator faster than the real client.
+         *
+         * Express the desired world vector as a camera heading change and pure
+         * forward input. LegacyMovementModel applies yawDelta before movement,
+         * and the live MovementInput bridge applies the same ordering.
          */
-        double yaw = Math.toRadians(state.player.yaw + yawDelta);
-        double forwardX = -Math.sin(yaw);
-        double forwardZ = Math.cos(yaw);
-        double strafeX = Math.cos(yaw);
-        double strafeZ = Math.sin(yaw);
-
-        double forward = worldX * forwardX + worldZ * forwardZ;
-        double strafe = worldX * strafeX + worldZ * strafeZ;
-        double magnitude = Math.hypot(forward, strafe);
-        if (magnitude > 1.0E-9D) {
-            forward = forward / magnitude * forwardMagnitude;
-            strafe = strafe / magnitude * forwardMagnitude;
-        }
-
-        return new Action(forward, strafe, jump, sprint, yawDelta, false);
+        return new Action(
+                forwardMagnitude,
+                0.0,
+                jump,
+                sprint,
+                yawDelta,
+                false);
     }
 
     private float normalize(float angle) {

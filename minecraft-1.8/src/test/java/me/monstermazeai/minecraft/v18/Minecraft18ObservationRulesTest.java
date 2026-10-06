@@ -20,6 +20,21 @@ public class Minecraft18ObservationRulesTest {
     }
 
     @Test
+    public void parsesAuthoritativeSourceModeLine() {
+        Minecraft18ObservationRules.ScoreboardData speed =
+                Minecraft18ObservationRules.parseScoreboard(
+                        "Monster Maze",
+                        Arrays.asList("Mode", "Speed", "Safe Pad", "60 Seconds", "Stage", "1"));
+        Minecraft18ObservationRules.ScoreboardData modern =
+                Minecraft18ObservationRules.parseScoreboard(
+                        "Monster Maze",
+                        Arrays.asList("Mode", "Modern", "Safe Pad", "35 Seconds", "Stage", "1"));
+
+        assertEquals("SPEED", speed.mode);
+        assertEquals("MODERN", modern.mode);
+    }
+
+    @Test
     public void parsesInlineSafePadAndStage() {
         Minecraft18ObservationRules.ScoreboardData data =
                 Minecraft18ObservationRules.parseScoreboard(

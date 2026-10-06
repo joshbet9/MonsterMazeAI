@@ -9,6 +9,7 @@ import me.monstermazeai.planner.RobustLiveController;
 import me.monstermazeai.adapter.ObservationWorldModel;
 import me.monstermazeai.game.GameState;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.AiProfile;
 import me.monstermazeai.telemetry.ReplayRecorder;
 import me.monstermazeai.telemetry.TelemetryEvent;
 import me.monstermazeai.telemetry.TelemetryRecorder;
@@ -28,7 +29,7 @@ public final class AiSidecarMain {
         AutonomousMonsterMazeAgent fullRoutingAgent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
                         new LiveObjectiveController(
-                                new MazeAwareRecedingHorizonController(1))));
+                                new MazeAwareRecedingHorizonController(1, AiProfile.HIGH_SKILL))));
         TelemetryRecorder telemetry = null;
         ReplayRecorder replay = null;
         String telemetryPath = System.getProperty("monstermazeai.telemetry");

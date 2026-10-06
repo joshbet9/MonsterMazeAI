@@ -119,6 +119,31 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void simulatorAndLiveMotorSharePostTurnMovementFrame() {
+        GameState s = state(0.5, 0.5, -20.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+        float expectedPostTurnYaw = s.player.yaw + action.yawDelta();
+
+        physics.tick(s.player, action);
+
+        /*
+         * The simulator applies yawDelta first, then converts WASD in that
+         * post-turn frame. The live 1.8 MovementInput bridge does the same.
+         * A pre-turn conversion would leave a material lateral component here.
+         */
+        assertEquals(expectedPostTurnYaw, -10.0F, 1.0e-5F);
+        double horizontal = Math.hypot(s.player.x - 0.5D, s.player.z - 0.5D);
+        assertTrue(horizontal > 0.05D, "controller produced no meaningful movement");
+        double lateralFraction = Math.abs(s.player.x - 0.5D) / horizontal;
+        assertTrue(lateralFraction < 0.08D,
+                "one-tick movement must follow the simulator's post-turn heading; lateral fraction="
+                        + lateralFraction + " action=" + action);
+    }
+
+    @Test
     void usesInPlaceTurnForLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

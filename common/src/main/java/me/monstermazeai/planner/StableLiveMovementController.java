@@ -1424,8 +1424,28 @@ public final class StableLiveMovementController {
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
             if (lateral > 0.95D) continue;
 
-            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
-            double score = distance - 0.20D * Math.max(0.0D, closing);
+            /*
+             * Threat is a relative-motion question. The old calculation used
+             * monster velocity only, so a stationary monster sitting 2 blocks
+             * ahead was treated as an incoming threat even when the player's
+             * trajectory would pass safely beside it. Use the actual relative
+             * closing speed and only enter the dodge branch when contact is
+             * plausibly imminent.
+             */
+            double relativeVx = monster.vx - state.player.vx;
+            double relativeVz = monster.vz - state.player.vz;
+            double closing = -(relativeVx * dx + relativeVz * dz) / distance;
+            double contactDistance = 1.05D;
+            double distanceUntilContact = distance - contactDistance;
+            double timeToContact = closing > 1.0E-6D
+                    ? Math.max(0.0D, distanceUntilContact) / closing
+                    : Double.POSITIVE_INFINITY;
+
+            boolean imminent = distance <= contactDistance
+                    || (closing > 0.05D && timeToContact <= 3.0D);
+            if (!imminent) continue;
+
+            double score = distance + 0.20D * timeToContact;
             if (score < bestScore) {
                 bestScore = score;
                 bestDistance = distance;
@@ -1493,13 +1513,22 @@ public final class StableLiveMovementController {
             }
 
             /*
-             * Keep forward at the vanilla sprint threshold while dodging.
-             * The old 0.65 W + 1.0 A/D action cancelled sprint in Minecraft
-             * even though the simulator still applied its 1.30 multiplier.
-             * W + full A/D is source-valid and the same normalized vector is
-             * evaluated by LegacyMovementModel.
+             * Keep forward at the vanilla sprint threshold, but express the
+             * dodge as a camera-steered world vector so the same directional
+             * intent is executed by the simulator and the 1.8.9 client.
+             * Bias forward motion toward the route while adding one full side
+             * component away from the monster.
              */
-            Action dodge = new Action(1.0, strafe, false, true, 0.0F, false);
+            double preferredSide = strafe;
+            double dodgeWorldX = routeDirRow + preferredSide;
+            double dodgeWorldZ = routeDirColumn - preferredSide;
+            double dodgeLength = Math.hypot(dodgeWorldX, dodgeWorldZ);
+            if (dodgeLength > 1.0E-9D) {
+                dodgeWorldX /= dodgeLength;
+                dodgeWorldZ /= dodgeLength;
+            }
+            Action dodge = noMobController.driveVector(
+                    state, dodgeWorldX, dodgeWorldZ, 1.0D, true, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id

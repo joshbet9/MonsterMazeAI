@@ -86,6 +86,7 @@ public final class FirstPadSpeedrunController {
     private long lastFailedMobReplanTick = Long.MIN_VALUE;
     private long lastSuccessfulMobReplanTick = Long.MIN_VALUE;
     private String lastRouteBuildFailureReason = "unknown";
+    private String lastDecisionDetail = "INIT";
 
     /*
      * Active-pad transitions are tracked explicitly. targetReached is a

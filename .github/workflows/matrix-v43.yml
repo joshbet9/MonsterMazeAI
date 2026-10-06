@@ -1,0 +1,67 @@
+name: Matrix v43 — Momentum Controller
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix-case:
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [SPEED, MODERN]
+        pattern: [1, 2, 3]
+        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B -ntp -pl common-api -am -DskipTests install
+      - name: Run natural termination cell
+        run: |
+          set -o pipefail
+          mvn -B -ntp -pl common -am -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase             -DmatrixMode=${{ matrix.mode }} -DmatrixPattern=${{ matrix.pattern }} -DmatrixKit=${{ matrix.kit }}             -Dsurefire.failIfNoSpecifiedTests=false -Dsurefire.useFile=false -Dsurefire.redirectTestOutputToFile=false test 2>&1 | tee matrix.log
+      - name: Extract
+        run: grep 'FULL_MATRIX ' matrix.log | tail -1 > row.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: row-${{ matrix.mode }}-${{ matrix.pattern }}-${{ matrix.kit }}
+          path: row.txt
+
+  aggregate:
+    needs: matrix-case
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: row-*
+          path: rows
+      - name: Aggregate
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          rows=[]
+          rx=re.compile(r'FULL_MATRIX mode=(SPEED|MODERN) pattern=(\d+) kit=([A-Z_]+) stage=(\d+) ticks=(\d+) health=([\-\d.]+)')
+          for p in pathlib.Path('rows').glob('**/row.txt'):
+            m=rx.search(p.read_text())
+            if m: rows.append((m.group(1),int(m.group(2)),m.group(3),int(m.group(4)),int(m.group(5)),float(m.group(6))))
+          if len(rows)!=30: raise SystemExit(f'expected 30 rows, got {len(rows)}')
+          speed=[x[3] for x in rows if x[0]=='SPEED']; modern=[x[3] for x in rows if x[0]=='MODERN']
+          print('V43_MATRIX')
+          print('stageSum=',sum(x[3] for x in rows))
+          print('speedMean=',sum(speed)/15,'speedPeak=',max(speed))
+          print('modernMean=',sum(modern)/15,'modernPeak=',max(modern))
+          for x in sorted(rows): print(f'{x[0]} P{x[1]} {x[2]}: stage={x[3]} ticks={x[4]} health={x[5]:.2f}')
+          PY

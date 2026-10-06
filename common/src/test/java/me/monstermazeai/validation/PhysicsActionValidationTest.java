@@ -87,6 +87,26 @@ class PhysicsActionValidationTest {
     }
 
     @Test
+    void sprintRequiresVanillaForwardThreshold() {
+        GameState s = state(Kit.MAVERICK);
+        Simulator simulator = simulator(s);
+
+        double unsprinted;
+        {
+            GameState slow = s.copy();
+            simulator.tick(slow, new Action(0.7, 0.7, false, true, 0.0F, false));
+            unsprinted = Math.hypot(slow.player.vx, slow.player.vz);
+        }
+
+        GameState sprint = s.copy();
+        simulator.tick(sprint, new Action(0.8, 0.6, false, true, 0.0F, false));
+        double sprinted = Math.hypot(sprint.player.vx, sprint.player.vz);
+
+        assertTrue(sprinted > unsprinted,
+                "forward < 0.8 must lose the sprint multiplier just as Minecraft 1.8.9 does");
+    }
+
+    @Test
     void jumpHasSourceShapedArcAndReturnsToGround() {
         GameState s = state(Kit.JUMPER);
         Simulator simulator = simulator(s);

@@ -1,0 +1,22 @@
+name: Modern Tactical Trigger Compile
+
+on:
+  push:
+    branches: [ autonomous/modern-tactical-trigger-local-20261006 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B -ntp -pl common -am install -DskipTests

@@ -410,6 +410,11 @@ public final class Minecraft18Observer {
                          */
                         cachedMazeDetected = true;
                         cachedMaze = new int[MAZE_SIZE][MAZE_SIZE];
+                        for (int row = 0; row < MAZE_SIZE; row++) {
+                            System.arraycopy(
+                                    MazeLayouts.ALL_MAZES[pattern][row],
+                                    0, cachedMaze[row], 0, MAZE_SIZE);
+                        }
                         cachedPhysicalFloor = null;
                         cachedPhysicalPad = null;
                         System.out.println("[MonsterMazeAI/1.8] CENTER DETECTED center="

@@ -1416,16 +1416,49 @@ public final class StableLiveMovementController {
             double dx = monster.x - state.player.x;
             double dz = monster.z - state.player.z;
             double distance = Math.hypot(dx, dz);
-            if (distance > 2.15D || distance < 0.05D) continue;
+            if (distance < 0.05D) continue;
 
             double along = dx * routeDirRow + dz * routeDirColumn;
-            if (along <= 0.0D || along > 2.15D) continue;
+            if (along <= 0.0D || along > 3.75D) continue;
 
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
-            if (lateral > 0.95D) continue;
+            if (lateral > 1.25D) continue;
 
-            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
-            double score = distance - 0.20D * Math.max(0.0D, closing);
+            /*
+             * Predict relative player/mob motion rather than treating the
+             * player as stationary. This creates a short warning window for
+             * fast closing mobs without triggering on distant stationary mobs.
+             */
+            double relativeVx = monster.vx - state.player.vx;
+            double relativeVz = monster.vz - state.player.vz;
+            double closing = -(relativeVx * dx + relativeVz * dz) / distance;
+
+            boolean immediate = distance <= 2.15D;
+            double interceptTicks = Double.POSITIVE_INFINITY;
+            boolean predictive = false;
+            if (closing > 0.03D) {
+                interceptTicks = distance / closing;
+                predictive = interceptTicks <= 8.0D;
+            }
+            if (!immediate && !predictive) continue;
+
+            /*
+             * Reject mobs already moving safely out of the route corridor.
+             */
+            double predictionTicks = predictive
+                    ? interceptTicks
+                    : Math.min(4.0D, Math.max(0.0D, interceptTicks));
+            double futureDx = dx + relativeVx * predictionTicks;
+            double futureDz = dz + relativeVz * predictionTicks;
+            double futureAlong = futureDx * routeDirRow + futureDz * routeDirColumn;
+            double futureLateral = Math.abs(
+                    futureDx * routeDirColumn - futureDz * routeDirRow);
+            if (futureAlong < -0.35D || futureAlong > 2.50D || futureLateral > 1.10D) {
+                continue;
+            }
+
+            double score = Math.min(distance, interceptTicks)
+                    - 0.25D * Math.max(0.0D, closing);
             if (score < bestScore) {
                 bestScore = score;
                 bestDistance = distance;

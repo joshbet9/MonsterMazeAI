@@ -238,7 +238,7 @@ public final class MonsterMaze18Mod {
 
     @SubscribeEvent
     public void renderOverlay(RenderGameOverlayEvent.Post event) {
-        if (event.type != RenderGameOverlayEvent.ElementType.ALL || !aiEnabled) return;
+        if (event.type != ElementType.ALL || !aiEnabled) return;
 
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft.fontRendererObj == null) return;

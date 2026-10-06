@@ -54,6 +54,19 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void largeHeadingErrorTurnsInPlaceBeforeApplyingSprintDrive() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertEquals(0.0, action.forward(), 1.0e-9);
+        assertEquals(0.0, action.strafe(), 1.0e-9);
+        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+        assertFalse(action.sprint());
+    }
+
+    @Test
     void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
@@ -134,7 +147,7 @@ class StableLiveMovementControllerTest {
          * post-turn frame. The live 1.8 MovementInput bridge does the same.
          * A pre-turn conversion would leave a material lateral component here.
          */
-        assertEquals(expectedPostTurnYaw, -10.0F, 1.0e-5F);
+        assertEquals(expectedPostTurnYaw, 0.0F, 1.0e-5F);
         double horizontal = Math.hypot(s.player.x - 0.5D, s.player.z - 0.5D);
         assertTrue(horizontal > 0.05D, "controller produced no meaningful movement");
         double lateralFraction = Math.abs(s.player.x - 0.5D) / horizontal;
@@ -339,8 +352,8 @@ class StableLiveMovementControllerTest {
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
         assertTrue(action.forward() > 0.0);
-        assertTrue(Math.abs(action.yawDelta()) < 3.0F,
-                "small heading errors must not receive a full 12-degree correction");
+        assertTrue(Math.abs(action.yawDelta()) <= 3.0F,
+                "small heading errors must not receive a correction larger than the actual heading error");
         assertEquals(0.0, action.strafe(), 1.0e-6);
     }
 

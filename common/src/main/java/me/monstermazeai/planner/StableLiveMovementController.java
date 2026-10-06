@@ -1492,7 +1492,14 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
+            /*
+             * Keep forward at the vanilla sprint threshold while dodging.
+             * The old 0.65 W + 1.0 A/D action cancelled sprint in Minecraft
+             * even though the simulator still applied its 1.30 multiplier.
+             * W + full A/D is source-valid and the same normalized vector is
+             * evaluated by LegacyMovementModel.
+             */
+            Action dodge = new Action(1.0, strafe, false, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id

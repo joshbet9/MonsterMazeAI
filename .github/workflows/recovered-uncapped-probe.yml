@@ -38,3 +38,5 @@ jobs:
             -Dexec.args="${{ matrix.mode }} ${{ matrix.pattern }} ${{ matrix.kit }}" \
             org.codehaus.mojo:exec-maven-plugin:3.5.0:java 2>&1 | tee cell.log
           grep '^FULL_MATRIX ' cell.log
+
+# trigger probe rerun

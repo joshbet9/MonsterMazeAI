@@ -145,6 +145,7 @@ public final class MonsterMaze18Mod {
         if (observationLogCount == 1L || observationLogCount % 20L == 0L) {
             System.out.println("[MonsterMazeAI/1.8] OBS#" + observationLogCount
                     + " mode=FULL_ROUTING"
+                    + " sourceMode=" + state.mode
                     + " tick=" + state.worldTick
                     + " inMaze=" + state.inMonsterMaze
                     + " detected=" + state.mazeDetected

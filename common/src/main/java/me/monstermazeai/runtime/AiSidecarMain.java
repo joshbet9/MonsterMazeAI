@@ -69,6 +69,7 @@ public final class AiSidecarMain {
                             + " alive=" + state.alive
                             + " completed=" + state.completed
                             + " maze=" + (state.maze != null)
+                            + " mode=" + state.mode
                             + " pattern=" + state.mazePattern
                             + " player=" + state.player.x + "," + state.player.y + "," + state.player.z
                             + " vel=" + state.player.vx + "," + state.player.vy + "," + state.player.vz

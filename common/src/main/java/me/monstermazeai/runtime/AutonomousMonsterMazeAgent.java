@@ -56,9 +56,16 @@ public final class AutonomousMonsterMazeAgent {
         lastActivePadColumn = state.activePadColumn;
 
         long signature = mazeSignature(state);
+        /*
+         * Preview-pad creation and old-pad decay legitimately change the
+         * physical-floor signature while the active objective is unchanged.
+         * Do not erase route progress, heading, momentum state, or jump cadence
+         * for those observations. Active-pad changes above are the actual
+         * objective transition and are handled by the movement controller.
+         */
         if (lastMazeSignature != Long.MIN_VALUE && signature != lastMazeSignature) {
-            lastDecisionDetail = "MAZE_SIGNATURE_CHANGED old=" + lastMazeSignature + " new=" + signature;
-            controller.reset();
+            lastDecisionDetail = "PHYSICAL_TOPOLOGY_UPDATED old="
+                    + lastMazeSignature + " new=" + signature;
         } else {
             lastDecisionDetail = "SIGNATURE_STABLE=" + signature;
         }

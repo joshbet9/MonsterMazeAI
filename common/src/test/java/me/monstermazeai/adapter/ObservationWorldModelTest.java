@@ -49,6 +49,27 @@ class ObservationWorldModelTest {
         assertFalse(state.maze.isDisabled(47, 47));
     }
     @Test
+    void usesAuthoritativeSpeedModeFromLiveObservation() {
+        int[][] maze = new int[99][99];
+        maze[50][50] = 1;
+
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                1234, true, true, 3, "SPEED", true, false, 1, 60, 12,
+                new LegacyWorldObservation.Player(
+                        24.2, 14.0, 16.7, 0.1, -0.2, 0.3,
+                        90f, -5f, true, 18, 20),
+                Kit.MAVERICK, 0, 0,
+                new LegacyWorldObservation.BlockPoint(23, 13, 15),
+                new LegacyWorldObservation.Pad(50, 50, 4.0, false),
+                maze, Collections.emptyList(),
+                "Monster Maze", Arrays.asList("Mode", "Speed", "Safe Pad", "60 Seconds", "Stage", "1"));
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertEquals(me.monstermazeai.game.Mode.SPEED, state.mode);
+    }
+
+    @Test
     void lobbyObservationDoesNotRequireMazeCenter() {
         int[][] maze = new int[99][99];
         LegacyWorldObservation observation = new LegacyWorldObservation(

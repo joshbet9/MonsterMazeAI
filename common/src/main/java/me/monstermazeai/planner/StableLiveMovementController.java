@@ -450,7 +450,8 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+            if (tactical != null && isDiscreteTacticalAction(
+                    state, tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }
@@ -1216,8 +1217,56 @@ public final class StableLiveMovementController {
         return false;
     }
 
-    private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+    private boolean isDiscreteTacticalAction(
+            GameState state, Action action, boolean allowJump) {
+        if (action == null) return false;
+        if (action.useAbility()) return true;
+        if (!allowJump || !action.jump() || route == null || route.size() < 2) {
+            return false;
+        }
+
+        /*
+         * Repulsor is the one kit for which this failure mode is now directly
+         * reproduced in the natural-end traces: an ordinary tactical jump can
+         * backtrack against the committed route and carry the player over a
+         * physical edge. Keep the established tactical motor for every other
+         * kit, including the high-performance Body Builder/Maverick behaviours.
+         */
+        if (state.kit != Kit.REPULSOR) return true;
+
+        int fromIndex = Math.max(0, Math.min(
+                waypointIndex > 0 ? waypointIndex - 1 : 0, route.size() - 2));
+        int toIndex = fromIndex + 1;
+        Cell from = route.cells().get(fromIndex);
+        Cell to = route.cells().get(toIndex);
+
+        double routeX = to.row() - from.row();
+        double routeZ = to.column() - from.column();
+        double routeLength = Math.hypot(routeX, routeZ);
+        if (routeLength < 1.0E-9D) return false;
+        routeX /= routeLength;
+        routeZ /= routeLength;
+
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        double movementX = forwardX * action.forward() + strafeX * action.strafe();
+        double movementZ = forwardZ * action.forward() + strafeZ * action.strafe();
+        double movementLength = Math.hypot(movementX, movementZ);
+        if (movementLength < 1.0E-9D) return false;
+
+        double routeProgress = (movementX / movementLength) * routeX
+                + (movementZ / movementLength) * routeZ;
+
+        /*
+         * Small local backtracking can still be intentional. Only reject the
+         * tactical jump when it points materially behind the active route and
+         * the source physics says the next tick would lose floor support.
+         */
+        if (routeProgress >= -0.20D) return true;
+        return hasPredictedPhysicalSupport(state, action, 1);
     }
 
     private boolean detectLiveMobHit(GameState state) {

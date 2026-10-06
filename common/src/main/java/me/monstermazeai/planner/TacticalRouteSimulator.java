@@ -186,24 +186,30 @@ public final class TacticalRouteSimulator {
     }
 
     private boolean needsTacticalSearch(GameState state) {
-        int horizon = tacticalHorizon(state);
-        double playerReach = 0.45 + Math.hypot(state.player.vx, state.player.vz) * horizon;
+        /*
+         * Keep the tactical wake-up envelope local. The tactical beam itself
+         * may reason ahead, but a dense Modern maze should not constantly
+         * replace the stable route motor because a distant mob could eventually
+         * enter the interaction radius.
+         */
+        int triggerHorizon = Math.min(6, tacticalHorizon(state));
+        double playerReach = 0.45
+                + Math.hypot(state.player.vx, state.player.vz) * triggerHorizon;
         double contactReach = MonsterMazeBumpModel.CONTACT_DISTANCE + playerReach;
 
         for (var m : state.monsters) {
             if (m.removed || m.launched(state.tick) || m.frozen(state.tick)
-                    || !MonsterRelevance.withinPlayerRadius(m, state.player, TACTICAL_RELEVANCE_RADIUS)) continue;
+                    || !MonsterRelevance.withinPlayerRadius(
+                    m, state.player, TACTICAL_RELEVANCE_RADIUS)) continue;
+
             double separationSq = sq(state.player.x - m.x)
                     + sq(state.player.y - m.y)
                     + sq(state.player.z - m.z);
-            double monsterReach = Math.hypot(m.vx, m.vz) * horizon;
+            double monsterReach = Math.hypot(m.vx, m.vz) * triggerHorizon;
             double threshold = contactReach + monsterReach;
             if (separationSq <= threshold * threshold) return true;
         }
 
-        // Source ability range is six blocks and is therefore already contained
-        // by the local interaction envelope. No distant monster can wake the
-        // expensive tactical branch merely because it exists in the world.
         return false;
     }
 

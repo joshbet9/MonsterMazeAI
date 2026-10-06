@@ -1520,8 +1520,9 @@ public final class StableLiveMovementController {
              * component away from the monster.
              */
             double preferredSide = strafe;
-            double dodgeWorldX = routeDirRow + preferredSide;
-            double dodgeWorldZ = routeDirColumn - preferredSide;
+            double dodgeSideBias = 0.75D;
+            double dodgeWorldX = routeDirRow + preferredSide * dodgeSideBias;
+            double dodgeWorldZ = routeDirColumn - preferredSide * dodgeSideBias;
             double dodgeLength = Math.hypot(dodgeWorldX, dodgeWorldZ);
             if (dodgeLength > 1.0E-9D) {
                 dodgeWorldX /= dodgeLength;

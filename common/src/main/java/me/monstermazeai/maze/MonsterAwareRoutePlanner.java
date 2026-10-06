@@ -12,6 +12,15 @@ public final class MonsterAwareRoutePlanner {
     private static final int MAX_ROUTE_CANDIDATES = 8;
     private static final int MAX_REGION_CANDIDATES = 12;
 
+    /*
+     * Keep candidate selection consistent with PlayerPathfinder.fastestPath:
+     * long straight corridors are preferable to short zig-zag routes when the
+     * latter require repeated 90-degree turns.
+     */
+    private static final double ROUTE_TURN_COST = 1.75D;
+    private static final double ROUTE_U_TURN_COST = 4.0D;
+    private static final double ROUTE_GAP_COST = 4.0D;
+
     private final AlternativePhysicalRoutes alternatives = new AlternativePhysicalRoutes();
     private final TacticalRouteSimulator simulator = new TacticalRouteSimulator();
     private final GapJumpPolicy gapJumpPolicy;
@@ -45,8 +54,8 @@ public final class MonsterAwareRoutePlanner {
         PlayerPathfinder pathfinder = new PlayerPathfinder();
         PlayerRoute chosen = chooseByGapRisk(
                 state,
-                toRoute(pathfinder.shortestPathWithoutGaps(state.maze, start, goal)),
-                toRoute(pathfinder.shortestPath(state.maze, start, goal)));
+                toRoute(pathfinder.fastestPath(state.maze, start, goal)),
+                toRoute(pathfinder.fastestPathWithGaps(state.maze, start, goal)));
         if (chosen == null) throw new IllegalArgumentException("No physical route from start to goal");
         return chosen;
     }
@@ -74,9 +83,9 @@ public final class MonsterAwareRoutePlanner {
         } else {
             chosen = chooseByGapRisk(
                     state,
-                    toRoute(pathfinder.shortestPathToRegionWithoutGaps(
+                    toRoute(pathfinder.fastestPathToRegion(
                             state.maze, start, regionCenter, radius)),
-                    toRoute(pathfinder.shortestPathToRegion(
+                    toRoute(pathfinder.fastestPathToRegionWithGaps(
                             state.maze, start, regionCenter, radius)));
         }
         if (chosen == null) throw new IllegalArgumentException("No physical route to Safe Pad region");
@@ -159,8 +168,11 @@ public final class MonsterAwareRoutePlanner {
         List<PlayerRoute> candidates;
         if (!regionGoal) {
             ArrayList<PlayerRoute> generated = new ArrayList<>();
-            List<Cell> normal = new PlayerPathfinder().shortestPathWithoutGaps(state.maze, start, goal);
+            PlayerPathfinder pathfinder = new PlayerPathfinder();
+            List<Cell> normal = pathfinder.fastestPath(state.maze, start, goal);
             if (!normal.isEmpty()) generated.add(new PlayerRoute(normal));
+            List<Cell> gap = pathfinder.fastestPathWithGaps(state.maze, start, goal);
+            if (!gap.isEmpty()) generated.add(new PlayerRoute(gap));
             generated.addAll(alternatives.generate(state.maze, start, goal, limit));
             candidates = distinct(generated, limit * 3);
         } else {
@@ -174,10 +186,10 @@ public final class MonsterAwareRoutePlanner {
                     if (r < 0 || r >= MazeModel.SIZE || c < 0 || c >= MazeModel.SIZE
                             || !state.maze.isPhysicalFloor(r, c)) continue;
 
-                    List<Cell> normalPath = pathfinder.shortestPathWithoutGaps(state.maze, start, target);
+                    List<Cell> normalPath = pathfinder.fastestPath(state.maze, start, target);
                     if (!normalPath.isEmpty()) addCandidate(generated, seen, new PlayerRoute(normalPath));
 
-                    List<Cell> path = pathfinder.shortestPath(state.maze, start, target);
+                    List<Cell> path = pathfinder.fastestPathWithGaps(state.maze, start, target);
                     if (!path.isEmpty()) addCandidate(generated, seen, new PlayerRoute(path));
 
                     for (PlayerRoute alt : alternatives.generate(state.maze, start, target, 3)) {
@@ -291,7 +303,7 @@ public final class MonsterAwareRoutePlanner {
 
         if (normal == null) return gapAware;
         if (gapAware == null) return normal;
-        return compareByGapRisk(normal, gapAware) <= 0 ? normal : gapAware;
+        return compareByTravelTime(normal, gapAware) <= 0 ? normal : gapAware;
     }
 
     private int compareByGapRisk(PlayerRoute a, PlayerRoute b) {
@@ -300,6 +312,51 @@ public final class MonsterAwareRoutePlanner {
         int gaps = Integer.compare(gapCount(a), gapCount(b));
         if (gaps != 0) return gaps;
         return Integer.compare(a.size(), b.size());
+    }
+
+    private int compareByTravelTime(PlayerRoute a, PlayerRoute b) {
+        int cost = Double.compare(estimatedTravelCost(a), estimatedTravelCost(b));
+        if (cost != 0) return cost;
+        return compareByGapRisk(a, b);
+    }
+
+    private double estimatedTravelCost(PlayerRoute route) {
+        List<Cell> cells = route.cells();
+        if (cells.size() <= 1) return 0.0D;
+
+        double cost = 0.0D;
+        int previousDirection = -1;
+        for (int i = 0; i + 1 < cells.size(); i++) {
+            Cell from = cells.get(i);
+            Cell to = cells.get(i + 1);
+            int direction = direction(from, to);
+            int dr = to.row() - from.row();
+            int dc = to.column() - from.column();
+            boolean gap = Math.abs(dr) == 2 || Math.abs(dc) == 2;
+
+            cost += gap ? ROUTE_GAP_COST : 1.0D;
+            if (previousDirection >= 0 && previousDirection != direction) {
+                cost += turnCost(previousDirection, direction);
+            }
+            previousDirection = direction;
+        }
+        return cost;
+    }
+
+    private static int direction(Cell from, Cell to) {
+        int dr = Integer.signum(to.row() - from.row());
+        int dc = Integer.signum(to.column() - from.column());
+        if (dr < 0) return 0;
+        if (dr > 0) return 1;
+        if (dc < 0) return 2;
+        if (dc > 0) return 3;
+        throw new IllegalArgumentException("duplicate route cell");
+    }
+
+    private static double turnCost(int from, int to) {
+        int delta = Math.abs(from - to);
+        delta = Math.min(delta, 4 - delta);
+        return delta == 2 ? ROUTE_U_TURN_COST : ROUTE_TURN_COST;
     }
 
     private double routeCost(PlayerRoute route) {

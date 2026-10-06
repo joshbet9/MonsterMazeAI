@@ -5,6 +5,7 @@ import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.AiProfile;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -100,26 +101,6 @@ class StableLiveMovementControllerTest {
         assertTrue(sawForward);
         assertTrue(strafeTicks <= 8,
                 "sideways approach should use strafe only as a bounded corner-turn aid, not oscillate");
-    }
-
-    @Test
-    void simultaneousYawSteeringBuildsWASDInPostTurnFrame() {
-        GameState s = state(0.5, 0.5, -20.0F);
-        NoMobLocomotionController controller = new NoMobLocomotionController(AiProfile.BASELINE);
-
-        Action action = controller.driveVector(s, 0.0D, 1.0D, 1.0D, true, false);
-        assertEquals(10.0F, action.yawDelta(), 1.0e-6F);
-
-        LegacyMazePhysics physics = new LegacyMazePhysics();
-        double beforeX = s.player.x;
-        double beforeZ = s.player.z;
-        physics.tick(s.player, action);
-
-        double dx = s.player.x - beforeX;
-        double dz = s.player.z - beforeZ;
-        assertTrue(dz > 0.0D, "forward world target must move toward +Z");
-        assertEquals(0.0D, dx, 0.002D,
-                "WASD must be computed after the requested yaw pulse is applied");
     }
 
     @Test

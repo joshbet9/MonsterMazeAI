@@ -358,6 +358,28 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void mobDodgeKeepsVanillaSprintValid() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        me.monstermazeai.monster.MonsterState monster =
+                new me.monstermazeai.monster.MonsterState(1, 0.5, 0.0, 1.8);
+        monster.vz = -0.1;
+        s.monsters.add(monster);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_DODGE")
+                        || controller.lastDecisionDetail().contains("EDGE_GUARD"),
+                controller.lastDecisionDetail());
+        if (controller.lastDecisionDetail().contains("MOB_DODGE")) {
+            assertEquals(1.0, action.forward(), 0.0);
+            assertTrue(Math.abs(action.strafe()) > 0.0);
+            assertTrue(action.sprint());
+        }
+    }
+
+    @Test
     void mobHitClearsStaleRouteAndWaitsForGroundBeforeResuming() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();

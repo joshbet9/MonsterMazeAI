@@ -16,7 +16,7 @@ class LegacyProtocolTest {
                 42L, true, true, 3, "SPEED", true, false, 2, 17, 9,
                 new LegacyWorldObservation.Player(24.2, 14.0, 16.7, 0.1, 0.0, -0.2,
                         12.5f, -3.0f, true, 18.0, 20.0),
-                Kit.JUMPER, 2, 1, "SPEED",
+                Kit.JUMPER, 2, 1,
                 new LegacyWorldObservation.BlockPoint(23, 13, 15),
                 new LegacyWorldObservation.Pad(50, 51, 1.25, false),
                 new int[][]{{1, 0}, {2, 5}},

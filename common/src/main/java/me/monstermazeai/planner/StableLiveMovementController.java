@@ -450,7 +450,8 @@ public final class StableLiveMovementController {
             Action tactical = routePlanner.tacticalAction(
                     state, route, goal, regionRadius);
             lastTacticalSignature = currentThreatSignature;
-            if (tactical != null && isDiscreteTacticalAction(tactical, allowJump)) {
+            if (tactical != null && isDiscreteTacticalAction(
+                    state, tactical, allowJump)) {
                 lastDecisionDetail += " TACTICAL=" + tactical;
                 return tactical;
             }
@@ -1216,8 +1217,48 @@ public final class StableLiveMovementController {
         return false;
     }
 
-    private static boolean isDiscreteTacticalAction(Action action, boolean allowJump) {
-        return action.useAbility() || (allowJump && action.jump());
+    private boolean isDiscreteTacticalAction(
+            GameState state, Action action, boolean allowJump) {
+        if (action == null) return false;
+        if (action.useAbility()) return true;
+        if (!allowJump || !action.jump() || route == null || route.size() < 2) {
+            return false;
+        }
+
+        /*
+         * Tactical jump input is useful for maintaining the source speeding
+         * mechanic and for selected mob interactions, but it must not reverse
+         * the committed route. The weak-cell traces showed the tactical branch
+         * issuing a jump/turn vector with negative route progress immediately
+         * before an edge fall; the high-performing Maverick trace used the same
+         * tactical jump while advancing strongly along its committed edge.
+         */
+        int fromIndex = Math.max(0, Math.min(
+                waypointIndex > 0 ? waypointIndex - 1 : 0, route.size() - 2));
+        int toIndex = fromIndex + 1;
+        Cell from = route.cells().get(fromIndex);
+        Cell to = route.cells().get(toIndex);
+
+        double routeX = to.row() - from.row();
+        double routeZ = to.column() - from.column();
+        double routeLength = Math.hypot(routeX, routeZ);
+        if (routeLength < 1.0E-9D) return false;
+        routeX /= routeLength;
+        routeZ /= routeLength;
+
+        double yaw = Math.toRadians(state.player.yaw + action.yawDelta());
+        double forwardX = -Math.sin(yaw);
+        double forwardZ = Math.cos(yaw);
+        double strafeX = Math.cos(yaw);
+        double strafeZ = Math.sin(yaw);
+        double movementX = forwardX * action.forward() + strafeX * action.strafe();
+        double movementZ = forwardZ * action.forward() + strafeZ * action.strafe();
+        double movementLength = Math.hypot(movementX, movementZ);
+        if (movementLength < 1.0E-9D) return false;
+
+        double routeProgress = (movementX / movementLength) * routeX
+                + (movementZ / movementLength) * routeZ;
+        return routeProgress >= 0.20D;
     }
 
     private boolean detectLiveMobHit(GameState state) {

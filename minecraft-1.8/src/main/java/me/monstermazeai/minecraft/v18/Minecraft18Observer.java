@@ -170,7 +170,7 @@ public final class Minecraft18Observer {
                         player.motionX, player.motionY, player.motionZ,
                         player.rotationYaw, player.rotationPitch, player.onGround,
                         player.getHealth(), player.getMaxHealth()),
-                kit, jumpCharges, abilityCharges,
+                kit, jumpCharges, abilityCharges, scoreboard.mode,
                 center == null ? null : new LegacyWorldObservation.BlockPoint(center.getX(), center.getY(), center.getZ()),
                 pad == null ? null : new LegacyWorldObservation.Pad(pad.row, pad.column, pad.distanceSq, padReached),
                 raw, physicalFloor, monsters, scoreboard.title, scoreboard.lines);

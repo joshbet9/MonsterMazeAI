@@ -13,6 +13,14 @@ public record Action(double forward, double strafe, boolean jump, boolean sprint
 
         if (Float.isNaN(yawDelta) || Float.isInfinite(yawDelta)) yawDelta = 0.0f;
         yawDelta = Math.max(-30.0f, Math.min(30.0f, yawDelta));
+
+        /*
+         * This is a common-core control contract, not a live-only adapter rule.
+         * Vanilla 1.8.9 cancels sprint below 0.8 forward input, so an Action that
+         * claims to sprint with a lower forward value would make the simulator
+         * and the real client execute different physics.
+         */
+        sprint = sprint && forward >= 0.8D;
     }
 
     /** Cardinal direction while holding the current facing. */

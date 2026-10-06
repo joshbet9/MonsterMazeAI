@@ -71,6 +71,29 @@ class ObservationWorldModelTest {
     }
 
     @Test
+    void usesLiveJumperChargeCountAsCommonAbilityCharges() {
+        int[][] maze = new int[99][99];
+        maze[50][50] = 1;
+
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                55, true, true, 1, "SPEED", true, false, 1, 60, 0,
+                new LegacyWorldObservation.Player(
+                        0.5, 0.0, 0.5, 0.0, 0.0, 0.0,
+                        0f, 0f, true, 20, 20),
+                Kit.JUMPER, 2, 99,
+                new LegacyWorldObservation.BlockPoint(0, 0, 0),
+                new LegacyWorldObservation.Pad(50, 50, 0.0, false),
+                maze, Collections.emptyList(), "Monster Maze",
+                Arrays.asList("Mode", "Speed", "Safe Pad", "60 Seconds", "Stage", "1"));
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertEquals(2, state.player.jumpCharges);
+        assertEquals(2, state.ability.charges,
+                "the live Jumper feather count must drive the same ability state used by the simulator");
+    }
+
+    @Test
     void lobbyObservationDoesNotRequireMazeCenter() {
         int[][] maze = new int[99][99];
         LegacyWorldObservation observation = new LegacyWorldObservation(

@@ -1,0 +1,45 @@
+name: Pattern No-Mob Matrix
+
+on:
+  push:
+    branches: [ validation/pattern-no-mob-matrix-20261006 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cell:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        mode: [SPEED]
+        pattern: [1, 2, 3]
+        kit: [JUMPER, SLOWBALLER, BODY_BUILDER, REPULSOR, MAVERICK]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    name: ${{ matrix.mode }} P${{ matrix.pattern }} ${{ matrix.kit }} no-mobs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compile common tests
+        run: mvn -B -ntp -pl common -am install -DskipTests
+      - name: Run locomotion-only cell
+        shell: bash
+        run: |
+          mvn -B -ntp -pl common \
+            -DmatrixMode="${{ matrix.mode }}" \
+            -DmatrixPattern="${{ matrix.pattern }}" \
+            -DmatrixKit="${{ matrix.kit }}" \
+            -DmatrixSpawnMonsters=false \
+            -DmatrixDiagnostic=false \
+            -Dtest=NaturalTerminationMatrixIT#naturalTerminationCase \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
+            test

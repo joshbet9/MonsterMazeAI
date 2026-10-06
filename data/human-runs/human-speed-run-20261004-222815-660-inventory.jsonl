@@ -1,6 +1,0 @@
-{"recordType":"header","jsonVersion":2,"stream":"inventory"}
-{"tick":2535120,"stage":1,"selectedSlot":0,"items":[{"slot":0,"itemId":263,"metadata":0,"count":3,"displayName":"§e§lRight Click§f§l - §a§lRepulse"},{"slot":4,"itemId":345,"metadata":0,"count":1,"displayName":"§aSafe Pad Locator"},{"slot":7,"itemId":351,"metadata":10,"count":1,"displayName":"§aViewing: Players Visible"}]}
-{"tick":2540771,"stage":22,"selectedSlot":0,"items":[{"slot":0,"itemId":263,"metadata":0,"count":2,"displayName":"§e§lRight Click§f§l - §a§lRepulse"},{"slot":4,"itemId":345,"metadata":0,"count":1,"displayName":"§aSafe Pad Locator"},{"slot":7,"itemId":351,"metadata":10,"count":1,"displayName":"§aViewing: Players Visible"}]}
-{"tick":2541382,"stage":24,"selectedSlot":0,"items":[{"slot":0,"itemId":263,"metadata":0,"count":1,"displayName":"§e§lRight Click§f§l - §a§lRepulse"},{"slot":4,"itemId":345,"metadata":0,"count":1,"displayName":"§aSafe Pad Locator"},{"slot":7,"itemId":351,"metadata":10,"count":1,"displayName":"§aViewing: Players Visible"}]}
-{"tick":2541645,"stage":25,"selectedSlot":0,"items":[{"slot":4,"itemId":345,"metadata":0,"count":1,"displayName":"§aSafe Pad Locator"},{"slot":7,"itemId":351,"metadata":10,"count":1,"displayName":"§aViewing: Players Visible"}]}
-{"tick":2542030,"stage":26,"selectedSlot":0,"items":[]}

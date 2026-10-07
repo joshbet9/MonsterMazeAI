@@ -198,50 +198,41 @@ public final class Minecraft18AiRuntime {
      */
     public synchronized LegacyAction pollCompleted(long currentTick) {
         DecisionResult result = latestCompletedDecision;
-        latestCompletedDecision = null;
         if (result == null || result.action == null) return null;
-        if (result.sequence <= lastAppliedDecisionSequence) return null;
-        lastAppliedDecisionSequence = result.sequence;
 
         long age = currentTick - result.tick;
-        if (age < 0L) {
-            /*
-             * A future result is impossible under the normal clock contract,
-             * but fail closed if an adapter/server clock ever moves backwards.
-             */
-            lastCompletedTick = result.tick;
-            return LegacyAction.IDLE;
+
+        /*
+         * Deterministic live cadence: observe N -> decide N -> apply on N+1.
+         * A result from the current tick is therefore still queued, even if the
+         * sidecar answered immediately. This prevents runtime speed from changing
+         * the control law relative to the simulator.
+         */
+        if (age < 1L) {
+            return null;
+        }
+
+        if (result.sequence <= lastAppliedDecisionSequence) {
+            latestCompletedDecision = null;
+            return null;
         }
 
         if (age > MAX_ACTION_AGE_TICKS) {
-            /*
-             * Live control is asynchronous by design: the Minecraft thread must
-             * never block waiting for the Java-17 planner. A small bounded latency
-             * window therefore exists between the observed world tick and the tick
-             * on which the resulting command is consumed.
-             */
+            latestCompletedDecision = null;
+            lastAppliedDecisionSequence = result.sequence;
             lastCompletedTick = result.tick;
             return LegacyAction.IDLE;
         }
 
+        latestCompletedDecision = null;
+        lastAppliedDecisionSequence = result.sequence;
         lastCompletedTick = result.tick;
-        if (age == 1L) {
-            /*
-             * The simulator explicitly models the live IPC cadence as:
-             * observe N -> decide N -> apply N+1. Therefore a result that is
-             * exactly one tick old is not stale; it is the command the simulator
-             * would consume on this tick. Preserve the complete action,
-             * including its one-shot yaw and ability pulses.
-             */
-            return result.action;
-        }
+
         /*
-         * Do not carry a movement command across two or more live ticks. A
-         * second-tick-old result no longer corresponds to the state that
-         * produced it, so the live bridge fails closed exactly as the simulator's
-         * bounded command queue does.
+         * The simulator consumes the exact queued Action on N+1. Preserve all
+         * fields here: WASD, jump, sprint, yaw pulse, and ability pulse.
          */
-        return LegacyAction.IDLE;
+        return result.action;
     }
 
 

@@ -33,8 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * The test intentionally exercises the current MonsterMaze source contract:
  * exact 99x99 source layouts, source SafePad selection/avoidance, source
- * starter/subsequent monster spawn pools, source progression/decay, and the
- * same common autonomous controller used by the 1.8 adapter.
+ * starter/subsequent monster spawn pools, source progression/decay, the
+ * same common autonomous controller used by the 1.8 adapter, and the
+ * one-tick observe/decide/apply cadence used by the live IPC bridge.
  *
  * Gate: every source pattern and every kit must survive at least stage 10 in
  * Modern mode on its deterministic seed. This is a baseline gate, not a proof
@@ -193,9 +194,14 @@ class AuthenticStage10SimulationTest {
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
-            ActionInput action = decide(agent, state);
+            ActionInput desired = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
-            String currentAction = action.action.toString();
+            String desiredAction = desired.action.toString();
+
+            me.monstermazeai.player.Action appliedAction =
+                    haveQueuedAction ? queuedAction : me.monstermazeai.player.Action.IDLE;
+            String currentAction = appliedAction.toString();
+
             if (diagnosticTrace || (pattern == 0 && kit == Kit.JUMPER)) {
                 trace.addLast("tick=" + state.tick
                         + " stage=" + state.stage
@@ -205,12 +211,14 @@ class AuthenticStage10SimulationTest {
                         + " v=" + format(state.player.vx) + "," + format(state.player.vz)
                         + " hp=" + format(state.player.health)
                         + " pad=" + state.activePadRow + "," + state.activePadColumn
-                        + " decision=" + decisionBeforeTick.replace(' ', '_')
-                        + " action=" + currentAction.replace(' ', '_'));
+                        + " desired=" + desiredAction.replace(' ', '_')
+                        + " applied=" + currentAction.replace(' ', '_'));
                 while (trace.size() > (diagnosticTrace ? 120 : 30)) trace.removeFirst();
             }
 
-            simulator.tick(state, action.action);
+            simulator.tick(state, appliedAction);
+            queuedAction = desired.action;
+            haveQueuedAction = true;
 
             if (state.previewPadRequested && state.previewPadRow < 0) {
                 List<Cell> avoid = currentPadAvoidance(state);
@@ -249,8 +257,9 @@ class AuthenticStage10SimulationTest {
                 firstFallVx = state.player.vx;
                 firstFallVz = state.player.vz;
                 firstFallDecision = decisionBeforeTick
-                        + " ACTION=" + currentAction
-                        + " PREVIOUS_ACTION=" + previousAction
+                        + " DESIRED_ACTION=" + desiredAction
+                        + " APPLIED_ACTION=" + currentAction
+                        + " PREVIOUS_APPLIED_ACTION=" + previousAction
                         + " TRACE=" + String.join(" || ", trace);
             }
 

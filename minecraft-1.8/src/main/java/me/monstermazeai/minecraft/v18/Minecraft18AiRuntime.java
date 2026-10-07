@@ -40,7 +40,7 @@ public final class Minecraft18AiRuntime {
      * a small bounded latency window in live Minecraft; genuinely old commands
      * still fail closed rather than being applied indefinitely.
      */
-    private static final long MAX_ACTION_AGE_TICKS = 4L;
+    private static final long MAX_ACTION_AGE_TICKS = 1L;
 
     private volatile Process process;
     private volatile DataInputStream input;

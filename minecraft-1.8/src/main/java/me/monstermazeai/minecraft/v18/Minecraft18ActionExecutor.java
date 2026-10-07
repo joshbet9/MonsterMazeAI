@@ -38,6 +38,11 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         this.minecraft = minecraft;
     }
 
+    /** Test-only constructor; command lifetime logic is independent of Minecraft itself. */
+    Minecraft18ActionExecutor() {
+        this.minecraft = null;
+    }
+
     @Override
     public synchronized void apply(LegacyAction action) {
         apply(action, Long.MAX_VALUE, MAX_COMMAND_HOLD_TICKS);

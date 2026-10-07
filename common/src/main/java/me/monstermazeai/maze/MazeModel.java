@@ -94,6 +94,13 @@ public final class MazeModel {
 
                 if (padSurface[row][col]) {
                     physicalBarrier[row][col] = false;
+                    if (oldBarrier != physicalBarrier[row][col]) {
+                        dynamicSignature ^= cellSignature(row, col, disabled[row][col],
+                                oldFloor, oldBarrier, padSurface[row][col]);
+                        dynamicSignature ^= cellSignature(row, col, disabled[row][col],
+                                physicalFloor[row][col], physicalBarrier[row][col],
+                                padSurface[row][col]);
+                    }
                     continue;
                 }
 

@@ -77,44 +77,40 @@ public final class ObservationWorldModel {
         state.player.jumpCharges = observation.jumpCharges;
 
         state.maze = new me.monstermazeai.maze.MazeModel(observation.maze);
+        for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
+            for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
+                state.maze.setPhysicalFloor(row, column, observation.physicalFloor[row][column]);
+                // Source Monster Maze disables centre-safe-zone path cells for
+                // monster movement until the final deterioration pass.
+                int value = observation.maze[row][column];
+                if (value == 5 || value == 6) {
+                    state.maze.setDisabled(row, column, true);
+                }
+            }
+        }
 
-        // A raw 4/6 cell has a source glass column above its floor before the
-        // final centre deterioration. Players cannot stand in those cells;
-        // after deterioration 5/6 become ordinary floor while 3/4 disappear.
-        // Detect the lifecycle from the raw 3 cells, which are never obscured by
-        // the source barrier and therefore remain a reliable transition signal.
+        // On the source's final centre-deterioration pass, the non-path centre
+        // cells (3/4) disappear while path cells (5/6) are rebuilt as normal
+        // maze blocks and re-enter the monster waypoint graph. Because all
+        // centre cells are changed in that same pass, a single missing 3/4
+        // physical cell is an unambiguous completion signal.
         boolean centreDeteriorated = false;
         for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE && !centreDeteriorated; row++) {
             for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
-                if (observation.maze[row][column] == 3
-                        && !observation.physicalFloor[row][column]) {
+                int value = observation.maze[row][column];
+                if ((value == 3 || value == 4) && !observation.physicalFloor[row][column]) {
                     centreDeteriorated = true;
                     break;
                 }
             }
         }
-        state.maze.setCenterDeteriorated(centreDeteriorated);
-
-        for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
-            for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
-                int value = observation.maze[row][column];
-                boolean floor = observation.physicalFloor[row][column];
-
-                // Preserve the live world's ordinary floor observation, while
-                // applying the source-specific center lifecycle where the raw
-                // value describes a temporary barrier/decorative cell.
-                if (!centreDeteriorated && (value == 4 || value == 6)) {
-                    floor = false;
-                } else if (centreDeteriorated && (value == 3 || value == 4)) {
-                    floor = false;
-                }
-
-                state.maze.setPhysicalFloor(row, column, floor);
-
-                // Source Monster Maze disables centre-safe-zone path cells for
-                // monster movement until the final deterioration pass.
-                if (value == 5 || value == 6) {
-                    state.maze.setDisabled(row, column, !centreDeteriorated);
+        if (centreDeteriorated) {
+            for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
+                for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
+                    int value = observation.maze[row][column];
+                    if ((value == 5 || value == 6) && observation.physicalFloor[row][column]) {
+                        state.maze.setDisabled(row, column, false);
+                    }
                 }
             }
         }

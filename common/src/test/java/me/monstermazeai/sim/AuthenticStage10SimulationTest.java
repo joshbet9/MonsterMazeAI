@@ -189,12 +189,10 @@ class AuthenticStage10SimulationTest {
         String previousAction = "NONE";
 
         /*
-         * Live IPC cadence: observe/decide on tick N, consume that exact action
-         * on tick N+1. The first physics tick therefore receives IDLE.
+         * Forge fires ClientTickEvent.START before world.updateEntities(), so
+         * the simulator evaluates the controller at the same pre-physics
+         * boundary as the live adapter and consumes that Action immediately.
          */
-        me.monstermazeai.player.Action queuedAction = me.monstermazeai.player.Action.IDLE;
-        boolean haveQueuedAction = false;
-
         boolean diagnosticTrace = pattern == 1
                 && ((mode == Mode.SPEED || mode == Mode.MODERN)
                 && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER));
@@ -202,13 +200,9 @@ class AuthenticStage10SimulationTest {
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
-            ActionInput desired = decide(agent, state);
+            ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
-            String desiredAction = desired.action.toString();
-
-            me.monstermazeai.player.Action appliedAction =
-                    haveQueuedAction ? queuedAction : me.monstermazeai.player.Action.IDLE;
-            String currentAction = appliedAction.toString();
+            String currentAction = action.action.toString();
 
             if (diagnosticTrace || (pattern == 0 && kit == Kit.JUMPER)) {
                 trace.addLast("tick=" + state.tick
@@ -219,14 +213,11 @@ class AuthenticStage10SimulationTest {
                         + " v=" + format(state.player.vx) + "," + format(state.player.vz)
                         + " hp=" + format(state.player.health)
                         + " pad=" + state.activePadRow + "," + state.activePadColumn
-                        + " desired=" + desiredAction.replace(' ', '_')
-                        + " applied=" + currentAction.replace(' ', '_'));
+                        + " action=" + currentAction.replace(' ', '_'));
                 while (trace.size() > (diagnosticTrace ? 120 : 30)) trace.removeFirst();
             }
 
-            simulator.tick(state, appliedAction);
-            queuedAction = desired.action;
-            haveQueuedAction = true;
+            simulator.tick(state, action.action);
 
             if (state.previewPadRequested && state.previewPadRow < 0) {
                 List<Cell> avoid = currentPadAvoidance(state);

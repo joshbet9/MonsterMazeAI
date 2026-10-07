@@ -160,7 +160,9 @@ public final class MonsterMazeBumpModel {
         if (len < 1.0E-9) { dx = 1.0; dz = 0.0; len = 1.0; }
         monster.vx = dx / len;
         monster.vz = dz / len;
-        monster.vy = 0.95;
+        // UtilAction.velocity(... yAdd=0.8, yMax=2, groundBoost=true)
+        // produces exactly +1.0 Y when the mob is standing on the maze floor.
+        monster.vy = 1.0;
         monster.launchedAtTick = tick;
         monster.launchedUntilTick = tick + 30;
         monster.waypointRow = -1;

@@ -102,4 +102,54 @@ class MovementBenchmarkTest {
         assertEquals(run(60,6),run(60,6),1e-12);
         assertEquals(run(60,8),run(60,8),1e-12);
     }
+    @Test
+    void sprintAirAccelerationIsExactlyTheVanillaOnePointThreeMultiplier() {
+        GameState s = player();
+        s.kit = Kit.MAVERICK;
+        s.player.grounded = false;
+        s.player.y = GameState.PATH_Y + 1.0;
+        LegacyMovementModel physics = new LegacyMovementModel();
+
+        GameState sprint = s.copy();
+        physics.tick(sprint.player, new Action(1, 0, false, true, 0, false));
+
+        GameState walk = s.copy();
+        physics.tick(walk.player, new Action(1, 0, false, false, 0, false));
+
+        double sprintDelta = Math.abs(sprint.player.vz - s.player.vz);
+        double walkDelta = Math.abs(walk.player.vz - s.player.vz);
+        assertEquals(1.30, sprintDelta / walkDelta, 1.0e-10,
+                "1.8 sprint air movement is the base 0.020 factor increased by exactly 30% to 0.026");
+    }
+
+    @Test
+    void heldJumpMinusTenUsesVanillaTenTickCooldown() {
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        raw[10][10] = 1;
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = player();
+        s.kit = Kit.MAVERICK;
+        s.player.x = 10.5;
+        s.player.z = 10.5;
+        s.player.y = GameState.PATH_Y;
+        s.player.grounded = true;
+        LegacyMovementModel physics = new LegacyMovementModel();
+
+        double[] speeds = new double[21];
+        for (int tick = 0; tick < speeds.length; tick++) {
+            double before = Math.hypot(s.player.vx, s.player.vz);
+            physics.tick(s.player, new Action(1, 0, true, true, 0, false), maze, -10);
+            speeds[tick] = Math.hypot(s.player.vx, s.player.vz) - before;
+        }
+
+        assertTrue(speeds[0] > 0.15, "first held jump must apply the source sprint-jump impulse");
+        for (int tick = 1; tick < 10; tick++) {
+            assertTrue(speeds[tick] < 0.20,
+                    "jumpTicks must suppress repeated Jump -10 impulses during the ten-tick cooldown");
+        }
+        assertTrue(speeds[10] > 0.15,
+                "the next held Jump -10 impulse must occur exactly ten ticks later");
+    }
+
 }

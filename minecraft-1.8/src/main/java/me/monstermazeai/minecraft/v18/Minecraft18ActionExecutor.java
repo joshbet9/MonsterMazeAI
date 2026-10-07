@@ -22,6 +22,8 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private boolean abilityPulsePending;
     private boolean yawPulsePending;
     private float pendingYawDelta;
+    private float controlledYaw;
+    private boolean controlledYawInitialised;
     private long actionExpiryTick = Long.MIN_VALUE;
     private long jumpExpiryTick = Long.MIN_VALUE;
     /*
@@ -41,6 +43,19 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     /** Test-only constructor; command lifetime logic is independent of Minecraft itself. */
     Minecraft18ActionExecutor() {
         this.minecraft = null;
+    }
+
+    /** Seed the AI camera from the real player exactly once when AI control begins. */
+    public synchronized void initialiseControlledYaw(float yaw) {
+        controlledYaw = normaliseYaw(yaw);
+        controlledYawInitialised = true;
+        pendingYawDelta = 0.0F;
+        yawPulsePending = false;
+    }
+
+    /** Current AI-owned camera heading; physical mouse input is not authoritative while AI is enabled. */
+    public synchronized float controlledYaw() {
+        return controlledYawInitialised ? controlledYaw : 0.0F;
     }
 
     @Override
@@ -121,7 +136,10 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     public synchronized float consumeYawPulse() {
         if (!yawPulsePending) return 0.0f;
         yawPulsePending = false;
-        return pendingYawDelta;
+        controlledYaw = normaliseYaw(controlledYaw + pendingYawDelta);
+        float delta = pendingYawDelta;
+        pendingYawDelta = 0.0F;
+        return delta;
     }
 
     /** Expire a one-tick command after the client tick that consumed it. */
@@ -134,6 +152,19 @@ public final class Minecraft18ActionExecutor implements ActionSink {
             actionExpiryTick = Long.MIN_VALUE;
             jumpExpiryTick = Long.MIN_VALUE;
         }
+    }
+
+    /** Drop all AI-owned camera state when AI mode ends. */
+    public synchronized void clearControlledYaw() {
+        controlledYawInitialised = false;
+        pendingYawDelta = 0.0F;
+        yawPulsePending = false;
+    }
+
+    private static float normaliseYaw(float yaw) {
+        while (yaw >= 180.0F) yaw -= 360.0F;
+        while (yaw < -180.0F) yaw += 360.0F;
+        return yaw;
     }
 
     /** Called on the Minecraft client thread to consume one right-click pulse. */

@@ -379,26 +379,22 @@ final class NoMobLocomotionController {
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
         Cell target = edge.to;
-        double targetX = target.row() + 0.5D;
-        double targetZ = target.column() + 0.5D;
-        double worldX = targetX - state.player.x;
-        double worldZ = targetZ - state.player.z;
-        double remaining = Math.hypot(worldX, worldZ);
-
-        if (remaining < 1.0E-9D) {
-            worldX = edge.dirX;
-            worldZ = edge.dirZ;
-            remaining = 1.0D;
-        } else {
-            worldX /= remaining;
-            worldZ /= remaining;
-        }
 
         /*
-         * Fast baseline: aim at the next floor-cell centre. This maximizes
-         * travel speed through ordinary corridors; the safety layer below only
-         * intervenes when the exact one-tick source model predicts a floor loss.
+         * The route edge is the committed locomotion primitive. Do not aim at
+         * the target cell centre: once vanilla momentum carries the player past
+         * that centre, the centre vector reverses and a closed-loop controller
+         * can command an immediate 180-degree turn back into the waypoint.
+         *
+         * The simulator's cardinal route model treats the active edge direction
+         * as authoritative until the edge is physically completed. The live
+         * motor must do the same. Route progress/edge advancement is handled
+         * separately by reanchorFromSupportedCell()/advanceCompletedEdges().
          */
+        double worldX = edge.dirX;
+        double worldZ = edge.dirZ;
+        double remaining = Math.max(0.0D, edge.length - edge.progress);
+
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
@@ -427,6 +423,7 @@ final class NoMobLocomotionController {
 
         lastDecision = "CELL_DRIVE edge=" + edge.index
                 + " target=" + target.row() + "," + target.column()
+                + " dir=" + directionRow(edge) + "," + directionColumn(edge)
                 + " remaining=" + format(remaining)
                 + " speed=" + format(speedAlong)
                 + " yawError=" + format(yawError)

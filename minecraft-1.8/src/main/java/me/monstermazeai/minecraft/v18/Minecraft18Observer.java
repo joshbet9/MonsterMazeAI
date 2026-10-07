@@ -199,9 +199,7 @@ public final class Minecraft18Observer {
         if (cachedPhysicalFloor == null || center == null || !cachedMazeDetected) {
             boolean[][] floor = new boolean[MAZE_SIZE][MAZE_SIZE];
             for (int row = 0; row < MAZE_SIZE; row++) {
-                for (int col = 0; col < MAZE_SIZE; col++) {
-                    floor[row][col] = basePhysicalFloor(raw[row][col], false);
-                }
+                for (int col = 0; col < MAZE_SIZE; col++) floor[row][col] = raw[row][col] != 0;
             }
             cachedPhysicalFloor = floor;
             cachedPhysicalPad = null;
@@ -210,34 +208,26 @@ public final class Minecraft18Observer {
         if (center == null || !cachedMazeDetected) return floor;
 
         int surfaceY = center.getY() - 1;
-        boolean centreDeteriorated = detectCenterDeteriorated(world, center, raw);
-
-        // The source builds raw 4/6 cells as 3-block-tall glass barriers. The
-        // underlying floor block exists, but the player's AABB cannot occupy
-        // that cell until the final centre deterioration removes the barrier.
-        // Raw 3/4 then disappear at deterioration, while 5/6 become ordinary
-        // maze floor. Read the actual surface block so world state remains
-        // authoritative, but apply the source lifecycle to player traversability.
         for (int row = 49 - CENTER_ANCHOR_RADIUS; row <= 49 + CENTER_ANCHOR_RADIUS; row++) {
             for (int col = 49 - CENTER_ANCHOR_RADIUS; col <= 49 + CENTER_ANCHOR_RADIUS; col++) {
                 int value = raw[row][col];
                 if (value < 3 || value > 6) continue;
                 int x = center.getX() - HALF_MAZE + row;
                 int z = center.getZ() - HALF_MAZE + col;
-                boolean surfacePresent = world.getBlockState(
-                        new BlockPos(x, surfaceY, z)).getBlock() != Blocks.air;
-                floor[row][col] = sourceCenterPhysicalFloor(value, centreDeteriorated)
-                        && surfacePresent;
+                floor[row][col] = world.getBlockState(new BlockPos(x, surfaceY, z)).getBlock() != Blocks.air;
             }
         }
 
+        // The source's once-per-second task starts at 20s with decay=10 and
+        // reaches its final decay=1 pass at ~29s. Keep the live block reading
+        // authoritative, but expose the source lifecycle explicitly for the
+        // common model so centre path cells can be re-enabled for monsters only
+        // after deterioration has completed.
         if (activePad != null && activePad.row >= 0 && activePad.column >= 0) {
             int cx = center.getX() - HALF_MAZE + activePad.row;
             int cz = center.getZ() - HALF_MAZE + activePad.column;
             if (cachedPhysicalPad == null || cachedPhysicalPad.getX() != cx || cachedPhysicalPad.getZ() != cz) {
-                if (cachedPhysicalPad != null) {
-                    restoreRawPadArea(raw, center, floor, cachedPhysicalPad, centreDeteriorated);
-                }
+                if (cachedPhysicalPad != null) restoreRawPadArea(raw, center, floor, cachedPhysicalPad);
                 markPhysicalPadArea(center, floor, cx, cz);
                 cachedPhysicalPad = new BlockPos(cx, center.getY(), cz);
             }
@@ -245,46 +235,11 @@ public final class Minecraft18Observer {
         return floor;
     }
 
-    private static boolean basePhysicalFloor(int value, boolean centreDeteriorated) {
-        if (value == 0 || value == 4) return false;
-        if (value == 6) return centreDeteriorated;
-        return value == 1 || value == 2 || value == 3 || value == 5;
-    }
-
-    private static boolean sourceCenterPhysicalFloor(int value, boolean centreDeteriorated) {
-        if (value == 3 || value == 4) return false;
-        if (value == 6) return centreDeteriorated;
-        return value == 5;
-    }
-
-    private static boolean detectCenterDeteriorated(World world, BlockPos center, int[][] raw) {
-        int surfaceY = center.getY() - 1;
-        int min = Math.max(0, 49 - CENTER_ANCHOR_RADIUS);
-        int max = Math.min(MAZE_SIZE - 1, 49 + CENTER_ANCHOR_RADIUS);
-        for (int row = min; row <= max; row++) {
-            for (int col = min; col <= max; col++) {
-                if (raw[row][col] != 3) continue;
-                int x = center.getX() - HALF_MAZE + row;
-                int z = center.getZ() - HALF_MAZE + col;
-                if (world.getBlockState(new BlockPos(x, surfaceY, z)).getBlock() == Blocks.air) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static void restoreRawPadArea(int[][] raw, BlockPos center, boolean[][] floor,
-                                          BlockPos pad, boolean centreDeteriorated) {
-        int baseRow = pad.getX() - (center.getX() - HALF_MAZE);
-        int baseCol = pad.getZ() - (center.getZ() - HALF_MAZE);
-        for (int dr = -SAFE_PAD_RADIUS; dr <= SAFE_PAD_RADIUS; dr++) {
-            for (int dc = -SAFE_PAD_RADIUS; dc <= SAFE_PAD_RADIUS; dc++) {
-                int row = baseRow + dr, col = baseCol + dc;
-                if (row >= 0 && row < MAZE_SIZE && col >= 0 && col < MAZE_SIZE) {
-                    floor[row][col] = basePhysicalFloor(raw[row][col], centreDeteriorated);
-                }
-            }
+    private static void restoreRawPadArea(int[][] raw, BlockPos center, boolean[][] floor, BlockPos pad) {
+        int baseRow = pad.getX() - (center.getX() - HALF_MAZE), baseCol = pad.getZ() - (center.getZ() - HALF_MAZE);
+        for (int dr = -SAFE_PAD_RADIUS; dr <= SAFE_PAD_RADIUS; dr++) for (int dc = -SAFE_PAD_RADIUS; dc <= SAFE_PAD_RADIUS; dc++) {
+            int row = baseRow + dr, col = baseCol + dc;
+            if (row >= 0 && row < MAZE_SIZE && col >= 0 && col < MAZE_SIZE) floor[row][col] = raw[row][col] != 0;
         }
     }
 

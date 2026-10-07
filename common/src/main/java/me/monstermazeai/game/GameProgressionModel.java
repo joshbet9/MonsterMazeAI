@@ -177,19 +177,13 @@ public final class GameProgressionModel {
     private void deteriorateCenter(GameState state) {
         if (state.maze == null) return;
 
-        /*
-         * The source removes the decorative 3/4 cells and rebuilds 5/6 as
-         * ordinary maze floor on the final deterioration pass. Raw 4/6 cells
-         * had a 3-block glass barrier above their floor before this point;
-         * MazeModel owns that physical lifecycle so simulator collision and
-         * player routing change together with the source.
-         */
-        state.maze.setCenterDeteriorated(true);
         for (int row = 0; row < me.monstermazeai.maze.MazeModel.SIZE; row++) {
             for (int column = 0; column < me.monstermazeai.maze.MazeModel.SIZE; column++) {
                 int value = state.maze.raw(row, column);
                 if (value == 5 || value == 6) {
                     state.maze.setDisabled(row, column, false);
+                } else if (value == 3 || value == 4) {
+                    state.maze.setPhysicalFloor(row, column, false);
                 }
             }
         }

@@ -158,7 +158,18 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = initialMonsterCount(mode);
+        /*
+         * MonsterManager.start() begins its starter spawn task during the
+         * three-second countdown. All 150/225 starter monsters therefore exist
+         * before the first LIVE movement tick. Reproduce that pre-LIVE RNG
+         * consumption once here rather than spawning monsters during live play.
+         */
+        int starter = initialMonsterCount(mode);
+        while (starter > 0) {
+            int batch = Math.min(25, starter);
+            int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
+            starter -= spawned;
+        }
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -180,15 +191,6 @@ class AuthenticStage10SimulationTest {
                 && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER));
 
         for (int tick = 0; tick < maxTicks && state.alive; tick++) {
-            // Source MonsterManager schedules its starter spawn task before its
-            // movement task: 25 monsters are added per server tick until the
-            // mode's 225-monster starter quota is reached.
-            if (state.pendingMonsterSpawns > 0) {
-                int batch = Math.min(25, state.pendingMonsterSpawns);
-                int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
-                state.pendingMonsterSpawns -= spawned;
-            }
-
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
             ActionInput action = decide(agent, state);

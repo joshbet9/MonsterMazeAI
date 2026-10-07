@@ -256,9 +256,8 @@ class AuthenticStage10SimulationTest {
                 firstFallVx = state.player.vx;
                 firstFallVz = state.player.vz;
                 firstFallDecision = decisionBeforeTick
-                        + " DESIRED_ACTION=" + desiredAction
-                        + " APPLIED_ACTION=" + currentAction
-                        + " PREVIOUS_APPLIED_ACTION=" + previousAction
+                        + " ACTION=" + currentAction
+                        + " PREVIOUS_ACTION=" + previousAction
                         + " TRACE=" + String.join(" || ", trace);
             }
 

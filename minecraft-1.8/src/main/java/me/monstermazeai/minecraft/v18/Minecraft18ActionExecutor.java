@@ -72,7 +72,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
                 ? Long.MAX_VALUE
                 : currentTick + holdTicks - 1L;
         jumpExpiryTick = next.jump && currentTick != Long.MAX_VALUE
-                ? currentTick + JUMP_PULSE_HOLD_TICKS
+                ? currentTick
                 : Long.MIN_VALUE;
         applyCount++;
 
@@ -150,6 +150,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
             yawPulsePending = false;
             pendingYawDelta = 0.0f;
             actionExpiryTick = Long.MIN_VALUE;
+            jumpExpiryTick = Long.MIN_VALUE;
         }
     }
 
@@ -160,6 +161,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         yawPulsePending = false;
         pendingYawDelta = 0.0f;
         actionExpiryTick = Long.MIN_VALUE;
+        jumpExpiryTick = Long.MIN_VALUE;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }
 

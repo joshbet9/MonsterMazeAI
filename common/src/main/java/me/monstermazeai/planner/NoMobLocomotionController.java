@@ -25,7 +25,7 @@ import java.util.List;
  * braking. Gap edges are committed and timed separately.
  */
 final class NoMobLocomotionController {
-    private static final float MAX_TURN_PER_TICK = 30.0F;
+    private static final float MAX_TURN_PER_TICK = 90.0F;
 
     private static final double HEADING_TOLERANCE = 5.0D;
     private static final double DRIVE_HEADING_LIMIT = 18.0D;
@@ -200,6 +200,28 @@ final class NoMobLocomotionController {
         }
 
         if (route == null || route.size() <= 1) {
+            /*
+             * A region search can intentionally return the player's current cell
+             * when that cell is inside the graph radius. The source completion
+             * condition is stricter: the player's AABB must actually be on the
+             * 5x5 SafePad surface. Drive the final physical distance whenever
+             * the graph has already reduced to a one-cell region route.
+             */
+            if (regionRadius > 0 && !PadModel.isOn(
+                    state.player,
+                    goal.row() + 0.5D,
+                    GameState.PAD_SURFACE_Y,
+                    goal.column() + 0.5D)) {
+                double dx = goal.row() + 0.5D - state.player.x;
+                double dz = goal.column() + 0.5D - state.player.z;
+                double len = Math.hypot(dx, dz);
+                if (len > 1.0E-9D) {
+                    lastDecision = "PAD_REGION_DIRECT_FINISH";
+                    return driveVector(
+                            state, dx / len, dz / len,
+                            1.0, true, allowJump && state.player.grounded);
+                }
+            }
             lastDecision = "ROUTE_DONE";
             return Action.IDLE;
         }
@@ -357,26 +379,22 @@ final class NoMobLocomotionController {
 
     private Action normalAction(GameState state, Edge edge, boolean allowJump) {
         Cell target = edge.to;
-        double targetX = target.row() + 0.5D;
-        double targetZ = target.column() + 0.5D;
-        double worldX = targetX - state.player.x;
-        double worldZ = targetZ - state.player.z;
-        double remaining = Math.hypot(worldX, worldZ);
-
-        if (remaining < 1.0E-9D) {
-            worldX = edge.dirX;
-            worldZ = edge.dirZ;
-            remaining = 1.0D;
-        } else {
-            worldX /= remaining;
-            worldZ /= remaining;
-        }
 
         /*
-         * Fast baseline: aim at the next floor-cell centre. This maximizes
-         * travel speed through ordinary corridors; the safety layer below only
-         * intervenes when the exact one-tick source model predicts a floor loss.
+         * The route edge is the committed locomotion primitive. Do not aim at
+         * the target cell centre: once vanilla momentum carries the player past
+         * that centre, the centre vector reverses and a closed-loop controller
+         * can command an immediate 180-degree turn back into the waypoint.
+         *
+         * The simulator's cardinal route model treats the active edge direction
+         * as authoritative until the edge is physically completed. The live
+         * motor must do the same. Route progress/edge advancement is handled
+         * separately by reanchorFromSupportedCell()/advanceCompletedEdges().
          */
+        double worldX = edge.dirX;
+        double worldZ = edge.dirZ;
+        double remaining = Math.max(0.0D, edge.length - edge.progress);
+
         float yawError = headingErrorForDirection(state, worldX, worldZ);
         double speedAlong = state.player.vx * edge.dirX + state.player.vz * edge.dirZ;
 
@@ -399,12 +417,13 @@ final class NoMobLocomotionController {
             jump = false;
         }
 
-        if (Math.abs(yawError) > 75.0F) {
+        if (Math.abs(yawError) > 90.0F) {
             jump = false;
         }
 
         lastDecision = "CELL_DRIVE edge=" + edge.index
                 + " target=" + target.row() + "," + target.column()
+                + " dir=" + directionRow(edge) + "," + directionColumn(edge)
                 + " remaining=" + format(remaining)
                 + " speed=" + format(speedAlong)
                 + " yawError=" + format(yawError)
@@ -512,7 +531,13 @@ final class NoMobLocomotionController {
          */
         yawDelta = 0.0F;
 
-        double yaw = Math.toRadians(state.player.yaw);
+        /*
+         * LegacyMovementModel and the live MovementInput bridge apply yawDelta
+         * before converting WASD into world motion. Build the WASD vector in that
+         * post-turn frame, otherwise each simultaneous steer+drive command is
+         * rotated by the camera pulse we just requested.
+         */
+        double yaw = Math.toRadians(state.player.yaw + yawDelta);
         double forwardX = -Math.sin(yaw);
         double forwardZ = Math.cos(yaw);
         double strafeX = Math.cos(yaw);
@@ -668,7 +693,7 @@ final class NoMobLocomotionController {
          * first rotate in place when facing backwards. A small fixed turn step
          * converges without the old +/-24 degree oscillation.
          */
-        if (Math.abs(yawError) > 75.0F) {
+        if (Math.abs(yawError) > 90.0F) {
             return new Action(
                     0.0, 0.0, false, false,
                     clamp(yawError, -15.0F, 15.0F),
@@ -782,7 +807,7 @@ final class NoMobLocomotionController {
         return normalize(desiredYaw - state.player.yaw);
     }
 
-    private Action driveVector(
+    Action driveVector(
             GameState state,
             double worldX,
             double worldZ,
@@ -792,34 +817,52 @@ final class NoMobLocomotionController {
         float yawError = headingErrorForDirection(state, worldX, worldZ);
 
         /*
-         * Translation is expressed directly in the player's current
-         * forward/strafe basis. Keeping yawDelta at zero removes the unstable
-         * rotate-stop-rotate loop seen in the diagnostic trace; the resulting
-         * input is still equivalent to WASD steering in the 1.8 client.
+         * Vanilla 1.8.9 can steer the camera and move on the same tick, but the
+         * player must retain >=0.8 forward input for sprint to remain active.
+         * A pure-W camera snap cuts corners badly at large errors; a raw diagonal
+         * sprint action can silently cancel sprint. Use the source-valid middle:
+         *
+         *   >90° error: turn in place until the route is within the safe
+         *   camera-control envelope.
+         *   <=90° error: turn up to 90° and add A/D as needed to keep moving
+         *   toward the desired world direction while preserving sprint input.
+         *
+         * The resulting Action is identical whether consumed by LegacyMovementModel
+         * or Minecraft18MovementInput: yaw first, then this local WASD intent.
          */
-        /*
-         * Human-like camera convergence: large route-heading errors should be
-         * closed quickly while translation continues. The source client accepts
-         * continuous mouse-look; this only changes the controller's yaw input,
-         * not movement physics.
-         */
-        float yawDelta = clamp(
-                yawError * 0.50F, -30.0F, 30.0F);
-        double yaw = Math.toRadians(state.player.yaw);
-        double forwardX = -Math.sin(yaw);
-        double forwardZ = Math.cos(yaw);
-        double strafeX = Math.cos(yaw);
-        double strafeZ = Math.sin(yaw);
-
-        double forward = worldX * forwardX + worldZ * forwardZ;
-        double strafe = worldX * strafeX + worldZ * strafeZ;
-        double magnitude = Math.hypot(forward, strafe);
-        if (magnitude > 1.0E-9D) {
-            forward = forward / magnitude * forwardMagnitude;
-            strafe = strafe / magnitude * forwardMagnitude;
+        if (Math.abs(yawError) > 75.0F) {
+            return new Action(
+                    0.0, 0.0, false, false,
+                    clamp(yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK),
+                    false);
         }
 
-        return new Action(forward, strafe, jump, sprint, yawDelta, false);
+        float yawDelta = clamp(
+                yawError, -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
+        float residualError = yawError - yawDelta;
+        while (residualError >= 180.0F) residualError -= 360.0F;
+        while (residualError < -180.0F) residualError += 360.0F;
+
+        double residualRadians = Math.toRadians(residualError);
+        double forward = Math.max(0.8D, Math.min(1.0D, forwardMagnitude));
+        double strafe = Math.tan(residualRadians) * forward;
+
+        /*
+         * Minecraft normalizes the combined forward/strafe input before applying
+         * movement, while sprint eligibility is checked from the raw forward
+         * input. A full strafe is therefore source-valid: forward remains 1.0
+         * for sprint purposes while the normalized vector can reach 45 degrees.
+         */
+        double maxStrafe = 1.0D;
+        strafe = Math.max(-maxStrafe, Math.min(maxStrafe, strafe));
+
+        return new Action(
+                forward,
+                strafe,
+                jump,
+                sprint,
+                yawDelta,
+                false);
     }
 
     private float normalize(float angle) {

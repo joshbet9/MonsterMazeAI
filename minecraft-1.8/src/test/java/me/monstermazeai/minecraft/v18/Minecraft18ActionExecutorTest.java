@@ -27,4 +27,34 @@ public class Minecraft18ActionExecutorTest {
         assertEquals(0.0f, action.yawDelta, 0.0f);
         assertFalse(action.useAbility);
     }
+    @Test
+    public void jumpInputExpiresWithTheCommandTick() {
+        Minecraft18ActionExecutor executor =
+                new Minecraft18ActionExecutor(org.mockito.Mockito.mock(Minecraft.class));
+        executor.setAiEnabled(true);
+
+        executor.apply(new LegacyAction(1.0, 0.0, true, true, 0.0F, false), 100L);
+
+        LegacyAction sameTick = executor.currentAction(100L);
+        LegacyAction nextTick = executor.currentAction(101L);
+
+        assertTrue(sameTick.jump);
+        assertFalse(nextTick.jump);
+    }
+
+    @Test
+    public void expiredMovementCannotLeakIntoTheFollowingTick() {
+        Minecraft18ActionExecutor executor =
+                new Minecraft18ActionExecutor(org.mockito.Mockito.mock(Minecraft.class));
+        executor.setAiEnabled(true);
+
+        executor.apply(new LegacyAction(1.0, 0.0, false, true, 0.0F, false), 100L);
+
+        LegacyAction expired = executor.currentAction(101L);
+
+        assertEquals(0.0, expired.forward, 0.0);
+        assertEquals(0.0, expired.strafe, 0.0);
+        assertFalse(expired.sprint);
+    }
+
 }

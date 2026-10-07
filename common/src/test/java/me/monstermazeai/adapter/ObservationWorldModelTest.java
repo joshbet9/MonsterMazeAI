@@ -111,4 +111,39 @@ class ObservationWorldModelTest {
         assertEquals(55, state.tick);
     }
 
+    @Test
+    void reconstructsRepulsorOrBodyRushLaunchStateFromLiveMobMotion() {
+        int[][] maze = new int[99][99];
+        maze[10][10] = 1;
+
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                500, true, true, 1, "SPEED", true, false, 4, 40, 8,
+                new LegacyWorldObservation.Player(
+                        10.5, 10.0, 10.5, 0.0, 0.0, 0.0,
+                        0f, 0f, false, 20, 20),
+                Kit.REPULSOR, 0, 1,
+                new LegacyWorldObservation.BlockPoint(0, 0, 0),
+                new LegacyWorldObservation.Pad(30, 30, 0.0, false),
+                maze, Collections.emptyList(),
+                "Monster Maze", Arrays.asList("Mode", "Speed", "Safe Pad", "40 Seconds", "Stage", "4"));
+
+        LegacyWorldObservation.Monster launched = new LegacyWorldObservation.Monster(
+                22, "monster_maze_monster", "snowman",
+                10.9, 10.9, 10.5, 0.25, 1.0, 0.15, false);
+
+        observation = new LegacyWorldObservation(
+                500, true, true, 1, "SPEED", true, false, 4, 40, 8,
+                observation.player, observation.kit, observation.jumpCharges,
+                observation.abilityCharges, observation.center, observation.pad,
+                observation.maze, observation.physicalFloor,
+                Collections.singletonList(launched),
+                observation.scoreboardTitle, observation.scoreboardLines);
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertEquals(499L, state.monsters.get(0).launchedAtTick);
+        assertEquals(529L, state.monsters.get(0).launchedUntilTick);
+        assertTrue(state.monsters.get(0).launched(state.tick));
+    }
+
 }

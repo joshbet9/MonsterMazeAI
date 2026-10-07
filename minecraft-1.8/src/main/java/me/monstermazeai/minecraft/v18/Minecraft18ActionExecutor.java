@@ -33,7 +33,6 @@ public final class Minecraft18ActionExecutor implements ActionSink {
      * Yaw/ability pulses remain one-shot and are never repeated by this hold.
      */
     private static final long MAX_COMMAND_HOLD_TICKS = 1L;
-    private static final long JUMP_PULSE_HOLD_TICKS = 1L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
@@ -182,8 +181,13 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         return aiEnabled;
     }
 
-    public void setAiEnabled(boolean enabled) {
+    public synchronized void setAiEnabled(boolean enabled) {
         aiEnabled = enabled;
+        // A new AI session must seed its camera from the real player once.
+        // Ending AI control returns camera authority to the user.
+        controlledYawInitialised = false;
+        pendingYawDelta = 0.0F;
+        yawPulsePending = false;
         if (!enabled) {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;

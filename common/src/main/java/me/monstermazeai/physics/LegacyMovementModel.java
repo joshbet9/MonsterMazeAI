@@ -55,38 +55,44 @@ public final class LegacyMovementModel implements PhysicsModel {
          */
         boolean effectiveSprint = sprinting && action.forward() >= 0.8D;
 
+        /*
+         * EntityLivingBase.onLivingUpdate() decrements jumpTicks before testing
+         * the current jump input. Releasing jump then clears the cooldown in the
+         * same tick. Preserving this order is important for the source
+         * jump-spam technique: held input is rate-limited to 10 ticks, while
+         * discrete key pulses can intentionally occur more frequently.
+         */
+        if (p.jumpTicks > 0) {
+            p.jumpTicks--;
+        }
+
         if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
             if (jumpAmplifier <= -2) {
-                // Monster Maze applies Jump -10 to non-Jumpers. That blocks the
-                // vertical impulse but the sprint-jump's horizontal impulse is
-                // still applied by the source jump routine.
+                // Monster Maze's Jump -10 makes jump() write a negative vertical
+                // velocity. The subsequent floor collision pins the player to
+                // the surface while the source sprint-jump impulse still applies.
                 p.vy = 0.0D;
                 if (effectiveSprint) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
                 }
-                // Vanilla sets jumpTicks=10 after every jump, including the
-                // Jump -10 case. Releasing the jump input resets it to zero;
-                // this is why deliberate jump pulses can still be faster than
-                // a continuously-held key.
-                p.jumpTicks = 10;
             } else {
-                p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
+                p.vy = JUMP_VELOCITY
+                        + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;
                 if (effectiveSprint) {
                     float yaw = p.yaw * 0.017453292F;
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
                 }
-                p.jumpTicks = 10;
             }
+            // Vanilla writes the same 10-tick jump cooldown for both real
+            // jumps and Jump -10's grounded sprint-jump interaction.
+            p.jumpTicks = 10;
         } else if (!action.jump()) {
             p.jumpTicks = 0;
-        } else if (p.jumpTicks > 0) {
-            p.jumpTicks--;
         }
-
         float movementFactor;
         if (groundedAtStart) {
             movementFactor = WALK_SPEED

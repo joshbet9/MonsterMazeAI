@@ -26,6 +26,9 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private boolean controlledYawInitialised;
     private long actionExpiryTick = Long.MIN_VALUE;
     private long jumpExpiryTick = Long.MIN_VALUE;
+    private boolean syntheticSprintKeyActive;
+    private boolean physicalSprintKeyBefore;
+    private int syntheticSprintKeyCode;
     /*
      * Live commands are one-tick control intents. The common controller is
      * closed-loop, so reusing an older movement command beyond one client tick
@@ -168,6 +171,30 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         while (yaw >= 180.0F) yaw -= 360.0F;
         while (yaw < -180.0F) yaw += 360.0F;
         return yaw;
+    }
+
+    /**
+     * Install the planner's sprint state for the current vanilla player tick.
+     * The state is deliberately not restored here: EntityPlayerSP evaluates
+     * sprint activation/cancellation after MovementInput.updatePlayerMoveState().
+     */
+    public synchronized void beginSyntheticSprintKey(
+            net.minecraft.client.settings.KeyBinding sprintBinding,
+            boolean requested) {
+        if (sprintBinding == null) return;
+        syntheticSprintKeyCode = sprintBinding.getKeyCode();
+        physicalSprintKeyBefore = net.minecraft.client.settings.GameSettings.isKeyDown(sprintBinding);
+        syntheticSprintKeyActive = true;
+        net.minecraft.client.settings.KeyBinding.setKeyBindState(
+                syntheticSprintKeyCode, requested);
+    }
+
+    /** Restore the physical sprint key after the player tick has finished. */
+    public synchronized void restoreSyntheticSprintKey() {
+        if (!syntheticSprintKeyActive) return;
+        net.minecraft.client.settings.KeyBinding.setKeyBindState(
+                syntheticSprintKeyCode, physicalSprintKeyBefore);
+        syntheticSprintKeyActive = false;
     }
 
     /** Called on the Minecraft client thread to consume one right-click pulse. */

@@ -227,23 +227,19 @@ public final class Minecraft18AiRuntime {
         lastCompletedTick = result.tick;
         if (age == 1L) {
             /*
-             * The common simulator is closed-loop on the observation being
-             * controlled. A one-tick-old snapshot can still preserve the
-             * continuous WASD/jump intent, but its camera pulse and ability
-             * decision are stale relative to the current world.
+             * The simulator explicitly models the live IPC cadence as:
+             * observe N -> decide N -> apply N+1. Therefore a result that is
+             * exactly one tick old is not stale; it is the command the simulator
+             * would consume on this tick. Preserve the complete action,
+             * including its one-shot yaw and ability pulses.
              */
-            return new LegacyAction(
-                    result.action.forward,
-                    result.action.strafe,
-                    result.action.jump,
-                    result.action.sprint,
-                    0.0F,
-                    false);
+            return result.action;
         }
         /*
-         * Do not carry a movement command across two or more live ticks. The
-         * simulator never does this: every physics step consumes an action
-         * selected from the immediately preceding state.
+         * Do not carry a movement command across two or more live ticks. A
+         * second-tick-old result no longer corresponds to the state that
+         * produced it, so the live bridge fails closed exactly as the simulator's
+         * bounded command queue does.
          */
         return LegacyAction.IDLE;
     }

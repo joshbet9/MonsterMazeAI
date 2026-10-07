@@ -66,7 +66,11 @@ public final class LegacyMovementModel implements PhysicsModel {
                     p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
                     p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
                 }
-                p.jumpTicks = 0;
+                // Vanilla sets jumpTicks=10 after every jump, including the
+                // Jump -10 case. Releasing the jump input resets it to zero;
+                // this is why deliberate jump pulses can still be faster than
+                // a continuously-held key.
+                p.jumpTicks = 10;
             } else {
                 p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
                 p.grounded = false;

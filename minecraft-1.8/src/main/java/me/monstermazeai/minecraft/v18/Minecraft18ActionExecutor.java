@@ -30,7 +30,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
      * changes the state on which the next decision should have been based.
      * Yaw/ability pulses remain one-shot and are never repeated by this hold.
      */
-    private static final long MAX_COMMAND_HOLD_TICKS = 4L;
+    private static final long MAX_COMMAND_HOLD_TICKS = 1L;
     private static final long JUMP_PULSE_HOLD_TICKS = 1L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {

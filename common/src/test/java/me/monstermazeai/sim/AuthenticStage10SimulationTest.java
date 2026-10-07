@@ -33,8 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * The test intentionally exercises the current MonsterMaze source contract:
  * exact 99x99 source layouts, source SafePad selection/avoidance, source
- * starter/subsequent monster spawn pools, source progression/decay, and the
- * same common autonomous controller used by the 1.8 adapter.
+ * starter/subsequent monster spawn pools, source progression/decay, the
+ * same common autonomous controller used by the 1.8 adapter, and the
+ * one-tick observe/decide/apply cadence used by the live IPC bridge.
  *
  * Gate: every source pattern and every kit must survive at least stage 10 in
  * Modern mode on its deterministic seed. This is a baseline gate, not a proof
@@ -43,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AuthenticStage10SimulationTest {
     private static final int REQUIRED_STAGE = 10;
     private static final int MAX_TICKS = 20_000;
+    private static final int NATURAL_MAX_TICKS = 60_000;
 
     @Test
     void allModernSourcePatternsAndKitsReachStageTen() {
@@ -103,6 +105,16 @@ class AuthenticStage10SimulationTest {
     }
 
     private RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode) {
+        return run(pattern, kit, profile, mode, REQUIRED_STAGE, MAX_TICKS);
+    }
+
+    /** Natural-end run used by the unrestricted 30-cell matrix. */
+    static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode, int stopStage) {
+        return run(pattern, kit, profile, mode, stopStage, stopStage > 0 ? MAX_TICKS : NATURAL_MAX_TICKS);
+    }
+
+    private static RunResult run(int pattern, Kit kit, AiProfile profile, Mode mode,
+                                 int stopStage, int maxTicks) {
         long seed = 0x4D4D4153494D0000L
                 ^ ((long) pattern * 0x9E3779B97F4A7C15L)
                 ^ ((long) kit.ordinal() * 0xBF58476D1CE4E5B9L);
@@ -120,6 +132,12 @@ class AuthenticStage10SimulationTest {
         state.inMonsterMaze = true;
         state.alive = true;
         state.completed = false;
+        /*
+         * Match MonsterMaze GameManager.startGame(): the real player is
+         * teleported to center.clone().add(0.5, 1, 0.5).
+         * MazeCoordinates maps that source location to logical cell-centre
+         * coordinates (49.5, 49.5).
+         */
         state.player.x = 49.5;
         state.player.y = GameState.PATH_Y;
         state.player.z = 49.5;
@@ -141,7 +159,18 @@ class AuthenticStage10SimulationTest {
         activatePadSurface(state, initial);
 
         int[] nextMonsterId = {1};
-        state.pendingMonsterSpawns = initialMonsterCount(mode);
+        /*
+         * MonsterManager.start() begins its starter spawn task during the
+         * three-second countdown. All 150/225 starter monsters therefore exist
+         * before the first LIVE movement tick. Reproduce that pre-LIVE RNG
+         * consumption once here rather than spawning monsters during live play.
+         */
+        int starter = initialMonsterCount(mode);
+        while (starter > 0) {
+            int batch = Math.min(25, starter);
+            int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
+            starter -= spawned;
+        }
 
         AutonomousMonsterMazeAgent agent = new AutonomousMonsterMazeAgent(
                 new RobustLiveController(
@@ -159,30 +188,33 @@ class AuthenticStage10SimulationTest {
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
 
-        for (int tick = 0; tick < MAX_TICKS && state.alive; tick++) {
-            // Source MonsterManager schedules its starter spawn task before its
-            // movement task: 25 monsters are added per server tick until the
-            // mode's 225-monster starter quota is reached.
-            if (state.pendingMonsterSpawns > 0) {
-                int batch = Math.min(25, state.pendingMonsterSpawns);
-                int spawned = spawnInitialBatch(state, monsterRandom, nextMonsterId, batch);
-                state.pendingMonsterSpawns -= spawned;
-            }
+        /*
+         * Forge fires ClientTickEvent.START before world.updateEntities(), so
+         * the simulator evaluates the controller at the same pre-physics
+         * boundary as the live adapter and consumes that Action immediately.
+         */
+        boolean diagnosticTrace = pattern == 1
+                && ((mode == Mode.SPEED || mode == Mode.MODERN)
+                && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER));
 
+        for (int tick = 0; tick < maxTicks && state.alive; tick++) {
             double preX = state.player.x, preY = state.player.y, preZ = state.player.z;
             double preVx = state.player.vx, preVy = state.player.vy, preVz = state.player.vz;
             ActionInput action = decide(agent, state);
             String decisionBeforeTick = agent.lastDecisionDetail();
             String currentAction = action.action.toString();
-            if (pattern == 0 && kit == Kit.JUMPER) {
+
+            if (diagnosticTrace || (pattern == 0 && kit == Kit.JUMPER)) {
                 trace.addLast("tick=" + state.tick
+                        + " stage=" + state.stage
                         + " pos=" + format(state.player.x) + "," + format(state.player.z)
                         + " y=" + format(state.player.y)
                         + " yaw=" + format(state.player.yaw)
                         + " v=" + format(state.player.vx) + "," + format(state.player.vz)
-                        + " decision=" + decisionBeforeTick.replace(' ', '_')
+                        + " hp=" + format(state.player.health)
+                        + " pad=" + state.activePadRow + "," + state.activePadColumn
                         + " action=" + currentAction.replace(' ', '_'));
-                while (trace.size() > 30) trace.removeFirst();
+                while (trace.size() > (diagnosticTrace ? 120 : 30)) trace.removeFirst();
             }
 
             simulator.tick(state, action.action);
@@ -231,7 +263,18 @@ class AuthenticStage10SimulationTest {
 
             previousAction = currentAction;
 
-            if (maxStage >= REQUIRED_STAGE) break;
+            if (stopStage > 0 && maxStage >= stopStage) break;
+        }
+
+        if (diagnosticTrace) {
+            System.out.println("OUTLIER_DIAGNOSTIC mode=" + mode
+                    + " pattern=" + (pattern + 1)
+                    + " kit=" + kit
+                    + " maxStage=" + maxStage
+                    + " ticks=" + state.tick
+                    + " firstFallTick=" + firstFallTick
+                    + " firstFallDecision=" + firstFallDecision
+                    + " TRACE=" + String.join(" || ", trace));
         }
 
         return new RunResult(maxStage, state.tick, state.player.health,
@@ -351,7 +394,7 @@ class AuthenticStage10SimulationTest {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private record RunResult(
+    static record RunResult(
             int maxStage,
             long ticks,
             double health,

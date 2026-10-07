@@ -3,6 +3,7 @@ package me.monstermazeai.minecraft.v18;
 import me.monstermazeai.adapter.LegacyAction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.GameSettings;
+import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.util.MovementInputFromOptions;
 
 /**
@@ -30,20 +31,53 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
 
     @Override
     public void updatePlayerMoveState() {
-        // Keep normal keyboard behaviour available whenever AI is disabled.
-        super.updatePlayerMoveState();
+        if (!executor.isAiEnabled()) {
+            super.updatePlayerMoveState();
+            return;
+        }
 
-        if (!executor.isAiEnabled()) return;
+        LegacyAction action = executor.currentAction(minecraft.theWorld == null
+                ? 0L
+                : minecraft.theWorld.getTotalWorldTime());
 
-        LegacyAction action = executor.currentAction();
+        /*
+         * Sprint is an input-state decision in the 1.8.9/LabyMod player loop.
+         * EntityPlayerSP reads the sprint binding/input state after
+         * MovementInputFromOptions.updatePlayerMoveState(). Merely calling
+         * EntityPlayer.setSprinting() here is therefore not authoritative: the
+         * later player sprint logic can immediately overwrite it.
+         *
+         * Feed the planner's sprint intent through the same key-state boundary
+         * that vanilla/LabyMod consumes, while restoring the real keyboard state
+         * immediately afterwards. This keeps the AI isolated from physical input
+         * and makes SP=true produce the same sprint state the simulator models.
+         */
+        executor.beginSyntheticSprintKey(
+                minecraft.gameSettings.keyBindSprint, action.sprint);
+        try {
+            super.updatePlayerMoveState();
+        } catch (RuntimeException failure) {
+            executor.restoreSyntheticSprintKey();
+            throw failure;
+        }
         if (action == null) action = LegacyAction.IDLE;
 
         if (minecraft.thePlayer != null) {
             /*
+             * AI owns the camera while enabled. Physical mouse movement cannot
+             * be allowed to change the heading between the observation used by
+             * the planner and the physics step that consumes its Action.
+             */
+            if (!executor.controlledYawInitialised()) {
+                executor.initialiseControlledYaw(minecraft.thePlayer.rotationYaw);
+            }
+            minecraft.thePlayer.rotationYaw = executor.controlledYaw();
+
+            /*
              * yawDelta is a per-command cursor step, not a held input. Consume
              * it once while forward/strafe/jump remain continuously authoritative.
              * This permits true simultaneous steering + forward movement without
-             * repeatedly applying the same 12-degree correction every tick.
+             * repeatedly applying the same correction every tick.
              */
             float yawDelta = executor.consumeYawPulse();
             if (yawDelta != 0.0f) {
@@ -62,6 +96,9 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
             moveForward = (float) action.forward;
             moveStrafe = (float) action.strafe;
             jump = action.jump;
+            // Sneak is not part of the common Monster Maze Action contract.
+            // Never let the user's physical sneak key reshape the AI action.
+            sneak = false;
 
             // Let vanilla's normal sprint eligibility rules run from the
             // resulting forward input. Explicitly clear sprint when the AI
@@ -74,6 +111,14 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
             if (executor.consumeAbilityPulse()
                     && minecraft.playerController != null
                     && minecraft.theWorld != null) {
+                /*
+                 * MonsterMaze places every QOL secondary item in hotbar slot 0:
+                 * snowball (Cryo), apple (Body Rush), coal (Repulsor). The
+                 * simulator models the ability as directly executable from kit
+                 * state, so the live bridge must make the same ability state
+                 * independent of the user's previously selected slot.
+                 */
+                minecraft.thePlayer.inventory.currentItem = 0;
                 net.minecraft.item.ItemStack stack = minecraft.thePlayer.getCurrentEquippedItem();
                 if (stack != null) {
                     // Source kits use different input events: Repulsor and Body

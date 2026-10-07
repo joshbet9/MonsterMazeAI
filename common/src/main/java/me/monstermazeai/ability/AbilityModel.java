@@ -71,7 +71,6 @@ public final class AbilityModel {
             double dx = game.player.x - m.x, dy = game.player.y - m.y, dz = game.player.z - m.z;
             if (dx*dx + dy*dy + dz*dz <= 36.0) {
                 m.frozenUntilTick = Math.max(m.frozenUntilTick, game.tick + CRYO_FREEZE_TICKS);
-                m.vx = m.vy = m.vz = 0.0;
             }
         }
         return true;

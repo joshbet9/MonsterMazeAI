@@ -42,11 +42,20 @@ public final class RobustLiveController {
             return Action.IDLE;
         }
 
+        boolean noMob = state.monsters != null && state.monsters.isEmpty();
         boolean sameObjective = state.activePadRow >= 0 && state.activePadColumn >= 0;
         double dx = state.player.x - lastX;
         double dz = state.player.z - lastZ;
         double displacementSq = dx * dx + dz * dz;
-        if (lastTick != Long.MIN_VALUE && sameObjective && displacementSq < MIN_PROGRESS_SQ) {
+        /*
+         * The locomotion-only controller deliberately spends ticks cancelling
+         * residual momentum before a sharp corridor turn. Treating that as
+         * "stuck" and injecting a forced jump after eight ticks destroys the
+         * deterministic no-mob motor's braking invariant. Mob-present runs keep
+         * the existing stuck recovery unchanged.
+         */
+        if (!noMob && lastTick != Long.MIN_VALUE && sameObjective
+                && displacementSq < MIN_PROGRESS_SQ) {
             stuckTicks++;
         } else {
             stuckTicks = 0;
@@ -84,7 +93,7 @@ public final class RobustLiveController {
             return Action.IDLE;
         }
 
-        if (stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
+        if (!noMob && stuckTicks >= STUCK_TICKS && allowJump && state.player.grounded) {
             stuckTicks = 0;
             Action jump = new Action(action.forward(), action.strafe(), true,
                     action.sprint(), action.yawDelta(), action.useAbility());

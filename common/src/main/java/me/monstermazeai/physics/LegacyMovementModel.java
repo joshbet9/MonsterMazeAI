@@ -9,7 +9,10 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final float GROUND_FRICTION = 0.91F;
     private static final float WALK_SPEED = 0.10F;
     private static final float SPRINT_MULTIPLIER = 1.30F;
-    private static final float AIR_MOVE_FACTOR = 0.02F;
+    /** EntityLivingBase applies a 0.98 input decay before moveEntityWithHeading(). */
+    private static final float INPUT_DAMPING = 0.98F;
+    /** Base 1.8 air movement factor; sprint raises it by 30% to exactly 0.026F. */
+    private static final float AIR_MOVE_FACTOR = 0.020F;
     private static final double GRAVITY = 0.08D;
     private static final double AIR_DRAG = 0.9800000190734863D;
     private static final double JUMP_VELOCITY = 0.42D;
@@ -42,47 +45,77 @@ public final class LegacyMovementModel implements PhysicsModel {
         while (p.yaw < -180.0F) p.yaw += 360.0F;
 
         boolean groundedAtStart = p.grounded;
+        // EntityPlayerSP cancels sprint when forward input drops below 0.8F.
+        // Keep the simulator faithful to that actual 1.8.9 input contract.
+        boolean sprinting = action.sprint() && action.forward() >= 0.8D;
         float friction = groundedAtStart ? SLIPPERINESS * GROUND_FRICTION : GROUND_FRICTION;
 
-        if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
-            if (jumpAmplifier <= -2) {
-                // Monster Maze applies Jump -10 to non-Jumpers. That blocks the
-                // vertical impulse but the sprint-jump's horizontal impulse is
-                // still applied by the source jump routine.
-                p.vy = 0.0D;
-                if (action.sprint()) {
-                    float yaw = p.yaw * 0.017453292F;
-                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
-                }
-                p.jumpTicks = 0;
-            } else {
-                p.vy = JUMP_VELOCITY + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
-                p.grounded = false;
-                if (action.sprint()) {
-                    float yaw = p.yaw * 0.017453292F;
-                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
-                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
-                }
-                p.jumpTicks = 10;
-            }
-        } else if (!action.jump()) {
-            p.jumpTicks = 0;
-        } else if (p.jumpTicks > 0) {
+        /*
+         * The sprint state used by both the movement multiplier and the
+         * sprint-jump impulse is the post-input vanilla state. Minecraft 1.8.9
+         * cancels sprint below 0.8 forward input before movement is applied.
+         */
+        boolean effectiveSprint = sprinting && action.forward() >= 0.8D;
+
+        /*
+         * EntityLivingBase.onLivingUpdate() decrements jumpTicks before testing
+         * the current jump input. Releasing jump then clears the cooldown in the
+         * same tick. Preserving this order is important for the source
+         * jump-spam technique: held input is rate-limited to 10 ticks, while
+         * discrete key pulses can intentionally occur more frequently.
+         */
+        if (p.jumpTicks > 0) {
             p.jumpTicks--;
         }
 
+        if (action.jump() && groundedAtStart && p.jumpTicks == 0) {
+            if (jumpAmplifier <= -2) {
+                // Monster Maze's Jump -10 makes jump() write a negative vertical
+                // velocity. The subsequent floor collision pins the player to
+                // the surface while the source sprint-jump impulse still applies.
+                p.vy = 0.0D;
+                if (effectiveSprint) {
+                    float yaw = p.yaw * 0.017453292F;
+                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                }
+            } else {
+                p.vy = JUMP_VELOCITY
+                        + (jumpAmplifier > 0 ? ((jumpAmplifier + 1) * 0.1D) : 0.0D);
+                p.grounded = false;
+                if (effectiveSprint) {
+                    float yaw = p.yaw * 0.017453292F;
+                    p.vx -= Math.sin(yaw) * SPRINT_JUMP_IMPULSE;
+                    p.vz += Math.cos(yaw) * SPRINT_JUMP_IMPULSE;
+                }
+            }
+            // Vanilla writes the same 10-tick jump cooldown for both real
+            // jumps and Jump -10's grounded sprint-jump interaction.
+            p.jumpTicks = 10;
+        } else if (!action.jump()) {
+            p.jumpTicks = 0;
+        }
         float movementFactor;
         if (groundedAtStart) {
             movementFactor = WALK_SPEED
-                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F)
+                    * (effectiveSprint ? SPRINT_MULTIPLIER : 1.0F)
                     * (0.16277136F / (friction * friction * friction));
         } else {
             movementFactor = AIR_MOVE_FACTOR
-                    * (action.sprint() ? SPRINT_MULTIPLIER : 1.0F);
+                    * (effectiveSprint ? SPRINT_MULTIPLIER : 1.0F);
         }
 
-        moveFlying(p, action.strafe(), action.forward(), movementFactor);
+        /*
+         * The live 1.8.9 path sets MovementInput first, then EntityLivingBase
+         * multiplies both moveStrafing and moveForward by 0.98 immediately
+         * before moveEntityWithHeading(). Keep sprint eligibility based on the
+         * pre-damped forward input, but apply the exact 0.98 factor to physics.
+         */
+        moveFlying(
+                p,
+                action.strafe() * INPUT_DAMPING,
+                action.forward() * INPUT_DAMPING,
+                movementFactor);
 
         /*
          * Entity.move() resolves the player's 0.6-wide AABB against the actual

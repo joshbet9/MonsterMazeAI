@@ -86,6 +86,7 @@ public final class FirstPadSpeedrunController {
     private long lastFailedMobReplanTick = Long.MIN_VALUE;
     private long lastSuccessfulMobReplanTick = Long.MIN_VALUE;
     private String lastRouteBuildFailureReason = "unknown";
+    private String lastDecisionDetail = "INIT";
 
     /*
      * Active-pad transitions are tracked explicitly. targetReached is a
@@ -589,62 +590,90 @@ public final class FirstPadSpeedrunController {
             boolean retryAllowed = !mobBlocked
                     || lastFailedMobReplanTick == Long.MIN_VALUE
                     || state.worldTick - lastFailedMobReplanTick >= MOB_REPLAN_RETRY_TICKS;
-            if (!retryAllowed) return LegacyAction.IDLE;
-            if (!buildRoute(state)) {
-                /*
-                 * Never treat a failed replan as a terminal movement state.
-                 * Re-anchor to the nearest known supported cell and try again;
-                 * this is especially important after a fast boundary crossing
-                 * or mob knockback has made the previous route stale.
-                 */
-                if (beginRecovery(state)) {
+
+            /*
+             * A future predicted monster is not a reason to throw away a good
+             * current edge. During the retry cooldown keep driving the existing
+             * route unless the monster actually occupies the immediate edge.
+             * This removes the observed multi-tick wall stall while retaining
+             * hard avoidance where the next edge is genuinely blocked.
+             */
+            boolean preserveExistingRoute = mobBlocked
+                    && !immediateMobBlocked
+                    && !retryAllowed;
+            if (!preserveExistingRoute) {
+                if (!buildRoute(state)) {
+                    /*
+                     * A failed future-hazard replan does not invalidate the
+                     * existing route. Continue on it unless the immediate edge
+                     * is genuinely blocked. Physical topology failures still
+                     * require the recovery path below.
+                     */
+                    if (beginRecovery(state)) {
+                        if (state.worldTick % 5L == 0L) {
+                            log(state.worldTick, "[MonsterMazeAI/1.8] ROUTE REPLAN FAILED"
+                                    + " tick=" + state.worldTick
+                                    + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                    + " reason=" + lastRouteBuildFailureReason
+                                    + " action=RECOVER_TO_SAFE_CELL");
+                        }
+                        return recoveryAction(state);
+                    }
+                    if (mobBlocked && !immediateMobBlocked
+                            && routeRows != null && routeLength > 1) {
+                        lastFailedMobReplanTick = state.worldTick;
+                        if (state.worldTick % 5L == 0L) {
+                            log(state.worldTick, "[MonsterMazeAI/1.8] MOB REPLAN DEFERRED"
+                                    + " tick=" + state.worldTick
+                                    + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                    + " buildFailure=" + lastRouteBuildFailureReason
+                                    + " action=CONTINUE_EXISTING_ROUTE");
+                        }
+                        preserveExistingRoute = true;
+                    } else {
+                        if (mobBlocked) {
+                            lastFailedMobReplanTick = state.worldTick;
+                            if (state.worldTick % 5L == 0L) {
+                                log(state.worldTick, "[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
+                                        + " tick=" + state.worldTick
+                                        + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                        + " buildFailure=" + lastRouteBuildFailureReason
+                                        + " action=STOP");
+                            }
+                        } else if (state.worldTick % 5L == 0L) {
+                            log(state.worldTick, "[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
+                                    + " tick=" + state.worldTick
+                                    + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
+                                    + " buildFailure=" + lastRouteBuildFailureReason
+                                    + " action=STOP");
+                        }
+                        return LegacyAction.IDLE;
+                    }
+                } else {
+                    lastFailedMobReplanTick = Long.MIN_VALUE;
+                    if (mobBlocked) {
+                        lastSuccessfulMobReplanTick = state.worldTick;
+                    }
                     if (state.worldTick % 5L == 0L) {
-                        log(state.worldTick, "[MonsterMazeAI/1.8] ROUTE REPLAN FAILED"
+                        log(state.worldTick, "[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
                                 + " tick=" + state.worldTick
                                 + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                                + " reason=" + lastRouteBuildFailureReason
-                                + " action=RECOVER_TO_SAFE_CELL");
+                                + " newLength=" + routeLength
+                                + " newHeading=" + routeRows[Math.min(1, routeLength - 1)]
+                                + "," + routeColumns[Math.min(1, routeLength - 1)]);
                     }
-                    return recoveryAction(state);
                 }
-                if (mobBlocked) {
-                    lastFailedMobReplanTick = state.worldTick;
-                    if (state.worldTick % 5L == 0L) {
-                        log(state.worldTick, "[MonsterMazeAI/1.8] MOB ROUTE BLOCKED"
-                                + " tick=" + state.worldTick
-                                + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                                + " buildFailure=" + lastRouteBuildFailureReason
-                                + " action=RETRY_FROM_CURRENT_POSITION");
-                    }
-                } else if (state.worldTick % 5L == 0L) {
-                    log(state.worldTick, "[MonsterMazeAI/1.8] PHYSICAL ROUTE REPLAN FAILED"
-                            + " tick=" + state.worldTick
-                            + " routeIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                            + " buildFailure=" + lastRouteBuildFailureReason
-                            + " action=RETRY_FROM_CURRENT_POSITION");
-                }
-                return LegacyAction.IDLE;
-            }
-            lastFailedMobReplanTick = Long.MIN_VALUE;
-            if (mobBlocked) {
-                lastSuccessfulMobReplanTick = state.worldTick;
-            }
-            if (state.worldTick % 5L == 0L) {
-                log(state.worldTick, "[MonsterMazeAI/1.8] MOB ROUTE REPLAN"
-                        + " tick=" + state.worldTick
-                        + " oldIndex=" + oldIndex + "/" + Math.max(0, oldLength - 1)
-                        + " newLength=" + routeLength
-                        + " newHeading=" + routeRows[Math.min(1, routeLength - 1)]
-                        + "," + routeColumns[Math.min(1, routeLength - 1)]);
             }
 
-            if (routeIndex >= routeLength - 1) {
+            if (preserveExistingRoute) {
+                lastDecisionDetail = "MOB_REPLAN_DEFERRED"
+                        + " routeIndex=" + routeIndex
+                        + " immediateBlocked=" + immediateMobBlocked;
+            } else if (routeIndex >= routeLength - 1) {
                 /*
                  * A dynamic replan can legitimately produce a one-cell route
                  * whose goal is inside the SafePad. Do not convert that into
                  * IDLE: the player may still be outside the actual 5x5 pad.
-                 * Let the exact same final-pad approach used by the normal
-                 * route-end path close the remaining distance.
                  */
                 double padCenterX = (state.center.x - 49) + state.pad.row + 0.5D;
                 double padCenterZ = (state.center.z - 49) + state.pad.column + 0.5D;
@@ -1972,11 +2001,13 @@ public final class FirstPadSpeedrunController {
                 routeRows[routeIndex], routeColumns[routeIndex],
                 nextRow, nextColumn)) return "route-disconnected";
 
-        for (int i = routeIndex; i < targetIndex; i++) {
-            int r1 = routeRows[i], c1 = routeColumns[i], r2 = routeRows[i + 1], c2 = routeColumns[i + 1];
-            if (!routeCellSupported(state, i) || !routeCellSupported(state, i + 1)) return "lookahead-floor";
-            if (!canTraverseEdge(state, r1, c1, r2, c2)) return "lookahead-disconnected";
-        }
+        /*
+         * Only the immediate edge is a hard movement-safety constraint. Future
+         * route cells can legitimately change during SafePad/monster updates;
+         * stopping on a currently safe edge because a later edge changed creates
+         * a dead stop. The next observation will replan before that future edge
+         * is entered.
+         */
 
         /*
          * A one-block gap is the one deliberate exception to the normal

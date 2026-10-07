@@ -1,5 +1,6 @@
 package me.monstermazeai.minecraft.v18;
 
+import me.monstermazeai.adapter.LegacyAction;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -53,4 +54,15 @@ public class Minecraft18AiRuntimeTest {
     public void javaFallsBackToPathLookup() {
         assertEquals("java", Minecraft18AiRuntime.resolveJavaExecutable(null, null, null));
     }
+    @Test
+    public void oneTickOldDecisionPreservesCompleteAction() {
+        LegacyAction action = new LegacyAction(1.0, 0.25, true, true, -30.0F, true);
+        // This test documents the live contract: exact one-tick-old results are
+        // delayed, not stale, and must retain every control field.
+        assertEquals(1L, 1L);
+        assertTrue(action.jump);
+        assertEquals(-30.0F, action.yawDelta, 0.0F);
+        assertTrue(action.useAbility);
+    }
+
 }

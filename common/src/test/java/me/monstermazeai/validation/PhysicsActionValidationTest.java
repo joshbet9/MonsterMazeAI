@@ -87,6 +87,45 @@ class PhysicsActionValidationTest {
     }
 
     @Test
+    void sprintRequiresVanillaForwardThreshold() {
+        GameState s = state(Kit.MAVERICK);
+        Simulator simulator = simulator(s);
+
+        double unsprinted;
+        {
+            GameState slow = s.copy();
+            simulator.tick(slow, new Action(0.7, 0.7, false, true, 0.0F, false));
+            unsprinted = Math.hypot(slow.player.vx, slow.player.vz);
+        }
+
+        GameState sprint = s.copy();
+        simulator.tick(sprint, new Action(0.8, 0.6, false, true, 0.0F, false));
+        double sprinted = Math.hypot(sprint.player.vx, sprint.player.vz);
+
+        assertTrue(sprinted > unsprinted,
+                "forward < 0.8 must lose the sprint multiplier just as Minecraft 1.8.9 does");
+    }
+
+    @Test
+    void sprintJumpImpulseRequiresVanillaSprintState() {
+        GameState s = state(Kit.MAVERICK);
+        Simulator simulator = simulator(s);
+
+        GameState belowThreshold = s.copy();
+        simulator.tick(belowThreshold,
+                new Action(0.7, 0.7, true, true, 0.0F, false));
+
+        GameState atThreshold = s.copy();
+        simulator.tick(atThreshold,
+                new Action(0.8, 0.6, true, true, 0.0F, false));
+
+        assertEquals(0.0D, belowThreshold.player.vy, 1.0e-9D);
+        assertTrue(Math.hypot(atThreshold.player.vx, atThreshold.player.vz)
+                        > Math.hypot(belowThreshold.player.vx, belowThreshold.player.vz),
+                "the 0.2 sprint-jump impulse must disappear when forward input cancels sprint");
+    }
+
+    @Test
     void jumpHasSourceShapedArcAndReturnsToGround() {
         GameState s = state(Kit.JUMPER);
         Simulator simulator = simulator(s);

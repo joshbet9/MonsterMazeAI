@@ -59,7 +59,30 @@ public final class MonsterSimulator {
 
     public void tick(GameState state) {
         for (MonsterState m : state.monsters) {
-            if (m.removed || m.frozen(state.tick)) continue;
+            if (m.removed) continue;
+            if (m.frozen(state.tick)) {
+                /*
+                 * Source MonsterManager.freeze() removes the waypoint/launch
+                 * bookkeeping but does not zero the entity's current velocity.
+                 * The normal EntityLiving tick therefore keeps gravity and
+                 * momentum running while the maze steering task is suppressed.
+                 */
+                m.x += m.vx;
+                m.y += m.vy;
+                m.z += m.vz;
+                m.vy -= GRAVITY;
+                m.vy *= AIR_DRAG;
+                if (m.y <= 0.0D) {
+                    m.y = 0.0D;
+                    m.vy = 0.0D;
+                    m.vx *= GROUND_FRICTION;
+                    m.vz *= GROUND_FRICTION;
+                } else {
+                    m.vx *= GROUND_FRICTION;
+                    m.vz *= GROUND_FRICTION;
+                }
+                continue;
+            }
             if (m.launched(state.tick)) {
                 tickLaunched(state, m);
                 continue;
@@ -104,7 +127,16 @@ public final class MonsterSimulator {
             // and the entity turns toward the waypoint by at most 30 degrees.
             // ControllerMove passes the command speed unchanged; it is
             // multiplied only by GenericAttributes.MOVEMENT_SPEED.
-            double movementInput = speed * SNOWMAN_MOVEMENT_SPEED;
+            /*
+             * UtilEnt.CreatureMoveFast() mirrors the source helper exactly:
+             * when the target is within four square blocks, it clamps its
+             * controller speed from 1.4 to 1.0 before EntityMoveHelper multiplies
+             * by the Snowman's 0.2 movement attribute.
+             */
+            double controllerSpeed = horizontalSq < 4.0D
+                    ? Math.min(speed, 1.0D)
+                    : speed;
+            double movementInput = controllerSpeed * SNOWMAN_MOVEMENT_SPEED;
             float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
 

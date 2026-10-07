@@ -5,6 +5,7 @@ import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeModel;
 import me.monstermazeai.physics.LegacyMazePhysics;
 import me.monstermazeai.player.Action;
+import me.monstermazeai.player.AiProfile;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -53,16 +54,29 @@ class StableLiveMovementControllerTest {
     }
 
     @Test
+    void largeHeadingErrorTurnsInPlaceBeforeApplyingSprintDrive() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(8, 0), false);
+
+        assertEquals(1.0, action.forward(), 0.0);
+        assertEquals(0.0, action.strafe(), 1.0e-9);
+        assertEquals(-90.0F, action.yawDelta(), 1.0e-6F);
+        assertTrue(action.sprint());
+    }
+
+    @Test
     void sourceSafePadIntegerCoordinateDoesNotTriggerLaneSafetyStop() {
         GameState s = state(0.0, 0.0, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action first = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, first.forward(), 1.0e-6);
+        assertEquals(1.0, first.forward(), 0.0);
         assertEquals(0.0, first.strafe(), 1.0e-6);
-        assertEquals(-30.0F, first.yawDelta(), 1.0e-6F,
-                "the initial 90-degree heading error must turn in place rather than safety-stop");
+        assertEquals(-90.0F, first.yawDelta(), 1.0e-6F,
+                "the initial 90-degree heading error should converge while still driving");
         assertFalse(controller.lastDecisionDetail().contains("SAFETY_STOP"));
     }
 
@@ -113,21 +127,81 @@ class StableLiveMovementControllerTest {
                 "moderate heading error should not force an unnecessary stop");
         assertTrue(Math.abs(action.yawDelta()) > 0.0,
                 "cursor/yaw steering should be applied in the same tick as forward movement");
-        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+        assertTrue(Math.abs(action.yawDelta()) <= 90.0F);
         assertFalse(action.strafe() != 0.0);
     }
 
     @Test
-    void usesInPlaceTurnForLargeHeadingError() {
+    void simulatorAndLiveMotorSharePostTurnMovementFrame() {
+        GameState s = state(0.5, 0.5, -20.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+        LegacyMazePhysics physics = new LegacyMazePhysics();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+        float expectedPostTurnYaw = s.player.yaw + action.yawDelta();
+
+        physics.tick(s.player, action);
+
+        /*
+         * The simulator applies yawDelta first, then converts WASD in that
+         * post-turn frame. The live 1.8 MovementInput bridge does the same.
+         * A pre-turn conversion would leave a material lateral component here.
+         */
+        assertEquals(expectedPostTurnYaw, 0.0F, 1.0e-5F);
+        double horizontal = Math.hypot(s.player.x - 0.5D, s.player.z - 0.5D);
+        assertTrue(horizontal > 0.05D, "controller produced no meaningful movement");
+        double lateralFraction = Math.abs(s.player.x - 0.5D) / horizontal;
+        assertTrue(lateralFraction < 0.08D,
+                "one-tick movement must follow the simulator's post-turn heading; lateral fraction="
+                        + lateralFraction + " action=" + action);
+    }
+
+    @Test
+    void sprintMotorKeepsForwardInputHighEnoughForVanillaSprint() {
+        GameState s = state(0.5, 0.5, -35.0F);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(action.sprint());
+        assertEquals(0.0, action.strafe(), 1.0e-9,
+                "the sprint motor must not rely on A/D input that vanilla can use to cancel sprint");
+        assertTrue(action.forward() >= 0.8,
+                "a sprinting common-core action must remain sprint-valid in Minecraft 1.8.9");
+        assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        assertTrue(Math.abs(action.yawDelta()) <= 30.0F);
+    }
+
+    @Test
+    void keepsDrivingThroughLargeHeadingError() {
         GameState s = state(0.5, 0.5, 0.0F);
         StableLiveMovementController controller = new StableLiveMovementController();
 
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
-        assertEquals(0.0, action.forward(), 1.0e-6,
-                "a 90-degree corner acquisition must not cut across the corridor");
+        assertEquals(1.0, action.forward(), 0.0,
+                "normal maze travel must continue while the camera converges");
         assertEquals(0.0, action.strafe(), 1.0e-6);
-        assertEquals(-30.0F, action.yawDelta(), 1.0e-6F);
+        assertEquals(-90.0F, action.yawDelta(), 1.0e-6F);
+        assertTrue(action.sprint());
+    }
+
+    @Test
+    void oneCellRegionRouteStillDrivesOntoPhysicalPad() {
+        GameState s = state(2.6, 0.5, 0.0F);
+        s.activePadRow = 0;
+        s.activePadColumn = 0;
+
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        Action action = controller.nextAction(s, new Cell(0, 0), false, 2);
+
+        assertNotEquals(Action.IDLE, action,
+                "being inside the graph radius but outside the physical SafePad must not be treated as complete");
+        assertTrue(action.forward() > 0.0 || Math.abs(action.yawDelta()) > 0.0,
+                "controller must continue toward the physical SafePad surface");
+        assertFalse(controller.lastDecisionDetail().contains("REACHED routeSize=1"),
+                controller.lastDecisionDetail());
     }
 
     @Test
@@ -297,9 +371,33 @@ class StableLiveMovementControllerTest {
         Action action = controller.nextAction(s, new Cell(8, 0), false);
 
         assertTrue(action.forward() > 0.0);
-        assertTrue(Math.abs(action.yawDelta()) < 3.0F,
-                "small heading errors must not receive a full 12-degree correction");
+        assertTrue(Math.abs(action.yawDelta()) <= 3.0F,
+                "small heading errors must not receive a correction larger than the actual heading error");
         assertEquals(0.0, action.strafe(), 1.0e-6);
+    }
+
+    @Test
+    void mobDodgeKeepsVanillaSprintValid() {
+        GameState s = state(0.5, 0.5, 0.0F);
+        me.monstermazeai.monster.MonsterState monster =
+                new me.monstermazeai.monster.MonsterState(1, 0.5, 0.0, 1.8);
+        monster.vz = -0.1;
+        s.monsters.add(monster);
+        StableLiveMovementController controller = new StableLiveMovementController();
+
+        s.tick = 1;
+        Action action = controller.nextAction(s, new Cell(0, 8), false);
+
+        assertTrue(controller.lastDecisionDetail().contains("MOB_DODGE")
+                        || controller.lastDecisionDetail().contains("EDGE_GUARD"),
+                controller.lastDecisionDetail());
+        if (controller.lastDecisionDetail().contains("MOB_DODGE")) {
+            assertEquals(1.0, action.forward(), 0.0);
+            assertEquals(0.0, action.strafe(), 1.0e-9,
+                    "the dodge motor should express lateral movement through camera steering, not raw A/D");
+            assertTrue(action.sprint());
+            assertTrue(Math.abs(action.yawDelta()) > 0.0F);
+        }
     }
 
     @Test

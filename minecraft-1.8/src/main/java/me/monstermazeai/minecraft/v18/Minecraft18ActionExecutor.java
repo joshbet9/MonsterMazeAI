@@ -22,13 +22,46 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     private boolean abilityPulsePending;
     private boolean yawPulsePending;
     private float pendingYawDelta;
+    private float controlledYaw;
+    private boolean controlledYawInitialised;
     private long actionExpiryTick = Long.MIN_VALUE;
-    /** First-pad branch commands are one client tick intents; never hold stale movement. */
+    private long jumpExpiryTick = Long.MIN_VALUE;
+    private boolean syntheticSprintKeyActive;
+    private boolean physicalSprintKeyBefore;
+    private int syntheticSprintKeyCode;
+    /*
+     * Live commands are one-tick control intents. The common controller is
+     * closed-loop, so reusing an older movement command beyond one client tick
+     * changes the state on which the next decision should have been based.
+     * Yaw/ability pulses remain one-shot and are never repeated by this hold.
+     */
     private static final long MAX_COMMAND_HOLD_TICKS = 1L;
 
     public Minecraft18ActionExecutor(Minecraft minecraft) {
         if (minecraft == null) throw new IllegalArgumentException("minecraft");
         this.minecraft = minecraft;
+    }
+
+    /** Test-only constructor; command lifetime logic is independent of Minecraft itself. */
+    Minecraft18ActionExecutor() {
+        this.minecraft = null;
+    }
+
+    /** Seed the AI camera from the real player exactly once when AI control begins. */
+    public synchronized void initialiseControlledYaw(float yaw) {
+        controlledYaw = normaliseYaw(yaw);
+        controlledYawInitialised = true;
+        pendingYawDelta = 0.0F;
+        yawPulsePending = false;
+    }
+
+    /** Current AI-owned camera heading; physical mouse input is not authoritative while AI is enabled. */
+    public synchronized boolean controlledYawInitialised() {
+        return controlledYawInitialised;
+    }
+
+    public synchronized float controlledYaw() {
+        return controlledYawInitialised ? controlledYaw : 0.0F;
     }
 
     @Override
@@ -63,7 +96,10 @@ public final class Minecraft18ActionExecutor implements ActionSink {
 
         actionExpiryTick = currentTick == Long.MAX_VALUE
                 ? Long.MAX_VALUE
-                : currentTick + holdTicks;
+                : currentTick + holdTicks - 1L;
+        jumpExpiryTick = next.jump && currentTick != Long.MAX_VALUE
+                ? currentTick
+                : Long.MIN_VALUE;
         applyCount++;
 
         if (applyCount == 1 || applyCount % 20 == 0
@@ -79,22 +115,86 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         return currentAction;
     }
 
+    /**
+     * Return the command that should be consumed on this exact world tick.
+     * Continuous WASD/sprint intent may be held for a short bounded window when
+     * IPC latency is unavoidable, but jump remains a one-tick pulse so the live
+     * cadence cannot silently become faster than the simulator.
+     */
+    public synchronized LegacyAction currentAction(long currentTick) {
+        if (currentAction == null) return LegacyAction.IDLE;
+        if (actionExpiryTick != Long.MAX_VALUE
+                && actionExpiryTick != Long.MIN_VALUE
+                && currentTick > actionExpiryTick) {
+            return LegacyAction.IDLE;
+        }
+        boolean jumpActive = jumpExpiryTick != Long.MIN_VALUE && currentTick <= jumpExpiryTick;
+        return new LegacyAction(
+                currentAction.forward,
+                currentAction.strafe,
+                jumpActive,
+                currentAction.sprint,
+                0.0F,
+                false);
+    }
+
     /** Consume the cursor step once; movement fields remain held until expiry. */
     public synchronized float consumeYawPulse() {
         if (!yawPulsePending) return 0.0f;
         yawPulsePending = false;
-        return pendingYawDelta;
+        controlledYaw = normaliseYaw(controlledYaw + pendingYawDelta);
+        float delta = pendingYawDelta;
+        pendingYawDelta = 0.0F;
+        return delta;
     }
 
     /** Expire a one-tick command after the client tick that consumed it. */
     public synchronized void expireIfNeeded(long currentTick) {
-        if (actionExpiryTick != Long.MAX_VALUE && currentTick >= actionExpiryTick) {
+        if (actionExpiryTick != Long.MAX_VALUE && currentTick > actionExpiryTick) {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;
             yawPulsePending = false;
             pendingYawDelta = 0.0f;
             actionExpiryTick = Long.MIN_VALUE;
+            jumpExpiryTick = Long.MIN_VALUE;
         }
+    }
+
+    /** Drop all AI-owned camera state when AI mode ends. */
+    public synchronized void clearControlledYaw() {
+        controlledYawInitialised = false;
+        pendingYawDelta = 0.0F;
+        yawPulsePending = false;
+    }
+
+    private static float normaliseYaw(float yaw) {
+        while (yaw >= 180.0F) yaw -= 360.0F;
+        while (yaw < -180.0F) yaw += 360.0F;
+        return yaw;
+    }
+
+    /**
+     * Install the planner's sprint state for the current vanilla player tick.
+     * The state is deliberately not restored here: EntityPlayerSP evaluates
+     * sprint activation/cancellation after MovementInput.updatePlayerMoveState().
+     */
+    public synchronized void beginSyntheticSprintKey(
+            net.minecraft.client.settings.KeyBinding sprintBinding,
+            boolean requested) {
+        if (sprintBinding == null) return;
+        syntheticSprintKeyCode = sprintBinding.getKeyCode();
+        physicalSprintKeyBefore = net.minecraft.client.settings.GameSettings.isKeyDown(sprintBinding);
+        syntheticSprintKeyActive = true;
+        net.minecraft.client.settings.KeyBinding.setKeyBindState(
+                syntheticSprintKeyCode, requested);
+    }
+
+    /** Restore the physical sprint key after the player tick has finished. */
+    public synchronized void restoreSyntheticSprintKey() {
+        if (!syntheticSprintKeyActive) return;
+        net.minecraft.client.settings.KeyBinding.setKeyBindState(
+                syntheticSprintKeyCode, physicalSprintKeyBefore);
+        syntheticSprintKeyActive = false;
     }
 
     /** Called on the Minecraft client thread to consume one right-click pulse. */
@@ -108,14 +208,20 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         return aiEnabled;
     }
 
-    public void setAiEnabled(boolean enabled) {
+    public synchronized void setAiEnabled(boolean enabled) {
         aiEnabled = enabled;
+        // A new AI session must seed its camera from the real player once.
+        // Ending AI control returns camera authority to the user.
+        controlledYawInitialised = false;
+        pendingYawDelta = 0.0F;
+        yawPulsePending = false;
         if (!enabled) {
             currentAction = LegacyAction.IDLE;
             abilityPulsePending = false;
             yawPulsePending = false;
             pendingYawDelta = 0.0f;
             actionExpiryTick = Long.MIN_VALUE;
+            jumpExpiryTick = Long.MIN_VALUE;
         }
     }
 
@@ -126,6 +232,7 @@ public final class Minecraft18ActionExecutor implements ActionSink {
         yawPulsePending = false;
         pendingYawDelta = 0.0f;
         actionExpiryTick = Long.MIN_VALUE;
+        jumpExpiryTick = Long.MIN_VALUE;
         System.err.println("[MonsterMazeAI/1.8] EXEC releaseAll()");
     }
 

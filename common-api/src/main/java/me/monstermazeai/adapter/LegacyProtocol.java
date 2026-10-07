@@ -15,7 +15,7 @@ import java.util.List;
  * depending on Minecraft or Java-17 classes.
  */
 public final class LegacyProtocol {
-    private static final int VERSION = 1;
+    private static final int VERSION = 3;
     private static final int MAX_MAZE_SIZE = 99;
     private static final int MAX_MONSTERS = 256;
 
@@ -35,6 +35,7 @@ public final class LegacyProtocol {
 
         writePlayer(out, o.player);
         out.writeInt(o.kit.ordinal());
+        writeString(out, o.mode);
         out.writeInt(o.jumpCharges);
         out.writeInt(o.abilityCharges);
 
@@ -50,6 +51,7 @@ public final class LegacyProtocol {
         }
 
         writeMaze(out, o.maze);
+        writePhysicalFloor(out, o.physicalFloor);
         writeString(out, o.scoreboardTitle);
         out.writeInt(o.scoreboardLines.size());
         for (String line : o.scoreboardLines) writeString(out, line);
@@ -83,6 +85,7 @@ public final class LegacyProtocol {
         Kit[] kits = Kit.values();
         if (kitOrdinal < 0 || kitOrdinal >= kits.length) throw new IOException("Invalid kit");
         Kit kit = kits[kitOrdinal];
+        String mode = readString(in);
         int jumpCharges = in.readInt();
         int abilityCharges = in.readInt();
 
@@ -95,6 +98,7 @@ public final class LegacyProtocol {
                 in.readInt(), in.readInt(), in.readDouble(), in.readBoolean());
 
         int[][] maze = readMaze(in);
+        boolean[][] physicalFloor = readPhysicalFloor(in);
         String title = readString(in);
         int lineCount = readCount(in, 1000, "scoreboard lines");
         List<String> lines = new ArrayList<String>(lineCount);
@@ -111,9 +115,9 @@ public final class LegacyProtocol {
                     in.readDouble(), in.readDouble(), in.readDouble(), in.readBoolean()));
         }
 
-        return new LegacyWorldObservation(tick, inMaze, detected, pattern, alive, completed,
+        return new LegacyWorldObservation(tick, inMaze, detected, pattern, mode, alive, completed,
                 stage, safe, live, player, kit, jumpCharges, abilityCharges, center, pad,
-                maze, monsters, title, lines);
+                maze, physicalFloor, monsters, title, lines);
     }
 
     public static void writeAction(DataOutput out, LegacyAction action) throws IOException {
@@ -163,6 +167,27 @@ public final class LegacyProtocol {
             for (int c = 0; c < columns; c++) maze[r][c] = in.readInt();
         }
         return maze;
+    }
+
+    private static void writePhysicalFloor(DataOutput out, boolean[][] floor) throws IOException {
+        if (floor == null || floor.length > MAX_MAZE_SIZE) throw new IOException("Invalid physical floor");
+        out.writeInt(floor.length);
+        for (boolean[] row : floor) {
+            if (row == null || row.length > MAX_MAZE_SIZE) throw new IOException("Invalid physical floor row");
+            out.writeInt(row.length);
+            for (boolean cell : row) out.writeBoolean(cell);
+        }
+    }
+
+    private static boolean[][] readPhysicalFloor(DataInput in) throws IOException {
+        int rows = readCount(in, MAX_MAZE_SIZE, "physical floor rows");
+        boolean[][] floor = new boolean[rows][];
+        for (int r = 0; r < rows; r++) {
+            int columns = readCount(in, MAX_MAZE_SIZE, "physical floor columns");
+            floor[r] = new boolean[columns];
+            for (int c = 0; c < columns; c++) floor[r][c] = in.readBoolean();
+        }
+        return floor;
     }
 
     private static int readCount(DataInput in, int max, String label) throws IOException {

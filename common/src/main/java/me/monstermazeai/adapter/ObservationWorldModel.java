@@ -1,6 +1,7 @@
 package me.monstermazeai.adapter;
 
 import me.monstermazeai.game.GameState;
+import me.monstermazeai.game.Mode;
 import me.monstermazeai.maze.Cell;
 import me.monstermazeai.maze.MazeCoordinates;
 import me.monstermazeai.monster.MonsterState;
@@ -20,12 +21,28 @@ public final class ObservationWorldModel {
         state.inMonsterMaze = observation.inMonsterMaze && observation.mazeDetected;
         state.stage = observation.stage;
         state.mazePattern = observation.mazePattern;
+        try {
+            state.mode = Mode.valueOf(observation.mode == null
+                    ? "MODERN"
+                    : observation.mode.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException invalidMode) {
+            state.mode = Mode.MODERN;
+        }
         state.phaseTicksRemaining = observation.safePadSeconds < 0 ? -1 : observation.safePadSeconds * 20;
         state.liveSeconds = observation.liveSeconds;
         state.alive = observation.alive;
         state.completed = observation.completed;
         state.kit = observation.kit;
-        state.ability.charges = observation.abilityCharges;
+        /*
+         * Jumper's source resource is represented by the "Jumps Remaining"
+         * feather count, which the live adapter exposes as jumpCharges. The
+         * common simulator uses AbilityState.charges for the same source
+         * resource when deciding whether the next jump is a real charged jump
+         * (and therefore uses Jump 0 rather than Jump -10).
+         */
+        state.ability.charges = state.kit == me.monstermazeai.kit.Kit.JUMPER
+                ? observation.jumpCharges
+                : observation.abilityCharges;
         /*
          * Body Rush uses a separate activation counter in the source. The
          * Minecraft observer exposes the remaining apple/activation count as
@@ -131,6 +148,21 @@ public final class ObservationWorldModel {
             monster.vy = observed.vy;
             monster.vz = observed.vz;
             monster.removed = observed.removed;
+
+            /*
+             * Repulsor/Body Rush launch a ghost upward with a source +1.0 Y
+             * velocity for roughly 30 ticks. The transient launch flag is not
+             * visible in the version-neutral packet, but an airborne maze mob
+             * cannot arise from normal MonsterManager movement, so reconstruct
+             * the same source state from its live position/velocity.
+             */
+            if (!observed.removed
+                    && (observed.vy > 0.50D
+                        || observed.y > observation.center.y + 0.05D)) {
+                monster.launchedAtTick = observation.worldTick - 1L;
+                monster.launchedUntilTick = observation.worldTick + 29L;
+            }
+
             {
                 Cell cell = coordinates.containingCell(observed.x, observed.z);
                 if (coordinates.inBounds(cell)) {

@@ -35,8 +35,12 @@ import java.util.regex.Pattern;
 public final class Minecraft18AiRuntime {
     private static final String EMBEDDED_RUNTIME_RESOURCE =
             "/runtime/monster-maze-ai-runtime.jar";
-    /** Movement-only branch: a decision is valid only for the exact observation tick it was planned from. */
-    private static final long MAX_ACTION_AGE_TICKS = 0L;
+    /**
+     * Async sidecar results normally arrive 1 tick after their observation. Allow
+     * a small bounded latency window in live Minecraft; genuinely old commands
+     * still fail closed rather than being applied indefinitely.
+     */
+    private static final long MAX_ACTION_AGE_TICKS = 1L;
 
     private volatile Process process;
     private volatile DataInputStream input;
@@ -50,6 +54,18 @@ public final class Minecraft18AiRuntime {
         return thread;
     });
 
+    /*
+     * Process creation and runtime/JDK discovery can take seconds under LabyMod.
+     * Keep that work completely off Minecraft's client thread.
+     */
+    private final ExecutorService startupExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MonsterMazeAI-1.8-runtime-start");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private Future<?> pendingStartup;
+    private volatile boolean stopping;
     private Future<?> pendingDecision;
     private LegacyWorldObservation latestObservation;
     private DecisionResult latestCompletedDecision;
@@ -73,39 +89,52 @@ public final class Minecraft18AiRuntime {
      * Starts the sidecar if available. This method is intentionally verbose:
      * a missing runtime must never look like an AI that simply "did nothing".
      */
+    /**
+     * Request sidecar startup without doing any process creation or runtime
+     * discovery on the Minecraft client thread.
+     */
     public synchronized void startIfConfigured() {
-        if (process != null) {
-            if (process.isAlive()) return;
-            System.err.println("[MonsterMazeAI/1.8] RUNTIME previous sidecar is no longer alive; restarting");
-            closeProcess();
-        }
+        stopping = false;
+        if (process != null && process.isAlive()) return;
+        if (pendingStartup != null && !pendingStartup.isDone()) return;
+        pendingStartup = startupExecutor.submit(this::startProcessWorker);
+    }
 
-        String jar = runtimeJar();
-        String java = javaExecutable();
-
-        if (!configurationLogged) {
-            configurationLogged = true;
-            System.out.println("[MonsterMazeAI/1.8] RUNTIME CONFIG " + runtimeStatus());
-        }
-
-        if (jar == null) {
-            logUnavailableOnce("No runtime sidecar was found. "
-                    + "Set MONSTERMAZE_AI_RUNTIME_JAR/monstermazeai.runtime.jar or rebuild the adapter "
-                    + "after the common runtime jar is available.");
-            return;
-        }
-        if (java == null || java.trim().isEmpty()) {
-            logUnavailableOnce("No Java executable could be resolved");
-            return;
-        }
-
-        Path jarPath = Paths.get(jar);
-        if (!Files.isRegularFile(jarPath)) {
-            logUnavailableOnce("Resolved runtime jar does not exist: " + jarPath.toAbsolutePath());
-            return;
+    private void startProcessWorker() {
+        String jar;
+        String java;
+        synchronized (this) {
+            if (stopping) return;
         }
 
         try {
+            jar = runtimeJar();
+            java = javaExecutable();
+
+            synchronized (this) {
+                if (!configurationLogged) {
+                    configurationLogged = true;
+                    System.out.println("[MonsterMazeAI/1.8] RUNTIME CONFIG " + runtimeStatus());
+                }
+            }
+
+            if (jar == null) {
+                logUnavailableOnce("No runtime sidecar was found. "
+                        + "Set MONSTERMAZE_AI_RUNTIME_JAR/monstermazeai.runtime.jar or rebuild the adapter "
+                        + "after the common runtime jar is available.");
+                return;
+            }
+            if (java == null || java.trim().isEmpty()) {
+                logUnavailableOnce("No Java executable could be resolved");
+                return;
+            }
+
+            Path jarPath = Paths.get(jar);
+            if (!Files.isRegularFile(jarPath)) {
+                logUnavailableOnce("Resolved runtime jar does not exist: " + jarPath.toAbsolutePath());
+                return;
+            }
+
             List<String> command = new ArrayList<String>();
             command.add(java);
             command.add("-jar");
@@ -113,23 +142,35 @@ public final class Minecraft18AiRuntime {
 
             ProcessBuilder builder = new ProcessBuilder(command);
             builder.redirectError(ProcessBuilder.Redirect.INHERIT);
-            process = builder.start();
-            input = new DataInputStream(new BufferedInputStream(process.getInputStream()));
-            output = new DataOutputStream(new BufferedOutputStream(process.getOutputStream()));
-            lastAction = LegacyAction.IDLE;
-            decideCount = 0;
-            unavailableLogged = false;
+            Process child = builder.start();
 
-            System.out.println("[MonsterMazeAI/1.8] RUNTIME STARTED java=" + java
-                    + " jar=" + jarPath.toAbsolutePath());
+            synchronized (this) {
+                if (stopping) {
+                    child.destroy();
+                    return;
+                }
+                process = child;
+                input = new DataInputStream(new BufferedInputStream(child.getInputStream()));
+                output = new DataOutputStream(new BufferedOutputStream(child.getOutputStream()));
+                lastAction = LegacyAction.IDLE;
+                decideCount = 0;
+                unavailableLogged = false;
+
+                System.out.println("[MonsterMazeAI/1.8] RUNTIME STARTED java=" + java
+                        + " jar=" + jarPath.toAbsolutePath());
+            }
         } catch (IOException failure) {
-            closeProcess();
-            logUnavailableOnce("Sidecar start failed: "
-                    + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            if (!stopping) {
+                closeProcess();
+                logUnavailableOnce("Sidecar start failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            }
         } catch (RuntimeException failure) {
-            closeProcess();
-            logUnavailableOnce("Sidecar start failed: "
-                    + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            if (!stopping) {
+                closeProcess();
+                logUnavailableOnce("Sidecar start failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            }
         }
     }
 
@@ -141,15 +182,10 @@ public final class Minecraft18AiRuntime {
     public synchronized void submit(LegacyWorldObservation observation) {
         if (observation == null) return;
 
+        latestObservation = observation;
         if (process == null || !process.isAlive() || output == null || input == null) {
             startIfConfigured();
         }
-        if (process == null || !process.isAlive() || output == null || input == null) {
-            logUnavailableOnce("Observation dropped because runtime is unavailable");
-            return;
-        }
-
-        latestObservation = observation;
         if (pendingDecision == null || pendingDecision.isDone()) {
             pendingDecision = decisionExecutor.submit(this::processLatestObservations);
         }
@@ -162,39 +198,51 @@ public final class Minecraft18AiRuntime {
      */
     public synchronized LegacyAction pollCompleted(long currentTick) {
         DecisionResult result = latestCompletedDecision;
-        latestCompletedDecision = null;
         if (result == null || result.action == null) return null;
-        if (result.sequence <= lastAppliedDecisionSequence) return null;
-        lastAppliedDecisionSequence = result.sequence;
 
         long age = currentTick - result.tick;
-        if (age < 0L) {
-            /*
-             * A future result is impossible under the normal clock contract,
-             * but fail closed if an adapter/server clock ever moves backwards.
-             */
-            lastCompletedTick = result.tick;
+
+        /*
+         * Forge fires ClientTickEvent.START before world.updateEntities(), so a
+         * sidecar result received before the player update is valid for the
+         * current tick. A result that crosses one tick of IPC latency may still
+         * be consumed on the next tick, but never beyond that bounded window.
+         */
+        if (age < 0L || age > MAX_ACTION_AGE_TICKS) {
+            if (age > MAX_ACTION_AGE_TICKS) {
+                latestCompletedDecision = null;
+                lastAppliedDecisionSequence = result.sequence;
+                lastCompletedTick = result.tick;
+            }
             return LegacyAction.IDLE;
         }
 
-        if (age > MAX_ACTION_AGE_TICKS) {
-            /*
-             * There is deliberately no stale-turn exception. A yaw pulse is
-             * part of the movement command for a specific world state; applying
-             * it one tick later can rotate the player after the route/velocity
-             * has already changed. This branch is an exact-tick benchmark.
-             */
-            lastCompletedTick = result.tick;
-            return LegacyAction.IDLE;
+        if (result.sequence <= lastAppliedDecisionSequence) {
+            latestCompletedDecision = null;
+            return null;
         }
 
+        latestCompletedDecision = null;
+        lastAppliedDecisionSequence = result.sequence;
         lastCompletedTick = result.tick;
+
+        /*
+         * Preserve the exact Action fields. The simulator and live adapter both
+         * use the same control vector; yaw and ability remain one-shot pulses.
+         */
         return result.action;
     }
 
-
     /** Worker loop that always consumes the newest available observation. */
     private void processLatestObservations() {
+        if (!awaitProcessReady()) {
+            synchronized (this) {
+                latestObservation = null;
+                pendingDecision = null;
+            }
+            return;
+        }
+
         while (true) {
             LegacyWorldObservation submitted;
             synchronized (this) {
@@ -238,8 +286,7 @@ public final class Minecraft18AiRuntime {
             return LegacyAction.IDLE;
         }
 
-        if (process == null || !process.isAlive()) startIfConfigured();
-        if (process == null || !process.isAlive() || output == null || input == null) {
+        if (!awaitProcessReady()) {
             System.err.println("[MonsterMazeAI/1.8] RUNTIME DECIDE unavailable -> IDLE");
             return LegacyAction.IDLE;
         }
@@ -257,8 +304,7 @@ public final class Minecraft18AiRuntime {
             }
 
             long wireStart = System.nanoTime();
-            LegacyWorldObservation localObservation = observation.localInteractionView(20.0);
-            LegacyProtocol.writeObservation(output, localObservation);
+            LegacyProtocol.writeObservation(output, observation);
             output.flush();
 
             LegacyAction action = LegacyProtocol.readAction(input);
@@ -287,8 +333,10 @@ public final class Minecraft18AiRuntime {
     }
 
     public synchronized void stop() {
+        stopping = true;
+        if (pendingStartup != null) pendingStartup.cancel(true);
         closeProcess();
-        decisionExecutor.shutdownNow();
+        if (pendingDecision != null) pendingDecision.cancel(true);
         latestObservation = null;
         latestCompletedDecision = null;
         pendingDecision = null;
@@ -297,6 +345,36 @@ public final class Minecraft18AiRuntime {
         completedSequence = 0L;
         lastAppliedDecisionSequence = 0L;
         lastCompletedWasStaleTurn = false;
+    }
+
+    private boolean awaitProcessReady() {
+        while (true) {
+            Future<?> startup;
+            synchronized (this) {
+                if (stopping) return false;
+                if (process != null && process.isAlive() && output != null && input != null) return true;
+                startIfConfigured();
+                startup = pendingStartup;
+            }
+
+            if (startup == null) return false;
+            try {
+                startup.get(15, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException timeout) {
+                startup.cancel(true);
+                logUnavailableOnce("Sidecar startup timed out");
+                return false;
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (java.util.concurrent.CancellationException cancelled) {
+                return false;
+            } catch (java.util.concurrent.ExecutionException failure) {
+                logUnavailableOnce("Sidecar startup failed: "
+                        + failure.getClass().getSimpleName() + ": " + failure.getMessage());
+                return false;
+            }
+        }
     }
 
     public synchronized LegacyAction lastAction() { return lastAction; }

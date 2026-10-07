@@ -25,10 +25,14 @@ public final class Minecraft18ObservationRules {
         // -1 means the scoreboard did not expose a usable timer. Zero is a real expired timer.
         int safePadSeconds = -1;
         int stage = 1;
+        String mode = "MODERN";
         boolean completed = false;
         for (int i = 0; i < cleanLines.size(); i++) {
             String line = cleanLines.get(i);
             String lower = line.toLowerCase(Locale.ROOT);
+            if (lower.equals("original") || lower.equals("speed") || lower.equals("modern")) {
+                mode = lower.toUpperCase(Locale.ROOT);
+            }
             if (lower.contains("complete") || lower.contains("victory") || lower.contains("winner")) {
                 completed = true;
             }
@@ -54,7 +58,7 @@ public final class Minecraft18ObservationRules {
             }
         }
 
-        return new ScoreboardData(cleanTitle, safePadSeconds, stage, completed, cleanLines);
+        return new ScoreboardData(cleanTitle, safePadSeconds, stage, mode, completed, cleanLines);
     }
 
     public static Kit detectKit(List<String> displayNames) {
@@ -154,13 +158,15 @@ public final class Minecraft18ObservationRules {
         public final String title;
         public final int safePadSeconds;
         public final int stage;
+        public final String mode;
         public final boolean completed;
         public final List<String> lines;
 
-        private ScoreboardData(String title, int safePadSeconds, int stage, boolean completed, List<String> lines) {
+        private ScoreboardData(String title, int safePadSeconds, int stage, String mode, boolean completed, List<String> lines) {
             this.title = title;
             this.safePadSeconds = safePadSeconds;
             this.stage = stage;
+            this.mode = mode;
             this.completed = completed;
             this.lines = Collections.unmodifiableList(new ArrayList<String>(lines));
         }

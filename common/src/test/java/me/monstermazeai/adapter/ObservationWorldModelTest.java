@@ -4,6 +4,7 @@ import me.monstermazeai.game.GameState;
 import me.monstermazeai.kit.Kit;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -49,6 +50,50 @@ class ObservationWorldModelTest {
         assertFalse(state.maze.isDisabled(47, 47));
     }
     @Test
+    void usesAuthoritativeSpeedModeFromLiveObservation() {
+        int[][] maze = new int[99][99];
+        maze[50][50] = 1;
+
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                1234, true, true, 3, "SPEED", true, false, 1, 60, 12,
+                new LegacyWorldObservation.Player(
+                        24.2, 14.0, 16.7, 0.1, -0.2, 0.3,
+                        90f, -5f, true, 18, 20),
+                Kit.MAVERICK, 0, 0,
+                new LegacyWorldObservation.BlockPoint(23, 13, 15),
+                new LegacyWorldObservation.Pad(50, 50, 4.0, false),
+                maze, Collections.emptyList(),
+                "Monster Maze", Arrays.asList("Mode", "Speed", "Safe Pad", "60 Seconds", "Stage", "1"));
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertEquals(me.monstermazeai.game.Mode.SPEED, state.mode);
+    }
+
+    @Test
+    void usesLiveJumperChargeCountAsCommonAbilityCharges() {
+        int[][] maze = new int[99][99];
+        maze[50][50] = 1;
+
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                55, true, true, 1, "SPEED", true, false, 1, 60, 0,
+                new LegacyWorldObservation.Player(
+                        0.5, 0.0, 0.5, 0.0, 0.0, 0.0,
+                        0f, 0f, true, 20, 20),
+                Kit.JUMPER, 2, 99,
+                new LegacyWorldObservation.BlockPoint(0, 0, 0),
+                new LegacyWorldObservation.Pad(50, 50, 0.0, false),
+                maze, Collections.emptyList(), "Monster Maze",
+                Arrays.asList("Mode", "Speed", "Safe Pad", "60 Seconds", "Stage", "1"));
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertEquals(2, state.player.jumpCharges);
+        assertEquals(2, state.ability.charges,
+                "the live Jumper feather count must drive the same ability state used by the simulator");
+    }
+
+    @Test
     void lobbyObservationDoesNotRequireMazeCenter() {
         int[][] maze = new int[99][99];
         LegacyWorldObservation observation = new LegacyWorldObservation(
@@ -64,6 +109,41 @@ class ObservationWorldModelTest {
         assertFalse(state.inMonsterMaze);
         assertNull(state.maze);
         assertEquals(55, state.tick);
+    }
+
+    @Test
+    void reconstructsRepulsorOrBodyRushLaunchStateFromLiveMobMotion() {
+        int[][] maze = new int[99][99];
+        maze[10][10] = 1;
+
+        LegacyWorldObservation observation = new LegacyWorldObservation(
+                500, true, true, 1, "SPEED", true, false, 4, 40, 8,
+                new LegacyWorldObservation.Player(
+                        10.5, 10.0, 10.5, 0.0, 0.0, 0.0,
+                        0f, 0f, false, 20, 20),
+                Kit.REPULSOR, 0, 1,
+                new LegacyWorldObservation.BlockPoint(0, 0, 0),
+                new LegacyWorldObservation.Pad(30, 30, 0.0, false),
+                maze, Collections.emptyList(),
+                "Monster Maze", Arrays.asList("Mode", "Speed", "Safe Pad", "40 Seconds", "Stage", "4"));
+
+        LegacyWorldObservation.Monster launched = new LegacyWorldObservation.Monster(
+                22, "monster_maze_monster", "snowman",
+                10.9, 10.9, 10.5, 0.25, 1.0, 0.15, false);
+
+        observation = new LegacyWorldObservation(
+                500, true, true, 1, "SPEED", true, false, 4, 40, 8,
+                observation.player, observation.kit, observation.jumpCharges,
+                observation.abilityCharges, observation.center, observation.pad,
+                observation.maze, observation.physicalFloor,
+                Collections.singletonList(launched),
+                observation.scoreboardTitle, observation.scoreboardLines);
+
+        GameState state = ObservationWorldModel.from(observation);
+
+        assertEquals(499L, state.monsters.get(0).launchedAtTick);
+        assertEquals(529L, state.monsters.get(0).launchedUntilTick);
+        assertTrue(state.monsters.get(0).launched(state.tick));
     }
 
 }

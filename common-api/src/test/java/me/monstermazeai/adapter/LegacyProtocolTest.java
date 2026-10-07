@@ -11,14 +11,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class LegacyProtocolTest {
     @Test
     void roundTripsLiveObservationAndAction() throws Exception {
+        boolean[][] physicalFloor = new boolean[][]{{true, false}, {false, true}};
         LegacyWorldObservation source = new LegacyWorldObservation(
-                42L, true, true, 3, true, false, 2, 17, 9,
+                42L, true, true, 3, "SPEED", true, false, 2, 17, 9,
                 new LegacyWorldObservation.Player(24.2, 14.0, 16.7, 0.1, 0.0, -0.2,
                         12.5f, -3.0f, true, 18.0, 20.0),
                 Kit.JUMPER, 2, 1,
                 new LegacyWorldObservation.BlockPoint(23, 13, 15),
                 new LegacyWorldObservation.Pad(50, 51, 1.25, false),
                 new int[][]{{1, 0}, {2, 5}},
+                physicalFloor,
                 Arrays.asList(new LegacyWorldObservation.Monster(
                         7, "monster_maze_monster", "villager",
                         25.0, 14.0, 16.0, 0.1, 0.0, 0.0, false)),
@@ -34,10 +36,13 @@ class LegacyProtocolTest {
 
         assertEquals(source.worldTick, copy.worldTick);
         assertEquals(source.mazePattern, copy.mazePattern);
+        assertEquals(source.mode, copy.mode);
         assertEquals(source.center.x, copy.center.x);
         assertEquals(source.pad.column, copy.pad.column);
         assertEquals(source.monsters.get(0).visualType, copy.monsters.get(0).visualType);
         assertEquals(2, copy.maze[1][0]);
+        assertArrayEquals(new boolean[]{true, false}, copy.physicalFloor[0]);
+        assertArrayEquals(new boolean[]{false, true}, copy.physicalFloor[1]);
     }
 
     @Test

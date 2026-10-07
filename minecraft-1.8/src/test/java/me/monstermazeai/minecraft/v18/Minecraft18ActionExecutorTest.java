@@ -45,7 +45,7 @@ public class Minecraft18ActionExecutorTest {
     @Test
     public void expiredMovementCannotLeakIntoTheFollowingTick() {
         Minecraft18ActionExecutor executor =
-                new Minecraft18ActionExecutor(org.mockito.Mockito.mock(Minecraft.class));
+                new Minecraft18ActionExecutor();
         executor.setAiEnabled(true);
 
         executor.apply(new LegacyAction(1.0, 0.0, false, true, 0.0F, false), 100L);

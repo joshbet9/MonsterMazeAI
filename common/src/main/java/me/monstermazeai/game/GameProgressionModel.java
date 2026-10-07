@@ -44,7 +44,9 @@ public final class GameProgressionModel {
         // checkPlayersOnSafePad() runs every server tick.
         if (onActive && !state.padReached) {
             state.padReached = true;
-            abilities.onReachedPad(state, state.stage == 1);
+            // This simulator represents a single-player run. In the source,
+            // that player is necessarily first to the Safe Pad in every phase.
+            abilities.onReachedPad(state, true);
 
             int shortenedSeconds = Math.max(6, 16 - (state.stage - 1));
             state.phaseTicksRemaining = Math.min(

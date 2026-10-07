@@ -225,11 +225,12 @@ public final class Minecraft18AiRuntime {
         }
 
         lastCompletedTick = result.tick;
-        if (age > 1L) {
+        if (age == 1L) {
             /*
-             * A late result may still be useful for continuous movement, but its
-             * camera/ability pulse was calculated against an older world state.
-             * Keep movement and jump intent; never replay a stale one-shot pulse.
+             * The common simulator is closed-loop on the observation being
+             * controlled. A one-tick-old snapshot can still preserve the
+             * continuous WASD/jump intent, but its camera pulse and ability
+             * decision are stale relative to the current world.
              */
             return new LegacyAction(
                     result.action.forward,
@@ -239,7 +240,12 @@ public final class Minecraft18AiRuntime {
                     0.0F,
                     false);
         }
-        return result.action;
+        /*
+         * Do not carry a movement command across two or more live ticks. The
+         * simulator never does this: every physics step consumes an action
+         * selected from the immediately preceding state.
+         */
+        return LegacyAction.IDLE;
     }
 
 

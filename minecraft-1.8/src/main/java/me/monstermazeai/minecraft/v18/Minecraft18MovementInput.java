@@ -52,16 +52,13 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
          * immediately afterwards. This keeps the AI isolated from physical input
          * and makes SP=true produce the same sprint state the simulator models.
          */
-        boolean physicalSprintPressed =
-                GameSettings.isKeyDown(minecraft.gameSettings.keyBindSprint);
-        int sprintKeyCode = minecraft.gameSettings.keyBindSprint.getKeyCode();
-        KeyBinding.setKeyBindState(sprintKeyCode, action.sprint);
+        executor.beginSyntheticSprintKey(
+                minecraft.gameSettings.keyBindSprint, action.sprint);
         try {
             super.updatePlayerMoveState();
-        } finally {
-            // Restore only the real hardware state; the MovementInput instance
-            // retains the synthetic sprint state produced by super.updatePlayerMoveState().
-            KeyBinding.setKeyBindState(sprintKeyCode, physicalSprintPressed);
+        } catch (RuntimeException failure) {
+            executor.restoreSyntheticSprintKey();
+            throw failure;
         }
         if (action == null) action = LegacyAction.IDLE;
 

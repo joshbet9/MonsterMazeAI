@@ -67,10 +67,20 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
 
         if (minecraft.thePlayer != null) {
             /*
+             * AI owns the camera while enabled. Physical mouse movement cannot
+             * be allowed to change the heading between the observation used by
+             * the planner and the physics step that consumes its Action.
+             */
+            if (!executor.controlledYawInitialised()) {
+                executor.initialiseControlledYaw(minecraft.thePlayer.rotationYaw);
+            }
+            minecraft.thePlayer.rotationYaw = executor.controlledYaw();
+
+            /*
              * yawDelta is a per-command cursor step, not a held input. Consume
              * it once while forward/strafe/jump remain continuously authoritative.
              * This permits true simultaneous steering + forward movement without
-             * repeatedly applying the same 12-degree correction every tick.
+             * repeatedly applying the same correction every tick.
              */
             float yawDelta = executor.consumeYawPulse();
             if (yawDelta != 0.0f) {

@@ -152,4 +152,56 @@ class MovementBenchmarkTest {
                 "the next held Jump -10 impulse must occur exactly ten ticks later");
     }
 
+    @Test
+    void matchesCapturedMinecraft189SprintJumpMinusTenTrajectory() {
+        /*
+         * Captured from the actual 1.8.9 client movement recorder
+         * human-speed-run-20261006-135516-498 at records 13 and 14:
+         *   start x/z = 1.0 / 1.0, yaw=-30
+         *   action = forward=1, jump=true, sprinting=true, yawDelta=-30
+         *   first delta = 0.1636909321 / 0.2835262343
+         *
+         * The recorder's next state also reports vx/vz =
+         * 0.0893752593 / 0.1548053419. This test ensures the common simulator
+         * executes the same vanilla 1.8.9 movement frame, including the
+         * 0.98 input damping, Sprint 1.3 multiplier, Jump -10 horizontal
+         * sprint-jump impulse, and 0.6*0.91 ground friction.
+         */
+        int[][] raw = new int[MazeModel.SIZE][MazeModel.SIZE];
+        for (int row = 0; row < MazeModel.SIZE; row++) {
+            for (int col = 0; col < MazeModel.SIZE; col++) raw[row][col] = 1;
+        }
+        MazeModel maze = new MazeModel(raw);
+
+        GameState s = player();
+        s.kit = Kit.REPULSOR;
+        s.player.x = 1.0;
+        s.player.z = 1.0;
+        s.player.y = GameState.PATH_Y;
+        s.player.yaw = 0.0F;
+        s.player.grounded = true;
+        s.player.vx = 0.0;
+        s.player.vz = 0.0;
+
+        LegacyMovementModel physics = new LegacyMovementModel();
+
+        physics.tick(s.player,
+                new Action(1.0, 0.0, true, true, -30.0F, false),
+                maze, -10);
+
+        assertEquals(1.1636909320950508, s.player.x, 1.0e-12);
+        assertEquals(1.2835262343287468, s.player.z, 1.0e-12);
+        assertEquals(0.08937525930506895, s.player.vx, 1.0e-12);
+        assertEquals(0.15480534192454298, s.player.vz, 1.0e-12);
+
+        physics.tick(s.player,
+                new Action(1.0, 0.0, true, true, -15.0F, false),
+                maze, -10);
+
+        assertEquals(1.3431515786300392, s.player.x, 1.0e-12);
+        assertEquals(1.5284169634832092, s.player.z, 1.0e-12);
+        assertEquals(0.09798552438937978, s.player.vx, 1.0e-12);
+        assertEquals(0.1337103536491454, s.player.vz, 1.0e-12);
+    }
+
 }

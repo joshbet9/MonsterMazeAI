@@ -1,5 +1,6 @@
 package me.monstermazeai.minecraft.v18;
 
+import me.monstermazeai.adapter.LegacyAction;
 import org.junit.Test;
 
 import static org.junit.Assert.*;

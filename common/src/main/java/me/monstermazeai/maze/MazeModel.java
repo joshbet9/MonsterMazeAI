@@ -9,6 +9,10 @@ public final class MazeModel {
     private final int[][] raw;
     private final boolean[][] disabled;
     private final boolean[][] physicalFloor;
+    /** Source MazeGenerator places a 3-block-high glass barrier on raw cells 4/6 until center deterioration. */
+    private final boolean[][] physicalBarrier;
+    /** Source center-safe-zone barrier/floor lifecycle. */
+    private boolean centerDeteriorated;
     /** Source SafePad surface overlay; distinct from the underlying maze floor. */
     private final boolean[][] padSurface;
     private long dynamicSignature;
@@ -18,11 +22,16 @@ public final class MazeModel {
         this.raw = new int[SIZE][SIZE];
         this.disabled = new boolean[SIZE][SIZE];
         this.physicalFloor = new boolean[SIZE][SIZE];
+        this.physicalBarrier = new boolean[SIZE][SIZE];
         this.padSurface = new boolean[SIZE][SIZE];
         for (int r = 0; r < SIZE; r++) {
             if (raw[r].length != SIZE) throw new IllegalArgumentException("Maze must be 99x99");
             System.arraycopy(raw[r], 0, this.raw[r], 0, SIZE);
-            for (int c = 0; c < SIZE; c++) this.physicalFloor[r][c] = raw[r][c] != 0;
+            for (int c = 0; c < SIZE; c++) {
+                int value = raw[r][c];
+                this.physicalFloor[r][c] = value != 0 && value != 4 && value != 6;
+                this.physicalBarrier[r][c] = value == 4 || value == 6;
+            }
         }
         dynamicSignature = 0x9E3779B97F4A7C15L;
     }
@@ -36,17 +45,17 @@ public final class MazeModel {
 
     public void setDisabled(int row, int col, boolean value) {
         if (disabled[row][col] == value) return;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
         disabled[row][col] = value;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
     }
     /** Source SafePad builds a 5x5 physical floor, including cells that were previously void. */
     public void setPadSurface(int row, int col, boolean value) {
         if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) return;
         if (padSurface[row][col] == value) return;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
         padSurface[row][col] = value;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
     }
 
     public boolean hasPadSurface(int row, int col) {
@@ -57,20 +66,63 @@ public final class MazeModel {
         return row >= 0 && row < SIZE && col >= 0 && col < SIZE
                 && (physicalFloor[row][col] || padSurface[row][col]);
     }
+
+    /** A raw 4/6 cell is a colliding source glass column until center deterioration; pads mask it. */
+    public boolean isPhysicalBarrier(int row, int col) {
+        return row >= 0 && row < SIZE && col >= 0 && col < SIZE
+                && physicalBarrier[row][col] && !padSurface[row][col];
+    }
+
     public void setPhysicalFloor(int row, int col, boolean value) {
         if (physicalFloor[row][col] == value) return;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
         physicalFloor[row][col] = value;
-        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], padSurface[row][col]);
+        dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
     }
+
+    /** Switch the source center-safe-zone from glass-bordered state to its final normal-maze state. */
+    public void setCenterDeteriorated(boolean value) {
+        if (centerDeteriorated == value) return;
+        centerDeteriorated = value;
+        for (int row = 0; row < SIZE; row++) {
+            for (int col = 0; col < SIZE; col++) {
+                int rawValue = raw[row][col];
+                if (rawValue < 3 || rawValue > 6) continue;
+
+                boolean oldFloor = physicalFloor[row][col];
+                boolean oldBarrier = physicalBarrier[row][col];
+
+                if (padSurface[row][col]) {
+                    physicalBarrier[row][col] = false;
+                    continue;
+                }
+
+                if (value) {
+                    physicalBarrier[row][col] = false;
+                    physicalFloor[row][col] = rawValue == 5 || rawValue == 6;
+                } else {
+                    physicalBarrier[row][col] = rawValue == 4 || rawValue == 6;
+                    physicalFloor[row][col] = rawValue == 3 || rawValue == 5;
+                }
+
+                if (oldFloor != physicalFloor[row][col] || oldBarrier != physicalBarrier[row][col]) {
+                    dynamicSignature ^= cellSignature(row, col, disabled[row][col], oldFloor, oldBarrier, padSurface[row][col]);
+                    dynamicSignature ^= cellSignature(row, col, disabled[row][col], physicalFloor[row][col], physicalBarrier[row][col], padSurface[row][col]);
+                }
+            }
+        }
+    }
+
+    public boolean centerDeteriorated() { return centerDeteriorated; }
 
     /** Compact O(1) signature of dynamic floor/waypoint state for live replanning. */
     public long dynamicSignature() { return dynamicSignature; }
 
-    private static long cellSignature(int row, int col, boolean disabled, boolean floor, boolean pad) {
+    private static long cellSignature(int row, int col, boolean disabled, boolean floor, boolean barrier, boolean pad) {
         long value = (((long) row) << 32) ^ (col & 0xffffffffL);
         if (disabled) value ^= 0xC2B2AE3D27D4EB4FL;
         if (floor) value ^= 0x165667B19E3779F9L;
+        if (barrier) value ^= 0xD6E8FEB86659FD93L;
         if (pad) value ^= 0x27D4EB2F165667B1L;
         value *= 0x9E3779B97F4A7C15L;
         value ^= value >>> 29;
@@ -84,9 +136,11 @@ public final class MazeModel {
             for (int c = 0; c < SIZE; c++) {
                 copy.disabled[r][c] = disabled[r][c];
                 copy.physicalFloor[r][c] = physicalFloor[r][c];
+                copy.physicalBarrier[r][c] = physicalBarrier[r][c];
                 copy.padSurface[r][c] = padSurface[r][c];
             }
         }
+        copy.centerDeteriorated = centerDeteriorated;
         copy.dynamicSignature = dynamicSignature;
         return copy;
     }

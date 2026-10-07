@@ -203,13 +203,18 @@ public final class Minecraft18AiRuntime {
         long age = currentTick - result.tick;
 
         /*
-         * Deterministic live cadence: observe N -> decide N -> apply on N+1.
-         * A result from the current tick is therefore still queued, even if the
-         * sidecar answered immediately. This prevents runtime speed from changing
-         * the control law relative to the simulator.
+         * Forge fires ClientTickEvent.START before world.updateEntities(), so a
+         * sidecar result received before the player update is valid for the
+         * current tick. A result that crosses one tick of IPC latency may still
+         * be consumed on the next tick, but never beyond that bounded window.
          */
-        if (age < 1L) {
-            return null;
+        if (age < 0L || age > MAX_ACTION_AGE_TICKS) {
+            if (age > MAX_ACTION_AGE_TICKS) {
+                latestCompletedDecision = null;
+                lastAppliedDecisionSequence = result.sequence;
+                lastCompletedTick = result.tick;
+            }
+            return LegacyAction.IDLE;
         }
 
         if (result.sequence <= lastAppliedDecisionSequence) {
@@ -217,24 +222,16 @@ public final class Minecraft18AiRuntime {
             return null;
         }
 
-        if (age > MAX_ACTION_AGE_TICKS) {
-            latestCompletedDecision = null;
-            lastAppliedDecisionSequence = result.sequence;
-            lastCompletedTick = result.tick;
-            return LegacyAction.IDLE;
-        }
-
         latestCompletedDecision = null;
         lastAppliedDecisionSequence = result.sequence;
         lastCompletedTick = result.tick;
 
         /*
-         * The simulator consumes the exact queued Action on N+1. Preserve all
-         * fields here: WASD, jump, sprint, yaw pulse, and ability pulse.
+         * Preserve the exact Action fields. The simulator and live adapter both
+         * use the same control vector; yaw and ability remain one-shot pulses.
          */
         return result.action;
     }
-
 
     /** Worker loop that always consumes the newest available observation. */
     private void processLatestObservations() {

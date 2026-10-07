@@ -41,6 +41,8 @@ public final class AiSidecarMain {
 
         long observationCount = 0L;
         long lastDiagnosticTick = Long.MIN_VALUE;
+        long bodyRushUntilTick = Long.MIN_VALUE;
+        long lastBodyRushContactTick = Long.MIN_VALUE;
 
         while (true) {
             LegacyWorldObservation observation;
@@ -84,6 +86,43 @@ public final class AiSidecarMain {
                 }
 
                 if (decisionReady) {
+                    /*
+                     * Body Rush is a server-side timed state. The inventory only
+                     * exposes remaining activations, not whether the current
+                     * 10-second immunity window is active. Because the AI itself
+                     * is the sole source of the activation input, mirror that
+                     * authoritative action into the next observations.
+                     */
+                    if (state.kit == me.monstermazeai.kit.Kit.BODY_BUILDER) {
+                        if (bodyRushUntilTick > state.tick) {
+                            state.ability.activeUntilTick = bodyRushUntilTick;
+                        } else {
+                            state.ability.activeUntilTick = 0L;
+                            bodyRushUntilTick = Long.MIN_VALUE;
+                        }
+
+                        /*
+                         * Body Rush contact launches the mob upward with the
+                         * source +1.0 vertical velocity and shortens the active
+                         * window by 40 ticks. The launched monster is observable
+                         * on the following tick, so apply the same penalty once.
+                         */
+                        if (bodyRushUntilTick > state.tick) {
+                            for (LegacyWorldObservation.Monster monster : observation.monsters) {
+                                double dx = monster.x - observation.player.x;
+                                double dy = monster.y - observation.player.y;
+                                double dz = monster.z - observation.player.z;
+                                if (dx * dx + dy * dy + dz * dz > 2.25D) continue;
+                                if (monster.vy < 0.80D) continue;
+                                if (state.tick == lastBodyRushContactTick) continue;
+                                bodyRushUntilTick = Math.max(state.tick, bodyRushUntilTick - 40L);
+                                lastBodyRushContactTick = state.tick;
+                                state.ability.activeUntilTick = bodyRushUntilTick;
+                                break;
+                            }
+                        }
+                    }
+
                     // Non-Jumper players deliberately hold jump for the source's
                     // "speeding" mechanic. Jumpers may jump only while a charge remains.
                     boolean allowJump = state.kit != me.monstermazeai.kit.Kit.JUMPER
@@ -91,6 +130,11 @@ public final class AiSidecarMain {
                     Action action = fullRoutingAgent.decide(state, allowJump);
                     result = new LegacyAction(action.forward(), action.strafe(), action.jump(),
                             action.sprint(), action.yawDelta(), action.useAbility());
+
+                    if (action.useAbility() && state.kit == me.monstermazeai.kit.Kit.BODY_BUILDER) {
+                        bodyRushUntilTick = state.tick + 200L;
+                        lastBodyRushContactTick = Long.MIN_VALUE;
+                    }
 
                     if (observationCount <= 3 || observationCount % 20 == 0
                             || action.yawDelta() != 0.0F
@@ -104,6 +148,8 @@ public final class AiSidecarMain {
                                 + " mode=full-routing");
                     }
                 } else {
+                    bodyRushUntilTick = Long.MIN_VALUE;
+                    lastBodyRushContactTick = Long.MIN_VALUE;
                     fullRoutingAgent.reset();
                     System.err.println("[MonsterMazeAI] FULL_ROUTING reset by gate at tick="
                             + observation.worldTick);

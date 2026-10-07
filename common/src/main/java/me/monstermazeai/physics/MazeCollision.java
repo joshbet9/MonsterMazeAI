@@ -94,7 +94,6 @@ public final class MazeCollision {
         for(int r=minX;r<=maxX;r++)for(int c=minZ;c<=maxZ;c++){
             if(r<0||c<0||r>=MazeModel.SIZE||c>=MazeModel.SIZE)continue;
             if(maze.isPhysicalFloor(r,c)) out.add(new Aabb(r,-1,c,r+1,0,c+1));
-            if(maze.isPhysicalBarrier(r,c)) out.add(new Aabb(r,0,c,r+1,3,c+1));
         }
         return out;
     }

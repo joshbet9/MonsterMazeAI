@@ -148,6 +148,21 @@ public final class ObservationWorldModel {
             monster.vy = observed.vy;
             monster.vz = observed.vz;
             monster.removed = observed.removed;
+
+            /*
+             * Repulsor/Body Rush launch a ghost upward with a source +1.0 Y
+             * velocity for roughly 30 ticks. The transient launch flag is not
+             * visible in the version-neutral packet, but an airborne maze mob
+             * cannot arise from normal MonsterManager movement, so reconstruct
+             * the same source state from its live position/velocity.
+             */
+            if (!observed.removed
+                    && (observed.vy > 0.50D
+                        || observed.y > observation.center.y + 0.05D)) {
+                monster.launchedAtTick = observation.worldTick - 1L;
+                monster.launchedUntilTick = observation.worldTick + 29L;
+            }
+
             {
                 Cell cell = coordinates.containingCell(observed.x, observed.z);
                 if (coordinates.inBounds(cell)) {

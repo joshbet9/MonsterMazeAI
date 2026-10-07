@@ -119,7 +119,10 @@ public final class TacticalRouteSimulator {
         // MonsterManager/UtilAction remains authoritative for the bump itself.
         MonsterMazeBumpModel.apply(state);
 
-        if (isOnActivePad(state)) {
+        if (isOnActivePad(state) && !state.padReached) {
+            // Match GameManager.checkPlayersOnSafePad(): the source rewards a
+            // player once on first entry, never once per standing tick. This
+            // simulator branch is single-player, so that entry is always first.
             abilities.onReachedPad(state, true);
             state.padReached = true;
         }

@@ -71,8 +71,8 @@ public final class StableLiveMovementController {
      * that discards newer world state.
      */
 
-    /** Camera turn bound used by the AI; vanilla 1.8.9 itself does not impose a 30-degree gameplay cap. */
-    private static final float MAX_TURN_PER_TICK = 90.0F;
+    /** Monster Maze accepts up to 30 degrees of 1.8 camera/yaw change per tick. */
+    private static final float MAX_TURN_PER_TICK = 30.0F;
     /** Same legacy player movement constants used by the physics predictor. */
     private static final double SLIPPERINESS = 0.6D;
     private static final double GROUND_FRICTION = 0.91D;
@@ -93,7 +93,7 @@ public final class StableLiveMovementController {
      * Monster Maze SafePads are centred on integer block coordinates, while
      * PlayerRoute cells use half-block cell centres. The live player can
      * therefore legitimately enter the first route cell with a 0.5-block
-     * cross-track offset at the source center-spawn boundary.
+     * cross-track offset (the observed 50.0,50.0 spawn is exactly this case).
      * Preserve that physical lane when a segment begins instead of treating
      * the pad-to-maze coordinate transition as a dangerous deviation.
      */
@@ -395,27 +395,8 @@ public final class StableLiveMovementController {
         }
 
         if (route.size() == 1) {
-            /*
-             * A region route can legitimately contain only the player's current
-             * cell when the graph considers that cell inside the SafePad search
-             * radius. That is not equivalent to the source's 5x5 PadModel.isOn()
-             * completion check. Keep driving toward the actual pad surface until
-             * the geometric source condition is satisfied.
-             */
-            if (regionRadius <= 0 || PadModel.isOn(
-                    state.player,
-                    goal.row() + 0.5,
-                    GameState.PAD_SURFACE_Y,
-                    goal.column() + 0.5)) {
-                lastDecisionDetail = "REACHED routeSize=1";
-                return Action.IDLE;
-            }
-
-            Action finishPad = noMobController.nextActionUsingRoute(
-                    state, goal, allowJump, regionRadius, route);
-            lastDecisionDetail = "PAD_REGION_FINISH "
-                    + noMobController.lastDecisionDetail();
-            return finishPad;
+            lastDecisionDetail = "REACHED routeSize=1";
+            return Action.IDLE;
         }
 
         /*
@@ -1319,7 +1300,7 @@ public final class StableLiveMovementController {
             forward /= inputMagnitude;
             strafe /= inputMagnitude;
         }
-        boolean sprint = forward >= 0.8D;
+        boolean sprint = true;
         lastDecisionDetail = "MOB_HIT_AIRBORNE_RECOVERY"
                 + " target=" + format(target[0]) + "," + format(target[1])
                 + " yawError=" + format(yawError)
@@ -1443,28 +1424,8 @@ public final class StableLiveMovementController {
             double lateral = Math.abs(dx * routeDirColumn - dz * routeDirRow);
             if (lateral > 0.95D) continue;
 
-            /*
-             * Threat is a relative-motion question. The old calculation used
-             * monster velocity only, so a stationary monster sitting 2 blocks
-             * ahead was treated as an incoming threat even when the player's
-             * trajectory would pass safely beside it. Use the actual relative
-             * closing speed and only enter the dodge branch when contact is
-             * plausibly imminent.
-             */
-            double relativeVx = monster.vx - state.player.vx;
-            double relativeVz = monster.vz - state.player.vz;
-            double closing = -(relativeVx * dx + relativeVz * dz) / distance;
-            double contactDistance = 1.05D;
-            double distanceUntilContact = distance - contactDistance;
-            double timeToContact = closing > 1.0E-6D
-                    ? Math.max(0.0D, distanceUntilContact) / closing
-                    : Double.POSITIVE_INFINITY;
-
-            boolean imminent = distance <= contactDistance
-                    || (closing > 0.05D && timeToContact <= 3.0D);
-            if (!imminent) continue;
-
-            double score = distance + 0.20D * timeToContact;
+            double closing = -(monster.vx * dx + monster.vz * dz) / distance;
+            double score = distance - 0.20D * Math.max(0.0D, closing);
             if (score < bestScore) {
                 bestScore = score;
                 bestDistance = distance;
@@ -1531,24 +1492,7 @@ public final class StableLiveMovementController {
                 strafe = 1.0D;
             }
 
-            /*
-             * Keep forward at the vanilla sprint threshold, but express the
-             * dodge as a camera-steered world vector so the same directional
-             * intent is executed by the simulator and the 1.8.9 client.
-             * Bias forward motion toward the route while adding one full side
-             * component away from the monster.
-             */
-            double preferredSide = strafe;
-            double dodgeSideBias = 0.75D;
-            double dodgeWorldX = routeDirRow + preferredSide * dodgeSideBias;
-            double dodgeWorldZ = routeDirColumn - preferredSide * dodgeSideBias;
-            double dodgeLength = Math.hypot(dodgeWorldX, dodgeWorldZ);
-            if (dodgeLength > 1.0E-9D) {
-                dodgeWorldX /= dodgeLength;
-                dodgeWorldZ /= dodgeLength;
-            }
-            Action dodge = noMobController.driveVector(
-                    state, dodgeWorldX, dodgeWorldZ, 1.0D, true, false);
+            Action dodge = new Action(0.65, strafe, false, true, 0.0F, false);
             Action guarded = guardProjectedSupport(state, dodge, routeDirRow, routeDirColumn);
             lastDecisionDetail = "MOB_DODGE"
                     + " monster=" + threat.id
@@ -1702,15 +1646,7 @@ public final class StableLiveMovementController {
         double ux = dx / length;
         double uz = dz / length;
 
-        /*
-         * EntityPlayerSP applies the yaw pulse before the movement step. Convert
-         * the recovery vector in that same post-turn frame, exactly as the
-         * simulator's LegacyMovementModel does.
-         */
-        float yawDelta = clamp(normalise(
-                (float) Math.toDegrees(Math.atan2(-dx, dz)) - state.player.yaw),
-                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
-        double yawRad = Math.toRadians(state.player.yaw + yawDelta);
+        double yawRad = Math.toRadians(state.player.yaw);
         double forwardX = -Math.sin(yawRad);
         double forwardZ = Math.cos(yawRad);
         double strafeX = Math.cos(yawRad);
@@ -1729,9 +1665,10 @@ public final class StableLiveMovementController {
                 && state.ability.charges > 0
                 && state.player.y > -0.05D;
         float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float desiredYawDelta = normalise(desiredYaw - state.player.yaw);
+        float yawDelta = clamp(normalise(desiredYaw - state.player.yaw),
+                -MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
 
-        return new Action(forward, strafe, emergencyJump, forward >= 0.8D,
+        return new Action(forward, strafe, emergencyJump, forward > 0.75,
                 yawDelta, false);
     }
 

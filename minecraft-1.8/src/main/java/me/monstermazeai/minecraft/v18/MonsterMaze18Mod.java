@@ -186,6 +186,16 @@ public final class MonsterMaze18Mod {
     }
 
     @SubscribeEvent
+    public void clientTickEnd(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || executor == null) return;
+        /*
+         * Restore physical keyboard state only after EntityPlayerSP has finished
+         * its sprint decision and movement for this tick.
+         */
+        executor.restoreSyntheticSprintKey();
+    }
+
+    @SubscribeEvent
     public void onClientChat(ClientChatReceivedEvent event) {
         if (!aiEnabled || event == null || event.message == null) return;
         String text = event.message.getUnformattedText();

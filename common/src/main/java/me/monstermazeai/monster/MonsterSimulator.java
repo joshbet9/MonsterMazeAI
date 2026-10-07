@@ -62,15 +62,25 @@ public final class MonsterSimulator {
             if (m.removed) continue;
             if (m.frozen(state.tick)) {
                 /*
-                 * Source MonsterManager.freeze() only suppresses the waypoint
-                 * movement task. It does not clear Entity velocity, so preserve
-                 * the mob's residual motion and normal ground friction while the
-                 * freeze is active.
+                 * Source MonsterManager.freeze() removes the waypoint/launch
+                 * bookkeeping but does not zero the entity's current velocity.
+                 * The normal EntityLiving tick therefore keeps gravity and
+                 * momentum running while the maze steering task is suppressed.
                  */
                 m.x += m.vx;
+                m.y += m.vy;
                 m.z += m.vz;
-                m.vx *= GROUND_FRICTION;
-                m.vz *= GROUND_FRICTION;
+                m.vy -= GRAVITY;
+                m.vy *= AIR_DRAG;
+                if (m.y <= 0.0D) {
+                    m.y = 0.0D;
+                    m.vy = 0.0D;
+                    m.vx *= GROUND_FRICTION;
+                    m.vz *= GROUND_FRICTION;
+                } else {
+                    m.vx *= GROUND_FRICTION;
+                    m.vz *= GROUND_FRICTION;
+                }
                 continue;
             }
             if (m.launched(state.tick)) {

@@ -117,7 +117,16 @@ public final class MonsterSimulator {
             // and the entity turns toward the waypoint by at most 30 degrees.
             // ControllerMove passes the command speed unchanged; it is
             // multiplied only by GenericAttributes.MOVEMENT_SPEED.
-            double movementInput = speed * SNOWMAN_MOVEMENT_SPEED;
+            /*
+             * UtilEnt.CreatureMoveFast() mirrors the source helper exactly:
+             * when the target is within four square blocks, it clamps its
+             * controller speed from 1.4 to 1.0 before EntityMoveHelper multiplies
+             * by the Snowman's 0.2 movement attribute.
+             */
+            double controllerSpeed = horizontalSq < 4.0D
+                    ? Math.min(speed, 1.0D)
+                    : speed;
+            double movementInput = controllerSpeed * SNOWMAN_MOVEMENT_SPEED;
             float desiredYaw = (float) (Math.atan2(dz, dx) * 180.0D / Math.PI) - 90.0F;
             m.yaw = approachAngle(m.yaw, desiredYaw, 30.0F);
 

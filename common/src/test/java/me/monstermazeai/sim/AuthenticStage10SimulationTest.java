@@ -131,9 +131,15 @@ class AuthenticStage10SimulationTest {
         state.inMonsterMaze = true;
         state.alive = true;
         state.completed = false;
-        state.player.x = 49.5;
+        /*
+         * Match MonsterMaze GameManager.startGame(): after maze generation the
+         * real player is teleported to center.clone().add(0.5, 1, 0.5).
+         * MazeCoordinates maps that source spawn to logical (50.0, 50.0),
+         * i.e. the player starts on the grid boundary with a 0.6-wide AABB.
+         */
+        state.player.x = 50.0;
         state.player.y = GameState.PATH_Y;
-        state.player.z = 49.5;
+        state.player.z = 50.0;
         state.player.yaw = 0.0F;
         state.player.grounded = true;
 

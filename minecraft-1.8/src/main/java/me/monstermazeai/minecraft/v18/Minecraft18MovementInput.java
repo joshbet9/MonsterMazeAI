@@ -89,6 +89,9 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
             moveForward = (float) action.forward;
             moveStrafe = (float) action.strafe;
             jump = action.jump;
+            // Sneak is not part of the common Monster Maze Action contract.
+            // Never let the user's physical sneak key reshape the AI action.
+            sneak = false;
 
             // Let vanilla's normal sprint eligibility rules run from the
             // resulting forward input. Explicitly clear sprint when the AI

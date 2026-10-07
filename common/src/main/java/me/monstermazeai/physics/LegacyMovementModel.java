@@ -9,6 +9,8 @@ public final class LegacyMovementModel implements PhysicsModel {
     private static final float GROUND_FRICTION = 0.91F;
     private static final float WALK_SPEED = 0.10F;
     private static final float SPRINT_MULTIPLIER = 1.30F;
+    /** EntityLivingBase applies a 0.98 input decay before moveEntityWithHeading(). */
+    private static final float INPUT_DAMPING = 0.98F;
     /** Base 1.8 air movement factor; sprint raises it by 30% to exactly 0.026F. */
     private static final float AIR_MOVE_FACTOR = 0.020F;
     private static final double GRAVITY = 0.08D;
@@ -103,7 +105,17 @@ public final class LegacyMovementModel implements PhysicsModel {
                     * (effectiveSprint ? SPRINT_MULTIPLIER : 1.0F);
         }
 
-        moveFlying(p, action.strafe(), action.forward(), movementFactor);
+        /*
+         * The live 1.8.9 path sets MovementInput first, then EntityLivingBase
+         * multiplies both moveStrafing and moveForward by 0.98 immediately
+         * before moveEntityWithHeading(). Keep sprint eligibility based on the
+         * pre-damped forward input, but apply the exact 0.98 factor to physics.
+         */
+        moveFlying(
+                p,
+                action.strafe() * INPUT_DAMPING,
+                action.forward() * INPUT_DAMPING,
+                movementFactor);
 
         /*
          * Entity.move() resolves the player's 0.6-wide AABB against the actual

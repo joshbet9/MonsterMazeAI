@@ -114,6 +114,14 @@ public final class Minecraft18MovementInput extends MovementInputFromOptions {
             if (executor.consumeAbilityPulse()
                     && minecraft.playerController != null
                     && minecraft.theWorld != null) {
+                /*
+                 * MonsterMaze places every QOL secondary item in hotbar slot 0:
+                 * snowball (Cryo), apple (Body Rush), coal (Repulsor). The
+                 * simulator models the ability as directly executable from kit
+                 * state, so the live bridge must make the same ability state
+                 * independent of the user's previously selected slot.
+                 */
+                minecraft.thePlayer.inventory.currentItem = 0;
                 net.minecraft.item.ItemStack stack = minecraft.thePlayer.getCurrentEquippedItem();
                 if (stack != null) {
                     // Source kits use different input events: Repulsor and Body

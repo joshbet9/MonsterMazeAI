@@ -54,6 +54,10 @@ public final class Minecraft18ActionExecutor implements ActionSink {
     }
 
     /** Current AI-owned camera heading; physical mouse input is not authoritative while AI is enabled. */
+    public synchronized boolean controlledYawInitialised() {
+        return controlledYawInitialised;
+    }
+
     public synchronized float controlledYaw() {
         return controlledYawInitialised ? controlledYaw : 0.0F;
     }

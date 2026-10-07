@@ -93,7 +93,7 @@ public final class StableLiveMovementController {
      * Monster Maze SafePads are centred on integer block coordinates, while
      * PlayerRoute cells use half-block cell centres. The live player can
      * therefore legitimately enter the first route cell with a 0.5-block
-     * cross-track offset (the observed 50.0,50.0 spawn is exactly this case).
+     * cross-track offset at the source center-spawn boundary.
      * Preserve that physical lane when a segment begins instead of treating
      * the pad-to-maze coordinate transition as a dangerous deviation.
      */

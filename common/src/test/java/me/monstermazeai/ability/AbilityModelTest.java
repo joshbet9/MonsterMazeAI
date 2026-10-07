@@ -195,5 +195,25 @@ class AbilityModelTest {
         assertFalse(AbilityDecision.shouldUse(s, "ROUTE_OPENING", "monster is off route"));
     }
 
+    @Test
+    void cryoDoesNotArtificiallyZeroExistingMonsterMomentum() {
+        GameState s = new GameState();
+        s.mode = Mode.MODERN;
+        s.kit = Kit.SLOWBALLER;
+        model.initialiseForMode(s);
+        s.player.x = 0.0;
+        s.player.z = 0.0;
+
+        MonsterState m = new MonsterState(12, 1.0, 0.0, 0.0);
+        m.vx = 0.20;
+        m.vz = 0.05;
+        s.monsters.add(m);
+
+        assertTrue(model.activate(s));
+        assertEquals(0.20, m.vx, 1.0e-12);
+        assertEquals(0.05, m.vz, 1.0e-12);
+        assertEquals(60, m.frozenUntilTick);
+    }
+
 }
 

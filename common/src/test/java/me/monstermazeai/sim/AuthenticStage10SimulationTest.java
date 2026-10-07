@@ -187,6 +187,14 @@ class AuthenticStage10SimulationTest {
         double firstFallPreVx = Double.NaN, firstFallPreVy = Double.NaN, firstFallPreVz = Double.NaN;
         Deque<String> trace = new ArrayDeque<>();
         String previousAction = "NONE";
+
+        /*
+         * Live IPC cadence: observe/decide on tick N, consume that exact action
+         * on tick N+1. The first physics tick therefore receives IDLE.
+         */
+        me.monstermazeai.player.Action queuedAction = me.monstermazeai.player.Action.IDLE;
+        boolean haveQueuedAction = false;
+
         boolean diagnosticTrace = pattern == 1
                 && ((mode == Mode.SPEED || mode == Mode.MODERN)
                 && (kit == Kit.MAVERICK || kit == Kit.BODY_BUILDER));

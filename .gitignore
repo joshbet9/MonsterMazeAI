@@ -1,0 +1,16 @@
+# Local client/launcher logs captured during development; never commit machine logs.
+/*.jsonl
+
+# Maven build output
+**/target/
+
+# Gradle output
+**/.gradle/
+**/build/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
